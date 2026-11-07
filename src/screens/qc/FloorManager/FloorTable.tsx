@@ -90,7 +90,7 @@ const CAPTION_MANUAL = 'Cao độ đang nhập tay.';
 const CAPTION_OVERRIDE = 'Ô ghi "Ghi đè" khác cao độ tính từ các tầng dưới.';
 const COLUMN_WIDTH: Record<string, string> = {
   handle: 'w-10',
-  name: 'w-[34%]',
+  name: 'w-[22%]',
   elevation: 'w-24',
   height: 'w-28',
   progress: '',

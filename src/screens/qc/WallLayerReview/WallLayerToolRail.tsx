@@ -114,7 +114,7 @@ export function WallLayerToolRail({
           />
         </span>
       </Tooltip>
-      <span aria-hidden="true" className="w-full text-center text-caption leading-tight text-text-muted">{MERGE_LABEL}</span>
+      <span aria-hidden="true" className="w-full px-1 text-center text-[11px] leading-tight text-text-muted">{MERGE_LABEL}</span>
     </div>
   );
 
@@ -153,7 +153,7 @@ export function WallLayerToolRail({
               />
             </Tooltip>
             {/* Nhãn chữ dưới icon (A3): rail không còn icon trần, cùng kiểu rail Cửa và nội thất. */}
-            <span aria-hidden="true" className="w-full text-center text-caption leading-tight text-text-muted">{tool.label}</span>
+            <span aria-hidden="true" className="w-full px-1 text-center text-[11px] leading-tight text-text-muted">{tool.label}</span>
           </div>
         );
 

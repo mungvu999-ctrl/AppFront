@@ -16,6 +16,7 @@ import {
   type FloorReviewLayerState,
   type FloorScaleState,
 } from './floorReviewGateModel';
+import { useFloorLabel } from './floorDoneModel';
 import { QC_LAYERS, qcLayerTitle, qcStepOf, type QcLayerKey } from './qcLayers';
 import { useFloorReview } from './useFloorReview';
 
@@ -79,6 +80,12 @@ const SCALE_TEXT_CLASS: Readonly<Record<FloorScaleState, string>> = {
   confirmed: '',
 };
 
+/** Nơi gọi không truyền `floors` (Tỷ lệ, Cửa, Phòng): tên tầng lấy từ danh sách tầng của dự án, không để chữ "Tầng" trơ. */
+function ProjectFloorLabel({ projectId, floorId }: { readonly projectId: string; readonly floorId: string }) {
+  const label = useFloorLabel(projectId, floorId);
+  return <>{label === '' ? FLOOR_FALLBACK : label}</>;
+}
+
 function StatusDot({ tone }: { readonly tone: keyof typeof DOT_CLASS }) {
   return <span aria-hidden="true" className={cn('h-2 w-2 shrink-0 rounded-full', DOT_CLASS[tone])} />;
 }
@@ -92,7 +99,7 @@ const IDLE_CLASS = 'text-text-secondary hover:bg-bg-hover hover:text-text-primar
 const MENU_ITEM_CLASS = 'flex w-full items-center gap-1 rounded-md px-3 py-1.5 text-left';
 /** Một ô trong dải bốn bước ở đầu cột việc: dòng trên số + chấm + đếm, dòng dưới tên bước (xuống dòng, không cắt). */
 const CELL_CLASS = cn(
-  'relative flex min-w-0 flex-1 basis-0 flex-col gap-0.5 rounded-md px-1.5 py-1 text-[12px] leading-tight transition-colors duration-120 [&>svg]:absolute [&>svg]:right-1 [&>svg]:top-1.5',
+  'relative flex min-w-0 flex-auto flex-col gap-0.5 rounded-md px-1.5 py-1 text-[12px] leading-tight transition-colors duration-120 [&>svg]:absolute [&>svg]:right-1 [&>svg]:top-1.5',
   'focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
 );
 
@@ -249,6 +256,8 @@ export function QcFloorNav({ projectId, floorId, layer, floors = [], progress, t
   );
   const stepNav = (
     <nav aria-label={STEP_BAR_LABEL} className={stacked ? 'flex flex-wrap items-stretch gap-1' : 'flex min-w-0 flex-1 items-center gap-1 border-l border-border-default pl-3'}>
+      {/* Bốn bước luôn một hàng (hẹp thì tên bước xuống dòng trong ô); mục con của bước nằm hàng dưới. */}
+      <div className={stacked ? 'flex w-full items-stretch gap-1' : 'contents'}>
       {steps.map((item, index) => {
         const state = layerStates.get(item.key);
         const isScale = item.key === 'scale';
@@ -270,7 +279,8 @@ export function QcFloorNav({ projectId, floorId, layer, floors = [], progress, t
               {isLocked(item.key) ? null : <StatusDot tone={scaleView?.statusCode ?? (isDone ? 'verified' : 'neutral')} />}
               {stacked && count !== null ? <span aria-hidden="true" className="ml-auto text-text-muted">{count}</span> : null}
             </span>
-            <span className={cn('min-w-0', !stacked && 'truncate', isScale && scale !== null && SCALE_TEXT_CLASS[scale])}>{label}</span>
+            {/* Ô hẹp: tên ngắn ("Tỷ lệ", "Phòng") không vỡ giữa chữ; chỉ tên dài ("Cửa và nội thất") xuống dòng. */}
+            <span className={cn('min-w-0', stacked ? label.length <= 10 && 'whitespace-nowrap' : 'truncate', isScale && scale !== null && SCALE_TEXT_CLASS[scale])}>{label}</span>
             {isDone && <span className="sr-only">: đã xong</span>}
             {count !== null && (
               <>
@@ -281,6 +291,7 @@ export function QcFloorNav({ projectId, floorId, layer, floors = [], progress, t
           </Step>
         );
       })}
+      </div>
       {subLinks.length === 0 ? null : (
         <>
           {stacked ? <span aria-hidden="true" className="w-full" /> : <span aria-hidden="true" className="mx-2 h-5 w-px shrink-0 bg-border-control" />}
@@ -302,7 +313,9 @@ export function QcFloorNav({ projectId, floorId, layer, floors = [], progress, t
       <div className="flex shrink-0 flex-col gap-1 border-b border-border-default px-2 py-1.5" data-testid="qc-panel-nav">
         <div className="flex min-w-0 items-center justify-between gap-2">
           {chrome.fileMenu(floorItems)}
-          <p className="max-w-[45%] shrink-0 truncate pr-2 text-[13px] font-medium text-text-secondary" title={floorLabel}>{floorLabel}</p>
+          <p className="max-w-[45%] shrink-0 truncate pr-2 text-[13px] font-medium text-text-secondary">
+            {floors.some((floor) => floor.id === floorId) ? floorLabel : <ProjectFloorLabel floorId={floorId} projectId={projectId} />}
+          </p>
         </div>
         {stepNav}
       </div>
