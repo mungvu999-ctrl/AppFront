@@ -224,11 +224,49 @@ const STYLE_TIE = 1.1;
  * F:/runs/library-profiles/profiles.jsonl: chỉ mẫu qc.ok + mặt trước đúng, giấy phép CC0/CC-BY (ghi công
  * hiện khi chọn món, `serverAttributionOf`). Bỏ đèn (mất nguồn sáng), tủ bếp dãy, gương/tranh (cần gắn tường).
  */
-const LIBRARY_ROLES = LIBRARY_ROLES_JSON as Readonly<Record<string, readonly string[]>>;
+const LIBRARY = LIBRARY_ROLES_JSON as {
+  readonly roles: Readonly<Record<string, readonly string[]>>;
+  /** s = mã phong cách (0–3 trong 12 mã), c = độ rực màu đo từ ảnh (C* Lab). */
+  readonly models: Readonly<Record<string, { readonly s: readonly string[]; readonly c: number }>>;
+};
 const libraryFoldersOf = (role: FurnitureRole, variant: string | undefined): readonly string[] =>
-  (role === 'fixed' ? (variant === undefined ? undefined : LIBRARY_ROLES[variant]) : LIBRARY_ROLES[role]) ?? [];
-/** Chọn (băm) trong các mẫu thư viện có chi phí cỡ không quá mẫu vừa nhất + chừng này (~15 % cỡ). */
-const LIBRARY_SIZE_SLACK = 0.15;
+  (role === 'fixed' ? (variant === undefined ? undefined : LIBRARY.roles[variant]) : LIBRARY.roles[role]) ?? [];
+/** Mẫu thư viện vừa cỡ: chi phí cỡ không quá mẫu vừa nhất + chừng này (khớp hộp còn co giãn từng trục). */
+const LIBRARY_SIZE_SLACK = 0.3;
+
+/**
+ * Hạng phong cách của mẫu với danh sách mã của căn (sớm = hợp hơn): trùng mã thứ i → i; mẫu trung tính
+ * (không mã) đứng sau mọi mã; lệch phong cách xếp cuối.
+ */
+const styleTierOf = (folder: string, wanted: readonly string[]): number => {
+  const styles = LIBRARY.models[folder]?.s ?? [];
+  const hits = wanted.map((code, i) => (styles.includes(code) ? i : Infinity));
+  const best = Math.min(...hits);
+  if (best !== Infinity) return best;
+  return styles.length === 0 ? wanted.length : wanted.length + 1;
+};
+
+/**
+ * Mẫu thư viện của một món: cả căn một phong cách (`style.libraryStyles`), rồi màu dịu (độ rực thấp) để
+ * các món hợp nhau, cuối cùng vừa cỡ. Cùng vai trò ra cùng mẫu khắp căn (bộ đồng bộ); cây/thảm thì đổi
+ * theo từng món trong nhóm hợp nhất. null = thư viện chưa nạp mẫu nào của vai trò.
+ */
+const libraryModelOf = (
+  f: Shaped & Pick<Furniture, 'id'>,
+  role: FurnitureRole,
+  style: SceneStyle,
+): string | null => {
+  const library = libraryFoldersOf(role, f.variant).filter(isServerModel);
+  if (library.length === 0) return null;
+  const best = Math.min(...library.map((folder) => sizeCostOf(f, folder)));
+  const wanted = style.libraryStyles ?? [];
+  const ranked = library
+    .filter((folder) => sizeCostOf(f, folder) <= best + LIBRARY_SIZE_SLACK)
+    .map((folder) => ({ folder, tier: styleTierOf(folder, wanted), chroma: LIBRARY.models[folder]?.c ?? 0 }))
+    .sort((a, b) => a.tier - b.tier || a.chroma - b.chroma || a.folder.localeCompare(b.folder));
+  const top = ranked.filter((r) => r.tier === ranked[0]?.tier).slice(0, PER_ITEM_ROLES.has(role) ? 4 : 1);
+  return top[fnv1a(f.id) % top.length]?.folder ?? null;
+};
 
 /**
  * Thư mục mô hình của một món theo phong cách; `null` = không có mô hình (bên gọi dựng
@@ -256,11 +294,8 @@ export const modelFolderOf = (
 
   // Mẫu đẹp của thư viện máy chủ thay mẫu Pascal low-poly cùng loại (khi thư viện đã nạp); mẫu AI chọn vẫn thắng.
   if (!preferred.some(isServerModel)) {
-    const library = libraryFoldersOf(role, f.variant).filter(isServerModel);
-    if (library.length > 0) {
-      const libBest = Math.min(...library.map((folder) => sizeCostOf(f, folder)));
-      return pickHashed(library.filter((folder) => sizeCostOf(f, folder) <= libBest + LIBRARY_SIZE_SLACK));
-    }
+    const library = libraryModelOf(f, role, style);
+    if (library !== null) return library;
   }
 
   const byVariant = roleOverride === undefined ? variantModelOf(f) : null;

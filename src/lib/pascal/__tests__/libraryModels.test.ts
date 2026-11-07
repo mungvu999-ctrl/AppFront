@@ -10,7 +10,7 @@ import { SpatialGraphDocumentSchema } from '@/api/schemas/spatialGraph';
 
 import { fixtureF1, fixtureF2, fixtureF5 } from '../__fixtures__';
 import { registerServerLibrary } from '../furnitureCatalog';
-import LIBRARY_ROLES from '../libraryRoles.json' with { type: 'json' };
+import LIBRARY from '../libraryRoles.json' with { type: 'json' };
 import { rectOfFurniture, rectsOverlap } from '../placement';
 import { dressingOf } from '../sceneDressingRules';
 import { furnishEmptyRooms } from '../sceneFurnish';
@@ -37,15 +37,26 @@ const piece = (id: string, variant: Furniture['variant'], x: number, w: number, 
   }) as Furniture;
 
 describe('mẫu thư viện cho đồ tự bày', () => {
-  it('chưa nạp thư viện: giữ mẫu Pascal; đã nạp: sofa dùng mẫu thư viện vừa cỡ nhất', () => {
+  it('chưa nạp thư viện: giữ mẫu Pascal; đã nạp: cả căn theo phong cách, rồi màu dịu, rồi vừa cỡ', () => {
     const sofa = piece('S', 'sofa', 0, 2000, 900);
     expect(modelFolderOf(sofa, style, 'livingRoom')).toBe('sofa');
-    const [near, far] = LIBRARY_ROLES.sofa as [string, string];
-    registerServerLibrary([
-      { id: near, widthMm: 2050, heightMm: 800, depthMm: 920, modelUrl: 'https://x.test/a.glb', attribution: 'a · CC0' },
-      { id: far, widthMm: 3200, heightMm: 800, depthMm: 1600, modelUrl: 'https://x.test/b.glb', attribution: 'b · CC0' },
-    ]);
-    expect(modelFolderOf(sofa, style, 'livingRoom')).toBe(near);
+    const models = LIBRARY.models as Record<string, { s: string[]; c: number }>;
+    const ofStyle = (code: string) => LIBRARY.roles.sofa.filter((id) => models[id]?.s.includes(code));
+    const [japandi] = ofStyle('japandi') as [string];
+    const [lux] = ofStyle('modern-lux').filter((id) => !models[id]?.s.includes('japandi')) as [string];
+    const huge = LIBRARY.roles.sofa.find((id) => id !== japandi && id !== lux) as string;
+    registerServerLibrary(
+      [japandi, lux, huge].map((id, i) => ({
+        id,
+        widthMm: i === 2 ? 4000 : 2050,
+        heightMm: 800,
+        depthMm: i === 2 ? 2000 : 920,
+        modelUrl: `https://x.test/${id}.glb`,
+        attribution: 'a · CC0',
+      })),
+    );
+    expect(modelFolderOf(sofa, { ...style, libraryStyles: ['japandi'] }, 'livingRoom')).toBe(japandi);
+    expect(modelFolderOf(sofa, { ...style, libraryStyles: ['modern-lux'] }, 'livingRoom')).toBe(lux);
   });
 
   it('bản vẽ mẫu, mọi phòng trống: đồ đứng sàn tự bày không chồng nhau, lưới chặn không phải bỏ món nào', () => {
