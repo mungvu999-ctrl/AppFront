@@ -35,6 +35,8 @@ export interface SceneStyle {
   readonly families: Readonly<Record<SlotFamily, string>>;
   /** Thư mục catalog ưu tiên theo vai trò đồ đạc (`sceneVariety.ts`). */
   readonly prefer: Readonly<Partial<Record<FurnitureRole, readonly string[]>>>;
+  /** Mã phong cách thư viện (12 mã của hồ sơ mẫu), sớm = ưu tiên: cả căn chọn đồ thư viện theo đây (`sceneVariety`). */
+  readonly libraryStyles?: readonly string[];
   readonly lampColour: string;
   readonly lampIntensity: number;
 }
@@ -99,6 +101,7 @@ export const SCENE_STYLES: Readonly<Record<SceneStyleId, SceneStyle>> = {
       rug: lib('fabric-wool'),
       pot: scene('pot_terracotta'),
     },
+    libraryStyles: ['scandinavian', 'japandi', 'midcentury'],
     prefer: { plant: ['indoor-plant'], roundRug: ['round-carpet'], desk: ['office-table'] },
     lampColour: STYLE_PALETTE.lampWarm,
     lampIntensity: 6,
@@ -125,6 +128,7 @@ export const SCENE_STYLES: Readonly<Record<SceneStyleId, SceneStyle>> = {
       rug: lib('fabric-boucle'),
       pot: scene('pot_concrete'),
     },
+    libraryStyles: ['modern-min', 'scandinavian', 'korean-min'],
     prefer: { plant: ['small-indoor-plant', 'indoor-plant'], rug: ['rectangular-carpet'] },
     lampColour: STYLE_PALETTE.lampNeutral,
     lampIntensity: 7,
@@ -151,6 +155,7 @@ export const SCENE_STYLES: Readonly<Record<SceneStyleId, SceneStyle>> = {
       rug: lib('fabric-wool'),
       pot: scene('pot_terracotta'),
     },
+    libraryStyles: ['japandi', 'rustic', 'midcentury'],
     prefer: { plant: ['indoor-plant'], rug: ['rectangular-carpet'], desk: ['office-table'] },
     lampColour: STYLE_PALETTE.lampAmber,
     lampIntensity: 5,
@@ -177,6 +182,7 @@ export const SCENE_STYLES: Readonly<Record<SceneStyleId, SceneStyle>> = {
       rug: lib('fabric-linen'),
       pot: scene('pot_concrete'),
     },
+    libraryStyles: ['modern-min', 'korean-min', 'japandi'],
     prefer: { plant: ['small-indoor-plant'], roundRug: ['round-carpet'] },
     lampColour: STYLE_PALETTE.lampNeutral,
     lampIntensity: 6,
@@ -203,6 +209,7 @@ export const SCENE_STYLES: Readonly<Record<SceneStyleId, SceneStyle>> = {
       rug: lib('fabric-velvet'),
       pot: scene('pot_black'),
     },
+    libraryStyles: ['modern-lux', 'neoclassic', 'industrial'],
     prefer: { plant: ['indoor-plant'], roundRug: ['round-carpet'], desk: ['office-table'] },
     lampColour: STYLE_PALETTE.lampAmber,
     lampIntensity: 9,
