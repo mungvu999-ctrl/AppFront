@@ -146,8 +146,10 @@ export function DimensionOcrList({
           )}
         >
           {/* Bộ đếm "18/34 kích thước đã duyệt" nằm ở dòng trạng thái đầu panel (một chỗ, không lặp). */}
+          {/* Ô theo bề dài chữ, một dòng: "Độ tin cậy thấp" không vỡ hai dòng trong cột 320. */}
           <SegmentedControl
             aria-label={DIMENSION_OCR_TEXT.filter.ariaLabel}
+            className="[&>*]:flex-auto [&>*]:whitespace-nowrap [&>*]:px-2"
             onChange={onFilterChange}
             options={FILTER_OPTIONS}
             value={activeFilter}

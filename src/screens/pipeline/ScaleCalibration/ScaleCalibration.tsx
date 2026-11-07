@@ -233,7 +233,7 @@ export function ScaleCalibration({ actions, floorNav, model }: ScaleCalibrationP
           />
           {isError && model.isNoDrawing === true && (
             /* Lối ra DUY NHẤT của tầng chưa có bản vẽ nên là nút chính (BUG-411). */
-            <Button onClick={actions.onGoToUpload} size="sm" variant="primary">
+            <Button className="self-start" onClick={actions.onGoToUpload} size="sm" variant="primary">
               {GO_TO_UPLOAD_LABEL}
             </Button>
           )}

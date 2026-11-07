@@ -146,7 +146,7 @@ export function WallLayerLeftPanel({ panel, extras, queue, queueNumbers, thickne
           <span className="w-[4.75rem] shrink-0 pl-7">{COLUMN_CODE}</span>
           <span className="min-w-0 flex-1 text-right">{COLUMN_LENGTH}</span>
           {panel.scaleLock != null ? null : (
-            <span className="w-9 shrink-0 text-right" title="Độ dày, mm">{COLUMN_THICKNESS}</span>
+            <span className="w-[4.5rem] shrink-0 text-right" title="Độ dày, mm">{COLUMN_THICKNESS}</span>
           )}
         </div>
       )}

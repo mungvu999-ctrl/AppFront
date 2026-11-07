@@ -139,7 +139,7 @@ export function WallLayerListRow({
         <span className="relative flex-1 whitespace-nowrap text-right tabular-nums text-text-secondary">{extra?.lengthText ?? ''}</span>
         {/* BUG-396: cột dày tối thiểu 36 nhưng nở theo "330 ≈300" — bề rộng cứng 36 cắt mất bậc gần nhất. */}
         {showUnapprove || !showThickness ? null : (
-          <span className="relative min-w-9 shrink-0 whitespace-nowrap text-right tabular-nums text-text-primary">
+          <span className="relative w-[4.5rem] shrink-0 whitespace-nowrap text-right tabular-nums text-text-primary">
             {extra?.thicknessText ?? row.thicknessLabel}
             {extra?.nearText == null ? null : <span className="ml-1 text-caption text-text-secondary">{extra.nearText}</span>}
           </span>

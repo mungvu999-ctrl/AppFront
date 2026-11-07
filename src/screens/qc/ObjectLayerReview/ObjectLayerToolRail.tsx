@@ -146,7 +146,7 @@ export function ObjectLayerToolRail({
                   size="lg"
                 />
                 {/* Group name, not the bare key letter ("C"/"S"/"N" meant nothing, QA-1); the key sits in tooltip + aria-label. */}
-                <span aria-hidden="true" className="w-full text-center text-caption leading-tight text-text-muted">
+                <span aria-hidden="true" className="w-full px-1 text-center text-[11px] leading-tight text-text-muted">
                   {label}
                 </span>
               </div>
