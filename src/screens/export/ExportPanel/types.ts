@@ -11,6 +11,8 @@
 
 import type { SevenState } from '@/lib/testing/sevenStateScenarios';
 
+import type { ServerGlbExportView } from './useServerGlbExport';
+
 /* -------------------------------------------------------------------------- */
 /* Bốn định dạng                                                              */
 /* -------------------------------------------------------------------------- */
@@ -306,4 +308,6 @@ export interface ExportPanelProps {
   readonly onBackToProject?: () => void;
   /** Mở màn "Dữ liệu dự án" (xem trước tệp JSON). Vắng thì không có liên kết. */
   readonly onOpenData?: () => void;
+  /** M1-01: khối "GLB dựng trên máy chủ" khi cờ `VITE_EXPORT_ENGINE=compiler`; vắng/`null` = chỉ GLB nhanh. */
+  readonly serverGlb?: ServerGlbExportView | null;
 }

@@ -132,7 +132,7 @@ export interface SceneStyleCardProps {
   /** Lưu ngay cảnh Pascal (lối Ctrl+S của editor) và đợi lượt ghi qua cầu. */
   readonly saveNow: () => Promise<void>;
   /** Xả mọi bộ tự lưu của AppFront (`flushAutosaves`). */
-  readonly flushAutosaves: () => Promise<void>;
+  readonly flushAutosaves: () => Promise<unknown>;
   readonly reload: () => void;
   /** Phong cách của dự án đang mở; mặc định đọc từ cầu (test cắm thẳng vào). */
   readonly source?: ProjectSceneStyle | null;

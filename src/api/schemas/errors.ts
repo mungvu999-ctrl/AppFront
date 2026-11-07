@@ -89,6 +89,7 @@ const ERROR_RESOURCES = [
   'user',
   'shareLink',
   'lightingBake',
+  'modelExport',
 ] as const;
 
 /* -------------------------------------------------------------------------- */

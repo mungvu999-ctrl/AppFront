@@ -51,6 +51,7 @@ import { ExportPanelFooter } from './ExportPanelFooter';
 import { ExportPanelFormats, SkeletonText } from './ExportPanelFormats';
 import { ExportPanelOptions } from './ExportPanelOptions';
 import { ExportPanelPreflight } from './ExportPanelPreflight';
+import { ServerGlbExportSection } from './ServerGlbExportSection';
 import type {
   ExportCapabilities,
   ExportedFileRow,
@@ -78,24 +79,11 @@ const count = (value: number): string => formatNumber(value, { fractionDigits: 0
  * Spatial JSON luôn có, `.glb` khi có ít nhất một tầng được chọn; PDF và ảnh phụ thuộc hai cờ mà tầng logic
  * hôm nay trả `false`. Suy ra từ props, không phải một trường mới của hợp đồng.
  */
-function canDeliverFormat(
-  id: ExportFormatId,
-  capabilities: ExportCapabilities,
-  floors: readonly ExportFloorChoice[],
-): boolean {
+function canDeliverFormat(id: ExportFormatId, capabilities: ExportCapabilities, floors: readonly ExportFloorChoice[]): boolean {
   // `.glb` dựng hình theo TẦNG: chưa chọn tầng nào thì không có tệp nào để dựng (BUG-466).
-  if (id === 'glb') {
-    return floors.some((floor) => floor.isSelected);
-  }
-
-  if (id === 'pdf') {
-    return capabilities.canRenderPdfBytes;
-  }
-
-  if (id === 'image') {
-    return capabilities.canCaptureImage;
-  }
-
+  if (id === 'glb') return floors.some((floor) => floor.isSelected);
+  if (id === 'pdf') return capabilities.canRenderPdfBytes;
+  if (id === 'image') return capabilities.canCaptureImage;
   return true;
 }
 
@@ -274,8 +262,10 @@ export function ExportPanel(props: ExportPanelProps) {
     lastFileId.current = newest?.id;
   }, [exportedFiles]);
   const selectedFormat = formats.find((format) => format.isSelected) ?? formats[0] ?? null;
+  // M1-01: đường máy chủ xuất cả dự án (N49) — không chọn tầng, không tuỳ chọn của đường nhanh.
+  const onServer = selectedFormat?.id === 'glb' && props.serverGlb?.engine === 'server';
   const canExportSelected =
-    selectedFormat !== null && canDeliverFormat(selectedFormat.id, capabilities, floors);
+    selectedFormat !== null && (onServer || canDeliverFormat(selectedFormat.id, capabilities, floors));
 
   const head = (withStatus: boolean) => (
     <PageHead
@@ -371,9 +361,10 @@ export function ExportPanel(props: ExportPanelProps) {
               onSelectFormat={onSelectFormat}
               {...(onOpenData !== undefined ? { onOpenData } : {})}
             />
+            {selectedFormat?.id === 'glb' && props.serverGlb != null && <ServerGlbExportSection view={props.serverGlb} />}
           </Section>
 
-          {selectedFormat !== null && (
+          {selectedFormat !== null && !onServer && (
             <div className={cn('min-w-0', !isCollapsed && 'lg:col-start-2 lg:row-span-2 lg:row-start-1')}>
               <ExportPanelOptions
                 floors={floors}
@@ -421,7 +412,7 @@ export function ExportPanel(props: ExportPanelProps) {
         progress={progress}
         canExportSelected={canExportSelected}
         exportLabel={selectedFormat === null ? 'Xuất' : EXPORT_BUTTON_LABEL[selectedFormat.id]}
-        blockedReason={noticeCaption ?? (selectedFormat?.id === 'glb' ? NO_FLOOR_CAPTION : null)}
+        blockedReason={noticeCaption ?? (selectedFormat?.id === 'glb' && !onServer ? NO_FLOOR_CAPTION : null)}
         destinationCaption={destinationCaption}
         pendingNote={props.pendingNote ?? null}
         isLoading={isLoading}

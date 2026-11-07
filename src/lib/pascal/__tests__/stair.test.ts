@@ -231,4 +231,58 @@ describe('thang Pascal thật', () => {
     expect(order.indexOf('stair')).toBeLessThan(order.indexOf('stair-segment'));
     expect(toPascalScene(sampleWithStair().graph).scene).toEqual(scene);
   });
+
+  describe('M1 H3.4 — variant của thang', () => {
+    const backOf = (scene: PascalScene, id: string) => toSpatialGraph(scene).graph.furniture.find((f) => f.id === id);
+    const withStairType = (scene: PascalScene, id: string, stairType: string): PascalScene => ({
+      ...scene,
+      nodes: { ...scene.nodes, [`stair_${id}`]: { ...scene.nodes[`stair_${id}`], stairType } as unknown as PascalNode },
+    });
+
+    it('thang đã lưu chưa có variant: không tự gán (BE vẫn báo chưa xác định kiểu)', () => {
+      const { graph, stair } = sampleWithStair();
+      expect(backOf(toPascalScene(graph).scene, stair.id)?.variant).toBeUndefined();
+    });
+
+    it('thang vẽ mới trong Pascal (id chưa có ở AppFront): ghi "straight"', () => {
+      const { graph, stair } = sampleWithStair();
+      const { scene } = toPascalScene(graph);
+      const node = scene.nodes[`stair_${stair.id}`] as PascalNode;
+      const fresh = 'stair_pascal-new';
+      const nodes: Record<string, PascalNode> = { ...scene.nodes, [fresh]: { ...node, id: fresh, metadata: {} } as PascalNode };
+      delete nodes[`stair_${stair.id}`];
+      const level = nodes[node.parentId ?? ''];
+      if (level?.type !== 'level') throw new Error('thiếu tầng');
+      nodes[level.id] = { ...level, children: level.children.map((id) => (id === node.id ? fresh : id)) };
+      const added = toSpatialGraph({ ...scene, nodes }).graph.furniture.filter((f) => f.kind === 'stair');
+      expect(added.map((f) => f.variant)).toEqual(['straight']);
+    });
+
+    it('variant đã lưu giữ nguyên qua toPascal → toSpatial (toPascal luôn dựng straight)', () => {
+      const { graph, stair } = sampleWithStair({ variant: 'spiral' });
+      const { scene } = toPascalScene(graph);
+      const node = scene.nodes[`stair_${stair.id}`];
+      expect(node?.type === 'stair' && node.stairType).toBe('straight');
+      expect(backOf(scene, stair.id)?.variant).toBe('spiral');
+    });
+
+    it('người dùng đổi kiểu trong Pascal: ghi tên kiểu mới (curved/spiral)', () => {
+      const { graph, stair } = sampleWithStair({ variant: 'straight' });
+      const scene = withStairType(toPascalScene(graph).scene, stair.id, 'curved');
+      expect(backOf(scene, stair.id)?.variant).toBe('curved');
+    });
+
+    it('chiều đi lên: chân thang ở mép âm, đi theo +y cục bộ xoay rotationDeg (θ = 90° → −x)', () => {
+      const { graph, stair } = sampleWithStair({
+        centre: { x: 5000, y: 5000 },
+        boundingBox: { min: { x: 4500, y: 3500 }, max: { x: 5500, y: 6500 } },
+        rotationDeg: 90,
+      });
+      const node = toPascalScene(graph).scene.nodes[`stair_${stair.id}`];
+      if (node?.type !== 'stair') throw new Error('thiếu thang');
+      // Chân thang (position) = centre − nửa thân theo hướng đi lên (−sin90°, cos90°) = (−1, 0) → x = 5000 + 1500.
+      expect(Math.round(node.position[0] * 1000)).toBe(6500);
+      expect(Math.round(node.position[2] * 1000)).toBe(5000);
+    });
+  });
 });

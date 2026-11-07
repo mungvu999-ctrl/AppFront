@@ -148,6 +148,7 @@ vi.mock('@/lib/pascal/toPascal', async (importOriginal) => {
 });
 
 vi.mock('@/screens/viewer/PascalViewer/usePascalEdits', () => ({
+  LEVEL_HEIGHT_UNSAVED: 'cao tầng — đổi ở màn Quản lý tầng',
   usePascalEdits: ({
     onRejected,
     onMassDelete,
@@ -456,6 +457,25 @@ describe('usePascalProjectBridge', () => {
     await result.current.onSave({ nodes: {}, rootNodeIds: [] });
     expect(applied).toHaveLength(1);
     expect(commit.rebased).toHaveLength(1);
+  });
+
+  it('M1 H3.3 — đổi cao tầng: dựng lại cảnh từ kho (cao đã lưu) một lần, cảnh editor sau đó thành mốc', async () => {
+    const applied: PascalScene[] = [];
+    const editor = { nodes: {}, rootNodeIds: ['editor'] };
+    const { result } = renderHook(() => usePascalProjectBridge('p1', (scene) => applied.push(scene as PascalScene), () => editor as never));
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    commit.rebased = [];
+    commit.ok = false;
+    commit.unsaved = ['cao tầng — đổi ở màn Quản lý tầng'];
+    await expect(result.current.onSave({ nodes: {}, rootNodeIds: [] })).resolves.toBeUndefined();
+    expect(applied).toHaveLength(1);
+    expect(commit.rebased).toEqual([editor]);
+
+    commit.unsaved = [];
+    await result.current.onSave({ nodes: {}, rootNodeIds: [] });
+    expect(applied).toHaveLength(1);
   });
 
   it('máy chủ khối tầng: "Tải lại tầng" nạp lại tầng rồi dựng lại cảnh từ kho, không nạp lại trang', async () => {

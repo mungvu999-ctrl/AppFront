@@ -80,6 +80,9 @@ import type { ProjectRole } from '@/types/project';
 import { EditorTourContainer } from '@/screens/system/EditorTour';
 import { ExportPanel } from './ExportPanel';
 import { useExportPanel } from './useExportPanel';
+import { isServerGlbEnabled, useServerGlbExport } from './useServerGlbExport';
+
+const SERVER_GLB_ENABLED = isServerGlbEnabled();
 
 /** Tên màn này với ranh giới lỗi, và với bất cứ ai đọc báo cáo của nó. */
 const SCREEN_ID = 'export-panel';
@@ -160,11 +163,16 @@ function WiredExportPanel(props: WiredExportPanelProps) {
     projectId: props.projectId,
     ...(props.isCompact !== undefined ? { isCompact: props.isCompact } : {}),
   });
+  const serverGlb = useServerGlbExport({ enabled: SERVER_GLB_ENABLED, projectId: props.projectId });
+  const glbSelected = viewProps.formats.some((format) => format.id === 'glb' && format.isSelected);
+  const exportOnServer = SERVER_GLB_ENABLED && glbSelected && serverGlb.view.engine === 'server';
 
   return (
     <>
       <ExportPanel
         {...viewProps}
+        serverGlb={SERVER_GLB_ENABLED ? serverGlb.view : null}
+        onExport={exportOnServer ? serverGlb.start : viewProps.onExport}
         onBackToProject={() => {
           void navigate(ROUTES.project.floors(props.projectId));
         }}

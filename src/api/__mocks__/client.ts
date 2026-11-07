@@ -1786,6 +1786,12 @@ export const createMockApiClient = (): ApiClient => {
       select: async () => failed(mockWireError(503, 'DESIGN_DIRECTOR_DISABLED', 'req-design-concept')),
     },
     lightingBakes: mockLightingBakes,
+    // M1-01: mock chưa có máy dựng GLB — chưa xuất lần nào, gửi xuất thì báo hỏng.
+    modelExports: {
+      readFile: async () => failed(mockWireError(404, 'NOT_FOUND', 'req-model-export')),
+      readLatest: async () => ok(null),
+      start: async () => failed(mockWireError(503, 'MODEL_EXPORT_FAILED', 'req-model-export')),
+    },
     /** N11–N14 có trạng thái trong mock: sửa xong đọc lại thấy ngay; `''` ở `jobTitle`/`phone` là xoá. */
     me: {
       changePassword: async () => ok(undefined),

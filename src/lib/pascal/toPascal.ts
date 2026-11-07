@@ -754,6 +754,8 @@ const stairNodesOf = (
           kind: furniture.kind,
           boundingBox: furniture.boundingBox,
           ...(furniture.roomId === undefined ? {} : { roomId: furniture.roomId }),
+          // Thang luôn dựng `straight`; kiểu đã lưu đi qua siêu dữ liệu để `toSpatial` ghi lại nguyên (M1 H3.4).
+          ...(furniture.variant === undefined ? {} : { variant: furniture.variant }),
         }),
       },
     },

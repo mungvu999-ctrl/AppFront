@@ -48,6 +48,7 @@ import {
   type DesignStyleId,
 } from './schemas/designConcept';
 import { LightingBakeSchema, type LightingBake, type LightingBakeFileName } from './schemas/lightingBake';
+import { ModelExportSchema, type ModelExport, type ModelExportFileName } from './schemas/modelExport';
 import { PipelineRunSchema, type PipelineRun } from './schemas/pipelineRuns';
 import { UserSchema, type SignInInput, type User as ApiUser } from './schemas';
 import {
@@ -889,6 +890,7 @@ export interface ApiClient {
   library: LibraryApi;
   lightingBakes: LightingBakesApi;
   me: MeApi;
+  modelExports: ModelExportsApi;
   members: MembersApi;
   notifications: NotificationsApi;
   projectSettings: ProjectSettingsApi;
@@ -925,6 +927,17 @@ export interface LightingBakesApi {
   readFile(projectId: string, bakeId: string, name: LightingBakeFileName, options?: RequestOptions): Promise<ApiResult<Blob>>;
   readLatest(projectId: string, options?: RequestOptions): Promise<ApiResult<LightingBake | null>>;
   start(projectId: string, glb: Blob, options?: RequestOptions): Promise<ApiResult<LightingBake>>;
+}
+
+/**
+ * N49–N51 — xuất GLB dựng phía máy chủ. `start` gửi thân `{}`; 202 (job mới) và 200 (cache cùng
+ * fingerprint) cùng một schema nên nơi gọi không phân biệt. `readLatest` trả `null` khi 404
+ * (chưa xuất lần nào). `readFile` trả Blob như lighting bake.
+ */
+export interface ModelExportsApi {
+  readFile(projectId: string, exportId: string, name: ModelExportFileName, options?: RequestOptions): Promise<ApiResult<Blob>>;
+  readLatest(projectId: string, options?: RequestOptions): Promise<ApiResult<ModelExport | null>>;
+  start(projectId: string, options?: RequestOptions): Promise<ApiResult<ModelExport>>;
 }
 
 export interface ShareApi {
@@ -1306,6 +1319,30 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
         }),
         LightingBakeSchema,
         'lightingBakes.start',
+      ),
+  },
+  modelExports: {
+    readFile: async (projectId, exportId, name, options) =>
+      asApiResult(
+        await http.get<Blob>(ENDPOINTS.modelExports.file(projectId, exportId, name), {
+          responseType: 'blob',
+          timeoutMode: 'file',
+          ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+        }),
+      ),
+    readLatest: async (projectId, options) => {
+      const result = await callGet<unknown>(http, ENDPOINTS.modelExports.latest(projectId), options?.signal);
+      if (!result.ok && result.error.status === 404) return { ok: true, data: null };
+      return decodeSingle(result, ModelExportSchema, 'modelExports.readLatest');
+    },
+    start: async (projectId, options) =>
+      decodeSingle(
+        await http.post<unknown, Record<string, never>>(ENDPOINTS.modelExports.start(projectId), {
+          body: {},
+          ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+        }),
+        ModelExportSchema,
+        'modelExports.start',
       ),
   },
   me: {

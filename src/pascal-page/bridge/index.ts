@@ -25,7 +25,7 @@ import { toPascalScene } from '@/lib/pascal/toPascal';
 import type { PascalNode, PascalNodeId, PascalScene } from '@/lib/pascal/types';
 import { ROUTES } from '@/routes/paths';
 import { startAppSession } from '@/routes/sessionSetup';
-import { usePascalEdits } from '@/screens/viewer/PascalViewer/usePascalEdits';
+import { LEVEL_HEIGHT_UNSAVED, usePascalEdits } from '@/screens/viewer/PascalViewer/usePascalEdits';
 import { selectViewerSpatial } from '@/screens/viewer/ViewerShell/viewerShellGateway';
 import { useStore } from '@/store';
 import type { ProjectRole } from '@/types/project';
@@ -383,8 +383,11 @@ export function usePascalProjectBridge(
   /* Phần sửa chưa lưu được: mỗi nhãn báo một lần mỗi phiên. */
   const noticed = useRef(new Set<string>());
   const noticedMessages = useRef(new Set<string>());
+  /* M1 H3.3: lượt vừa rồi đổi cao tầng — dữ liệu đã giữ cao cũ, khung 3D cũng phải về cao cũ. */
+  const levelReverted = useRef(false);
   const onUnsaved = useCallback(
     (labels: readonly string[]) => {
+      levelReverted.current = labels.includes(LEVEL_HEIGHT_UNSAVED);
       const fresh = labels.filter((item) => !noticed.current.has(item));
 
       if (fresh.length === 0) return;
@@ -500,10 +503,18 @@ export function usePascalProjectBridge(
 
       rejection.current = null;
       massDeleteRef.current = null;
+      levelReverted.current = false;
       pendingScene.current = scene;
       // Chạy cổng trước (phán quyết nhớ theo cảnh, `onSceneCommit` dùng lại): xoá nhiều → `onMassDelete` mở hộp hỏi.
       validateCommit(scene as PascalScene);
       const pending = onSceneCommit(scene as PascalScene).then(async (ok) => {
+        /* Cao tầng chỉ đổi ở màn Quản lý tầng: dựng lại cảnh từ kho (cao đã lưu) và lấy cảnh dựng lại làm mốc. */
+        if (levelReverted.current && rejection.current === null) {
+          levelReverted.current = false;
+          revertToStore();
+          const rebuilt = editorScene?.();
+          if (rebuilt !== undefined) rebaseOnRebuilt(rebuilt as PascalScene);
+        }
         // `false` mà không có lời từ chối là "không có gì để ghi" (sửa node sinh ra) — vẫn là thành công.
         if (!ok && rejection.current !== null) {
           /* Lượt bị từ chối (luật toàn vẹn, node lạ, lệnh hỏng): kho không đổi, nên đặt lại cảnh

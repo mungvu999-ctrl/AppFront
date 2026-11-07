@@ -40,16 +40,46 @@ const mountedAutosaves = new Set<Autosave>();
  *
  * An toàn khi không có gì để lưu: `saveNow` của một engine không có thay đổi
  * nào sẽ giải quyết mà không gọi `onSave` lần nào. Trả về một `Promise` đợi
- * ĐỦ mọi lượt lưu, để nơi gọi (và bài kiểm) biết lượt xả đã xong.
+ * ĐỦ mọi lượt lưu, để nơi gọi (và bài kiểm) biết lượt xả đã xong. Không ném: lượt
+ * hỏng, xung đột phiên bản hay sửa còn chờ đều ra `{ok: false, reason}` (H3.1 — màn Xuất
+ * chỉ xuất khi `ok`).
  *
  * Đây là thứ Ctrl+S gọi. **Không** có nút Lưu nào được sinh ra kèm theo — A7
  * nói phím tắt là lối tắt của bộ đếm giờ, không phải một nút bấm mới.
  */
-export function flushAutosaves(): Promise<void> {
-  return Promise.all([...mountedAutosaves].map((autosave) => autosave.saveNow())).then(
-    () => undefined,
-  );
+export async function flushAutosaves(): Promise<FlushResult> {
+  const engines = [...mountedAutosaves];
+
+  await Promise.allSettled(engines.map((autosave) => autosave.saveNow()));
+
+  // Sau lượt xả, engine nào không về `'saved'` là còn sửa chưa tới máy chủ (hỏng, chờ thử lại, mất mạng).
+  if (engines.some((autosave) => autosave.getState() === 'offline')) {
+    return { ok: false, reason: FLUSH_OFFLINE };
+  }
+
+  if (engines.some((autosave) => autosave.getState() !== 'saved')) {
+    return { ok: false, reason: FLUSH_FAILED };
+  }
+
+  // Tầng bị khối (409 xung đột phiên bản, 422…) không còn "gửi được" nên engine vẫn về `'saved'`:
+  // sổ `unsavedFloorIds` mới là thứ nói tầng ấy chưa lưu.
+  const unsaved = useStore.getState().unsavedFloorIds;
+
+  if (unsaved.length > 0) {
+    const message = unsaved.map((floorId) => book?.saver?.getBlock(floorId)?.message).find((text) => text !== undefined);
+
+    return { ok: false, reason: message ?? FLUSH_UNSENT };
+  }
+
+  return { ok: true };
 }
+
+/** Kết quả {@link flushAutosaves}: `ok: false` mang câu tiếng Việt nói vì sao chưa lưu hết. */
+export type FlushResult = { ok: true } | { ok: false; reason: string };
+
+export const FLUSH_FAILED = 'Chưa lưu được thay đổi: lượt lưu vừa rồi bị lỗi.';
+export const FLUSH_OFFLINE = 'Chưa lưu được thay đổi: đang mất kết nối mạng.';
+export const FLUSH_UNSENT = 'Còn thay đổi của tầng chưa gửi được lên máy chủ.';
 
 /**
  * Ghi một engine vào sổ của {@link flushAutosaves} suốt thời gian component còn

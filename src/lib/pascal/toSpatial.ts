@@ -48,13 +48,14 @@ import type {
   RoomId,
   RoomUsage,
   SpatialGraph,
+  StairVariant,
   SwingDirection,
   Wall,
   WallId,
   WallKind,
   WallPaint,
 } from '@/domain/spatial/types';
-import { FURNITURE_VARIANTS } from '@/domain/spatial/types';
+import { FURNITURE_VARIANTS, STAIR_VARIANTS } from '@/domain/spatial/types';
 import {
   degrees as asDegrees,
   metres,
@@ -89,6 +90,7 @@ import type {
   PascalNodeType,
   PascalScene,
   PascalItemNode,
+  PascalStairNode,
   PascalVec3,
   PascalWallNode,
   PascalWindowNode,
@@ -432,6 +434,33 @@ const itemSlotsFieldOf = (item: PascalItemNode): Readonly<Record<string, Materia
   );
 
   return painted.length === 0 ? null : Object.fromEntries(painted.slice(0, 8));
+};
+
+/**
+ * Kiểu cầu thang ghi vào `Furniture.variant` (M1 H3.4): `stairType` của node Pascal (`straight` = một vế
+ * thẳng, `curved`, `spiral` — đúng enum `StairType` của Pascal). Bộ xuất của BE chỉ dựng `straight`.
+ *
+ * `toPascal` luôn dựng thang `straight`, và mang kiểu đã lưu trong siêu dữ liệu: node vẫn `straight` thì giữ
+ * kiểu đã lưu (round-trip không mất; thang đã lưu chưa có kiểu thì vẫn không có), thang vẽ mới ghi `straight`,
+ * người dùng đổi sang kiểu khác trong Pascal thì ghi kiểu mới.
+ * ponytail: đổi `curved` → `straight` trên thang đã lưu kiểu khác không phân biệt được với "chưa đổi".
+ *
+ * **Chiều đi lên** (quy ước của `toPascal` `stairNodesOf`, BE dựa vào): thân thang chạy dọc cạnh DÀI của
+ * `boundingBox` (hộp chưa xoay, tâm `centre`; hai cạnh bằng nhau thì coi cạnh dài là y). Chân thang ở mép âm,
+ * đỉnh ở mép dương: đi lên theo hướng **+y cục bộ** (cạnh dài là y) hoặc **+x cục bộ** (cạnh dài là x) của trục
+ * cục bộ sau khi xoay `rotationDeg` quanh `centre`, với phép xoay mặt bằng chuẩn
+ * (x, y) → (x·cosθ − y·sinθ, x·sinθ + y·cosθ). Ví dụ θ = 0: cạnh dài y → đi lên theo +y; θ = 90°: → theo −x.
+ */
+const stairVariantOf = (node: PascalStairNode, fields: Fields, known: boolean): StairVariant | null => {
+  const pascal = (node as { readonly stairType?: unknown }).stairType;
+  const drawn = typeof pascal === 'string' && (STAIR_VARIANTS as readonly string[]).includes(pascal) ? (pascal as StairVariant) : null;
+  const stored = readOneOf(fields, 'variant', STAIR_VARIANTS);
+
+  // Thang đã lưu mà chưa có kiểu (máy dò, dữ liệu cũ): `straight` của node chỉ là cách toPascal vẽ, không phải
+  // người dùng chọn — không tự gán, BE vẫn báo "chưa xác định kiểu". Thang vẽ mới trong Pascal thì ghi kiểu của nó.
+  if (drawn === 'straight') return stored ?? (known ? null : 'straight');
+
+  return drawn ?? stored;
 };
 
 /**
@@ -987,6 +1016,7 @@ const collectLevelChildren = (
         const min = readCorner(fields, 'min');
         const max = readCorner(fields, 'max');
         const roomId = readString(fields, 'roomId');
+        const variant = stairVariantOf(child, fields, knownId !== null);
         // Thân thang chạy theo +z cục bộ từ `position` (chân thang) → tâm ở giữa thân.
         const centre: Point = {
           x: millimetresOf(child.position[0] + (Math.sin(child.rotation) * length) / 2),
@@ -1021,6 +1051,7 @@ const collectLevelChildren = (
           // Viết −(bù − yaw) chứ không phải yaw − bù: yaw 0 phải ra 0° chứ không phải −0° (diff so giá trị).
           rotationDeg: planDegreesOf(-((runAlongX ? Math.PI / 2 : 0) - child.rotation)),
           ...(roomId !== null && isIdOfKind('room', roomId) ? { roomId } : {}),
+          ...(variant === null ? {} : { variant }),
         });
         break;
       }

@@ -259,7 +259,14 @@ export const FURNITURE_VARIANTS = [
   'shrub',
 ] as const;
 
-export type FurnitureVariant = (typeof FURNITURE_VARIANTS)[number];
+/**
+ * Kiểu cầu thang (`kind: 'stair'`), đúng enum `StairType` của Pascal (`schema/nodes/stair.ts`).
+ * Bộ xuất mô hình (M1) chỉ dựng `straight`; kiểu khác bị bỏ qua có lý do.
+ */
+export const STAIR_VARIANTS = ['straight', 'curved', 'spiral'] as const;
+export type StairVariant = (typeof STAIR_VARIANTS)[number];
+
+export type FurnitureVariant = (typeof FURNITURE_VARIANTS)[number] | StairVariant;
 
 /** Floor finish of a room. */
 export type RoomFinish = 'wood' | 'tile' | 'mosaic' | 'decking' | 'concrete';

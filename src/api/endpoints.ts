@@ -149,6 +149,13 @@ export const ENDPOINTS = {
     latest: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}/lighting-bakes/latest`,
     start: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}/lighting-bakes`,
   },
+  /** N49–N51 — xuất GLB dựng phía máy chủ: tạo (hoặc trả cache), đọc lần mới nhất, tải tệp kết quả. */
+  modelExports: {
+    file: (projectId: string, exportId: string, fileName: string): string =>
+      `${PROJECTS_ROOT}/${projectId}/model-exports/${exportId}/files/${fileName}`,
+    latest: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}/model-exports/latest`,
+    start: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}/model-exports`,
+  },
   /** N11–N14 — hồ sơ của người đang đăng nhập: đọc/sửa, đổi mật khẩu, thay ảnh đại diện. */
   me: {
     avatar: `${ME_ROOT}/avatar`,

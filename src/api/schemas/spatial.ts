@@ -18,7 +18,7 @@ import type {
   Segment,
   Wall,
 } from '@/domain/spatial/types';
-import { FURNITURE_VARIANTS } from '@/domain/spatial/types';
+import { FURNITURE_VARIANTS, STAIR_VARIANTS } from '@/domain/spatial/types';
 import { millimetresPerPixel } from '@/domain/units/scale';
 
 import { isoInstantSchema } from './common';
@@ -362,7 +362,7 @@ export const FurnitureSchema: z.ZodType<Furniture, z.ZodTypeDef, unknown> = z
     levelId: levelIdSchema,
     roomId: roomIdSchema.optional(),
     rotationDeg: degreesSchema,
-    variant: z.enum(FURNITURE_VARIANTS).optional(),
+    variant: z.enum([...FURNITURE_VARIANTS, ...STAIR_VARIANTS]).optional(),
     heightMm: positiveMillimetresSchema.optional(),
     liftMm: nonNegativeMillimetresSchema.optional(),
     model: furnitureModelSchema.optional(),

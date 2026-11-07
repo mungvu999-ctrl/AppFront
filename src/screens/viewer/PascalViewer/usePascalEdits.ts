@@ -191,6 +191,42 @@ export const settledScene = (scene: PascalScene, previous: PascalScene | null): 
   return { ...scene, nodes };
 };
 
+/** H3.3 — nhãn `unsavedPascalEdits` khi người dùng đổi cao tầng ở nút tầng của Pascal. */
+export const LEVEL_HEIGHT_UNSAVED = 'cao tầng — đổi ở màn Quản lý tầng';
+
+/** Tầng nào của `next` có `height` khác bản đã lưu ở `previous`. */
+const editedLevelIds = (previous: PascalScene, next: PascalScene): string[] =>
+  Object.values(next.nodes)
+    .filter((node) => node.type === 'level')
+    .filter((node) => {
+      const before = previous.nodes[node.id];
+
+      return before?.type === 'level' && before.height !== node.height;
+    })
+    .map((node) => node.id);
+
+/**
+ * Cao tầng không đi theo lượt PUT lớp tầng (`spatialLayerSave` chỉ gửi tường/ô mở/phòng/đồ/mái),
+ * và tường "theo tầng" đọc cao từ node tầng (`toSpatial`) — để nguyên thì cao mới lọt vào tường
+ * còn tầng thì mất im lặng. Nên trả `height` của tầng về bản đã lưu; `onUnsaved` báo nhãn
+ * {@link LEVEL_HEIGHT_UNSAVED}. Lưu cao tầng thật là việc của màn Quản lý tầng (PATCH tầng).
+ */
+export const withSavedLevelHeights = (scene: PascalScene, previous: PascalScene | null): PascalScene => {
+  const edited = previous === null ? [] : editedLevelIds(previous, scene);
+
+  if (previous === null || edited.length === 0) return scene;
+
+  const nodes: Record<string, PascalNode> = { ...scene.nodes };
+
+  for (const nodeId of edited) {
+    const before = previous.nodes[nodeId];
+
+    if (before?.type === 'level') nodes[nodeId] = { ...(nodes[nodeId] as PascalNode & { type: 'level' }), height: before.height };
+  }
+
+  return { ...scene, nodes };
+};
+
 /** Câu khi người dùng xoá món bày sẵn mà không phòng nào khai hộ được (tầng không có phòng): chặn, món về chỗ cũ. */
 export const GENERATED_DELETE_BLOCKED =
   'Món đồ bày sẵn này chưa xoá được: nó tự có theo phòng nên mở lại sẽ hiện lại. Món đã được đặt về chỗ cũ.';
@@ -575,7 +611,11 @@ export function usePascalEdits({
   const settled = useRef<{ raw: PascalScene; scene: PascalScene } | null>(null);
   const settle = useCallback(
     (raw: PascalScene): PascalScene => {
-      if (settled.current?.raw !== raw) settled.current = { raw, scene: settledScene(raw, savedScene.current ?? loadedScene) };
+      if (settled.current?.raw !== raw) {
+        const previous = savedScene.current ?? loadedScene;
+
+        settled.current = { raw, scene: withSavedLevelHeights(settledScene(raw, previous), previous) };
+      }
 
       return settled.current.scene;
     },
@@ -716,12 +756,20 @@ export function usePascalEdits({
       const notices = lastVerdict.current?.scene === scene ? lastVerdict.current.notices : [];
       const accepted = lastVerdict.current?.scene === scene && lastVerdict.current.accepted;
 
-      if (built === null) return false;
+      // Cao tầng đã bị `settle` trả về bản lưu, nên dò trên cảnh thô của editor.
+      const levelEdited = previous !== null && editedLevelIds(previous, raw).length > 0;
+
+      if (built === null) {
+        // Chỉ đổi cao tầng: không còn gì để ghi, nhưng vẫn phải nói phần đó chưa lưu.
+        if (levelEdited) onUnsaved?.([LEVEL_HEIGHT_UNSAVED]);
+
+        return false;
+      }
 
       /* Phần máy chủ chưa nhận: báo cả khi phần còn lại lưu được lẫn khi chỉ còn "không có gì để ghi".
          Gọi cả khi danh sách rỗng (V9): màn dựa vào đó để gỡ câu báo cũ. */
       if ((built.ok || built.error.code === 'PASCAL_NO_CHANGE') && previous !== null) {
-        onUnsaved?.(unsavedPascalEdits(previous, scene));
+        onUnsaved?.([...unsavedPascalEdits(previous, scene), ...(levelEdited ? [LEVEL_HEIGHT_UNSAVED] : [])]);
       }
 
       if (!built.ok) {

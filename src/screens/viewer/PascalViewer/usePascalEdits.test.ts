@@ -28,6 +28,8 @@ import {
   settledScene,
   CEILING_LIGHT_MOVE_BLOCKED,
   GENERATED_EDIT_BLOCKED,
+  LEVEL_HEIGHT_UNSAVED,
+  withSavedLevelHeights,
   SUGGESTION_ACCEPTED_NOTICE,
   unsavedPascalEdits,
   usePascalEdits,
@@ -810,3 +812,59 @@ describe('usePascalEdits', () => {
     expect(useStore.getState().spatial?.byKind.wall ?? []).toHaveLength(0);
   });
 });
+
+describe('M1 H3.3 — đổi cao tầng trong Pascal', () => {
+  const level = Object.values(SCENE.nodes).find((node) => node.type === 'level') as Extract<PascalNode, { readonly type: 'level' }>;
+  const raised = (): PascalScene => ({
+    nodes: { ...SCENE.nodes, [level.id]: { ...level, height: level.height + 0.5 } },
+    rootNodeIds: SCENE.rootNodeIds,
+  });
+
+  it('withSavedLevelHeights trả cao tầng về bản đã lưu', () => {
+    const back = withSavedLevelHeights(raised(), SCENE).nodes[level.id];
+
+    expect(back?.type === 'level' && back.height).toBe(level.height);
+    expect(withSavedLevelHeights(SCENE, SCENE)).toBe(SCENE);
+  });
+
+  it('chỉ đổi cao tầng: không ghi gì, báo nhãn chưa lưu, bản vẽ giữ cao đã lưu', async () => {
+    const onUnsaved = vi.fn();
+    const onRejected = vi.fn();
+    const { result } = mount({ onUnsaved, onRejected });
+    const before = useStore.getState().spatial;
+    let ok = true;
+
+    await act(async () => {
+      ok = await result.current.onSceneCommit(raised());
+    });
+
+    expect(ok).toBe(false);
+    expect(onRejected).not.toHaveBeenCalled();
+    expect(onUnsaved).toHaveBeenCalledWith([LEVEL_HEIGHT_UNSAVED]);
+    expect(useStore.getState().spatial).toBe(before);
+  });
+
+  it('đổi cao tầng kèm sửa tường: tường lưu, cao tầng không lọt vào, nhãn vẫn báo', async () => {
+    const onUnsaved = vi.fn();
+    const { result } = mount({ onUnsaved });
+    const wall = firstWall();
+    const scene = raised();
+    const both: PascalScene = { ...scene, nodes: { ...scene.nodes, [wall.id]: { ...wall, thickness: 0.33 } } };
+    let ok = false;
+
+    await act(async () => {
+      ok = await result.current.onSceneCommit(both);
+    });
+
+    expect(ok).toBe(true);
+    expect(onUnsaved).toHaveBeenCalledWith([LEVEL_HEIGHT_UNSAVED]);
+    const graph = useStore.getState().spatial;
+    const levelId = level.id.replace(/^level_/, '');
+    const saved = graph?.byId[levelId as never] as { heightMm?: number } | undefined;
+    const original = SPATIAL.byId[levelId as never] as { heightMm?: number } | undefined;
+
+    expect(original?.heightMm).toBeGreaterThan(0);
+    expect(saved?.heightMm).toBe(original?.heightMm);
+  });
+});
+

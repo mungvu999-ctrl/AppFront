@@ -28,7 +28,8 @@
     "build-storybook": "storybook build",
     "pascal:assets": "node scripts/copy-pascal-assets.mjs",
     "build:pascal": "vite build --config vite.pascal.config.ts",
-    "pascal": "node scripts/pascal-cached.mjs"
+    "pascal": "node scripts/pascal-cached.mjs",
+    "export-pack": "node scripts/export-pack/build.mjs"
   },
   "dependencies": {
     "@pascal-app/core": "workspace:*",
