@@ -46,8 +46,16 @@ export const BRIDGE_EMPTY_ERROR = 'Dự án chưa có mô hình để mở trong
 export const BRIDGE_SAVE_FAILED = 'Lưu thất bại. Kiểm tra mạng rồi sửa tiếp để thử lại.';
 
 /** Câu báo một lần mỗi phiên cho phần sửa máy chủ chưa nhận (`unsavedPascalEdits`). */
-export const unsavedNoticeOf = (labels: readonly string[]): string =>
-  `Chưa lưu được: ${labels.join(', ')} — sẽ có ở bản sau.`;
+export const unsavedNoticeOf = (labels: readonly string[]): string => {
+  /* Cao tầng lưu được ngay ở màn Quản lý tầng — không phải "bản sau" như các phần editor chưa ghi. */
+  const later = labels.filter((item) => item !== LEVEL_HEIGHT_UNSAVED);
+  const parts = later.length > 0 ? [`Chưa lưu được: ${later.join(', ')} — sẽ có ở bản sau.`] : [];
+
+  return [...parts, ...(labels.includes(LEVEL_HEIGHT_UNSAVED) ? [LEVEL_HEIGHT_NOTICE] : [])].join(' ');
+};
+
+/** Lời báo khi kéo cao tầng trong editor: khung 3D về cao đã lưu, chỉ chỗ đổi đúng. */
+export const LEVEL_HEIGHT_NOTICE = 'Cao tầng chưa đổi: đổi cao tầng ở màn Quản lý tầng.';
 
 /** Câu ném cho editor khi tầng bị khối (409/422/403) — lý do đầy đủ + "Tải lại tầng" ở thẻ trang. */
 export const BRIDGE_SAVE_BLOCKED = 'Tầng này chưa lưu được lên máy chủ. Xem thẻ ở góc trên để tải lại tầng.';

@@ -5,6 +5,7 @@ import { createSampleBuilding, sampleLevelId } from '@/domain/spatial/__fixtures
 import { normalizeSpatial } from '@/domain/spatial/normalize';
 import { UpdateProjectSettingsSchema } from '@/api/schemas/projectSettings';
 import { SCENE_STYLE_STORAGE_KEY, SCENE_STYLES, sceneStylePreviewKey } from '@/lib/pascal/sceneStyles';
+import { LEVEL_HEIGHT_UNSAVED } from '@/screens/viewer/PascalViewer/usePascalEdits';
 import { createPascalEditCommand } from '@/lib/pascal/fromPascal';
 import { toPascalScene } from '@/lib/pascal/toPascal';
 import type { PascalScene } from '@/lib/pascal/types';
@@ -32,6 +33,7 @@ import {
   SESSION_LOST_UNSAVED,
   undrawnFloorNames,
   unsavedNoticeOf,
+  LEVEL_HEIGHT_NOTICE,
   usePascalProjectBridge,
   withoutFloorContents,
 } from '..';
@@ -790,5 +792,12 @@ describe('drawnFloorIds (UX-32)', () => {
     } as unknown as Parameters<typeof drawnFloorIds>[0]);
     expect([...drawn].sort()).toEqual(['f0', 'f1']);
     expect(drawn.has('f2')).toBe(false);
+  });
+});
+
+describe('unsavedNoticeOf — M1 E5a', () => {
+  it('cao tầng không bị gọi là "bản sau": chỉ ra màn Quản lý tầng', () => {
+    expect(unsavedNoticeOf([LEVEL_HEIGHT_UNSAVED])).toBe(LEVEL_HEIGHT_NOTICE);
+    expect(unsavedNoticeOf(['màu sàn', LEVEL_HEIGHT_UNSAVED])).toBe(`Chưa lưu được: màu sàn — sẽ có ở bản sau. ${LEVEL_HEIGHT_NOTICE}`);
   });
 });
