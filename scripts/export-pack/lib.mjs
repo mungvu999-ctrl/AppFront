@@ -1,5 +1,8 @@
-// Hàm thuần của build.mjs (có test): ánh xạ đường danh mục → ảnh nguồn, sinh furniture-defaults.
-import { join } from 'node:path';
+// Hàm của build.mjs (có test): ánh xạ đường danh mục → ảnh nguồn, giải nén KTX2, sinh furniture-defaults.
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import vm from 'node:vm';
 
 /** Đường ảnh nguồn (webp/jpg/png) trong `assets` cho một map của danh mục; `.ktx2` qua `sourceFor`. */
 export function sourceOfMap(assetsDir, mapPath, sourceFor, exists) {
@@ -83,4 +86,28 @@ export function parseStringRecord(src, name) {
 /** `const NAME = '...'` → chuỗi. */
 export function parseConstString(src, name) {
   return new RegExp(String.raw`const ${name}\b[^=]*=\s*'([^']*)'`).exec(src)?.[1] ?? null;
+}
+
+const basisDir = join(dirname(createRequire(import.meta.url).resolve('three')), '..', 'examples', 'jsm', 'libs', 'basis');
+let basis = null;
+/** KTX2 (Basis) → ảnh `sharp` RGBA đúng cỡ gốc; hỏng → null. */
+export async function decodeKtx2(file, sharp) {
+  if (!basis) {
+    const module = { exports: {} };
+    const ctx = { module, exports: module.exports, console, WebAssembly, performance, TextDecoder };
+    vm.runInNewContext(readFileSync(join(basisDir, 'basis_transcoder.js'), 'utf8'), ctx);
+    basis = await ctx.module.exports({ wasmBinary: readFileSync(join(basisDir, 'basis_transcoder.wasm')) });
+    basis.initializeBasis();
+  }
+  const ktx = new basis.KTX2File(new Uint8Array(readFileSync(file)));
+  try {
+    const RGBA32 = 13;
+    const [width, height] = [ktx.getWidth(), ktx.getHeight()];
+    const data = new Uint8Array(ktx.getImageTranscodedSizeInBytes(0, 0, 0, RGBA32));
+    if (!width || !ktx.startTranscoding() || !ktx.transcodeImage(data, 0, 0, 0, RGBA32, 0, -1, -1)) return null;
+    return sharp(Buffer.from(data), { raw: { width, height, channels: 4 } });
+  } finally {
+    ktx.close();
+    ktx.delete();
+  }
 }

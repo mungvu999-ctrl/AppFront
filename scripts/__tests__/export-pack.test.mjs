@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildDefaults, collectRefs, missingRefs, parseConstString, parseStringRecord, resolveFinishes, sourceOfMap } from '../export-pack/lib.mjs';
+import sharp from 'sharp';
+
+import { buildDefaults, collectRefs, decodeKtx2, missingRefs, parseConstString, parseStringRecord, resolveFinishes, sourceOfMap } from '../export-pack/lib.mjs';
 
 describe('export-pack lib', () => {
   it('sourceOfMap: ktx2 qua sourceFor, webp thẳng, thiếu → null', () => {
@@ -32,5 +34,12 @@ describe('export-pack lib', () => {
     const src = "const U: Readonly<Record<string, string>> = {\n  a: 'wood',\n  b: 'tile',\n};\nconst K = 'library:k';";
     expect(parseStringRecord(src, 'U')).toEqual({ a: 'wood', b: 'tile' });
     expect(parseConstString(src, 'K')).toBe('library:k');
+  });
+  it('decodeKtx2: KTX2 thật của vendor → RGBA 512², tệp hỏng → null', async () => {
+    const dir = new URL('../../vendor/pascal/assets/material/concrete/plaster_painted/', import.meta.url);
+    const img = await decodeKtx2(new URL('plaster_painted_basecolor_512.ktx2', dir), sharp);
+    const { info } = await img.raw().toBuffer({ resolveWithObject: true });
+    expect([info.width, info.height, info.channels]).toEqual([512, 512, 4]);
+    expect(await decodeKtx2(new URL('plaster_painted_thumb.webp', dir), sharp)).toBeNull();
   });
 });

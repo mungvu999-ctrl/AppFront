@@ -18,7 +18,7 @@ import sharp from 'sharp';
 import { createServer } from 'vite';
 
 import { sourceFor } from '../pascal-material-webp.mjs';
-import { buildDefaults, collectRefs, missingRefs, parseConstString, parseStringRecord, resolveFinishes, sourceOfMap } from './lib.mjs';
+import { buildDefaults, collectRefs, decodeKtx2, missingRefs, parseConstString, parseStringRecord, resolveFinishes, sourceOfMap } from './lib.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const ASSETS = join(ROOT, 'vendor', 'pascal', 'assets');
@@ -40,6 +40,8 @@ const { modelFolderOf } = await load('/src/lib/pascal/sceneVariety.ts');
 const { FURNITURE_VARIANTS } = await load('/src/domain/spatial/types.ts');
 
 const missing = [];
+/** Map chỉ có KTX2 trong vendor (không ảnh gốc): giải nén bằng bộ Basis của three — đúng ảnh editor hiển thị (512 px). */
+const decodedFromKtx2 = [];
 const hex = (c) => (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c) ? c.toLowerCase() : '#ffffff');
 
 // ── vật liệu ──
@@ -61,12 +63,15 @@ for (const item of MATERIAL_CATALOG) {
   entry.hasTexture = wanted.length > 0;
   for (const [key, [role, ext]] of wanted) {
     const src = sourceOfMap(ASSETS, p.maps[key], sourceFor, existsSync);
-    if (!src) {
+    const ktx2 = join(ASSETS, p.maps[key]);
+    const decoded = !src && /\.ktx2$/.test(p.maps[key]) && existsSync(ktx2) ? await decodeKtx2(ktx2, sharp) : null;
+    if (!src && !decoded) {
       missing.push(`material:${item.id}:${role} (${p.maps[key]})`);
       continue;
     }
+    if (decoded) decodedFromKtx2.push(`material:${item.id}:${role} (${p.maps[key]})`);
     const file = `textures/${item.id}_${role}.${ext}`;
-    const img = sharp(src).resize({ width: 1024, height: 1024, fit: 'inside', withoutEnlargement: true });
+    const img = (decoded ?? sharp(src)).resize({ width: 1024, height: 1024, fit: 'inside', withoutEnlargement: true });
     await (ext === 'jpg' ? img.jpeg({ quality: 88 }) : img.png({ compressionLevel: 9 })).toFile(join(OUT, file));
     entry.maps[role] = file;
   }
@@ -209,6 +214,7 @@ const manifest = {
   sources: ['vendor/pascal material-library.ts', 'src/lib/pascal sceneDressing/sceneStyles/furnitureCatalog', 'assets/appfront-items', 'vendor/pascal/assets/items'],
   files,
   missing,
+  decodedFromKtx2,
 };
 writeFileSync(join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 1));
 await vite.close();
@@ -224,6 +230,7 @@ console.log(
     models: Object.keys(models).length,
     defaults: Object.keys(defaults).length,
     missing: missing.length,
+    decodedFromKtx2: decodedFromKtx2.length,
     MB: +(total / 1048576).toFixed(1),
   }),
 );
