@@ -75,7 +75,11 @@ import {
 import type { PascalNodeType, PascalScene } from './types';
 
 /** Vì sao một lượt thay đổi của Pascal không thành lệnh được. */
-export type PascalRefusalCode = 'PASCAL_NO_CHANGE' | 'PASCAL_UNKNOWN_NODE' | 'PASCAL_WALL_BELOW_OPENING';
+export type PascalRefusalCode =
+  | 'PASCAL_NO_CHANGE'
+  | 'PASCAL_UNKNOWN_NODE'
+  | 'PASCAL_WALL_BELOW_OPENING'
+  | 'PASCAL_OPENING_PAST_WALL';
 
 /**
  * Lời từ chối, mang thêm một mã máy đọc được.
@@ -431,6 +435,54 @@ const wallBelowOpening = (
 };
 
 /**
+ * M1 H4: ô mở phải nằm gọn trong tường chủ (`0 ≤ offsetMm`, `offsetMm + widthMm ≤ dài + 1 mm`), cùng luật với máy chủ.
+ * Không kẹp im lặng (lớp `buildCommand` sẽ kẹp, làm ô số của editor và dữ liệu lưu lệch nhau): từ chối, editor về bản
+ * đã lưu và người dùng đọc câu này. Chỉ ô mở bị sửa hoặc trên tường đổi đường tim; tường cong bỏ qua như máy chủ.
+ */
+const openingPastWallEnd = (
+  changes: readonly EntityChange[],
+  after: ReturnType<typeof toSpatialGraph>['graph'],
+): string | null => {
+  const touchedWalls = new Set<string>();
+  const touchedOpenings = new Set<string>();
+
+  for (const change of changes) {
+    // Như máy chủ: "chạm" = đổi phép đo — ô mở đổi tường/vị trí/rộng, tường đổi đường tim (đổi dày/cao thì không).
+    if (change.kind === 'wall' && change.after !== null) {
+      const line = (w: { centreline: { start: { x: number; y: number }; end: { x: number; y: number } } } | null) =>
+        w === null ? '' : [w.centreline.start.x, w.centreline.start.y, w.centreline.end.x, w.centreline.end.y].join('|');
+
+      if (line(change.before) !== line(change.after)) touchedWalls.add(change.after.id);
+    }
+    if (change.kind === 'opening' && change.after !== null) {
+      const span = (o: { wallId: string; offsetMm: number; widthMm: number } | null) =>
+        o === null ? '' : `${o.wallId}|${o.offsetMm}|${o.widthMm}`;
+
+      if (span(change.before) !== span(change.after)) touchedOpenings.add(change.after.id);
+    }
+  }
+
+  for (const opening of after.openings) {
+    if (!touchedOpenings.has(opening.id) && !touchedWalls.has(opening.wallId)) continue;
+
+    const wall = after.walls.find((item) => item.id === opening.wallId);
+
+    if (wall === undefined || (wall.curveOffsetMm ?? 0) !== 0) continue;
+
+    const { start, end } = wall.centreline;
+    const length = Math.hypot(end.x - start.x, end.y - start.y);
+
+    if (opening.offsetMm < 0 || opening.offsetMm + opening.widthMm > length + 1) {
+      const name = opening.kind === 'door' ? 'Cửa đi' : 'Cửa sổ';
+
+      return `${name} rộng ${formatLength(opening.widthMm)} không nằm gọn trong tường dài ${formatLength(length)} ở vị trí này. Dời ô mở vào trong tường hoặc thu hẹp nó.`;
+    }
+  }
+
+  return null;
+};
+
+/**
  * Dựng lệnh cho một lượt thay đổi của Pascal.
  *
  * Trả lời từ chối khi lượt ấy không đổi gì (`PASCAL_NO_CHANGE`) hoặc khi nó
@@ -606,6 +658,12 @@ export const createPascalEditCommand = (input: PascalEditInput): PascalEditResul
 
   if (tooLow !== null) {
     return err({ type: PASCAL_COMMAND_TYPE, code: 'PASCAL_WALL_BELOW_OPENING', reasons: [tooLow] });
+  }
+
+  const pastEnd = openingPastWallEnd(changes, after);
+
+  if (pastEnd !== null) {
+    return err({ type: PASCAL_COMMAND_TYPE, code: 'PASCAL_OPENING_PAST_WALL', reasons: [pastEnd] });
   }
 
   const context: CommandContext = {

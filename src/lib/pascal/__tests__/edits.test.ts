@@ -229,6 +229,22 @@ describe('createPascalEditCommand', () => {
     expect(result.ok ? '' : result.error.reasons[0]).toMatch(/^Tường cao 1,00 m, thấp hơn đỉnh ô mở/);
   });
 
+  it('M1 H4 — dời cửa ra quá đầu tường thì bị từ chối, không kẹp im lặng', () => {
+    const door = Object.values(baseScene.nodes).find((node) => node.type === 'door');
+
+    if (door === undefined || door.type !== 'door') throw new Error('cảnh nền phải có một cửa');
+
+    const result = createPascalEditCommand({
+      graph,
+      scene: sceneWith(door.id, { ...door, position: [100, door.position[1], door.position[2]] }),
+      commit: { origin: 'local', changedNodeIds: [door.id] },
+      actorId: ACTOR,
+    });
+
+    expect(result.ok ? null : result.error.code).toBe('PASCAL_OPENING_PAST_WALL');
+    expect(result.ok ? '' : result.error.reasons[0]).toMatch(/^Cửa đi rộng .* không nằm gọn trong tường dài/);
+  });
+
   it('A5 — chỉ đổi `reviewed` trong `metadata.appfront` thì không có lệnh: duyệt ở màn QC', () => {
     const wall = baseScene.nodes[firstWallId];
 
