@@ -13,7 +13,7 @@
 import { pointAtArcLength } from '@/domain/spatial/arc';
 import type { Furniture, FurnitureId, FurnitureVariant, Millimetres, Point, Room, SpatialGraph } from '@/domain/spatial/types';
 
-import { CATALOG_MODELS, VARIANT_MODEL, modelSrcOf, topFractionOf } from './furnitureCatalog';
+import { CATALOG_MODELS, VARIANT_MODEL, isServerModel, modelSrcOf, topFractionOf } from './furnitureCatalog';
 import {
   doorSwingRects,
   rectCorners,
@@ -262,6 +262,9 @@ const generatedOf = (
 });
 
 /** Các món trang trí của cả đồ thị; `graph.furniture` đã gồm đồ tự bày (sceneFurnish). */
+const isOwnDressed = (folder: string | null): boolean =>
+  folder !== null && (CATALOG_MODELS[folder]?.dressed === true || isServerModel(folder));
+
 export const dressingOf = (graph: SpatialGraph, style: SceneStyle): readonly Furniture[] => {
   const out: Furniture[] = [];
   const placed = graph.furniture.map((f) => ({ id: f.id as string, levelId: f.levelId, rect: rectOfFurniture(f) }));
@@ -417,7 +420,8 @@ export const dressingOf = (graph: SpatialGraph, style: SceneStyle): readonly Fur
     // (6) Chăn gấp ở chân giường, trên mặt nệm. (5) Gối tựa đầu giường đã bỏ (review2): mẫu `double-bed`
     // của mọi giường có sẵn 3 gối, gối dựng thêm cắt vào đầu giường.
     for (const { f, rect } of withRole(BED_ROLES)) {
-      if (CATALOG_MODELS[modelFolderOf(f, style, room.usage) ?? '']?.dressed) continue;
+      // Mẫu thư viện máy chủ đã dựng sẵn chăn gối: chăn gấp thêm sẽ lơ lửng/cắt vào nệm.
+      if (isOwnDressed(modelFolderOf(f, style, room.usage))) continue;
       const lengthAxis = rect.d >= rect.w ? 1 : 0;
       const length = lengthAxis === 1 ? rect.d : rect.w;
       const foot = openSideOf(rect, lengthAxis, room.outline);
@@ -434,6 +438,7 @@ export const dressingOf = (graph: SpatialGraph, style: SceneStyle): readonly Fur
 
     // (7) Gối sofa: 3 nếu sofa dài, không thì 2 — tựa lưng sofa, trên mặt đệm ngồi.
     for (const { f, rect } of withRole(new Set<FurnitureRole>(['sofa']))) {
+      if (isOwnDressed(modelFolderOf(f, style, room.usage))) continue;
       const depthAxis = rect.w >= rect.d ? 1 : 0;
       const depth = depthAxis === 1 ? rect.d : rect.w;
       const long = depthAxis === 1 ? rect.w : rect.d;

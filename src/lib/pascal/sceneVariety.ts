@@ -12,6 +12,7 @@ import type { Furniture, RoomUsage } from '@/domain/spatial/types';
 import { millimetres, millimetresToMetres } from '@/domain/units/types';
 
 import { CATALOG_MODELS, isServerModel, VARIANT_MODEL } from './furnitureCatalog';
+import LIBRARY_ROLES_JSON from './libraryRoles.json' with { type: 'json' };
 import { rectOfFurniture, rectsOverlap } from './placement';
 import type { SceneStyle } from './sceneStyles';
 
@@ -219,6 +220,17 @@ const fnv1a = (text: string): number => {
 const STYLE_TIE = 1.1;
 
 /**
+ * Mẫu thư viện máy chủ theo vai trò (đồ `fixed` thì theo variant: tv, vase). Sinh một lần từ hồ sơ mẫu
+ * F:/runs/library-profiles/profiles.jsonl: chỉ mẫu qc.ok + mặt trước đúng, giấy phép CC0/CC-BY (ghi công
+ * hiện khi chọn món, `serverAttributionOf`). Bỏ đèn (mất nguồn sáng), tủ bếp dãy, gương/tranh (cần gắn tường).
+ */
+const LIBRARY_ROLES = LIBRARY_ROLES_JSON as Readonly<Record<string, readonly string[]>>;
+const libraryFoldersOf = (role: FurnitureRole, variant: string | undefined): readonly string[] =>
+  (role === 'fixed' ? (variant === undefined ? undefined : LIBRARY_ROLES[variant]) : LIBRARY_ROLES[role]) ?? [];
+/** Chọn (băm) trong các mẫu thư viện có chi phí cỡ không quá mẫu vừa nhất + chừng này (~15 % cỡ). */
+const LIBRARY_SIZE_SLACK = 0.15;
+
+/**
  * Thư mục mô hình của một món theo phong cách; `null` = không có mô hình (bên gọi dựng
  * chỗ giữ chỗ). Cùng hợp đồng với `furnitureModelOf` của `toPascal.ts`, chỉ trả thư mục.
  */
@@ -241,6 +253,15 @@ export const modelFolderOf = (
   );
   const key = PER_ITEM_ROLES.has(role) ? f.id : `${f.roomId ?? 'none'}|${role}`;
   const pickHashed = (folders: readonly string[]): string => folders[fnv1a(key) % folders.length] as string;
+
+  // Mẫu đẹp của thư viện máy chủ thay mẫu Pascal low-poly cùng loại (khi thư viện đã nạp); mẫu AI chọn vẫn thắng.
+  if (!preferred.some(isServerModel)) {
+    const library = libraryFoldersOf(role, f.variant).filter(isServerModel);
+    if (library.length > 0) {
+      const libBest = Math.min(...library.map((folder) => sizeCostOf(f, folder)));
+      return pickHashed(library.filter((folder) => sizeCostOf(f, folder) <= libBest + LIBRARY_SIZE_SLACK));
+    }
+  }
 
   const byVariant = roleOverride === undefined ? variantModelOf(f) : null;
   if (byVariant) {
@@ -292,4 +313,26 @@ export const contextRolesOf = (
       .forEach((f) => roles.set(f.id, 'basin'));
   }
   return roles;
+};
+
+/** Món nằm trên sàn (không nâng, không thảm, không chậu/mặt bếp mỏng trên mặt đá): chiếm chỗ, không được chồng. */
+const isFloorStanding = (f: Furniture): boolean => {
+  const role = roleOf(f);
+  const lift = f.liftMm ?? (f.variant === undefined ? undefined : VARIANT_MODEL[f.variant]?.liftMm) ?? 0;
+  return lift === 0 && role !== 'rug' && role !== 'roundRug' && !isThinHob(f) && !isThinSink(f);
+};
+
+/**
+ * Lưới chặn cuối của đồ sinh ra: món đứng sàn chồng khung bao lên đồ thật hoặc món sinh đã giữ (cùng tầng)
+ * thì bỏ. Đồ trang trí nâng lên (bình, đèn bàn trên mặt bàn/kệ), thảm, chậu/bếp trên dãy tủ được nằm chồng.
+ */
+export const withoutOverlaps = (generated: readonly Furniture[], fixed: readonly Furniture[]): Furniture[] => {
+  const taken = fixed.filter(isFloorStanding).map((f) => ({ levelId: f.levelId, rect: rectOfFurniture(f) }));
+  return generated.filter((f) => {
+    if (!isFloorStanding(f)) return true;
+    const rect = rectOfFurniture(f);
+    if (taken.some((t) => t.levelId === f.levelId && rectsOverlap(rect, t.rect))) return false;
+    taken.push({ levelId: f.levelId, rect });
+    return true;
+  });
 };
