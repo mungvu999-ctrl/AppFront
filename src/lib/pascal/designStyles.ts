@@ -87,7 +87,7 @@ export const DESIGN_STYLE_LABELS: Readonly<Record<DesignStyleId, string>> = {
  * `base`), mẫu đồ AI chọn đứng đầu `prefer` của vai trò — chỉ mẫu có trong danh mục (đóng gói hoặc
  * thư viện máy chủ đã gộp), mẫu lạ bỏ qua và vai trò giữ ưu tiên của `base`.
  */
-export const sceneStyleFromConcept = (result: DesignResult, base: SceneStyle): SceneStyle => {
+export const sceneStyleFromConcept = (result: DesignResult, base: SceneStyle, styleId?: DesignStyleId): SceneStyle => {
   const prefer: Partial<Record<FurnitureRole, readonly string[]>> = { ...base.prefer };
   for (const [role, modelId] of Object.entries(result.models)) {
     if (Object.prototype.hasOwnProperty.call(CATALOG_MODELS, modelId))
@@ -101,5 +101,7 @@ export const sceneStyleFromConcept = (result: DesignResult, base: SceneStyle): S
     floor: { ...base.floor, ...result.floor },
     wall: { interior: result.wall.interior, exterior: result.wall.exterior ?? base.wall.exterior },
     prefer,
+    // Kiểu AI chọn đứng đầu: mọi món thư viện còn lại của căn theo cùng kiểu, không chỉ các vai trò AI chọn mẫu.
+    ...(styleId === undefined ? {} : { libraryStyles: [styleId, ...(base.libraryStyles ?? [])] }),
   };
 };

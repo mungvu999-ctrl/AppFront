@@ -24,7 +24,7 @@ export function QcRailCollapse({ isCollapsed, onToggle }: { readonly isCollapsed
           tooltip={false}
         />
       </Tooltip>
-      <span aria-hidden="true" className="w-full text-center text-caption leading-tight text-text-muted">{isCollapsed ? EXPAND_SHORT_LABEL : COLLAPSE_SHORT_LABEL}</span>
+      <span aria-hidden="true" className="w-full px-1 text-center text-[11px] leading-tight text-text-muted">{isCollapsed ? EXPAND_SHORT_LABEL : COLLAPSE_SHORT_LABEL}</span>
     </div>
   );
 }

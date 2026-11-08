@@ -96,7 +96,7 @@ describe('[figma-layout] QcWorkspace column: hai panel neo cùng cỡ', () => {
   it('cột trái và panel phải cùng 260/280/320; không còn nút "Hiện/Ẩn chi tiết"', () => {
     render(<QcWorkspace canvas={<p>bv</p>} canvasLabel="Bản vẽ" column inspector={<p>chi tiết</p>} left={<p>trái</p>} selectionKey="a" />);
     for (const element of [screen.getByText('trái').parentElement, dock()]) {
-      expect(element?.className).toContain('lg:w-[260px] xl:w-[280px] 2xl:w-[320px]');
+      expect(element?.className).toContain('lg:w-[300px] xl:w-[340px] 2xl:w-[360px]');
     }
     expect(dock().className).not.toContain('lg:max-xl:hidden');
     expect(screen.queryByRole('button', { name: 'Hiện chi tiết' })).toBeNull();

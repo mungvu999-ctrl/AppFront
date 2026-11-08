@@ -278,7 +278,7 @@ async function loadProject(projectId: string): Promise<{
   const style =
     concept === undefined
       ? readSceneStyle(() => localStorage, { id: projectId, style: settings?.sceneStyle })
-      : sceneStyleFromConcept(concept, SCENE_STYLES[concept.baseStyle]);
+      : sceneStyleFromConcept(concept, SCENE_STYLES[concept.baseStyle], conceptState?.active?.styleId);
   // Cùng cổng vai như hook: vai theo dự án vừa nạp trước, phiên dự phòng.
   const storeRoles = useStore.getState().userRoles;
   const canEditSettings = can('edit', 'project.settings', { roles: storeRoles.length > 0 ? storeRoles : session.roles });

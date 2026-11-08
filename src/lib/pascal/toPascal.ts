@@ -72,7 +72,7 @@ import { SCENE_STYLE_MATERIALS, sceneStyleOf, type SceneStyle } from './sceneSty
 import { dressingOf, hostTopMm } from './sceneDressingRules';
 import { furnishEmptyRooms } from './sceneFurnish';
 import { furnishingUsageOf, isPlausibleStair, lShapedRunArms, orphanWallIds, weldWallEnds } from './structureFixes';
-import { contextRolesOf, isThinHob, isThinSink, modelFolderOf, roleOf } from './sceneVariety';
+import { contextRolesOf, isThinHob, isThinSink, modelFolderOf, roleOf, withoutOverlaps } from './sceneVariety';
 import type {
   AppFrontOrigin,
   PascalDoorNode,
@@ -1427,7 +1427,10 @@ export const toPascalScene = (
   ).filter(notOff);
   const dressIdsOf = new Map<string, string[]>();
   // AI (designAdditionsOf) đặt thảm theo tâm nó tự chọn và thảm không bị chặn chồng: tâm ngoài phòng → bỏ.
-  const generatedAll = [...furnished, ...dressed, ...aiAdded].filter((f) => !isStrayRug(f, builtRooms));
+  const generatedAll = withoutOverlaps(
+    [...furnished, ...dressed, ...aiAdded].filter((f) => !isStrayRug(f, builtRooms)),
+    builtFurniture,
+  );
   /* Chậu/mặt bếp sinh ra nằm trên mặt đá dãy tủ sinh ra (hoặc thật), như đường đồ thật ở trên. */
   const counterPool = [...builtFurniture, ...generatedAll];
   const usageOfGenerated = (f: Furniture) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId));

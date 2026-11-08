@@ -67,7 +67,7 @@ interface QcWorkspaceProps {
   readonly wideLeft?: boolean;
   /**
    * Bố cục hai panel kiểu Figma (`docs/figma-layout-spec.md`), liền mép, không thẻ: cột trái và panel phải cùng cỡ —
-   * 260 ở 1024-1279, 280 ở 1280-1535, 320 từ 1536. Panel phải chỉ hiện khi đang chọn, hoặc khi mở bằng nút "Chi tiết"
+   * 300 ở 1024-1279, 340 ở 1280-1535, 360 từ 1536. Panel phải chỉ hiện khi đang chọn, hoặc khi mở bằng nút "Chi tiết"
    * trên bản vẽ (chú giải, Hiển thị), và NỔI ĐÈ lên bản vẽ: chọn/bỏ chọn không đổi khổ khung, không đổi mức phóng
    * (`qcCanvasCover.ts`). Dưới 1024: cột trái là ngăn kéo, panel phải là tấm đáy ≤ 45 %. Thắng `wideLeft`.
    */
@@ -95,7 +95,7 @@ interface QcWorkspaceProps {
 }
 
 /** Cỡ chung của hai panel neo (bố cục `column`). */
-export const QC_PANEL_WIDTH_CLASS = 'lg:w-[260px] xl:w-[280px] 2xl:w-[320px]';
+export const QC_PANEL_WIDTH_CLASS = 'lg:w-[300px] xl:w-[340px] 2xl:w-[360px]';
 const DRAWER_HIDE_LABEL = 'Ẩn chi tiết';
 const DRAWER_SHOW_LABEL = 'Hiện chi tiết';
 const COLUMN_OPEN_LABEL = 'Mở cột việc';

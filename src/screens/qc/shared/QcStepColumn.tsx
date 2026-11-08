@@ -88,7 +88,8 @@ const stepRoute = (key: QcStepKey) => (QC_LAYERS.find((item) => item.key === key
 
 /** Chữ chip của bước lớp: số còn phải xem, xong thì tổng số. */
 function summaryOf(layer: FloorReviewLayerState | undefined): string {
-  if (layer === undefined) return '';
+  /* Chưa có mục nào (tầng chưa dò ra phòng): không chip "0 cần xem". */
+  if (layer === undefined || layer.total === 0) return '';
   if (layer.done) return `${layer.total} ${UNIT[layer.key]} · đã duyệt`;
   return `${layer.total - layer.reviewed} cần xem`;
 }
@@ -184,7 +185,7 @@ export function QcStepColumn({ projectId, floorId, activeStep, task, title, hint
   const remaining =
     activeStep === 'scale'
       ? done || scale === null ? null : `${SCALE_STATE_VIEWS[scale].name}.`
-      : layer === undefined || layer.done ? null : `Còn ${layer.total - layer.reviewed} ${UNIT[layer.key]} chưa duyệt.`;
+      : layer === undefined || layer.done || layer.total === layer.reviewed ? null : `Còn ${layer.total - layer.reviewed} ${UNIT[layer.key]} chưa duyệt.`;
   const pagerProps = { activeStep, floorId, projectId, remaining, stepDone: done, quiet: isDoneScreen };
   const floatingPager = createPortal(
     <div className={PAGER_FLOAT_CLASS}>
