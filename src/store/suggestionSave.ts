@@ -18,7 +18,8 @@ export const withSuggestions =
         ...ports,
         readSuggestionBody: (floorId) => suggestionBodyOf(useSuggestionStore.getState().floorSuggestions[floorId]),
         onSaved(floorId, result, info) {
-          storeReceived(useSuggestionStore, floorId, result, !info.redirtied);
+          // Lượt xả muộn sau khi đổi dự án: kho lớp đề xuất giờ là của dự án khác, không ghi vào.
+          if (useStore.getState().spatialProjectId === projectId) storeReceived(useSuggestionStore, floorId, result, !info.redirtied);
           ports.onSaved(floorId, result, info);
         },
       });
