@@ -126,6 +126,12 @@ export function enabledEntry(current: FloorSuggestions | undefined, enabled: boo
   return { ...rest, ...(enabled ? { enabled: true as const } : {}), enabledChanged: true };
 }
 
+/**
+ * Bản ghi này do máy chủ M2 trả: chỉ máy chủ M2 mới có `suggestionsMeta` / `suggestionsEnabled` (máy chủ trước M2
+ * không có khoá nào, và gửi `suggestionState`/`suggestionsEnabled` lên nó là 422 khối cả tầng).
+ */
+export const fromM2Server = (entry: FloorSuggestions): boolean => entry.meta !== undefined || entry.enabled === true;
+
 /** Phần lớp đề xuất của thân #35 cho một tầng; `null` = không mang gì. */
 export function suggestionBodyOf(
   entry: FloorSuggestions | undefined,

@@ -15,12 +15,15 @@ import { floorSuggestionsView, type FloorSuggestionsView } from './suggestionLay
 export interface SuggestionLayerView {
   readonly floors: readonly FloorSuggestionsView[];
   readonly readOnly: boolean;
+  /** Máy chủ có lớp đề xuất; không thì panel chỉ báo và không có công tắc. */
+  readonly supported: boolean;
   readonly onToggleVisible: (floorId: string) => void;
   readonly onToggleItem: (floorId: string, id: string, on: boolean) => void;
 }
 
 export function useSuggestionLayer(readOnly: boolean): SuggestionLayerView {
   const floorSuggestions = useSuggestionStore((state) => state.floorSuggestions);
+  const supported = useSuggestionStore((state) => state.supported);
   const levels = useStore((state) => state.floors);
   const spatial = useStore((state) => state.spatial);
 
@@ -41,6 +44,7 @@ export function useSuggestionLayer(readOnly: boolean): SuggestionLayerView {
   return {
     floors,
     readOnly,
+    supported,
     onToggleVisible: (floorId) => {
       const current = useSuggestionStore.getState().floorSuggestions[floorId];
       useSuggestionStore.getState().putFloorSuggestions(floorId, enabledEntry(current, current?.enabled !== true));

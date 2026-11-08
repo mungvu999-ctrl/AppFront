@@ -23,6 +23,12 @@ describe('SuggestionsPanel (M2 "Lớp đề xuất")', () => {
     expectAccessible(container);
   });
 
+  it('save__server_without_m2_does_not_block_geometry: máy chủ chưa có M2 thì panel báo, thân #35 không mang khoá lớp đề xuất', () => {
+    render(<SuggestionsPanel view={stories.Unsupported.args.view} />);
+    expect(screen.getByText('Máy chủ chưa hỗ trợ lớp đề xuất.')).toBeTruthy();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+  });
+
   it('bật/tắt món và lớp gọi đúng hàm; món đã nhận nuôi không bật/tắt được', () => {
     const view = { ...stories.Floor.args.view, onToggleItem: vi.fn(), onToggleVisible: vi.fn() };
     render(<SuggestionsPanel view={view} />);

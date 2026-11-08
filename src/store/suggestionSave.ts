@@ -16,7 +16,11 @@ export const withSuggestions =
   (projectId: string, ports: FloorLayerSaverPorts): FloorLayerSaver => {
       const saver = create(projectId, {
         ...ports,
-        readSuggestionBody: (floorId) => suggestionBodyOf(useSuggestionStore.getState().floorSuggestions[floorId]),
+        readSuggestionBody: (floorId) => {
+          // Máy chủ trước M2: không gửi khoá lớp đề xuất (nó trả 422 và khối cả tầng, cả phần hình học).
+          const { floorSuggestions, supported } = useSuggestionStore.getState();
+          return supported ? suggestionBodyOf(floorSuggestions[floorId]) : null;
+        },
         onSaved(floorId, result, info) {
           // Lượt xả muộn sau khi đổi dự án: kho lớp đề xuất giờ là của dự án khác, không ghi vào.
           if (useStore.getState().spatialProjectId === projectId) storeReceived(useSuggestionStore, floorId, result, !info.redirtied);

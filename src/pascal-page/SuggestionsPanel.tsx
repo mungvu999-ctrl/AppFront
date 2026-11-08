@@ -94,6 +94,16 @@ export function SuggestionsPanel({ view }: { readonly view: SuggestionLayerView 
       </div>
     );
   }
+  if (!view.supported) {
+    return (
+      <div className="pb-1">
+        <p className={SECTION_TITLE_CLASS}>Lớp đề xuất</p>
+        <p className="px-2 py-1 text-[12px] text-[var(--pa-text-3)]" role="status">
+          Máy chủ chưa hỗ trợ lớp đề xuất.
+        </p>
+      </div>
+    );
+  }
   return (
     <div>
       {view.floors.map((floor) => (

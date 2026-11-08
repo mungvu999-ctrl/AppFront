@@ -55,6 +55,7 @@ const FLOOR: FloorSuggestionsView = {
 const view = (patch: Partial<SuggestionLayerView> = {}): SuggestionLayerView => ({
   floors: [FLOOR],
   readOnly: false,
+  supported: true,
   onToggleVisible: () => undefined,
   onToggleItem: () => undefined,
   ...patch,
@@ -63,4 +64,5 @@ const view = (patch: Partial<SuggestionLayerView> = {}): SuggestionLayerView => 
 export const Empty: Story = { args: { view: view({ floors: [] }) } };
 export const Floor: Story = { args: { view: view() } };
 export const HiddenPending: Story = { args: { view: view({ floors: [{ ...FLOOR, visible: false, pending: true }] }) } };
+export const Unsupported: Story = { args: { view: view({ supported: false }) } };
 export const ReadOnly: Story = { args: { view: view({ readOnly: true }) } };
