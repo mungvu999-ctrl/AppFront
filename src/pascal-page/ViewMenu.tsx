@@ -11,6 +11,7 @@ import { LightingCard, type LightingCardProps } from './LightingCard';
 import { MENU_SUMMARY_CLASS, SECTION_TITLE_CLASS, useMenuGroup } from './menuGroup';
 import { QualityCard } from './QualityCard';
 import { SceneStyleCard, type SceneStyleCardProps } from './SceneStyleCard';
+import { SuggestionsCard } from './SuggestionsPanel';
 
 export interface ViewMenuProps {
   readonly projectId: string;
@@ -24,11 +25,13 @@ export interface ViewMenuProps {
   readonly display?: ReactNode;
   /** Chỉ cho test: phong cách của dự án. */
   readonly source?: SceneStyleCardProps['source'];
+  /** M2 — chỉ xem: mục "Lớp đề xuất" không bật/tắt được. */
+  readonly readOnly?: boolean;
 }
 
 const DIVIDER = 'mx-2 my-1 border-t border-[var(--pa-border)]';
 
-export function ViewMenu({ projectId, useViewer, saveNow, flushAutosaves, reload, exportGlb, display, source }: ViewMenuProps) {
+export function ViewMenu({ projectId, useViewer, saveNow, flushAutosaves, reload, exportGlb, display, source, readOnly = false }: ViewMenuProps) {
   useMenuGroup();
   return (
     <details className="relative" data-appfront-menu="">
@@ -48,6 +51,8 @@ export function ViewMenu({ projectId, useViewer, saveNow, flushAutosaves, reload
           section
           {...(source === undefined ? {} : { source })}
         />
+        <div aria-hidden="true" className={DIVIDER} />
+        <SuggestionsCard projectId={projectId} readOnly={readOnly} />
         <div aria-hidden="true" className={DIVIDER} />
         <LightingCard projectId={projectId} section useViewer={useViewer} />
         <div aria-hidden="true" className={DIVIDER} />

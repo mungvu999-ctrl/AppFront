@@ -267,6 +267,7 @@ function PascalPage({ projectId }: { readonly projectId: string }) {
               display={<DisplayMenu />}
               flushAutosaves={flushAutosaves}
               projectId={projectId}
+              readOnly={readOnly}
               reload={() => window.location.reload()}
               saveNow={savePascalNow}
               useViewer={useViewer}

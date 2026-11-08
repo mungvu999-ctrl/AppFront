@@ -30,6 +30,7 @@ import { selectViewerSpatial } from '@/screens/viewer/ViewerShell/viewerShellGat
 import { useStore } from '@/store';
 import type { ProjectRole } from '@/types/project';
 
+import { subscribeLayerVisibility, visibleSuggestionsOf } from '../suggestionLayer';
 import { scaleStatusOf } from '../useScaleStatus';
 import { resolveBackHref } from './backHref';
 import type { PascalBridge, PascalConfirm, PascalNotice, PascalSaveStatus, PascalSceneGraph } from './types';
@@ -457,6 +458,8 @@ export function usePascalProjectBridge(
      `toPascalScene` dùng chung nó, không thì giá trị sinh ra lệch nhau → "sửa ma". */
   /* Tầng chưa có tỷ lệ (cùng danh sách của dải cảnh báo): chốt ở `onLoad`, mọi lượt dựng lại dùng chung. */
   const missingFloors = useRef<ReadonlySet<string>>(new Set());
+  /** M2 — lớp đề xuất mà cảnh đang giữ (JSON), để bật/tắt hay bản máy chủ mới chỉ dựng lại khi khác. */
+  const suggestionKey = useRef('');
   const sceneFromStore = useCallback((): PascalScene | null => {
     const current = selectViewerSpatial(useStore.getState());
     if (current === null) return null;
@@ -464,14 +467,19 @@ export function usePascalProjectBridge(
     const graph = withoutFloorContents(denormalizeSpatial(current), missingFloors.current);
     // Đồ AI bổ sung (AID-01) và chế độ tự bày dự phòng đi cùng phong cách: chốt một lần mỗi lượt
     // mở trang, mọi lượt dựng dùng chung, không thì "sửa ma".
+    // M2 — lớp đề xuất đã lưu của các tầng (trừ tầng người dùng ẩn); khoá để chỉ dựng lại khi nó đổi thật.
+    const { floorSuggestions, unsavedFloorIds } = useStore.getState();
+    const suggestions = visibleSuggestionsOf(floorSuggestions, projectId, { graph, unsaved: unsavedFloorIds });
+    suggestionKey.current = JSON.stringify(suggestions);
     const scene = toPascalScene(graph, {
       style: style ?? readSceneStyle(() => localStorage),
       ...(furnish === 'on' ? { furnish } : {}),
       ...(additions === undefined || additions.length === 0 ? {} : { additions }),
+      ...(suggestions.length === 0 ? {} : { suggestions }),
     }).scene;
 
     return markNotBuilt(scene, missingFloors.current);
-  }, [style, additions, furnish]);
+  }, [style, additions, furnish, projectId]);
 
   /* Tải lại tầng bị khối (409/422/403): bỏ bản chưa lưu được, nạp lại tầng từ máy chủ vào kho rồi
      dựng lại cảnh từ kho. Không có `applyScene` thì nạp lại cả trang như trước. */
@@ -504,6 +512,30 @@ export function usePascalProjectBridge(
     const restored = sceneFromStore();
     if (restored !== null) applyScene?.(restored);
   }, [applyScene, sceneFromStore]);
+
+  /* M2 — bật/tắt món, ẩn lớp tầng hay bản máy chủ vừa reconcile: dựng lại cảnh từ kho khi lớp đề xuất khác bản
+     cảnh đang giữ, rồi lấy cảnh dựng lại làm mốc (không phải lượt sửa của người dùng). */
+  useEffect(() => {
+    const rebuild = (): void => {
+      if (loadedScene === null) return;
+      const current = selectViewerSpatial(useStore.getState());
+      const { floorSuggestions, unsavedFloorIds } = useStore.getState();
+      const graph = current === null ? undefined : denormalizeSpatial(current);
+      const next = visibleSuggestionsOf(floorSuggestions, projectId, graph === undefined ? undefined : { graph, unsaved: unsavedFloorIds });
+      if (JSON.stringify(next) === suggestionKey.current) return;
+      revertToStore();
+      const rebuilt = editorScene?.();
+      if (rebuilt !== undefined) rebaseOnRebuilt(rebuilt as PascalScene);
+    };
+    const stopStore = useStore.subscribe((state, previous) => {
+      if (state.floorSuggestions !== previous.floorSuggestions) rebuild();
+    });
+    const stopVisibility = subscribeLayerVisibility(rebuild);
+    return () => {
+      stopStore();
+      stopVisibility();
+    };
+  }, [editorScene, loadedScene, projectId, rebaseOnRebuilt, revertToStore]);
 
   const onSave = useCallback(
     async (scene: unknown): Promise<void> => {
