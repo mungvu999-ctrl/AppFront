@@ -16,23 +16,24 @@ afterEach(() => {
 });
 
 describe('floorSuggestions (M2)', () => {
-  it('đổi trạng thái đánh dấu bẩn; id lạ không đổi gì; "Cập nhật gợi ý" đặt cờ refresh', () => {
-    useStore.getState().receiveFloorSuggestions(FLOOR, { suggestions: STORED, meta: META }, true);
+  it('đổi trạng thái đánh dấu bẩn; id lạ không đổi gì; bật/tắt lớp đặt cờ enabledChanged', () => {
+    useStore.getState().receiveFloorSuggestions(FLOOR, { suggestions: STORED, meta: META, enabled: true }, true);
     useStore.getState().changeSuggestionState(FLOOR, STORED[0]!.id, 'disabled');
     expect(useStore.getState().floorSuggestions[FLOOR]).toMatchObject({ dirty: true });
     const before = useStore.getState().floorSuggestions;
     useStore.getState().changeSuggestionState(FLOOR, 'DRESS-X-nope', 'disabled');
     expect(useStore.getState().floorSuggestions).toBe(before);
-    useStore.getState().requestSuggestionRefresh(FLOOR);
-    expect(useStore.getState().floorSuggestions[FLOOR]?.refresh).toBe(true);
+    useStore.getState().setSuggestionsEnabled(FLOOR, false);
+    expect(useStore.getState().floorSuggestions[FLOOR]).toMatchObject({ enabledChanged: true });
+    expect(useStore.getState().floorSuggestions[FLOOR]?.enabled).toBeUndefined();
   });
 
   it('bản máy chủ về sau lượt gửi xoá cờ bẩn; bản về khi chưa gửi không đè sửa đang chờ', () => {
-    useStore.getState().receiveFloorSuggestions(FLOOR, { suggestions: STORED, meta: META }, true);
+    useStore.getState().receiveFloorSuggestions(FLOOR, { suggestions: STORED, meta: META, enabled: true }, true);
     useStore.getState().changeSuggestionState(FLOOR, STORED[0]!.id, 'disabled');
     useStore.getState().receiveFloorSuggestions(FLOOR, { suggestions: STORED, meta: META });
     expect(useStore.getState().floorSuggestions[FLOOR]?.suggestions[0]?.state).toBe('disabled');
-    useStore.getState().receiveFloorSuggestions(FLOOR, { suggestions: STORED, meta: META }, true);
+    useStore.getState().receiveFloorSuggestions(FLOOR, { suggestions: STORED, meta: META, enabled: true }, true);
     expect(useStore.getState().floorSuggestions[FLOOR]?.dirty).toBeUndefined();
   });
 });

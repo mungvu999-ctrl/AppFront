@@ -1,7 +1,7 @@
 {
  "case": "syn-penthouse",
  "layer": "syn-penthouse.layer.json",
- "rulesetSha": "9bbae40783ecfc9e6855ded122696fe5672046095730fc175e18c3b316f32370",
+ "rulesetSha": "8d81d381b90256a6c9f477243fc76cc2da4b2b523908d2a3018d2a1ec8932f60",
  "rules": [
   "R1",
   "R4",
@@ -446,7 +446,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -468,7 +468,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -494,7 +494,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -520,7 +520,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -542,7 +542,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -564,7 +564,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -586,7 +586,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -608,7 +608,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -630,7 +630,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -652,7 +652,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -678,7 +678,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -704,7 +704,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -726,7 +726,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -752,7 +752,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -774,7 +774,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -796,7 +796,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -818,7 +818,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -840,7 +840,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -862,7 +862,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -884,7 +884,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -906,7 +906,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -928,7 +928,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -950,7 +950,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -972,7 +972,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -994,7 +994,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -1020,7 +1020,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -1042,7 +1042,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -1064,7 +1064,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -1086,7 +1086,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -1108,7 +1108,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   },
   {
@@ -1130,7 +1130,7 @@
     ],
     "heightMm": 90,
     "thicknessMm": 12,
-    "material": "library:paint-white"
+    "material": "library:preset-white"
    }
   }
  ],

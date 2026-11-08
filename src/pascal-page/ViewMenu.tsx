@@ -52,7 +52,7 @@ export function ViewMenu({ projectId, useViewer, saveNow, flushAutosaves, reload
           {...(source === undefined ? {} : { source })}
         />
         <div aria-hidden="true" className={DIVIDER} />
-        <SuggestionsCard projectId={projectId} readOnly={readOnly} />
+        <SuggestionsCard readOnly={readOnly} />
         <div aria-hidden="true" className={DIVIDER} />
         <LightingCard projectId={projectId} section useViewer={useViewer} />
         <div aria-hidden="true" className={DIVIDER} />

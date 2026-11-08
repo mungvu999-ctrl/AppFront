@@ -28,10 +28,19 @@ const revisionsOf = (document: SpatialGraphDocument): Record<string, number> =>
 /** M2 — lớp đề xuất từng tầng của N15 (vắng khoá = không có). */
 const suggestionsOf = (document: SpatialGraphDocument): Record<string, FloorSuggestions> =>
   Object.fromEntries(
-    document.floorRevisions.flatMap(({ floorId, suggestions, suggestionsMeta }) =>
-      suggestions === undefined || suggestions.length === 0
+    document.floorRevisions.flatMap(({ floorId, suggestions, suggestionsMeta, suggestionsEnabled }) =>
+      (suggestions === undefined || suggestions.length === 0) && suggestionsEnabled !== true
         ? []
-        : [[floorId, { suggestions, ...(suggestionsMeta === undefined ? {} : { meta: suggestionsMeta }) }]],
+        : [
+            [
+              floorId,
+              {
+                suggestions: suggestions ?? [],
+                ...(suggestionsMeta === undefined ? {} : { meta: suggestionsMeta }),
+                ...(suggestionsEnabled === true ? { enabled: true as const } : {}),
+              },
+            ],
+          ],
     ),
   );
 

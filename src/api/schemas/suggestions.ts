@@ -234,10 +234,14 @@ export type SuggestionStateRow = z.infer<typeof SuggestionStateRowSchema>;
 /** Trần số bản ghi mỗi tầng (AppBack `SUGGESTIONS_CAP`). */
 export const SUGGESTIONS_MAX = 2000;
 
-/** Khoá tuỳ chọn của tài liệu tầng (N16, #35) và của mỗi tầng trong N15: vắng cả hai khi danh sách rỗng. */
+/**
+ * Khoá tuỳ chọn của tài liệu tầng (N16), kết quả #35 và (đề xuất) mỗi tầng trong N15: `suggestions`/`suggestionsMeta`
+ * vắng khi rỗng; `suggestionsEnabled` chỉ có giá trị `true` (vắng = lớp tắt), như AppBack `suggestion_fields`.
+ */
 export const floorSuggestionsShape = {
   suggestions: z.array(SuggestionSchema).max(SUGGESTIONS_MAX).optional(),
   suggestionsMeta: SuggestionsMetaSchema.optional(),
+  suggestionsEnabled: z.literal(true).optional(),
 } as const;
 
 /** Giá trị hiệu lực: `override` > `params` (hợp đồng §3). */

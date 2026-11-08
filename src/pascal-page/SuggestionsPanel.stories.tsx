@@ -1,6 +1,6 @@
 /**
  * Các trạng thái của {@link SuggestionsPanel} (M2): chưa có gợi ý, một tầng đủ nhóm (có món đã nhận nuôi,
- * nhóm chỉ liệt kê, gợi ý cũ), tầng đang ẩn lớp và chờ lưu, chỉ xem. View thuần — `args` tĩnh.
+ * nhóm chỉ liệt kê, gợi ý cũ), tầng đã tắt lớp và chờ lưu, chỉ xem. View thuần — `args` tĩnh.
  */
 import type { Meta, StoryObj } from '@storybook/react';
 
@@ -57,7 +57,6 @@ const view = (patch: Partial<SuggestionLayerView> = {}): SuggestionLayerView => 
   readOnly: false,
   onToggleVisible: () => undefined,
   onToggleItem: () => undefined,
-  onRefresh: () => undefined,
   ...patch,
 });
 

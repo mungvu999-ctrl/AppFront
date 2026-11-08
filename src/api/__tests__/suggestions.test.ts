@@ -29,10 +29,16 @@ function makeClient(reply: Result<unknown, HttpError>) {
 const META = { ruleset: '2026.11-1', rulesetSha: CH04.rulesetSha, basisRevision: 1 };
 
 describe('M2 lớp đề xuất — schema và client', () => {
-  it('GET /suggestion-rules: 404 (máy chủ chưa có) → null; bảng đúng → giải mã', async () => {
+  it('GET /api/suggestion-rules: 404 (máy chủ chưa có) → null; bảng đúng → giải mã', async () => {
     expect(await makeClient({ ok: false, error: notFound }).client.suggestionRules?.read()).toEqual({ ok: true, data: null });
-    const { call, client } = makeClient({ ok: true, data: DEFAULT_RULESET });
+    const wire = {
+      ruleset: DEFAULT_RULESET.ruleset,
+      rulesetSha: CH04.rulesetSha,
+      rules: Object.entries(DEFAULT_RULESET.rules).map(([id, spec]) => ({ id, version: spec.version, majorSince: spec.majorSince ?? 1, kind: spec.kind, nameVi: spec.nameVi, editor: spec.editor, params: spec.params, overridable: spec.overridable })),
+    };
+    const { call, client } = makeClient({ ok: true, data: wire });
     const result = await client.suggestionRules?.read();
+    expect(result?.ok && result.data?.rulesetSha).toBe(CH04.rulesetSha);
     expect(result?.ok && result.data?.rules.R1?.nameVi).toBe('Len chân tường');
     expect(call.mock.calls[0]).toEqual(['/suggestion-rules', undefined]);
   });
@@ -49,9 +55,10 @@ describe('M2 lớp đề xuất — schema và client', () => {
     expect(isEffectiveSuggestion({ state: 'active', stale: { since: 2, reasonVi: 'x' } })).toBe(false);
   });
 
-  it('thân #35 chỉ mang suggestionState / refreshSuggestions là hợp lệ; kết quả ghi nhận suggestions', () => {
+  it('thân #35 chỉ mang suggestionState / suggestionsEnabled là hợp lệ; kết quả ghi nhận suggestions', () => {
     expect(FloorLayerWriteBodySchema.safeParse({ suggestionState: [] }).success).toBe(true);
-    expect(FloorLayerWriteBodySchema.safeParse({ refreshSuggestions: true }).success).toBe(true);
+    expect(FloorLayerWriteBodySchema.safeParse({ suggestionsEnabled: false }).success).toBe(true);
+    expect(FloorLayerWriteBodySchema.safeParse({ refreshSuggestions: true }).success).toBe(false);
     expect(FloorLayerWriteBodySchema.safeParse({}).success).toBe(false);
     const parsed = FloorLayerWriteResultSchema.parse({ layer: CH04.layer, revision: 2, suggestions: storedSuggestionsOf(CH04), suggestionsMeta: META });
     expect(parsed.suggestions?.length).toBe(CH04.drafts.length + CH04.serverDrafts.length);
@@ -65,6 +72,7 @@ describe('M2 lớp đề xuất — schema và client', () => {
     seedMockSuggestions(floorId, stored, META);
     const read = await client.spatial.readLayer({ floorId, projectId: 'project-1' });
     expect(read.ok && read.data.suggestions?.length).toBe(stored.length);
+    expect(read.ok && read.data.suggestionsEnabled).toBe(true);
     const target = stored[0]!.id;
     const write = await client.spatial.writeLayer({
       baseVersion: 0,

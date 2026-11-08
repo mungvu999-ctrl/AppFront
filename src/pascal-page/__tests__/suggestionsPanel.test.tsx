@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { normalizeSpatial } from '@/domain/spatial/normalize';
 import { withSuggestionState } from '@/lib/suggestions/state';
@@ -7,24 +7,13 @@ import { CH04, goldenGraphOf, storedSuggestionsOf } from '@/lib/suggestions/__fi
 import { DEFAULT_RULESET } from '@/lib/suggestions/ruleset';
 import { expectAccessible } from '@/lib/testing/expectAccessible';
 
-import {
-  SUGGESTIONS_HIDDEN_STORAGE_KEY,
-  floorSuggestionsView,
-  isFloorLayerHidden,
-  setFloorLayerHidden,
-  visibleSuggestionsOf,
-} from '../suggestionLayer';
+import { floorSuggestionsView, visibleSuggestionsOf } from '../suggestionLayer';
 import { SuggestionsPanel } from '../SuggestionsPanel';
 import * as stories from '../SuggestionsPanel.stories';
 import type { SuggestionLayerView } from '../useSuggestionLayer';
 
 const STORED = storedSuggestionsOf(CH04);
 const FLOOR = 'L-01M6GEZPRRGMBWR8D13KAF6YE6';
-
-afterEach(() => {
-  setFloorLayerHidden('p1', FLOOR, false);
-  localStorage.removeItem(SUGGESTIONS_HIDDEN_STORAGE_KEY);
-});
 
 describe('SuggestionsPanel (M2 "Lớp đề xuất")', () => {
   const cases = Object.entries(stories).filter(([name]) => name !== 'default') as [string, { args: { view: SuggestionLayerView } }][];
@@ -34,15 +23,13 @@ describe('SuggestionsPanel (M2 "Lớp đề xuất")', () => {
     expectAccessible(container);
   });
 
-  it('bật/tắt món, ẩn lớp, "Cập nhật gợi ý" gọi đúng hàm; món đã nhận nuôi không bật/tắt được', () => {
-    const view = { ...stories.Floor.args.view, onToggleItem: vi.fn(), onToggleVisible: vi.fn(), onRefresh: vi.fn() };
+  it('bật/tắt món và lớp gọi đúng hàm; món đã nhận nuôi không bật/tắt được', () => {
+    const view = { ...stories.Floor.args.view, onToggleItem: vi.fn(), onToggleVisible: vi.fn() };
     render(<SuggestionsPanel view={view} />);
     fireEvent.click(screen.getAllByRole('checkbox', { name: 'Len chân tường — Phòng khách' })[1]!);
     expect(view.onToggleItem).toHaveBeenCalledWith('L-01', 'DRESS-R1-R-1-W-2', true);
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Hiện lớp đề xuất của tầng' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Bật lớp đề xuất của tầng' }));
     expect(view.onToggleVisible).toHaveBeenCalledWith('L-01');
-    fireEvent.click(screen.getByRole('button', { name: 'Cập nhật gợi ý' }));
-    expect(view.onRefresh).toHaveBeenCalledWith('L-01');
     expect((screen.getByRole('checkbox', { name: /đã nhận làm đồ thật/ }) as HTMLInputElement).disabled).toBe(true);
     expect(screen.getByText('đồ chủ đã bị xoá khỏi bản vẽ')).toBeTruthy();
   });
@@ -55,11 +42,11 @@ describe('SuggestionsPanel (M2 "Lớp đề xuất")', () => {
     const view = floorSuggestionsView({
       floorId: FLOOR,
       floorName: 'Tầng 1',
-      entry: { suggestions },
+      entry: { suggestions, enabled: true },
       ruleset: DEFAULT_RULESET,
       spatial: normalizeSpatial(goldenGraphOf(CH04)),
-      visible: true,
     });
+    expect(view.visible).toBe(true);
     const r1Group = view.groups.find((g) => g.rule === 'R1')!;
     const total = STORED.filter((s) => s.rule === 'R1').length;
     expect(r1Group).toMatchObject({ title: 'Len chân tường', countLabel: `${total - 1}/${total} đang bật`, listOnly: false });
@@ -68,12 +55,8 @@ describe('SuggestionsPanel (M2 "Lớp đề xuất")', () => {
     expect(view.stale).toEqual([expect.objectContaining({ reason: 'đồ chủ đã bị xoá khỏi bản vẽ' })]);
   });
 
-  it('ẩn lớp của tầng: cảnh không nhận đề xuất của tầng ấy; nhớ theo máy', () => {
-    const floors = { [FLOOR]: { suggestions: STORED } };
-    expect(visibleSuggestionsOf(floors, 'p1')).toHaveLength(STORED.length);
-    setFloorLayerHidden('p1', FLOOR, true);
-    expect(isFloorLayerHidden('p1', FLOOR)).toBe(true);
-    expect(visibleSuggestionsOf(floors, 'p1')).toEqual([]);
-    expect(localStorage.getItem(SUGGESTIONS_HIDDEN_STORAGE_KEY)).toContain(FLOOR);
+  it('tầng tắt lớp (`suggestionsEnabled` vắng): cảnh không nhận đề xuất của tầng ấy', () => {
+    expect(visibleSuggestionsOf({ [FLOOR]: { suggestions: STORED, enabled: true } })).toHaveLength(STORED.length);
+    expect(visibleSuggestionsOf({ [FLOOR]: { suggestions: STORED } })).toEqual([]);
   });
 });

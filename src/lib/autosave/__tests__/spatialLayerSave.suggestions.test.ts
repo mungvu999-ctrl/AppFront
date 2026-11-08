@@ -11,7 +11,7 @@ import { createFloorLayerSaver } from '../spatialLayerSave';
 
 /**
  * M2 — thân #35 mang `suggestionState` (trạng thái THƯA cả tầng) chỉ khi bẩn, và `refreshSuggestions` khi người
- * dùng bấm "Cập nhật gợi ý" (hợp đồng M2 §4, §6). Kho giữ cờ bẩn (`store/__tests__/floorSuggestions.test.ts`);
+ * dùng bật/tắt lớp của tầng (`suggestionsEnabled`, hợp đồng M2 §4, §6). Kho giữ cờ bẩn (`store/__tests__/floorSuggestions.test.ts`);
  * saver chụp phần thân cùng lúc với lớp, qua cổng `readSuggestionBody` (ở đây đọc một bản ghi tại chỗ).
  */
 
@@ -19,7 +19,7 @@ const FLOOR = 'L-01M6GEZPRRGMBWR8D13KAF6YE6';
 const STORED = storedSuggestionsOf(CH04);
 const META = { ruleset: '2026.11-1', rulesetSha: CH04.rulesetSha, basisRevision: 1 };
 
-let entry: { suggestions: readonly Suggestion[]; meta?: typeof META; dirty?: true; refresh?: true } | undefined;
+let entry: { suggestions: readonly Suggestion[]; meta?: typeof META; dirty?: true; enabled?: true; enabledChanged?: true } | undefined;
 
 const harness = () => {
   const writeLayer = vi.fn<SpatialApi['writeLayer']>().mockResolvedValue({ ok: true, data: { layer: CH04.layer, revision: 2 } });
@@ -29,10 +29,10 @@ const harness = () => {
     readRevision: () => 1,
     readSuggestionBody: (floorId) => {
       void floorId;
-      if (entry === undefined || (entry.dirty !== true && entry.refresh !== true)) return null;
+      if (entry === undefined || (entry.dirty !== true && entry.enabledChanged !== true)) return null;
       return {
         ...(entry.dirty === true ? { suggestionState: sparseStateOf(entry.suggestions) } : {}),
-        ...(entry.refresh === true ? { refreshSuggestions: true as const } : {}),
+        ...(entry.enabledChanged === true ? { suggestionsEnabled: entry.enabled === true } : {}),
       };
     },
     writeLayer,
@@ -47,7 +47,7 @@ describe('spatialLayerSave — suggestionState (M2)', () => {
     saver.markDirty([FLOOR]);
     await saver.flush();
     expect(body()).not.toHaveProperty('suggestionState');
-    expect(body()).not.toHaveProperty('refreshSuggestions');
+    expect(body()).not.toHaveProperty('suggestionsEnabled');
   });
 
   it('tắt một món → thân mang đủ trạng thái thưa của tầng, sắp theo id, qua schema', async () => {
@@ -62,11 +62,11 @@ describe('spatialLayerSave — suggestionState (M2)', () => {
     expect(FloorLayerWriteSchema.safeParse({ baseVersion: 1, body: body() }).success).toBe(true);
   });
 
-  it('bật lại hết → vẫn gửi (mảng rỗng = mọi bản về active); "Cập nhật gợi ý" thêm refreshSuggestions', async () => {
-    entry = { suggestions: STORED, meta: META, dirty: true, refresh: true };
+  it('bật lại hết → vẫn gửi (mảng rỗng = mọi bản về active); tắt cả lớp → suggestionsEnabled: false', async () => {
+    entry = { suggestions: STORED, meta: META, dirty: true, enabledChanged: true };
     const { saver, body } = harness();
     saver.markDirty([FLOOR]);
     await saver.flush();
-    expect(body()).toMatchObject({ suggestionState: [], refreshSuggestions: true });
+    expect(body()).toMatchObject({ suggestionState: [], suggestionsEnabled: false });
   });
 });

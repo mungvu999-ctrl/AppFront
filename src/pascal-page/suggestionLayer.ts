@@ -1,10 +1,9 @@
 /**
- * M2 — lớp đề xuất trên trang 3D: (1) công tắc HIỆN lớp theo tầng, nhớ theo máy (localStorage); (2) danh sách
- * đề xuất mà cảnh dựng (`visibleSuggestionsOf`, cầu `bridge/index.ts` đọc); (3) view model của mục "Lớp đề xuất"
- * (`SuggestionsPanel`). Không React.
+ * M2 — lớp đề xuất trên trang 3D: (1) danh sách đề xuất mà cảnh dựng (`visibleSuggestionsOf`, cầu
+ * `bridge/index.ts` đọc); (2) view model của mục "Lớp đề xuất" (`SuggestionsPanel`). Không React.
  *
- * Công tắc tầng chỉ là hiển thị phía máy này: hợp đồng chưa có trường "bật lớp" lưu trên máy chủ (quyết định tạm
- * §8.1 cần nó, ghi ở báo cáo). Tắt = cảnh không vẽ đề xuất của tầng, dữ liệu không đổi.
+ * Công tắc lớp của tầng là cờ máy chủ `suggestionsEnabled` (#35, §8 quyết định 1): tắt = máy chủ không sinh,
+ * cảnh không vẽ; bật lại = máy chủ chạy luật ngay lượt lưu ấy.
  */
 
 import type { SuggestionRuleset } from '@/api/schemas/suggestionRules';
@@ -16,59 +15,16 @@ import { previewSuggestions } from '@/lib/suggestions/mirror';
 import { DEFAULT_RULESET, ruleNameVi } from '@/lib/suggestions/ruleset';
 import type { FloorSuggestions } from '@/store/spatialSlice';
 
-/** Khoá localStorage: danh sách `projectId:floorId` đang ẩn lớp đề xuất (R-10). */
-export const SUGGESTIONS_HIDDEN_STORAGE_KEY = 'appfront.suggestions.hidden';
-
-const listeners = new Set<() => void>();
-let hidden: ReadonlySet<string> | null = null;
-
-const readHidden = (): ReadonlySet<string> => {
-  if (hidden !== null) return hidden;
-  try {
-    const raw: unknown = JSON.parse(localStorage.getItem(SUGGESTIONS_HIDDEN_STORAGE_KEY) ?? '[]');
-    hidden = new Set(Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string') : []);
-  } catch {
-    hidden = new Set();
-  }
-  return hidden;
-};
-
-const keyOf = (projectId: string, floorId: string): string => `${projectId}:${floorId}`;
-
-export const isFloorLayerHidden = (projectId: string, floorId: string): boolean => readHidden().has(keyOf(projectId, floorId));
-
-export function setFloorLayerHidden(projectId: string, floorId: string, value: boolean): void {
-  const next = new Set(readHidden());
-  if (value) next.add(keyOf(projectId, floorId));
-  else next.delete(keyOf(projectId, floorId));
-  hidden = next;
-  try {
-    localStorage.setItem(SUGGESTIONS_HIDDEN_STORAGE_KEY, JSON.stringify([...next]));
-  } catch {
-    // Không ghi được (chế độ riêng tư): công tắc vẫn có hiệu lực tới khi tải lại trang.
-  }
-  listeners.forEach((listener) => listener());
-}
-
-export function subscribeLayerVisibility(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-/** Phiên bản của công tắc (cho `useSyncExternalStore`). */
-export const layerVisibilitySnapshot = (): ReadonlySet<string> => readHidden();
-
 /**
- * Đề xuất mà cảnh 3D dựng: mọi tầng có lớp, trừ tầng người dùng ẩn. Tầng có sửa chưa lưu (`preview.unsaved`)
+ * Đề xuất mà cảnh 3D dựng: mọi tầng đang bật lớp (`enabled`). Tầng có sửa chưa lưu (`preview.unsaved`)
  * dùng bản xem trước của gương luật (R1, R4, C2, F1, L1) trên lớp hiện tại, tới khi máy chủ reconcile.
  */
 export function visibleSuggestionsOf(
   floors: Readonly<Record<string, FloorSuggestions>>,
-  projectId: string,
   preview?: { readonly graph: SpatialGraph; readonly unsaved: readonly string[] },
 ): Suggestion[] {
   return Object.entries(floors).flatMap(([floorId, entry]) => {
-    if (isFloorLayerHidden(projectId, floorId)) return [];
+    if (entry.enabled !== true) return [];
     if (preview === undefined || !preview.unsaved.includes(floorId)) return [...entry.suggestions];
     const { graph } = preview;
     const walls = graph.walls.filter((w) => w.levelId === floorId);
@@ -128,7 +84,7 @@ export interface FloorSuggestionsView {
   readonly floorId: string;
   readonly floorName: string;
   readonly visible: boolean;
-  /** Có thay đổi chưa gửi (bật/tắt, "Cập nhật gợi ý"). */
+  /** Có thay đổi chưa gửi (bật/tắt món hay cả lớp). */
   readonly pending: boolean;
   readonly groups: readonly SuggestionGroupView[];
   readonly stale: readonly StaleSuggestionView[];
@@ -153,7 +109,6 @@ export function floorSuggestionsView(input: {
   readonly entry: FloorSuggestions;
   readonly ruleset: SuggestionRuleset;
   readonly spatial: NormalizedSpatial | null;
-  readonly visible: boolean;
 }): FloorSuggestionsView {
   const { entry, ruleset, spatial } = input;
   const order = Object.keys(ruleset.rules);
@@ -164,8 +119,8 @@ export function floorSuggestionsView(input: {
   return {
     floorId: input.floorId,
     floorName: input.floorName,
-    visible: input.visible,
-    pending: entry.dirty === true || entry.refresh === true,
+    visible: entry.enabled === true,
+    pending: entry.dirty === true || entry.enabledChanged === true,
     groups: rules.map((rule) => {
       const items = live.filter((s) => s.rule === rule);
       const on = items.filter((s) => isEffectiveSuggestion(s)).length;

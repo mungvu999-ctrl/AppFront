@@ -141,7 +141,7 @@ export const ENDPOINTS = {
     list: LIBRARY_ROOT,
   },
   /**
-   * M2 — bảng tham số luật của lớp đề xuất (ETag = `rulesetSha`), toàn cục. CHƯA có ở AppBack (08/11): máy chủ
+   * M2 — `GET /api/suggestion-rules`: bảng tham số luật của lớp đề xuất (ETag = `rulesetSha`), toàn cục. Máy chủ cũ
    * trả 404 thì client coi như "không có bảng", app dùng bảng gói kèm (`lib/suggestions/defaultRuleset.json`).
    */
   suggestionRules: '/suggestion-rules',

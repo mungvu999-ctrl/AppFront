@@ -159,6 +159,7 @@ export const FloorLayerDocumentSchema = z
       ? { suggestions: wireDocument.suggestions }
       : {}),
     ...(wireDocument.suggestionsMeta !== undefined ? { suggestionsMeta: wireDocument.suggestionsMeta } : {}),
+    ...(wireDocument.suggestionsEnabled === true ? { suggestionsEnabled: true as const } : {}),
   }));
 
 export type FloorLayerDocument = z.infer<typeof FloorLayerDocumentSchema>;
@@ -184,8 +185,8 @@ export const FloorLayerWriteBodySchema = z
      * Máy chủ bỏ qua `params`/`stale` client gửi; id lạ → 422 (hợp đồng M2 §4). Máy chủ chưa có thì 422 `VALIDATION`.
      */
     suggestionState: z.array(SuggestionStateRowSchema).optional(),
-    /** M2 — "Cập nhật gợi ý": máy chủ chạy lại `reconcile` dù `layer` không đổi. */
-    refreshSuggestions: z.literal(true).optional(),
+    /** M2 — bật/tắt lớp đề xuất của tầng (§8 quyết định 1); bật lại thì máy chủ chạy `reconcile` ngay lượt này. */
+    suggestionsEnabled: z.boolean().optional(),
   })
   .strict()
   .refine(
@@ -206,7 +207,7 @@ export const FloorLayerWriteBodySchema = z
       body.axes !== undefined ||
       body.origin !== undefined ||
       body.suggestionState !== undefined ||
-      body.refreshSuggestions !== undefined,
+      body.suggestionsEnabled !== undefined,
     { path: [] },
   );
 

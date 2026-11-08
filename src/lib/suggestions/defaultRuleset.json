@@ -3,7 +3,7 @@
   "rules": {
     "R1": {
       "version": 1, "majorSince": 1, "kind": "skirting", "nameVi": "Len chân tường", "editor": "mirror",
-      "params": {"heightMm": 90, "thicknessMm": 12, "material": "library:paint-white", "doorMarginMm": 70,
+      "params": {"heightMm": 90, "thicknessMm": 12, "material": "library:preset-white", "doorMarginMm": 70,
                  "faceToleranceMm": 60, "minSpanMm": 100, "excludeUsages": ["bathroom"]},
       "overridable": ["heightMm", "thicknessMm", "material"]
     },
@@ -27,7 +27,7 @@
     },
     "C1": {
       "version": 1, "majorSince": 1, "kind": "casing", "nameVi": "Nẹp cửa sổ", "editor": "list",
-      "params": {"widthMm": 70, "thicknessMm": 16, "material": "library:paint-white"},
+      "params": {"widthMm": 70, "thicknessMm": 16, "material": "library:preset-white"},
       "overridable": ["widthMm", "thicknessMm", "material"]
     },
     "C2": {

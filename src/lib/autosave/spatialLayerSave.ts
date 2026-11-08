@@ -250,9 +250,9 @@ export interface FloorLayerSaverPorts {
   readDimensions?(floorId: string): readonly Dimension[] | null;
   /**
    * M2 — phần lớp đề xuất của thân #35, chụp cùng lúc với lớp: `suggestionState` (trạng thái THƯA cả tầng) chỉ khi
-   * trạng thái bẩn, `refreshSuggestions` khi người dùng bấm "Cập nhật gợi ý". `null` = không mang gì (hợp đồng M2 §4).
+   * trạng thái bẩn, `suggestionsEnabled` khi người dùng bật/tắt lớp của tầng. `null` = không mang gì (hợp đồng M2 §4).
    */
-  readSuggestionBody?(floorId: string): Pick<FloorLayerWriteBody, 'suggestionState' | 'refreshSuggestions'> | null;
+  readSuggestionBody?(floorId: string): Pick<FloorLayerWriteBody, 'suggestionState' | 'suggestionsEnabled'> | null;
   /** `scaleSent` chỉ có mặt (luôn `true`) khi thân mang tỉ lệ — kho gỡ `scaleStatus` của tầng. */
   onSaved(floorId: string, result: FloorLayerWriteResult, info: { redirtied: boolean; scaleSent?: true }): void;
   queue?: typeof runExclusive;
@@ -390,7 +390,7 @@ export function createFloorLayerSaver(projectId: string, ports: FloorLayerSaverP
     first: LayerWrite | undefined,
     layer: SpatialLayer | null,
     dimensions: readonly Dimension[] | null,
-    suggestionBody: Pick<FloorLayerWriteBody, 'suggestionState' | 'refreshSuggestions'> | null = null,
+    suggestionBody: Pick<FloorLayerWriteBody, 'suggestionState' | 'suggestionsEnabled'> | null = null,
   ): Promise<FloorFailure | undefined> => {
     if (first) {
       const failure = await send(floorId, first, layer !== null);

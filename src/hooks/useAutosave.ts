@@ -407,7 +407,11 @@ const attachSaver = (target: SaverBook, loaded: Pipes): void => {
       // M2: bản đề xuất máy chủ vừa reconcile; lượt mang trạng thái mà không ai sửa thêm thì thay bản bẩn.
       useStore.getState().receiveFloorSuggestions(
         floorId,
-        { suggestions: result.suggestions ?? [], ...(result.suggestionsMeta === undefined ? {} : { meta: result.suggestionsMeta }) },
+        {
+          suggestions: result.suggestions ?? [],
+          ...(result.suggestionsMeta === undefined ? {} : { meta: result.suggestionsMeta }),
+          ...(result.suggestionsEnabled === true ? { enabled: true as const } : {}),
+        },
         !redirtied,
       );
 
@@ -441,10 +445,10 @@ const attachSaver = (target: SaverBook, loaded: Pipes): void => {
     },
     readSuggestionBody(floorId) {
       const entry = target.disposed || !owns() ? undefined : useStore.getState().floorSuggestions[floorId];
-      if (entry === undefined || (entry.dirty !== true && entry.refresh !== true)) return null;
+      if (entry === undefined || (entry.dirty !== true && entry.enabledChanged !== true)) return null;
       return {
         ...(entry.dirty === true ? { suggestionState: sparseStateOf(entry.suggestions) } : {}),
-        ...(entry.refresh === true ? { refreshSuggestions: true as const } : {}),
+        ...(entry.enabledChanged === true ? { suggestionsEnabled: entry.enabled === true } : {}),
       };
     },
     // Không chặn theo `disposed`: lượt xả lúc đổi dự án chạy SAU `dispose()`, và base 0 là 409 chắc.
@@ -543,12 +547,12 @@ function openBook(projectId: string): SaverBook {
         created.opened = state.spatial;
       }
 
-      // M2: bật/tắt một đề xuất hay "Cập nhật gợi ý" là một lượt lưu của tầng ấy (thân mang `suggestionState`).
+      // M2: bật/tắt một đề xuất hay cả lớp của tầng là một lượt lưu của tầng ấy (`suggestionState`/`suggestionsEnabled`).
       if (state.floorSuggestions !== previous.floorSuggestions && state.spatialProjectId === projectId && created.saver) {
         const touched = Object.entries(state.floorSuggestions)
           .filter(([floorId, entry]) => {
             const before = previous.floorSuggestions[floorId];
-            return entry !== before && (entry.dirty === true || entry.refresh === true);
+            return entry !== before && (entry.dirty === true || entry.enabledChanged === true);
           })
           .map(([floorId]) => floorId);
         if (touched.length > 0) {

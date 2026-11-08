@@ -1297,17 +1297,21 @@ const writtenOrigins = new Map<string, { x: number; y: number }>();
  * trang mock nạp bằng {@link seedMockSuggestions} (vd. ca vàng `ch-04` của AppBack). Không gói ca vàng vào
  * đây: tệp này vào bản dựng sản phẩm qua `appClient.ts`.
  */
-const mockSuggestions = new Map<string, { suggestions: Suggestion[]; meta: SuggestionsMeta }>();
+const mockSuggestions = new Map<string, { suggestions: Suggestion[]; meta: SuggestionsMeta; enabled: boolean }>();
 
 export const seedMockSuggestions = (floorId: string, suggestions: readonly Suggestion[], meta: SuggestionsMeta): void => {
-  mockSuggestions.set(floorId, { suggestions: clone([...suggestions]), meta: { ...meta } });
+  mockSuggestions.set(floorId, { suggestions: clone([...suggestions]), meta: { ...meta }, enabled: true });
 };
 
-const suggestionKeysOf = (floorId: string): { suggestions?: Suggestion[]; suggestionsMeta?: SuggestionsMeta } => {
+/** Như AppBack `suggestion_fields`: lớp tắt thì vắng cả ba khoá; danh sách rỗng thì vắng `suggestions`/`suggestionsMeta`. */
+const suggestionKeysOf = (
+  floorId: string,
+): { suggestions?: Suggestion[]; suggestionsMeta?: SuggestionsMeta; suggestionsEnabled?: true } => {
   const stored = mockSuggestions.get(floorId);
-  return stored === undefined || stored.suggestions.length === 0
-    ? {}
-    : { suggestions: clone(stored.suggestions), suggestionsMeta: { ...stored.meta } };
+  if (stored === undefined || !stored.enabled) return {};
+  return stored.suggestions.length === 0
+    ? { suggestionsEnabled: true }
+    : { suggestions: clone(stored.suggestions), suggestionsMeta: { ...stored.meta }, suggestionsEnabled: true };
 };
 
 export const __resetMockLayerState = (): void => {
@@ -2211,6 +2215,9 @@ export const createMockApiClient = (): ApiClient => {
           } catch {
             return failed(mockWireError(422, 'VALIDATION', requestId, { code: 'VALIDATION', field: 'suggestionState', message: 'id đề xuất lạ', requestId }));
           }
+        }
+        if (body.suggestionsEnabled !== undefined && stored !== undefined) {
+          stored.enabled = body.suggestionsEnabled;
         }
 
         return ok({ layer: currentLayer(floorId), revision, ...suggestionKeysOf(floorId) });
