@@ -197,10 +197,6 @@ export function suggestionPlanOf(
   const railings: SuggestedRailing[] = [];
   const furniture: { furniture: Furniture; folder?: string; origin: FurnitureOrigin }[] = [];
 
-  if (checked.some((s) => s.kind === 'ceilingLight')) {
-    for (const room of graph.rooms) light.set(room.id, 'off');
-  }
-
   for (const s of checked) {
     const live = isEffectiveSuggestion(s) && !offIds.has(s.id);
     if (s.kind === 'railing' && s.hostRef.room !== undefined) railingRooms.add(s.hostRef.room);
@@ -230,7 +226,8 @@ export function suggestionPlanOf(
       case 'modelPick': {
         const host = s.hostRef.furniture === undefined ? undefined : at.furniture.get(s.hostRef.furniture);
         const { modelId } = effectiveParams(s);
-        if (host !== undefined && host.model === undefined && hasModel(modelId)) modelFolder.set(host.id, modelId);
+        // Chỉ chọn mẫu khi người dùng chưa chọn (mẫu hoặc biến thể).
+        if (host !== undefined && host.model === undefined && host.variant === undefined && hasModel(modelId)) modelFolder.set(host.id, modelId);
         break;
       }
       case 'ceilingLight':
@@ -279,8 +276,11 @@ export function suggestionPlanOf(
         const host = s.hostRef.furniture === undefined ? undefined : at.furniture.get(s.hostRef.furniture);
         const p = effectiveParams(s);
         const length = Math.hypot(p.end.x - p.start.x, p.end.y - p.start.y);
-        if (host === undefined || !(length > 0)) break;
-        [host.id, ...(p.mergedIds ?? [])].forEach((id) => cabinetHosts.add(id));
+        // Hộp do người dùng vẽ/sửa không bao giờ bị ẩn: dãy tủ chỉ thay hộp AI/luật. Hộp chủ của người dùng thì không vẽ dãy chồng lên.
+        if (host === undefined || host.source === 'human' || !(length > 0)) break;
+        [host.id, ...(p.mergedIds ?? [])].forEach((id) => {
+          if (at.furniture.get(id)?.source !== 'human') cabinetHosts.add(id);
+        });
         // Dãy nằm phía pháp tuyến trái của đường lưng, tâm lùi nửa chiều sâu.
         const [ux, uy] = [(p.end.x - p.start.x) / length, (p.end.y - p.start.y) / length];
         const centre = { x: (p.start.x + p.end.x) / 2 - uy * (p.depthMm / 2), y: (p.start.y + p.end.y) / 2 + ux * (p.depthMm / 2) };

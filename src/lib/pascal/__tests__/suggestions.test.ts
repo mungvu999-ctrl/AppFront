@@ -70,14 +70,45 @@ describe('M2 — vẽ lớp đề xuất đã lưu (toPascal)', () => {
     expect(node<PascalItemNode>(off, id)?.asset.src).toBe(node<PascalItemNode>(BASE, id)?.asset.src);
   });
 
-  it('L1: đèn trần đặt ở tâm máy chủ; tắt hay cũ thì không có đèn', () => {
+  it('L1: đèn trần đặt ở tâm máy chủ; tắt hay cũ thì phòng ấy về đèn mặc định', () => {
     const l1 = first('ceilingLight');
     const lightId = toPascalId('item', `LIGHT-${l1.hostRef.room!}`);
     const light = node<PascalItemNode>(SAVED, lightId);
     expect(light?.position[0]).toBeCloseTo(l1.params.centre.x / 1000, 6);
     expect(light?.position[2]).toBeCloseTo(l1.params.centre.y / 1000, 6);
-    expect(node(sceneOf(replaced(l1, { state: 'disabled' })), lightId)).toBeUndefined();
-    expect(node(sceneOf(replaced(l1, { stale: { since: 3, reasonVi: 'phòng đã bị xoá' } })), lightId)).toBeUndefined();
+    expect(node(sceneOf(replaced(l1, { state: 'disabled' })), lightId)).toEqual(node(BASE, lightId));
+    expect(node(sceneOf(replaced(l1, { stale: { since: 3, reasonVi: 'phòng đã bị xoá' } })), lightId)).toEqual(node(BASE, lightId));
+  });
+
+  it('L1: chỉ phòng có bản L1 hiệu lực mất đèn mặc định; phòng khác giữ nguyên (không theo tầng)', () => {
+    const l1s = STORED.filter((s) => s.kind === 'ceilingLight');
+    expect(l1s.length).toBeGreaterThan(1);
+    const only = sceneOf(STORED.filter((s) => s.kind !== 'ceilingLight' || s.id === l1s[0]!.id));
+    for (const other of l1s.slice(1)) {
+      const id = toPascalId('item', `LIGHT-${other.hostRef.room!}`);
+      expect(node(only, id), other.id).toEqual(node(BASE, id));
+    }
+  });
+
+  it('modelPick__host_with_variant_not_repicked: món người dùng đã chọn variant không bị F1 chọn lại mẫu', () => {
+    const f1 = STORED.find((s) => s.kind === 'modelPick' && s.params.modelId === 'toilet-sf')!;
+    const id = toPascalId('item', f1.hostRef.furniture!);
+    const graph = { ...GRAPH, furniture: GRAPH.furniture.map((f) => (f.id === f1.hostRef.furniture ? { ...f, variant: 'wc' as const } : f)) };
+    const withVariant = toPascalScene(graph, { suggestions: STORED }).scene.nodes;
+    const without = toPascalScene(graph, {}).scene.nodes;
+    expect(node<PascalItemNode>(withVariant, id)?.asset.src).toBe(node<PascalItemNode>(without, id)?.asset.src);
+  });
+
+  it('cabinetRun__user_drawn_host_stays_visible: dãy tủ không ẩn hộp source human; hộp AI vẫn bị ẩn', () => {
+    const run = first('cabinetRun');
+    const hostId = run.hostRef.furniture!;
+    const hid = (source: 'ai' | 'human') =>
+      toPascalScene({ ...GRAPH, furniture: GRAPH.furniture.map((f) => (f.id === hostId ? { ...f, source } : f)) }, { suggestions: STORED }).scene.nodes;
+    const host = toPascalId('item', hostId);
+    expect(node<PascalItemNode>(hid('ai'), host)?.visible).toBe(false);
+    const human = hid('human');
+    expect(node<PascalItemNode>(human, host)?.visible).not.toBe(false);
+    expect(node(human, toPascalId('item', run.id))).toBeUndefined();
   });
 
   it('R4: lan can lô gia theo đoạn đã lưu, id là id đề xuất; tắt thì không tự dò lại', () => {
