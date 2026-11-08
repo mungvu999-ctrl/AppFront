@@ -89,7 +89,7 @@ export interface ServerGlbExportView {
   readonly staleNote: string | null;
   readonly result: ServerGlbResultView | null;
   readonly onSelectEngine: (engine: GlbEngine) => void;
-  readonly onDownload: (fileName: Extract<ModelExportFileName, 'model.glb' | 'report.json'>) => void;
+  readonly onDownload: (fileName: ModelExportFileName) => void;
 }
 
 const isPending = (job: ModelExport | null): boolean => job !== null && (job.status === 'queued' || job.status === 'running');

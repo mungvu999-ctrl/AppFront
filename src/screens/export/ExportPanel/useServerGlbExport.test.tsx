@@ -153,6 +153,10 @@ describe('useServerGlbExport', () => {
     await settle();
     expect(api.modelExports.readFile).toHaveBeenCalledWith('p', 'mex_01JABCDEFGHJKMNPQRSTVWXYZ0', 'report.json');
     expect(deliver).toHaveBeenCalledWith(expect.any(Blob), 'report.json');
+    act(() => view.onDownload('CREDITS.txt'));
+    await settle();
+    expect(api.modelExports.readFile).toHaveBeenCalledWith('p', 'mex_01JABCDEFGHJKMNPQRSTVWXYZ0', 'CREDITS.txt');
+    expect(deliver).toHaveBeenCalledWith(expect.any(Blob), 'CREDITS.txt');
   });
 
   it('job failed → câu theo mã; lỗi mạng của N49 → câu mạng', async () => {

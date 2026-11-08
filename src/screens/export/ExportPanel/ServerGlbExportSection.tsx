@@ -72,6 +72,10 @@ export function ServerGlbExportSection({ view }: { readonly view: ServerGlbExpor
                 <Button size="sm" variant="secondary" onClick={() => view.onDownload('report.json')}>
                   Tải report.json
                 </Button>
+                {/* Mẫu CC BY 4.0 trong GLB bắt buộc ghi công: CREDITS.txt (N51) đi kèm tệp tải. */}
+                <Button size="sm" variant="secondary" onClick={() => view.onDownload('CREDITS.txt')}>
+                  Tải ghi công (CREDITS.txt)
+                </Button>
               </div>
             </div>
           )}

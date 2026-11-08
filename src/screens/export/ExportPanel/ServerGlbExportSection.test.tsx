@@ -45,7 +45,7 @@ describe('ServerGlbExportSection', () => {
     expect(screen.queryByRole('button', { name: /Lưu/ })).toBeNull();
   });
 
-  it('xong có thiếu sót: chất lượng, issues, bản lưu, stale, hai nút tải', () => {
+  it('xong có thiếu sót: chất lượng, issues, bản lưu, stale, ba nút tải', () => {
     const view = base({
       result: result(true),
       snapshotLine: 'Dựng từ bản lưu: tầng L-1 revision 3 · lúc 12:00',
@@ -59,8 +59,10 @@ describe('ServerGlbExportSection', () => {
     expect(screen.getByText(/Dữ liệu đã thay đổi/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Tải model.glb' }));
     fireEvent.click(screen.getByRole('button', { name: 'Tải report.json' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tải ghi công (CREDITS.txt)' }));
     expect(view.onDownload).toHaveBeenNthCalledWith(1, 'model.glb');
     expect(view.onDownload).toHaveBeenNthCalledWith(2, 'report.json');
+    expect(view.onDownload).toHaveBeenNthCalledWith(3, 'CREDITS.txt');
   });
 
   it('Sẵn sàng: huy hiệu trung tính, không mang xanh "đã xác minh" (A5)', () => {
