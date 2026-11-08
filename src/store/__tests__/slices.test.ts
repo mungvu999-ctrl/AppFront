@@ -421,6 +421,7 @@ describe('slice state shape', () => {
     expect(projectFields).toEqual(['activeFloorId', 'floors', 'project', 'userRoles']);
     expect(spatialFields).toEqual([
       'floorMeta',
+      'floorSuggestions',
       'lastServerSpatial',
       'serverReplaceSeq',
       'spatial',

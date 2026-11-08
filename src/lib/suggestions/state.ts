@@ -106,5 +106,20 @@ export function adoptedFurnitureOf(
   };
 }
 
+/**
+ * Bản ghi cần chuyển `adopted`: đồ thật có `origin.suggestionId` trỏ vào một bản chưa `adopted` của tầng.
+ * Trả `[id đề xuất, id đồ]` theo thứ tự đồ; rỗng khi không có gì đổi.
+ */
+export function adoptionsOf(
+  furniture: readonly Pick<Furniture, 'id' | 'origin'>[],
+  suggestions: readonly Pick<Suggestion, 'id' | 'state' | 'adoptedAs'>[],
+): (readonly [string, string])[] {
+  const byId = new Map(suggestions.map((s) => [s.id, s]));
+  return furniture.flatMap((f) => {
+    const target = f.origin === undefined ? undefined : byId.get(f.origin.suggestionId);
+    return target === undefined || (target.state === 'adopted' && target.adoptedAs === f.id) ? [] : [[target.id, f.id] as const];
+  });
+}
+
 /** Id này là một id đề xuất hợp lệ (`DRESS-…`). */
 export const isSuggestionId = (id: string): boolean => SUGGESTION_ID_PATTERN.test(id);

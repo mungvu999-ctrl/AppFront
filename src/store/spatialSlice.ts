@@ -4,6 +4,8 @@ import { applyPatch, type SpatialPatch } from '../domain/spatial/applyPatch';
 import type { NormalizedSpatial } from '../domain/spatial/normalize';
 import { graphVersionOf } from '../lib/versioning/graphVersion';
 import type { ScaleSource } from '../lib/viewmodel/provisionalScale';
+import type { Suggestion, SuggestionState, SuggestionsMeta } from '../api/schemas/suggestions';
+import { withSuggestionState } from '../lib/suggestions/state';
 
 /**
  * Saved spatial data of the floor being viewed, in the normalized form built
@@ -39,6 +41,18 @@ export function floorMetaEntryOf(revision: number, scale?: FloorScaleKeys): Floo
   return scaleSource === undefined ? { revision, scaleStatus } : { revision, scaleStatus, scaleSource };
 }
 
+/**
+ * M2 — the suggestion layer of one floor as the server last returned it, plus the user's unsent state.
+ * `dirty`: a `state` changed locally and the next #35 must carry `suggestionState`; `refresh`: the user asked
+ * the server to reconcile again ("Cập nhật gợi ý").
+ */
+export interface FloorSuggestions {
+  readonly suggestions: readonly Suggestion[];
+  readonly meta?: SuggestionsMeta;
+  readonly dirty?: true;
+  readonly refresh?: true;
+}
+
 /** Where a loaded graph came from: the project and the revision each floor was read at. */
 export interface SpatialSource {
   projectId: string;
@@ -47,6 +61,8 @@ export interface SpatialSource {
   floorScaleStatus?: Readonly<Record<string, 'unresolved'>>;
   /** `scaleSource` of the floors in `floorScaleStatus` (N16 only). */
   floorScaleSource?: Readonly<Record<string, ScaleSource>>;
+  /** M2 — suggestion layer per floor (N15 `floorRevisions[].suggestions`); absent = none. */
+  floorSuggestions?: Readonly<Record<string, FloorSuggestions>>;
 }
 
 /**
@@ -92,6 +108,14 @@ export interface SpatialSlice {
   setVersionId: (versionId: string | null) => void;
   /** Mutation gateway reserved for `commit(patch, label)`; never call it from a component. */
   _applyPatches: (patches: readonly SpatialPatch[]) => void;
+  /** M2 — suggestion layer per floor; see {@link FloorSuggestions}. */
+  floorSuggestions: Readonly<Record<string, FloorSuggestions>>;
+  /** M2 — the server's copy of one floor (save result or read); a floor still `dirty` keeps its local state. */
+  receiveFloorSuggestions: (floorId: string, entry: Pick<FloorSuggestions, 'suggestions' | 'meta'>, sent?: boolean) => void;
+  /** M2 — the user turned one suggestion on/off (or adopted it); marks the floor dirty for the next save. */
+  changeSuggestionState: (floorId: string, id: string, state: SuggestionState, adoptedAs?: string) => void;
+  /** M2 — "Cập nhật gợi ý": the next save asks the server to reconcile again. */
+  requestSuggestionRefresh: (floorId: string) => void;
 }
 
 /** `temporal` is attached to the store api by the zundo middleware in `store/index.ts`. */
@@ -108,6 +132,27 @@ export const createSpatialSlice: StateCreator<SpatialSlice> = (set, _get, api) =
   unsavedFloorIds: [],
   serverReplaceSeq: 0,
   lastServerSpatial: null,
+  floorSuggestions: {},
+  receiveFloorSuggestions: (floorId, { suggestions, meta }, sent = false) =>
+    set((state) => {
+      const current = state.floorSuggestions[floorId];
+      // Local state not yet sent wins over a save result that did not carry it.
+      if (current?.dirty === true && !sent) return state;
+      const entry: FloorSuggestions = { suggestions, ...(meta === undefined ? {} : { meta }) };
+      return { floorSuggestions: { ...state.floorSuggestions, [floorId]: entry } };
+    }),
+  changeSuggestionState: (floorId, id, next, adoptedAs) =>
+    set((state) => {
+      const current = state.floorSuggestions[floorId];
+      if (current === undefined || !current.suggestions.some((s) => s.id === id)) return state;
+      const entry: FloorSuggestions = { ...current, suggestions: withSuggestionState(current.suggestions, id, next, adoptedAs), dirty: true };
+      return { floorSuggestions: { ...state.floorSuggestions, [floorId]: entry } };
+    }),
+  requestSuggestionRefresh: (floorId) =>
+    set((state) => {
+      const current = state.floorSuggestions[floorId] ?? { suggestions: [] };
+      return { floorSuggestions: { ...state.floorSuggestions, [floorId]: { ...current, refresh: true } } };
+    }),
   updateFloorMeta: (floorId, entry) =>
     set((state) => {
       const floorMeta = { ...state.floorMeta, [floorId]: entry };
@@ -131,6 +176,7 @@ export const createSpatialSlice: StateCreator<SpatialSlice> = (set, _get, api) =
       spatialProjectId: source?.projectId ?? null,
       floorMeta,
       lastServerSpatial: spatial,
+      floorSuggestions: source?.floorSuggestions ?? {},
     });
     (api as MaybeTemporalApi).temporal?.getState().clear();
   },

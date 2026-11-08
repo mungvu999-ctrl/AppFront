@@ -6,7 +6,7 @@ import type { EntityId, Level, LevelId, SpatialGraph } from '../domain/spatial/t
 import type { Project, ProjectRole } from '../types/project';
 import { resetCommitRun } from './commit';
 import { useStore } from './index';
-import { floorMetaEntryOf, versionIdFor, type FloorMetaEntry } from './spatialSlice';
+import { floorMetaEntryOf, versionIdFor, type FloorMetaEntry, type FloorSuggestions } from './spatialSlice';
 
 /**
  * Loading a project's whole graph (N15) into the store — F-04x-2 step 2.
@@ -25,6 +25,16 @@ export interface ProjectHydrationInput {
 const revisionsOf = (document: SpatialGraphDocument): Record<string, number> =>
   Object.fromEntries(document.floorRevisions.map((entry) => [entry.floorId, entry.revision]));
 
+/** M2 — lớp đề xuất từng tầng của N15 (vắng khoá = không có). */
+const suggestionsOf = (document: SpatialGraphDocument): Record<string, FloorSuggestions> =>
+  Object.fromEntries(
+    document.floorRevisions.flatMap(({ floorId, suggestions, suggestionsMeta }) =>
+      suggestions === undefined || suggestions.length === 0
+        ? []
+        : [[floorId, { suggestions, ...(suggestionsMeta === undefined ? {} : { meta: suggestionsMeta }) }]],
+    ),
+  );
+
 const byOrder = (levels: readonly Level[]): Level[] => [...levels].sort((a, b) => a.order - b.order);
 
 /** Opens a project from scratch: project, floors, roles, graph; history emptied by `setSpatial`. */
@@ -41,6 +51,7 @@ export function hydrateProject({ document, project, roles }: ProjectHydrationInp
   state.setSpatial(normalizeSpatial(document.graph), null, {
     floorRevisions: revisionsOf(document),
     projectId: project.id,
+    floorSuggestions: suggestionsOf(document),
   });
 }
 

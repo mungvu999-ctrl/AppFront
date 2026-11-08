@@ -13,6 +13,9 @@ import { appNotificationBus } from './useNotifications';
 import type { RootState } from '../store';
 import { useStore } from '../store';
 import { floorMetaEntryOf } from '../store/spatialSlice';
+import { adoptionsOf, sparseStateOf } from '../lib/suggestions/state';
+import { idsOnLevel, isEntityOfKind } from '../domain/spatial/normalize';
+import type { LevelId } from '../domain/spatial/types';
 
 /* -------------------------------------------------------------------------- */
 /* Mọi bộ tự lưu đang gắn — để Ctrl+S có ĐÚNG MỘT hệ để xả.                    */
@@ -366,6 +369,24 @@ const markChanged = (
   }
 };
 
+/**
+ * M2 — dời/xoay món đề xuất = nhận nuôi: `toSpatial` đã ghi đồ thật kèm `origin`; ở đây chuyển bản ghi sang
+ * `adopted` (bẩn → lượt lưu mang `suggestionState`). Hoàn tác xoá đồ thì máy chủ tự về `disabled` (bước 6).
+ */
+const markAdoptedSuggestions = (state: RootState): void => {
+  const { spatial } = state;
+  if (spatial === null) return;
+  for (const [floorId, entry] of Object.entries(state.floorSuggestions)) {
+    const furniture = idsOnLevel(spatial, floorId as LevelId).flatMap((id) => {
+      const entity = spatial.byId[id];
+      return entity !== undefined && isEntityOfKind('furniture', entity) && entity.origin !== undefined ? [entity] : [];
+    });
+    for (const [suggestionId, furnitureId] of adoptionsOf(furniture, entry.suggestions)) {
+      state.changeSuggestionState(floorId, suggestionId, 'adopted', furnitureId);
+    }
+  }
+};
+
 /** Gắn saver khi ống đã nạp; sửa xảy ra trước đó (so với `opened`) được đánh dấu bẩn ngay. */
 const attachSaver = (target: SaverBook, loaded: Pipes): void => {
   if (target.disposed || target.saver) {
@@ -382,6 +403,13 @@ const attachSaver = (target: SaverBook, loaded: Pipes): void => {
       if (target.disposed || !owns()) {
         return;
       }
+
+      // M2: bản đề xuất máy chủ vừa reconcile; lượt mang trạng thái mà không ai sửa thêm thì thay bản bẩn.
+      useStore.getState().receiveFloorSuggestions(
+        floorId,
+        { suggestions: result.suggestions ?? [], ...(result.suggestionsMeta === undefined ? {} : { meta: result.suggestionsMeta }) },
+        !redirtied,
+      );
 
       if (redirtied) {
         // Sửa đang chờ giữ nguyên; `scaleStatus` chỉ mất khi chính lượt này mang tỉ lệ.
@@ -410,6 +438,14 @@ const attachSaver = (target: SaverBook, loaded: Pipes): void => {
       const level = spatial?.byId[floorId];
 
       return spatial && level?.id === floorId && 'order' in level ? loaded.dimensionsOf(spatial, level.id) : null;
+    },
+    readSuggestionBody(floorId) {
+      const entry = target.disposed || !owns() ? undefined : useStore.getState().floorSuggestions[floorId];
+      if (entry === undefined || (entry.dirty !== true && entry.refresh !== true)) return null;
+      return {
+        ...(entry.dirty === true ? { suggestionState: sparseStateOf(entry.suggestions) } : {}),
+        ...(entry.refresh === true ? { refreshSuggestions: true as const } : {}),
+      };
     },
     // Không chặn theo `disposed`: lượt xả lúc đổi dự án chạy SAU `dispose()`, và base 0 là 409 chắc.
     readRevision: (floorId) => source()?.floorMeta[floorId]?.revision ?? null,
@@ -507,6 +543,20 @@ function openBook(projectId: string): SaverBook {
         created.opened = state.spatial;
       }
 
+      // M2: bật/tắt một đề xuất hay "Cập nhật gợi ý" là một lượt lưu của tầng ấy (thân mang `suggestionState`).
+      if (state.floorSuggestions !== previous.floorSuggestions && state.spatialProjectId === projectId && created.saver) {
+        const touched = Object.entries(state.floorSuggestions)
+          .filter(([floorId, entry]) => {
+            const before = previous.floorSuggestions[floorId];
+            return entry !== before && (entry.dirty === true || entry.refresh === true);
+          })
+          .map(([floorId]) => floorId);
+        if (touched.length > 0) {
+          notePendingEdit();
+          markChanged(created, touched);
+        }
+      }
+
       if (
         fromServer ||
         state.spatialProjectId !== projectId ||
@@ -518,6 +568,7 @@ function openBook(projectId: string): SaverBook {
       }
 
       notePendingEdit();
+      markAdoptedSuggestions(state);
 
       if (created.saver && pipes) {
         markChanged(

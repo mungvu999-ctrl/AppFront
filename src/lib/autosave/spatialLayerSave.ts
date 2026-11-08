@@ -248,6 +248,11 @@ export interface FloorLayerSaverPorts {
   readRevision(floorId: string): number | null;
   /** Kích thước hiện có của tầng; vắng → thân PUT không bao giờ mang `dimensions`. */
   readDimensions?(floorId: string): readonly Dimension[] | null;
+  /**
+   * M2 — phần lớp đề xuất của thân #35, chụp cùng lúc với lớp: `suggestionState` (trạng thái THƯA cả tầng) chỉ khi
+   * trạng thái bẩn, `refreshSuggestions` khi người dùng bấm "Cập nhật gợi ý". `null` = không mang gì (hợp đồng M2 §4).
+   */
+  readSuggestionBody?(floorId: string): Pick<FloorLayerWriteBody, 'suggestionState' | 'refreshSuggestions'> | null;
   /** `scaleSent` chỉ có mặt (luôn `true`) khi thân mang tỉ lệ — kho gỡ `scaleStatus` của tầng. */
   onSaved(floorId: string, result: FloorLayerWriteResult, info: { redirtied: boolean; scaleSent?: true }): void;
   queue?: typeof runExclusive;
@@ -385,6 +390,7 @@ export function createFloorLayerSaver(projectId: string, ports: FloorLayerSaverP
     first: LayerWrite | undefined,
     layer: SpatialLayer | null,
     dimensions: readonly Dimension[] | null,
+    suggestionBody: Pick<FloorLayerWriteBody, 'suggestionState' | 'refreshSuggestions'> | null = null,
   ): Promise<FloorFailure | undefined> => {
     if (first) {
       const failure = await send(floorId, first, layer !== null);
@@ -409,7 +415,7 @@ export function createFloorLayerSaver(projectId: string, ports: FloorLayerSaverP
 
     return send(
       floorId,
-      { baseVersion: layerBase(floorId), body: dimensions ? { dimensions: [...dimensions], layer } : { layer } },
+      { baseVersion: layerBase(floorId), body: { ...(dimensions ? { dimensions: [...dimensions] } : {}), layer, ...suggestionBody } },
       false,
     );
   };
@@ -427,13 +433,14 @@ export function createFloorLayerSaver(projectId: string, ports: FloorLayerSaverP
     held.delete(floorId);
 
     const dimensions = layer && dimensionsDirty.has(floorId) ? (ports.readDimensions?.(floorId) ?? null) : null;
+    const suggestionBody = layer ? (ports.readSuggestionBody?.(floorId) ?? null) : null;
 
     if (layer) {
       dirty.delete(floorId);
       dimensionsDirty.delete(floorId);
     }
 
-    return track(floorId, () => run(floorId, first, layer, dimensions));
+    return track(floorId, () => run(floorId, first, layer, dimensions, suggestionBody));
   };
 
   /** Chạy `task` dưới khoá tầng, tính nó vào "đang gửi" tới khi xong. */

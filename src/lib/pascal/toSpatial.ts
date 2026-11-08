@@ -37,6 +37,7 @@ import type {
   Level,
   LevelId,
   DoorStyle,
+  FurnitureOrigin,
   Opening,
   OpeningId,
   Point,
@@ -469,6 +470,15 @@ const stairVariantOf = (node: PascalStairNode, fields: Fields, known: boolean): 
  * quá 1 mm) vừa rồi; `slots` khác phong cách; `model` khi mẫu không phải mẫu AppFront chọn
  * và `src` là một mẫu `/items/…` (ngoài ra không lưu được).
  */
+/** `metadata.suggestion` do `toPascal` ghi lên món đề xuất ảo → `{ origin }`, hoặc `{}` khi không hợp lệ. */
+const originOfSuggestion = (raw: unknown): { origin?: FurnitureOrigin } => {
+  if (typeof raw !== 'object' || raw === null) return {};
+  const { suggestionId, rule, ruleVersion } = raw as Record<string, unknown>;
+  return typeof suggestionId === 'string' && typeof rule === 'string' && typeof ruleVersion === 'number'
+    ? { origin: { suggestionId, rule, ruleVersion } }
+    : {};
+};
+
 const itemFieldsOf = (item: PascalItemNode, kind: FurnitureKind): Partial<Furniture> => {
   const fields = fieldsOf(item);
   const variant = readOneOf(fields, 'variant', FURNITURE_VARIANTS);
@@ -488,6 +498,7 @@ const itemFieldsOf = (item: PascalItemNode, kind: FurnitureKind): Partial<Furnit
 
   return {
     ...(variant === null ? {} : { variant }),
+    ...originOfSuggestion(fields['origin']),
     ...(heightMm === null ? {} : { heightMm: millimetres(heightMm) }),
     ...(liftMm === null ? {} : { liftMm: millimetres(liftMm) }),
     ...(slots === null ? {} : { slots }),
@@ -870,6 +881,8 @@ const collectItem = (scene: PascalScene, item: PascalItemNode, levelId: LevelId,
       // Món rời thành đồ thật giữ đúng mẫu và độ nâng lượt đi tự chọn (lan can, mặt bếp…), không đoán lại theo `kind`.
       ...(looseAdopted && MODEL_SRC.test(item.asset.src) ? { model: { id: item.asset.id.slice(0, 120), src: item.asset.src } } : {}),
       ...(looseAdopted && item.position[1] > 0.001 ? { liftMm: millimetres(Math.round(millimetresOf(item.position[1]))) } : {}),
+      // M2 — món đề xuất được nhận nuôi giữ dấu luật nguồn (`origin`), để máy chủ đánh dấu bản ghi `adopted`.
+      ...(isGeneratedNodeId(item.id) ? originOfSuggestion(item.metadata?.['suggestion']) : {}),
     });
   }
 
