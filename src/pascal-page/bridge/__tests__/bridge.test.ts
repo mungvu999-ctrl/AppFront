@@ -11,7 +11,9 @@ import { toPascalScene } from '@/lib/pascal/toPascal';
 import type { PascalScene } from '@/lib/pascal/types';
 import type * as ToPascal from '@/lib/pascal/toPascal';
 import type * as AuthSession from '@/lib/auth/session';
+import { CH04, storedSuggestionsOf } from '@/lib/suggestions/__fixtures__/golden';
 import { useStore } from '@/store';
+import { useSuggestionStore } from '@/store/suggestionStore';
 import type { ProjectRole } from '@/types/project';
 
 import {
@@ -796,6 +798,31 @@ describe('drawnFloorIds (UX-32)', () => {
 });
 
 describe('unsavedNoticeOf — M1 E5a', () => {
+  it('bridge__server_suggestions_during_drag_keep_pending_scene: bản đề xuất về giữa lượt kéo không dựng lại cảnh; dựng sau khi kéo xong', async () => {
+    const applyScene = vi.fn();
+    const listeners = new Set<() => void>();
+    const drag = { on: true };
+    const interaction = {
+      active: () => drag.on,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+    const floor = sampleLevelId(0);
+    const { result } = renderHook(() => usePascalProjectBridge('p1', applyScene, () => ({}) as never, interaction));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    await act(() => result.current.onLoad());
+
+    act(() => useSuggestionStore.getState().putFloorSuggestions(floor, { suggestions: storedSuggestionsOf(CH04), enabled: true }));
+    expect(applyScene).not.toHaveBeenCalled();
+
+    drag.on = false;
+    act(() => listeners.forEach((listener) => listener()));
+    await waitFor(() => expect(applyScene).toHaveBeenCalledTimes(1));
+    act(() => useSuggestionStore.getState().putFloorSuggestions(floor, { suggestions: [] }));
+  });
+
   it('cao tầng không bị gọi là "bản sau": chỉ ra màn Quản lý tầng', () => {
     expect(unsavedNoticeOf([LEVEL_HEIGHT_UNSAVED])).toBe(LEVEL_HEIGHT_NOTICE);
     expect(unsavedNoticeOf(['màu sàn', LEVEL_HEIGHT_UNSAVED])).toBe(`Chưa lưu được: màu sàn — sẽ có ở bản sau. ${LEVEL_HEIGHT_NOTICE}`);

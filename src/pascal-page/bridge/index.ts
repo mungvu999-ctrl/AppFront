@@ -337,6 +337,15 @@ interface LoadState {
   readonly furnish?: 'on' | 'off';
 }
 
+/** Cổng đọc "người dùng đang kéo/đặt" của editor; cầu không nhập Pascal nên main.tsx đưa vào. */
+export interface BridgeInteraction {
+  active(): boolean;
+  subscribe(listener: () => void): () => void;
+}
+
+/** Sau khi lượt kéo xong, đợi lượt `onSave` của nó tối đa chừng này rồi mới dựng lại (kéo bị huỷ thì không có `onSave`). */
+const REBUILD_AFTER_DRAG_MS = 250;
+
 /**
  * `applyScene` — đặt cảnh vào editor đúng lối nạp (`applySceneGraphToEditor`: không bước hoàn tác,
  * không đụng camera). Cầu gọi nó khi một lượt sửa bị từ chối để cảnh 3D quay về khớp kho.
@@ -346,6 +355,8 @@ export function usePascalProjectBridge(
   applyScene?: (scene: PascalSceneGraph) => void,
   /** Cảnh editor đang giữ, đã điền mặc định lược đồ. */
   editorScene?: () => PascalSceneGraph,
+  /** Editor có lượt kéo/đặt chưa chốt không: có thì không dựng lại cảnh từ kho (sẽ đè lượt đang kéo). */
+  interaction?: BridgeInteraction,
 ): PascalBridge {
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
   const { style, additions, furnish } = load;
@@ -517,9 +528,17 @@ export function usePascalProjectBridge(
 
   /* M2 — bật/tắt món, bật/tắt lớp tầng hay bản máy chủ vừa reconcile: dựng lại cảnh từ kho khi lớp đề xuất khác bản
      cảnh đang giữ, rồi lấy cảnh dựng lại làm mốc (không phải lượt sửa của người dùng). */
+  const deferredRebuild = useRef<(() => void) | null>(null);
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const rebuild = (): void => {
       if (loadedScene === null) return;
+      // Đang kéo: dựng lại sẽ đè lượt chưa chốt. Hoãn tới khi kéo xong (và `onSave` của nó đã chạy).
+      if (interaction?.active() === true) {
+        deferredRebuild.current = rebuild;
+        return;
+      }
+      deferredRebuild.current = null;
       const current = selectViewerSpatial(useStore.getState());
       const { unsavedFloorIds } = useStore.getState();
       const { floorSuggestions } = useSuggestionStore.getState();
@@ -530,10 +549,21 @@ export function usePascalProjectBridge(
       const rebuilt = editorScene?.();
       if (rebuilt !== undefined) rebaseOnRebuilt(rebuilt as PascalScene);
     };
-    return useSuggestionStore.subscribe((state, previous) => {
+    const stopStore = useSuggestionStore.subscribe((state, previous) => {
       if (state.floorSuggestions !== previous.floorSuggestions) rebuild();
     });
-  }, [editorScene, loadedScene, rebaseOnRebuilt, revertToStore]);
+    const stopInteraction = interaction?.subscribe(() => {
+      if (deferredRebuild.current === null || interaction.active()) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => deferredRebuild.current?.(), REBUILD_AFTER_DRAG_MS);
+    });
+    return () => {
+      stopStore();
+      stopInteraction?.();
+      clearTimeout(timer);
+      deferredRebuild.current = null;
+    };
+  }, [editorScene, interaction, loadedScene, rebaseOnRebuilt, revertToStore]);
 
   const onSave = useCallback(
     async (scene: unknown): Promise<void> => {
@@ -561,6 +591,8 @@ export function usePascalProjectBridge(
           if (massDeleteRef.current?.reason !== rejection.current) revertToStore();
           throw new Error(rejection.current);
         }
+        /* Lượt kéo vừa chốt: bản đề xuất về giữa chừng giờ mới dựng lại (không còn lượt chưa chốt để đè). */
+        if (ok && interaction?.active() !== true) deferredRebuild.current?.();
         if (!ok) return;
         /* Vừa nhận món gợi ý: tấm viền thành mẫu thật ngay. Không vào lịch sử Pascal; Ctrl+Z về cảnh còn tấm
            viền và `suggestionEditOf` trả bản ghi gợi ý. */
@@ -579,7 +611,7 @@ export function usePascalProjectBridge(
       lastSave = pending;
       await pending;
     },
-    [autosave, editorScene, isFloorBlocked, onSceneCommit, readOnly, rebaseOnRebuilt, revertToStore, takeSuggestionAccepted, validateCommit],
+    [autosave, editorScene, interaction, isFloorBlocked, onSceneCommit, readOnly, rebaseOnRebuilt, revertToStore, takeSuggestionAccepted, validateCommit],
   );
 
   /* Đã xác nhận xoá nhiều: mở cổng cho đúng các node ấy rồi lưu (bản sao nông để không trúng phán

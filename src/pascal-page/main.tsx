@@ -8,7 +8,7 @@ import './probe';
 import './icons';
 import './firstOpen';
 import { acquireSceneReadOnlyLease, AnyNode, pauseSceneHistory, resumeSceneHistory, runAsSingleSceneHistoryStep, type SceneGraph, useScene } from '@pascal-app/core';
-import { CATALOG_ITEMS, useEditor, useSidebarStore } from '@pascal-app/editor';
+import { CATALOG_ITEMS, useEditor, useInteractionScope, useSidebarStore } from '@pascal-app/editor';
 import { loadPlugin, nodeRegistry } from '@pascal-app/core/registry';
 import { builtinPlugin } from '@pascal-app/nodes';
 import { createMaterialFromPresetRef, getSceneTheme, prewarmWebGpuDevice, SSGI_PARAMS, useViewer } from '@pascal-app/viewer';
@@ -19,7 +19,7 @@ import { flushAutosaves } from '@/hooks/useAutosave';
 import { libraryOnlyCatalog, serverCatalogTiles, setRealismModels } from '@/lib/pascal/furnitureCatalog';
 import { getFeatureFlagsSnapshot } from '@/lib/telemetry/flags';
 
-import { BRIDGE_SESSION_ERROR, loginHrefOf, savePascalNow, usePascalProjectBridge } from './bridge';
+import { BRIDGE_SESSION_ERROR, type BridgeInteraction, loginHrefOf, savePascalNow, usePascalProjectBridge } from './bridge';
 import { isEmptyChange, type NodeChanges, nodeChangesTo } from './bridge/sceneRevert';
 import type { PascalSceneGraph } from './bridge/types';
 import { BackToProjectCard, EditModelButton, ProjectStepsCard } from './BackToProjectCard';
@@ -186,11 +186,20 @@ const hasWalls = () =>
 const exportSceneGlb = async (): Promise<Blob | null> =>
   (await useEditor.getState().modelExport?.('glb', { download: false }))?.blob ?? null;
 
+/** Editor đang có lượt kéo/đặt/chỉnh chưa chốt (`useInteractionScope` không rảnh) hay camera đang kéo. */
+const editorInteraction: BridgeInteraction = {
+  active: () => useInteractionScope.getState().scope.kind !== 'idle' || useViewer.getState().inputDragging,
+  subscribe: (listener) => {
+    const stops = [useInteractionScope.subscribe(listener), useViewer.subscribe(listener)];
+    return () => stops.forEach((stop) => stop());
+  },
+};
+
 /** Trần chờ ảnh vật liệu trước lượt dựng đầu; quá thì dựng luôn, ảnh gán sau. */
 const TEXTURE_HOLD_MS = 1500;
 
 function PascalPage({ projectId }: { readonly projectId: string }) {
-  const bridge = usePascalProjectBridge(projectId, applyRejectedRevert, readEditorScene);
+  const bridge = usePascalProjectBridge(projectId, applyRejectedRevert, readEditorScene, editorInteraction);
   const readOnly = bridge.status === 'ready' && bridge.readOnly;
   // Cầu khai kiểu lỏng (`PascalSceneGraph`, `unknown`) để không nhập Pascal; `useSceneLoader` ráp với `SceneGraph`.
   const loadScene = useSceneLoader(bridge.onLoad, bridge.rebaseLoaded);
