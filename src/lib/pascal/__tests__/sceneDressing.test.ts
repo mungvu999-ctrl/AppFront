@@ -136,7 +136,7 @@ describe('sceneDressing (I3) — sàn, tường, vật liệu cảnh', () => {
         }
         expect(node.slots?.['interior']).toBe(DEFAULT.wall.interior);
         expect(node.slots?.['exterior']).toBe(wall.kind === 'partition' ? DEFAULT.wall.interior : DEFAULT.wall.exterior);
-        expect(node.skirting).toEqual({ enabled: true, sides: 'interior', height: 0.1, proud: 0.015, profile: 'flat' });
+        expect(node.skirting).toEqual({ enabled: true, sides: 'interior', height: 0.09, proud: 0.012, profile: 'flat' });
         expect(node.crown).toEqual({ enabled: true, sides: 'interior', height: 0.05, proud: 0.02, profile: 'flat' });
       }
     }
@@ -159,12 +159,12 @@ describe('sceneDressing (I3) — sàn, tường, vật liệu cảnh', () => {
           // Mặt trong giữ len của phong cách; mặt ngoài phào cỡ EXTERIOR_SKIRTING.
           const { height, proud, profile } = EXTERIOR_SKIRTING;
           expect(node.skirting, wall.id).toEqual({
-            enabled: true, sides: 'both', height: 0.1, proud: 0.015, profile: 'flat',
+            enabled: true, sides: 'both', height: 0.09, proud: 0.012, profile: 'flat',
             exterior: { height, proud, profile },
           });
         } else {
           inner += 1;
-          expect(node.skirting, wall.id).toEqual({ enabled: true, sides: 'interior', height: 0.1, proud: 0.015, profile: 'flat' });
+          expect(node.skirting, wall.id).toEqual({ enabled: true, sides: 'interior', height: 0.09, proud: 0.012, profile: 'flat' });
         }
       }
       expect(outer).toBeGreaterThan(0);

@@ -21,7 +21,7 @@ describe('realism details (R6)', () => {
     expect(realismWallDefaults()).toEqual({
       skirting: { ...wallDressingOf({ kind: 'envelope', heightMm: 2700 }).skirting, sides: 'both', exterior: { height, proud, profile } },
     })
-    expect(INTERIOR_SKIRTING.height).toBe(0.1)
+    expect(INTERIOR_SKIRTING.height).toBe(0.09)
   })
 
   it('tool preset spread after realism defaults wins (same order as vendor patch)', () => {
@@ -42,7 +42,7 @@ describe('realism details (R6)', () => {
     a.skirting.height = 9
     a.skirting.exterior.height = 9
     const b = realismWallDefaults() as { skirting: { height: number; exterior: { height: number } } }
-    expect(b.skirting.height).toBe(0.1)
+    expect(b.skirting.height).toBe(0.09)
     expect(b.skirting.exterior.height).toBe(0.25)
     const r = realismRoofSegmentDefaults() as { metadata: Record<string, unknown> }
     r.metadata.x = 1

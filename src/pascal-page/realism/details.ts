@@ -10,6 +10,8 @@
  * Không nhập store: `main.tsx` (thẻ R1) gọi `setDetailsEnabled(flags.details)`.
  */
 
+import { SKIRTING_MM } from '@/lib/suggestions/ruleset'
+
 let enabled = false
 
 export function setDetailsEnabled(value: boolean): void {
@@ -37,13 +39,14 @@ export const EXTERIOR_SKIRTING = {
 
 /**
  * Len chân trong nhà (mọi phong cách cùng cỡ). `wallDressingOf` (src/lib/pascal/sceneDressing.ts)
- * dùng chung hằng này để tường vẽ mới và tường dựng lúc nạp không lệch nhau.
+ * dùng chung hằng này để tường vẽ mới và tường dựng lúc nạp không lệch nhau. Cỡ lấy từ bảng luật R1
+ * của lớp đề xuất (M2, G1: 90 × 12 mm như compiler), không còn 100 × 15 viết tay.
  */
 export const INTERIOR_SKIRTING = {
   enabled: true,
   sides: 'interior',
-  height: 0.1,
-  proud: 0.015,
+  height: SKIRTING_MM.height / 1000,
+  proud: SKIRTING_MM.thickness / 1000,
   profile: 'flat',
 } as const
 
