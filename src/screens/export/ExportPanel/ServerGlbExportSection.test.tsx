@@ -63,6 +63,14 @@ describe('ServerGlbExportSection', () => {
     expect(view.onDownload).toHaveBeenNthCalledWith(2, 'report.json');
   });
 
+  it('Sẵn sàng: huy hiệu trung tính, không mang xanh "đã xác minh" (A5)', () => {
+    const ready = { ...result(true), qualityLabel: 'Sẵn sàng', qualityTone: 'ok' as const, issues: [] };
+    render(<ServerGlbExportSection view={base({ result: ready })} />);
+    const badge = screen.getByText('Sẵn sàng').closest('span');
+    expect(badge?.className).not.toMatch(/state-verified/);
+    expect(badge?.className).toMatch(/bg-bg-sunken/);
+  });
+
   it('blocked: ẩn tải GLB, còn report.json', () => {
     render(<ServerGlbExportSection view={base({ result: result(false) })} />);
     expect(screen.getByText('Không dùng được')).toBeTruthy();

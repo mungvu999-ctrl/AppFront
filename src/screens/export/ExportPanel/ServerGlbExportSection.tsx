@@ -21,7 +21,8 @@ const ENGINE_OPTIONS: { label: string; value: GlbEngine }[] = [
   { label: GLB_ENGINE_LABELS.quick, value: 'quick' },
 ];
 
-const TONE_TO_BADGE = { ok: 'verified', attention: 'attention', violation: 'violation' } as const;
+// A5: xanh `verified` chỉ cho việc người duyệt; kết quả máy dựng "Sẵn sàng" dùng `neutral`.
+const TONE_TO_BADGE = { ok: 'neutral', attention: 'attention', violation: 'violation' } as const;
 
 export function ServerGlbExportSection({ view }: { readonly view: ServerGlbExportView }) {
   const { result } = view;
