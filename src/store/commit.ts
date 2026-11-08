@@ -11,6 +11,9 @@ import type { SpatialEntity } from '../domain/spatial/normalize';
 import type { Dimension, EntityId, Level } from '../domain/spatial/types';
 import { floorMetaEntryOf, versionIdFor, type FloorMetaEntry } from './spatialSlice';
 import type { ScaleSource } from '../lib/viewmodel/provisionalScale';
+import type { Suggestion, SuggestionsMeta } from '../api/schemas/suggestions';
+import { storeReceived } from '../lib/suggestions/state';
+import { useSuggestionStore } from './suggestionStore';
 
 /**
  * The selection as it stands right now, for a command recorder to stamp on its history step.
@@ -230,6 +233,10 @@ export interface FloorLayerReplacement {
   scaleStatus?: 'unresolved';
   /** From N16, only with `scaleStatus`: where the provisional scale came from. */
   scaleSource?: ScaleSource;
+  /** M2 — lớp đề xuất của tầng (N16/#35); đường đọc lại thay hẳn mục của kho lớp đề xuất. */
+  suggestions?: readonly Suggestion[] | undefined;
+  suggestionsMeta?: SuggestionsMeta | undefined;
+  suggestionsEnabled?: true | undefined;
 }
 
 export interface ReplaceFloorLayerOptions {
@@ -339,6 +346,9 @@ export function applyFloorLayerRead(floorId: string, read: FloorLayerReplacement
   if (scaleStatus === undefined && useStore.getState().floorMeta[floorId]?.scaleStatus !== undefined) {
     useStore.getState().updateFloorMeta(floorId, { revision });
   }
+
+  // M2: bản đọc từ máy chủ thay cả lớp đề xuất; cờ bẩn/enabledChanged của bản bỏ đi không được gửi lại lên tầng mới.
+  storeReceived(useSuggestionStore, floorId, read, true);
 }
 
 /* -------------------------------------------------------------------------- */
