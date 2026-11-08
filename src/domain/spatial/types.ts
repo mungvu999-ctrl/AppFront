@@ -218,6 +218,15 @@ export interface Furniture extends ReviewMetadata {
   liftMm?: Millimetres;
   /** A machine suggestion the reviewer has not accepted yet: kept out of the 3D build; absent = a normal piece. */
   suggested?: boolean;
+  /** M2: the suggestion this piece was adopted from (moved/rotated a `DRESS-` item); absent = not adopted. */
+  origin?: FurnitureOrigin;
+}
+
+/** Where an adopted piece came from: suggestion id, rule and rule version (M2 contract §2.4). */
+export interface FurnitureOrigin {
+  readonly suggestionId: string;
+  readonly rule: string;
+  readonly ruleVersion: number;
 }
 
 /** The 35 furniture variants of the login-page house model. */

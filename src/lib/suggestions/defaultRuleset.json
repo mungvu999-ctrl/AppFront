@@ -1,0 +1,145 @@
+{
+  "ruleset": "2026.11-1",
+  "rules": {
+    "R1": {
+      "version": 1, "majorSince": 1, "kind": "skirting", "nameVi": "Len chân tường", "editor": "mirror",
+      "params": {"heightMm": 90, "thicknessMm": 12, "material": "library:paint-white", "doorMarginMm": 70,
+                 "faceToleranceMm": 60, "minSpanMm": 100, "excludeUsages": ["bathroom"]},
+      "overridable": ["heightMm", "thicknessMm", "material"]
+    },
+    "R2": {
+      "version": 1, "majorSince": 1, "kind": "wallTile", "nameVi": "Ốp gạch phòng ướt", "editor": "render",
+      "params": {"heightMm": 2400, "thicknessMm": 8, "tileMm": 300, "material": "library:flooring-tile20",
+                 "usages": ["bathroom"]},
+      "overridable": ["heightMm", "material"]
+    },
+    "R3": {
+      "version": 1, "majorSince": 1, "kind": "cornice", "nameVi": "Phào trần", "editor": "list",
+      "params": {"heightMm": 50, "depthMm": 30},
+      "overridable": ["heightMm", "depthMm", "material"]
+    },
+    "R4": {
+      "version": 1, "majorSince": 1, "kind": "railing", "nameVi": "Lan can lô gia", "editor": "mirror",
+      "params": {"heightMm": 1100, "handrailMm": 50, "glassMm": 12, "postSpacingMaxMm": 1200,
+                 "wallGapMm": 60, "minEdgeMm": 400, "usages": ["loggia"],
+                 "metalMaterial": "library:metal-chrome", "glassMaterial": "scene:mat_appfront_glass"},
+      "overridable": ["heightMm", "metalMaterial", "glassMaterial"]
+    },
+    "C1": {
+      "version": 1, "majorSince": 1, "kind": "casing", "nameVi": "Nẹp cửa sổ", "editor": "list",
+      "params": {"widthMm": 70, "thicknessMm": 16, "material": "library:paint-white"},
+      "overridable": ["widthMm", "thicknessMm", "material"]
+    },
+    "C2": {
+      "version": 1, "majorSince": 1, "kind": "sash", "nameVi": "Khung cánh cửa sổ", "editor": "mirror",
+      "params": {"frameWidthMm": 40, "frameDepthMm": 45},
+      "overridable": ["frameWidthMm", "frameDepthMm"]
+    },
+    "F1": {
+      "version": 1, "majorSince": 1, "kind": "modelPick", "nameVi": "Chọn mẫu theo cỡ hộp", "editor": "mirror",
+      "params": {
+        "scaleTolPct": 10,
+        "models": {
+          "shower-sf": {"sizeMm": [950, 950, 1998], "nameVi": "vòi sen"},
+          "toilet-sf": {"sizeMm": [476, 604, 740], "nameVi": "bồn cầu"},
+          "vanity-sf": {"sizeMm": [917, 636, 1130], "nameVi": "tủ chậu rửa"},
+          "sofa-ph": {"sizeMm": [1807, 818, 709], "nameVi": "sofa"},
+          "armchair-ph": {"sizeMm": [820, 987, 1023], "nameVi": "ghế bành"}
+        },
+        "table": [
+          {"kind": "sanitaryFixture", "minLongMm": 1400, "pick": null,
+           "reasonVi": "hộp cỡ bồn tắm, gói chưa có mẫu bồn tắm CC0/CC-BY"},
+          {"kind": "sanitaryFixture", "minShortMm": 750, "maxAspect": 1.3, "pick": "shower-sf"},
+          {"kind": "sanitaryFixture", "minShortMm": 350, "maxShortMm": 550, "minLongMm": 550, "maxLongMm": 850,
+           "pick": "toilet-sf"},
+          {"kind": "sanitaryFixture", "minLongMm": 400, "pick": "vanity-sf"},
+          {"kind": "sanitaryFixture", "pick": null, "reasonVi": "hộp quá nhỏ để phân loại"},
+          {"kind": "chair", "variant": "sofa", "pick": "sofa-ph"},
+          {"kind": "chair", "minLongMm": 1400, "minShortMm": 600, "pick": "sofa-ph", "variantAs": "sofa"},
+          {"kind": "chair", "minShortMm": 700, "maxLongMm": 1200, "pick": "armchair-ph", "variantAs": "armchair"},
+          {"kind": "kitchenCabinet", "roomUsages": ["bathroom"], "maxLongMm": 1100, "pick": "vanity-sf",
+           "kindAs": "sanitaryFixture", "variantAs": "basin"}
+        ]
+      },
+      "overridable": ["modelId"]
+    },
+    "F2": {
+      "version": 1, "majorSince": 1, "kind": "cabinetRun", "nameVi": "Tủ bếp dưới", "editor": "render",
+      "params": {"depthMm": 600, "heightMm": 860, "plinthMm": 100, "countertopMm": 40, "moduleMm": 600,
+                 "gapMm": 4, "minRunMm": 900},
+      "overridable": ["material", "countertopMaterial"]
+    },
+    "F3": {
+      "version": 1, "majorSince": 1, "kind": "cabinetRun", "nameVi": "Tủ bếp trên", "editor": "render",
+      "params": {"depthMm": 350, "bottomMm": 1450, "topMm": 2150, "moduleMm": 600, "gapMm": 4},
+      "overridable": ["material"]
+    },
+    "P1": {
+      "version": 1, "majorSince": 1, "kind": "item", "nameVi": "Đồ chính theo công năng", "editor": "render",
+      "params": {
+        "gapMm": 30, "doorClearMm": 800,
+        "roles": {
+          "bedroom": [{"slot": "bed", "kinds": ["bed"], "variants": ["bed"], "modelId": "bed-sf"},
+                      {"slot": "wardrobe", "kinds": ["wardrobe"], "variants": ["wardrobe"],
+                       "modelId": "wardrobe-sf", "minAreaM2": 7}],
+          "livingRoom": [{"slot": "sofa", "kinds": [], "variants": ["sofa"], "modelId": "sofa-ph"}],
+          "bathroom": [{"slot": "wc", "kinds": [], "variants": ["wc"], "modelId": "toilet-sf"},
+                       {"slot": "basin", "kinds": [], "variants": ["basin"], "modelId": "vanity-sf",
+                        "minAreaM2": 3}],
+          "kitchen": [{"slot": "fridge", "kinds": [], "variants": ["fridge"], "modelId": "fridge-sf"}],
+          "loggia": [{"slot": "planter", "kinds": [], "variants": ["planter"], "modelId": "planter-ph"}]
+        }
+      },
+      "overridable": ["modelId"]
+    },
+    "P2": {
+      "version": 1, "majorSince": 1, "kind": "item", "nameVi": "Tab đầu giường", "editor": "render",
+      "params": {"modelId": "bedside-table-ph", "gapMm": 40},
+      "overridable": ["modelId"]
+    },
+    "P3": {
+      "version": 1, "majorSince": 1, "kind": "item", "nameVi": "Bàn trà", "editor": "render",
+      "params": {"modelId": "coffee-table-sf", "distanceMm": 450},
+      "overridable": ["modelId"]
+    },
+    "D1": {
+      "version": 1, "majorSince": 1, "kind": "rug", "nameVi": "Thảm", "editor": "render",
+      "params": {"sizeMm": [2300, 1600], "thicknessMm": 12, "minInsidePct": 70},
+      "overridable": ["material"]
+    },
+    "D2": {
+      "version": 1, "majorSince": 1, "kind": "curtain", "nameVi": "Rèm", "editor": "render",
+      "params": {"extMm": [300, 200, 100], "offsetMm": 120, "pleatMm": 80, "ceilingGapMm": 70,
+                 "panelMinMm": 350, "panelBaseMm": 300, "panelPerMetreMm": 150, "probeMm": 150,
+                 "clearanceMm": 50, "usages": ["bedroom", "livingRoom", "other"],
+                 "material": "library:fabric-linen"},
+      "overridable": ["material", "pleatMm"]
+    },
+    "D3": {
+      "version": 1, "majorSince": 1, "kind": "item", "nameVi": "Bình gốm", "editor": "render",
+      "params": {"modelId": "ceramic-vase"},
+      "overridable": ["modelId"]
+    },
+    "D4": {
+      "version": 1, "majorSince": 1, "kind": "item", "nameVi": "Tranh", "editor": "render",
+      "params": {"modelId": "picture-ph", "centreHeightMm": 1550, "tallItemMm": 1200},
+      "overridable": ["modelId"]
+    },
+    "D5": {
+      "version": 1, "majorSince": 1, "kind": "item", "nameVi": "Cây góc phòng", "editor": "render",
+      "params": {"modelId": "plant-ph"},
+      "overridable": ["modelId"]
+    },
+    "L1": {
+      "version": 1, "majorSince": 1, "kind": "ceilingLight", "nameVi": "Đèn trần", "editor": "mirror",
+      "params": {"precisionMm": 50, "lampMinAreaM2": 6, "lampUsages": ["bedroom", "livingRoom", "kitchen", "other"],
+                 "lampModelId": "ceiling-lamp-ph", "panelSizeMm": [300, 300, 40], "skipUsages": ["loggia"]},
+      "overridable": ["modelId"]
+    },
+    "AID": {
+      "version": 1, "majorSince": 1, "kind": "item", "nameVi": "Gợi ý của AI thiết kế", "editor": "render",
+      "params": {},
+      "overridable": ["modelId"]
+    }
+  }
+}

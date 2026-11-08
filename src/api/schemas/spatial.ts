@@ -368,6 +368,11 @@ export const FurnitureSchema: z.ZodType<Furniture, z.ZodTypeDef, unknown> = z
     model: furnitureModelSchema.optional(),
     slots: furnitureSlotsSchema.optional(),
     suggested: z.boolean().optional(),
+    /** M2 — đồ nhận nuôi từ một đề xuất (`DRESS-…`): giữ dấu luật nguồn (hợp đồng M2 §2.4). */
+    origin: z
+      .object({ suggestionId: z.string().regex(DRESSING_ID), rule: z.string().regex(/^[A-Z][A-Z0-9]{0,5}$/), ruleVersion: z.number().int().min(1) })
+      .strict()
+      .optional(),
   })
   .strict()
   .refine(humanOnlyReview)
@@ -390,6 +395,7 @@ export const FurnitureSchema: z.ZodType<Furniture, z.ZodTypeDef, unknown> = z
     ...(wireFurniture.model !== undefined ? { model: wireFurniture.model } : {}),
     ...(wireFurniture.slots !== undefined ? { slots: wireFurniture.slots } : {}),
     ...(wireFurniture.suggested === true ? { suggested: true } : {}),
+    ...(wireFurniture.origin !== undefined ? { origin: wireFurniture.origin } : {}),
   }));
 
 /* -------------------------------------------------------------------------- */

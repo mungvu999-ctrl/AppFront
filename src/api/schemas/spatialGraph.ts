@@ -14,6 +14,7 @@ import {
   RoomSchema,
   WallSchema,
 } from './spatial';
+import { floorSuggestionsShape } from './suggestions';
 
 /**
  * `GET /api/projects/{project_id}/spatial` — cả đồ thị của một công trình, kèm
@@ -102,6 +103,8 @@ export const FloorRevisionSchema = z
   .object({
     floorId: floorIdSchema,
     revision: revisionSchema,
+    /** M2 — lớp đề xuất của tầng ở N15 (đề xuất tới BE: cùng chỗ với `revision`); vắng khi rỗng. */
+    ...floorSuggestionsShape,
   })
   .strict();
 

@@ -13,6 +13,9 @@ import type { LightingBake } from '../schemas/lightingBake';
 import type { PipelineRun } from '../schemas/pipelineRuns';
 import type { ProjectRuleConfig } from '../schemas/ruleConfig';
 import type { FloorLayerDocument } from '../schemas/spatialLayer';
+import type { Suggestion, SuggestionsMeta } from '../schemas/suggestions';
+import { DEFAULT_RULESET } from '@/lib/suggestions/ruleset';
+import { applySuggestionState } from '@/lib/suggestions/state';
 import type {
   AdminUser,
   AdminUserList,
@@ -1289,8 +1292,26 @@ const writtenScales = new Map<
 /** Trục và gốc đã lưu qua #35 (G4b-17): gửi `axes` thay nguyên danh sách, gửi `origin` thay gốc. */
 const writtenAxes = new Map<string, FloorLayerDocument['axes']>();
 const writtenOrigins = new Map<string, { x: number; y: number }>();
+/**
+ * M2 — lớp đề xuất của tầng (máy chủ thật sinh bằng `reconcile`; mock không sinh). Rỗng mặc định: test và
+ * trang mock nạp bằng {@link seedMockSuggestions} (vd. ca vàng `ch-04` của AppBack). Không gói ca vàng vào
+ * đây: tệp này vào bản dựng sản phẩm qua `appClient.ts`.
+ */
+const mockSuggestions = new Map<string, { suggestions: Suggestion[]; meta: SuggestionsMeta }>();
+
+export const seedMockSuggestions = (floorId: string, suggestions: readonly Suggestion[], meta: SuggestionsMeta): void => {
+  mockSuggestions.set(floorId, { suggestions: clone([...suggestions]), meta: { ...meta } });
+};
+
+const suggestionKeysOf = (floorId: string): { suggestions?: Suggestion[]; suggestionsMeta?: SuggestionsMeta } => {
+  const stored = mockSuggestions.get(floorId);
+  return stored === undefined || stored.suggestions.length === 0
+    ? {}
+    : { suggestions: clone(stored.suggestions), suggestionsMeta: { ...stored.meta } };
+};
 
 export const __resetMockLayerState = (): void => {
+  mockSuggestions.clear();
   layerRevisions.clear();
   writtenLayers.clear();
   lastLayerWrites.clear();
@@ -1781,6 +1802,9 @@ export const createMockApiClient = (): ApiClient => {
         ),
     },
     // AID-01: mock không có AI phong cách — thẻ giữ năm kiểu cũ.
+    suggestionRules: {
+      read: async () => ok(clone(DEFAULT_RULESET)),
+    },
     designConcept: {
       read: async () => ok({ enabled: false }),
       select: async () => failed(mockWireError(503, 'DESIGN_DIRECTOR_DISABLED', 'req-design-concept')),
@@ -2101,7 +2125,10 @@ export const createMockApiClient = (): ApiClient => {
       readLayer: async ({ floorId }) => {
         const floor = floors.find((item) => item.id === floorId) ?? makeFallbackFloor(floorId);
 
-        return ok(makeLayerDocument(floor, layerRevisions.get(floorId) ?? 0, writtenLayers.get(floorId)));
+        return ok({
+          ...makeLayerDocument(floor, layerRevisions.get(floorId) ?? 0, writtenLayers.get(floorId)),
+          ...suggestionKeysOf(floorId),
+        });
       },
       /**
        * Lưu lớp theo luật base của #35 (`writer.py`): base > revision → 422 `baseVersion`;
@@ -2176,7 +2203,17 @@ export const createMockApiClient = (): ApiClient => {
           });
         }
 
-        return ok({ layer: currentLayer(floorId), revision });
+        // M2: trạng thái thưa thay cả trạng thái người dùng của tầng; id lạ → 422 như máy chủ (hợp đồng §4).
+        const stored = mockSuggestions.get(floorId);
+        if (body.suggestionState !== undefined && stored !== undefined) {
+          try {
+            stored.suggestions = applySuggestionState(stored.suggestions, body.suggestionState);
+          } catch {
+            return failed(mockWireError(422, 'VALIDATION', requestId, { code: 'VALIDATION', field: 'suggestionState', message: 'id đề xuất lạ', requestId }));
+          }
+        }
+
+        return ok({ layer: currentLayer(floorId), revision, ...suggestionKeysOf(floorId) });
       },
     },
     /**

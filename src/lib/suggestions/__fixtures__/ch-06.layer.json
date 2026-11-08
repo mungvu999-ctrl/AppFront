@@ -1,0 +1,1184 @@
+{
+ "walls": [
+  {
+   "confidence": 1.0,
+   "source": "ai",
+   "reviewed": false,
+   "id": "W-03H62ABAAAN00PEMD4H9VMHFJ",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "centreline": {
+    "start": {
+     "x": 1849,
+     "y": 1050
+    },
+    "end": {
+     "x": 1849,
+     "y": 4089
+    }
+   },
+   "thicknessMm": 150,
+   "detectedThicknessMm": 149,
+   "heightMm": 3300,
+   "kind": "envelope",
+   "openingIds": []
+  },
+  {
+   "confidence": 1.0,
+   "source": "ai",
+   "reviewed": false,
+   "id": "W-03H62ABAAEN9LDARXQS1TUCSV",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "centreline": {
+    "start": {
+     "x": 1849,
+     "y": 1050
+    },
+    "end": {
+     "x": 9233,
+     "y": 1050
+    }
+   },
+   "thicknessMm": 200,
+   "detectedThicknessMm": 197,
+   "heightMm": 3300,
+   "kind": "envelope",
+   "openingIds": []
+  },
+  {
+   "confidence": 1.0,
+   "source": "ai",
+   "reviewed": false,
+   "id": "W-03H62ABAAEFYIOGNM70XNES6T",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "centreline": {
+    "start": {
+     "x": 1849,
+     "y": 4089
+    },
+    "end": {
+     "x": 3435,
+     "y": 4089
+    }
+   },
+   "thicknessMm": 100,
+   "detectedThicknessMm": 103,
+   "heightMm": 3300,
+   "kind": "partition",
+   "openingIds": [
+    "D-03H62ABAABIGKEEY1O1AHKHJ2"
+   ]
+  },
+  {
+   "confidence": 1.0,
+   "source": "ai",
+   "reviewed": false,
+   "id": "W-03H62ABAABVYBXQPKKC8XGIEG",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "centreline": {
+    "start": {
+     "x": 1849,
+     "y": 4089
+    },
+    "end": {
+     "x": 1849,
+     "y": 7281
+    }
+   },
+   "thicknessMm": 150,
+   "detectedThicknessMm": 148,
+   "heightMm": 3300,
+   "kind": "envelope",
+   "openingIds": [
+    "D-03H62ABAAC8D5N4BPHIN33NEH"
+   ]
+  },
+  {
+   "confidence": 0.5,
+   "source": "ai",
+   "reviewed": false,
+   "id": "W-03H62ABAAC368B0AALKRQ9VET",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "centreline": {
+    "start": {
+     "x": 1849,
+     "y": 7281
+    },
+    "end": {
+     "x": 9233,
+     "y": 7281
+    }
+   },
+   "thicknessMm": 200,
+   "detectedThicknessMm": 209,
+   "heightMm": 3300,
+   "kind": "envelope",
+   "openingIds": [
+    "D-03H62ABAADHYFHK0F3OWUAL9Z"
+   ]
+  },
+  {
+   "confidence": 1.0,
+   "source": "ai",
+   "reviewed": false,
+   "id": "W-03H62ABAABD5QI7J3TYBN6KBK",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "centreline": {
+    "start": {
+     "x": 3435,
+     "y": 1050
+    },
+    "end": {
+     "x": 3435,
+     "y": 4089
+    }
+   },
+   "thicknessMm": 100,
+   "detectedThicknessMm": 101,
+   "heightMm": 3300,
+   "kind": "partition",
+   "openingIds": []
+  },
+  {
+   "confidence": 1.0,
+   "source": "ai",
+   "reviewed": false,
+   "id": "W-03H62ABAAE51B3EXFG5DJISML",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "centreline": {
+    "start": {
+     "x": 5612,
+     "y": 1050
+    },
+    "end": {
+     "x": 5612,
+     "y": 4089
+    }
+   },
+   "thicknessMm": 100,
+   "detectedThicknessMm": 98,
+   "heightMm": 3300,
+   "kind": "partition",
+   "openingIds": [
+    "D-03H62ABAAB0I95H2FTEBECY52"
+   ]
+  },
+  {
+   "confidence": 1.0,
+   "source": "ai",
+   "reviewed": false,
+   "id": "W-03H62ABAACJEM62YI1ZO3W8R2",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "centreline": {
+    "start": {
+     "x": 5612,
+     "y": 4089
+    },
+    "end": {
+     "x": 6480,
+     "y": 4089
+    }
+   },
+   "thicknessMm": 150,
+   "detectedThicknessMm": 160,
+   "heightMm": 3300,
+   "kind": "partition",
+   "openingIds": []
+  },
+  {
+   "confidence": 1.0,
+   "source": "ai",
+   "reviewed": false,
+   "id": "W-03H62ABAAE5AGQBEYM9MEXYGJ",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "centreline": {
+    "start": {
+     "x": 6480,
+     "y": 4089
+    },
+    "end": {
+     "x": 9233,
+     "y": 4089
+    }
+   },
+   "thicknessMm": 220,
+   "detectedThicknessMm": 221,
+   "heightMm": 3300,
+   "kind": "partition",
+   "openingIds": []
+  },
+  {
+   "confidence": 1.0,
+   "source": "ai",
+   "reviewed": false,
+   "id": "W-03H62ABAAEKNISVWA0OMC5VGU",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "centreline": {
+    "start": {
+     "x": 8184,
+     "y": 4089
+    },
+    "end": {
+     "x": 8184,
+     "y": 7281
+    }
+   },
+   "thicknessMm": 100,
+   "detectedThicknessMm": 97,
+   "heightMm": 3300,
+   "kind": "partition",
+   "openingIds": [
+    "D-03H62ABAAC1K6S3MZEZFBBE2H"
+   ]
+  },
+  {
+   "confidence": 0.5,
+   "source": "ai",
+   "reviewed": false,
+   "id": "W-03H62ABAACYMF0LV7MX6H4TH1",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "centreline": {
+    "start": {
+     "x": 9233,
+     "y": 1050
+    },
+    "end": {
+     "x": 9233,
+     "y": 7281
+    }
+   },
+   "thicknessMm": 200,
+   "detectedThicknessMm": 197,
+   "heightMm": 3300,
+   "kind": "envelope",
+   "openingIds": [
+    "D-03H62ABAABH6CD2M089AJILO0",
+    "D-03H62ABAAAV96H2JA1HO5AM0H"
+   ]
+  }
+ ],
+ "openings": [
+  {
+   "confidence": 0.8576,
+   "source": "ai",
+   "reviewed": false,
+   "id": "D-03H62ABAABH6CD2M089AJILO0",
+   "wallId": "W-03H62ABAACYMF0LV7MX6H4TH1",
+   "kind": "window",
+   "offsetMm": 548,
+   "widthMm": 2001,
+   "heightMm": 1400,
+   "sillHeightMm": 900,
+   "swing": "sliding"
+  },
+  {
+   "confidence": 0.6959,
+   "source": "ai",
+   "reviewed": false,
+   "id": "D-03H62ABAAB0I95H2FTEBECY52",
+   "wallId": "W-03H62ABAAE51B3EXFG5DJISML",
+   "kind": "door",
+   "offsetMm": 2028,
+   "widthMm": 857,
+   "heightMm": 2200,
+   "sillHeightMm": 0,
+   "swing": "right",
+   "reversed": true
+  },
+  {
+   "confidence": 0.6971,
+   "source": "ai",
+   "reviewed": false,
+   "id": "D-03H62ABAABIGKEEY1O1AHKHJ2",
+   "wallId": "W-03H62ABAAEFYIOGNM70XNES6T",
+   "kind": "door",
+   "offsetMm": 671,
+   "widthMm": 734,
+   "heightMm": 2200,
+   "sillHeightMm": 0,
+   "swing": "right"
+  },
+  {
+   "confidence": 0.7522,
+   "source": "ai",
+   "reviewed": false,
+   "id": "D-03H62ABAAAV96H2JA1HO5AM0H",
+   "wallId": "W-03H62ABAACYMF0LV7MX6H4TH1",
+   "kind": "window",
+   "offsetMm": 3163,
+   "widthMm": 3068,
+   "heightMm": 1400,
+   "sillHeightMm": 900,
+   "swing": "sliding"
+  },
+  {
+   "confidence": 0.6075,
+   "source": "ai",
+   "reviewed": false,
+   "id": "D-03H62ABAAC8D5N4BPHIN33NEH",
+   "wallId": "W-03H62ABAABVYBXQPKKC8XGIEG",
+   "kind": "door",
+   "offsetMm": 183,
+   "widthMm": 1036,
+   "heightMm": 2200,
+   "sillHeightMm": 0,
+   "swing": "left"
+  },
+  {
+   "confidence": 0.5,
+   "source": "ai",
+   "reviewed": false,
+   "id": "D-03H62ABAAC1K6S3MZEZFBBE2H",
+   "wallId": "W-03H62ABAAEKNISVWA0OMC5VGU",
+   "kind": "door",
+   "offsetMm": 538,
+   "widthMm": 2152,
+   "heightMm": 2200,
+   "sillHeightMm": 0,
+   "swing": "sliding"
+  },
+  {
+   "confidence": 0.5624,
+   "source": "ai",
+   "reviewed": false,
+   "id": "D-03H62ABAADHYFHK0F3OWUAL9Z",
+   "wallId": "W-03H62ABAAC368B0AALKRQ9VET",
+   "kind": "window",
+   "offsetMm": 1985,
+   "widthMm": 1959,
+   "heightMm": 1400,
+   "sillHeightMm": 900,
+   "swing": "sliding"
+  }
+ ],
+ "rooms": [
+  {
+   "confidence": 0.6,
+   "source": "ai",
+   "reviewed": false,
+   "id": "R-03H62ABADBWQJTN32GNR7RBYZ",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "name": "phòng tắm",
+   "usage": "bathroom",
+   "outline": [
+    {
+     "x": 1849,
+     "y": 1050
+    },
+    {
+     "x": 1849,
+     "y": 3939
+    },
+    {
+     "x": 1849,
+     "y": 4089
+    },
+    {
+     "x": 3435,
+     "y": 4089
+    },
+    {
+     "x": 3435,
+     "y": 1050
+    }
+   ],
+   "areaM2": 4.82,
+   "wallIds": [
+    "W-03H62ABAAAN00PEMD4H9VMHFJ",
+    "W-03H62ABAAEFYIOGNM70XNES6T",
+    "W-03H62ABAABD5QI7J3TYBN6KBK"
+   ]
+  },
+  {
+   "confidence": 0.33,
+   "source": "ai",
+   "reviewed": false,
+   "id": "R-03H62ABADBAURQNVCIGHU5S6M",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "name": "phòng khác",
+   "usage": "other",
+   "outline": [
+    {
+     "x": 5612,
+     "y": 1050
+    },
+    {
+     "x": 3435,
+     "y": 1050
+    },
+    {
+     "x": 3435,
+     "y": 4089
+    },
+    {
+     "x": 3585,
+     "y": 4089
+    },
+    {
+     "x": 5462,
+     "y": 4089
+    },
+    {
+     "x": 5612,
+     "y": 4089
+    }
+   ],
+   "areaM2": 6.62,
+   "wallIds": [
+    "W-03H62ABAAEN9LDARXQS1TUCSV",
+    "W-03H62ABAABD5QI7J3TYBN6KBK",
+    "W-03H62ABAAE51B3EXFG5DJISML"
+   ]
+  },
+  {
+   "confidence": 1.0,
+   "source": "ai",
+   "reviewed": false,
+   "id": "R-03H62ABADA93UG3PHWW9OME1S",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "name": "phòng ngủ",
+   "usage": "bedroom",
+   "outline": [
+    {
+     "x": 9233,
+     "y": 1050
+    },
+    {
+     "x": 5612,
+     "y": 1050
+    },
+    {
+     "x": 5612,
+     "y": 4089
+    },
+    {
+     "x": 6330,
+     "y": 4089
+    },
+    {
+     "x": 6630,
+     "y": 4089
+    },
+    {
+     "x": 8184,
+     "y": 4089
+    },
+    {
+     "x": 9233,
+     "y": 4089
+    }
+   ],
+   "areaM2": 11.0,
+   "wallIds": [
+    "W-03H62ABAAEN9LDARXQS1TUCSV",
+    "W-03H62ABAAE51B3EXFG5DJISML",
+    "W-03H62ABAACJEM62YI1ZO3W8R2",
+    "W-03H62ABAAE5AGQBEYM9MEXYGJ",
+    "W-03H62ABAACYMF0LV7MX6H4TH1"
+   ]
+  },
+  {
+   "confidence": 0.91,
+   "source": "ai",
+   "reviewed": false,
+   "id": "R-03H62ABADA4BQC2IODO0AOMNQ",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "name": "phòng khách",
+   "usage": "livingRoom",
+   "outline": [
+    {
+     "x": 1849,
+     "y": 4089
+    },
+    {
+     "x": 1849,
+     "y": 4239
+    },
+    {
+     "x": 1849,
+     "y": 7281
+    },
+    {
+     "x": 8184,
+     "y": 7281
+    },
+    {
+     "x": 8184,
+     "y": 4089
+    },
+    {
+     "x": 6630,
+     "y": 4089
+    },
+    {
+     "x": 6330,
+     "y": 4089
+    },
+    {
+     "x": 5612,
+     "y": 4089
+    },
+    {
+     "x": 5462,
+     "y": 4089
+    },
+    {
+     "x": 3585,
+     "y": 4089
+    },
+    {
+     "x": 3435,
+     "y": 4089
+    }
+   ],
+   "areaM2": 20.22,
+   "wallIds": [
+    "W-03H62ABAAEFYIOGNM70XNES6T",
+    "W-03H62ABAABVYBXQPKKC8XGIEG",
+    "W-03H62ABAAC368B0AALKRQ9VET",
+    "W-03H62ABAACJEM62YI1ZO3W8R2",
+    "W-03H62ABAAE5AGQBEYM9MEXYGJ",
+    "W-03H62ABAAEKNISVWA0OMC5VGU"
+   ]
+  },
+  {
+   "confidence": 0.6,
+   "source": "ai",
+   "reviewed": false,
+   "id": "R-03H62ABAD871QFPIMJZJP446Q",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "name": "lô gia",
+   "usage": "loggia",
+   "outline": [
+    {
+     "x": 8184,
+     "y": 7281
+    },
+    {
+     "x": 9233,
+     "y": 7281
+    },
+    {
+     "x": 9233,
+     "y": 4089
+    },
+    {
+     "x": 8184,
+     "y": 4089
+    }
+   ],
+   "areaM2": 3.35,
+   "wallIds": [
+    "W-03H62ABAAEKNISVWA0OMC5VGU",
+    "W-03H62ABAACYMF0LV7MX6H4TH1"
+   ]
+  }
+ ],
+ "furniture": [
+  {
+   "confidence": 0.8728,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADHHGH2OZZVQDLD8T1",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADBAURQNVCIGHU5S6M",
+   "kind": "wardrobe",
+   "centre": {
+    "x": 5066,
+    "y": 1393
+   },
+   "boundingBox": {
+    "min": {
+     "x": 4568,
+     "y": 1094
+    },
+    "max": {
+     "x": 5564,
+     "y": 1692
+    }
+   },
+   "rotationDeg": 0.0
+  },
+  {
+   "confidence": 0.6699,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADMAPR3P5VKJMLMVZR",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADBAURQNVCIGHU5S6M",
+   "kind": "wardrobe",
+   "centre": {
+    "x": 4034,
+    "y": 1405
+   },
+   "boundingBox": {
+    "min": {
+     "x": 3495,
+     "y": 1111
+    },
+    "max": {
+     "x": 4573,
+     "y": 1699
+    }
+   },
+   "rotationDeg": 0.0
+  },
+  {
+   "confidence": 0.9303,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADIB83ZJVP3YURFHBZ",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADA93UG3PHWW9OME1S",
+   "kind": "bed",
+   "centre": {
+    "x": 7716,
+    "y": 2200
+   },
+   "boundingBox": {
+    "min": {
+     "x": 6870,
+     "y": 1162
+    },
+    "max": {
+     "x": 8561,
+     "y": 3237
+    }
+   },
+   "rotationDeg": 0.0
+  },
+  {
+   "confidence": 0.4616,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADM2CMYYLY1G4HG1S0",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADBWQJTN32GNR7RBYZ",
+   "kind": "sanitaryFixture",
+   "centre": {
+    "x": 2536,
+    "y": 1730
+   },
+   "boundingBox": {
+    "min": {
+     "x": 2434,
+     "y": 1551
+    },
+    "max": {
+     "x": 2637,
+     "y": 1908
+    }
+   },
+   "rotationDeg": 0.0
+  },
+  {
+   "confidence": 0.785,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADKAS3GTY4F1TD8VLD",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADA93UG3PHWW9OME1S",
+   "kind": "chair",
+   "centre": {
+    "x": 6069,
+    "y": 1825
+   },
+   "boundingBox": {
+    "min": {
+     "x": 5824,
+     "y": 1582
+    },
+    "max": {
+     "x": 6313,
+     "y": 2066
+    }
+   },
+   "rotationDeg": 270.0
+  },
+  {
+   "confidence": 0.8833,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADIB3OCU4ONYH0LE9H",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADBWQJTN32GNR7RBYZ",
+   "kind": "sanitaryFixture",
+   "centre": {
+    "x": 2301,
+    "y": 2824
+   },
+   "boundingBox": {
+    "min": {
+     "x": 2075,
+     "y": 2453
+    },
+    "max": {
+     "x": 2527,
+     "y": 3195
+    }
+   },
+   "rotationDeg": 270.0
+  },
+  {
+   "confidence": 0.9025,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADK9MYVC5CLNWQ14GN",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADBWQJTN32GNR7RBYZ",
+   "kind": "kitchenCabinet",
+   "centre": {
+    "x": 2140,
+    "y": 3616
+   },
+   "boundingBox": {
+    "min": {
+     "x": 1737,
+     "y": 3407
+    },
+    "max": {
+     "x": 2541,
+     "y": 3824
+    }
+   },
+   "rotationDeg": 270.0
+  },
+  {
+   "confidence": 0.5,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADK3XC2KFY9UVFRXIV",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADBWQJTN32GNR7RBYZ",
+   "kind": "sanitaryFixture",
+   "centre": {
+    "x": 2111,
+    "y": 3624
+   },
+   "boundingBox": {
+    "min": {
+     "x": 1907,
+     "y": 3436
+    },
+    "max": {
+     "x": 2314,
+     "y": 3810
+    }
+   },
+   "rotationDeg": 270.0
+  },
+  {
+   "confidence": 0.9049,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADS1NPHSVXBGZ1ML4M",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADA4BQC2IODO0AOMNQ",
+   "kind": "chair",
+   "centre": {
+    "x": 6827,
+    "y": 4536
+   },
+   "boundingBox": {
+    "min": {
+     "x": 5709,
+     "y": 4125
+    },
+    "max": {
+     "x": 7945,
+     "y": 4947
+    }
+   },
+   "rotationDeg": 0.0,
+   "variant": "sofa"
+  },
+  {
+   "confidence": 0.6763,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADPYTAGCQOOGKPS0BX",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABAD871QFPIMJZJP446Q",
+   "kind": "chair",
+   "centre": {
+    "x": 8579,
+    "y": 5529
+   },
+   "boundingBox": {
+    "min": {
+     "x": 8358,
+     "y": 5291
+    },
+    "max": {
+     "x": 8799,
+     "y": 5765
+    }
+   },
+   "rotationDeg": 270.0
+  },
+  {
+   "confidence": 0.8881,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADN3IZIPR5GI7YB40O",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADA4BQC2IODO0AOMNQ",
+   "kind": "kitchenCabinet",
+   "centre": {
+    "x": 2575,
+    "y": 6252
+   },
+   "boundingBox": {
+    "min": {
+     "x": 1682,
+     "y": 5607
+    },
+    "max": {
+     "x": 3467,
+     "y": 6895
+    }
+   },
+   "rotationDeg": 270.0
+  },
+  {
+   "confidence": 0.8651,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADN9MKQJIRPX0J83DY",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADA4BQC2IODO0AOMNQ",
+   "kind": "chair",
+   "centre": {
+    "x": 5247,
+    "y": 5800
+   },
+   "boundingBox": {
+    "min": {
+     "x": 4954,
+     "y": 5504
+    },
+    "max": {
+     "x": 5540,
+     "y": 6095
+    }
+   },
+   "rotationDeg": 0.0
+  },
+  {
+   "confidence": 0.8796,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADQNDXAVM2EIY2YH2S",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADA4BQC2IODO0AOMNQ",
+   "kind": "chair",
+   "centre": {
+    "x": 4334,
+    "y": 5801
+   },
+   "boundingBox": {
+    "min": {
+     "x": 4061,
+     "y": 5510
+    },
+    "max": {
+     "x": 4606,
+     "y": 6091
+    }
+   },
+   "rotationDeg": 0.0
+  },
+  {
+   "confidence": 0.764,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADR8SVMNBJHH60Y80Z",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADA4BQC2IODO0AOMNQ",
+   "kind": "other",
+   "centre": {
+    "x": 2204,
+    "y": 5961
+   },
+   "boundingBox": {
+    "min": {
+     "x": 1889,
+     "y": 5701
+    },
+    "max": {
+     "x": 2518,
+     "y": 6219
+    }
+   },
+   "rotationDeg": 270.0
+  },
+  {
+   "confidence": 0.9059,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADQ53P2EHDMODQ492E",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADA4BQC2IODO0AOMNQ",
+   "kind": "table",
+   "centre": {
+    "x": 4785,
+    "y": 6267
+   },
+   "boundingBox": {
+    "min": {
+     "x": 4330,
+     "y": 5813
+    },
+    "max": {
+     "x": 5239,
+     "y": 6720
+    }
+   },
+   "rotationDeg": 0.0
+  },
+  {
+   "confidence": 0.8568,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADO6U1MEAMXPCITUI9",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADA4BQC2IODO0AOMNQ",
+   "kind": "chair",
+   "centre": {
+    "x": 5255,
+    "y": 6733
+   },
+   "boundingBox": {
+    "min": {
+     "x": 4965,
+     "y": 6432
+    },
+    "max": {
+     "x": 5543,
+     "y": 7033
+    }
+   },
+   "rotationDeg": 90.0
+  },
+  {
+   "confidence": 0.8908,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADRIV0EK3KBJAGAMLJ",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADA4BQC2IODO0AOMNQ",
+   "kind": "chair",
+   "centre": {
+    "x": 4329,
+    "y": 6722
+   },
+   "boundingBox": {
+    "min": {
+     "x": 4051,
+     "y": 6447
+    },
+    "max": {
+     "x": 4607,
+     "y": 6997
+    }
+   },
+   "rotationDeg": 180.0
+  },
+  {
+   "confidence": 0.7493,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADN5TBYOS90ZHQKQWD",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADA4BQC2IODO0AOMNQ",
+   "kind": "other",
+   "centre": {
+    "x": 3767,
+    "y": 6820
+   },
+   "boundingBox": {
+    "min": {
+     "x": 3707,
+     "y": 6502
+    },
+    "max": {
+     "x": 3826,
+     "y": 7138
+    }
+   },
+   "rotationDeg": 180.0
+  },
+  {
+   "confidence": 0.3844,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADP7XRU3PW1JIB3P45",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADA4BQC2IODO0AOMNQ",
+   "kind": "sanitaryFixture",
+   "centre": {
+    "x": 3530,
+    "y": 6827
+   },
+   "boundingBox": {
+    "min": {
+     "x": 3225,
+     "y": 6515
+    },
+    "max": {
+     "x": 3834,
+     "y": 7139
+    }
+   },
+   "rotationDeg": 180.0
+  },
+  {
+   "confidence": 0.8537,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADUDPVOUZKGJ69QCNO",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADA4BQC2IODO0AOMNQ",
+   "kind": "sanitaryFixture",
+   "centre": {
+    "x": 2857,
+    "y": 6849
+   },
+   "boundingBox": {
+    "min": {
+     "x": 2589,
+     "y": 6557
+    },
+    "max": {
+     "x": 3124,
+     "y": 7141
+    }
+   },
+   "rotationDeg": 180.0
+  },
+  {
+   "confidence": 0.5,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADWUYQDK5GM0NHQL9D",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADBAURQNVCIGHU5S6M",
+   "kind": "other",
+   "centre": {
+    "x": 4114,
+    "y": 2941
+   },
+   "boundingBox": {
+    "min": {
+     "x": 2889,
+     "y": 2351
+    },
+    "max": {
+     "x": 5338,
+     "y": 3530
+    }
+   },
+   "rotationDeg": 270.0,
+   "suggested": true
+  },
+  {
+   "confidence": 0.5,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADXG2O4G53Z3YIJ8AD",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABAD871QFPIMJZJP446Q",
+   "kind": "other",
+   "centre": {
+    "x": 8811,
+    "y": 5590
+   },
+   "boundingBox": {
+    "min": {
+     "x": 7866,
+     "y": 5292
+    },
+    "max": {
+     "x": 9754,
+     "y": 5887
+    }
+   },
+   "rotationDeg": 90.0,
+   "suggested": true
+  },
+  {
+   "confidence": 0.5,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADX7FPDZIO7ZO4GTPF",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABADA4BQC2IODO0AOMNQ",
+   "kind": "other",
+   "centre": {
+    "x": 6958,
+    "y": 5544
+   },
+   "boundingBox": {
+    "min": {
+     "x": 6454,
+     "y": 5161
+    },
+    "max": {
+     "x": 7461,
+     "y": 5927
+    }
+   },
+   "rotationDeg": 0.0,
+   "suggested": true
+  },
+  {
+   "confidence": 0.5,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADVT3AUVRRIC90YFRO",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABAD871QFPIMJZJP446Q",
+   "kind": "other",
+   "centre": {
+    "x": 8703,
+    "y": 6963
+   },
+   "boundingBox": {
+    "min": {
+     "x": 8342,
+     "y": 6637
+    },
+    "max": {
+     "x": 9063,
+     "y": 7289
+    }
+   },
+   "rotationDeg": 180.0,
+   "suggested": true
+  },
+  {
+   "confidence": 0.5,
+   "source": "ai",
+   "reviewed": false,
+   "id": "F-03H62ABADUSDT7C7RMP5ERGRB",
+   "levelId": "L-01M6GF1DQRRNT1F7EVFA2CZC5H",
+   "roomId": "R-03H62ABAD871QFPIMJZJP446Q",
+   "kind": "other",
+   "centre": {
+    "x": 8680,
+    "y": 4423
+   },
+   "boundingBox": {
+    "min": {
+     "x": 8502,
+     "y": 4016
+    },
+    "max": {
+     "x": 8857,
+     "y": 4829
+    }
+   },
+   "rotationDeg": 270.0,
+   "suggested": true
+  }
+ ]
+}

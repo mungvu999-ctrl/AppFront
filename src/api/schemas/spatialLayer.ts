@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { VersionedWriteSchema } from './common';
 import { AxisSchema, DimensionSchema, LevelSchema, SpatialLayerSchema } from './spatial';
+import { floorSuggestionsShape, SuggestionStateRowSchema } from './suggestions';
 
 /**
  * `GET` và `PUT /api/projects/{project_id}/floors/{floor_id}/spatial/layer` —
@@ -127,6 +128,8 @@ export const FloorLayerDocumentSchema = z
     suggestedScaleMmPerPx: scaleMillimetresPerPixelSchema.optional(),
     /** DPI của ảnh máy đã xử lý khi biết (PDF dựng ở DPI nào); `null`/vắng = không biết. Có thì nhập thẳng 1:N (U01). */
     sourceDpi: z.number().positive().finite().nullish(),
+    /** M2 — lớp đề xuất của tầng; vắng khi rỗng (hợp đồng M2 §2.1). */
+    ...floorSuggestionsShape,
   })
   .strict()
   .refine(
@@ -152,6 +155,10 @@ export const FloorLayerDocumentSchema = z
       ? { suggestedScaleMmPerPx: wireDocument.suggestedScaleMmPerPx }
       : {}),
     ...(wireDocument.sourceDpi != null ? { sourceDpi: wireDocument.sourceDpi } : {}),
+    ...(wireDocument.suggestions !== undefined && wireDocument.suggestions.length > 0
+      ? { suggestions: wireDocument.suggestions }
+      : {}),
+    ...(wireDocument.suggestionsMeta !== undefined ? { suggestionsMeta: wireDocument.suggestionsMeta } : {}),
   }));
 
 export type FloorLayerDocument = z.infer<typeof FloorLayerDocumentSchema>;
@@ -172,6 +179,13 @@ export const FloorLayerWriteBodySchema = z
     origin: FloorOriginSchema.optional(),
     layer: SpatialLayerSchema.optional(),
     scaleMillimetresPerPixel: scaleMillimetresPerPixelSchema.optional(),
+    /**
+     * M2 — trạng thái THƯA của lớp đề xuất cả tầng (`state ≠ active` hoặc có `override`); chỉ gửi khi bẩn.
+     * Máy chủ bỏ qua `params`/`stale` client gửi; id lạ → 422 (hợp đồng M2 §4). Máy chủ chưa có thì 422 `VALIDATION`.
+     */
+    suggestionState: z.array(SuggestionStateRowSchema).optional(),
+    /** M2 — "Cập nhật gợi ý": máy chủ chạy lại `reconcile` dù `layer` không đổi. */
+    refreshSuggestions: z.literal(true).optional(),
   })
   .strict()
   .refine(
@@ -190,7 +204,9 @@ export const FloorLayerWriteBodySchema = z
       body.scaleMillimetresPerPixel !== undefined ||
       body.dimensions !== undefined ||
       body.axes !== undefined ||
-      body.origin !== undefined,
+      body.origin !== undefined ||
+      body.suggestionState !== undefined ||
+      body.refreshSuggestions !== undefined,
     { path: [] },
   );
 
@@ -213,6 +229,8 @@ export const FloorLayerWriteResultSchema = z
   .object({
     layer: SpatialLayerSchema,
     revision: revisionSchema,
+    /** M2 — lớp đề xuất sau `reconcile` của chính lượt ghi (cùng `revision`); vắng = máy chủ chưa có M2 hoặc rỗng. */
+    ...floorSuggestionsShape,
   })
   .strict();
 

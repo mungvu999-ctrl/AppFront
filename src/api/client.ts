@@ -95,6 +95,7 @@ import {
   type FloorVersionSummary,
 } from './schemas/versions';
 import { SpatialGraphDocumentSchema, type SpatialGraphDocument } from './schemas/spatialGraph';
+import { SuggestionRulesetSchema, type SuggestionRuleset } from './schemas/suggestionRules';
 import { ShareLinkWireSchema } from '@/lib/export/shareLink';
 
 export type {
@@ -575,6 +576,14 @@ export interface FeatureFlagsApi {
   read(options?: RequestOptions): Promise<ApiResult<unknown>>;
 }
 
+/**
+ * M2 — `GET /suggestion-rules`. **Endpoint chưa có ở AppBack** (08/11/2026): 404 → `null` ("không có bảng"),
+ * nơi gọi lùi về bảng gói kèm; app không bao giờ hỏng vì thiếu nó.
+ */
+export interface SuggestionRulesApi {
+  read(options?: RequestOptions): Promise<ApiResult<SuggestionRuleset | null>>;
+}
+
 export interface FloorsApi {
   create(input: CreateFloorInput): Promise<ApiResult<Floor>>;
   delete(input: DeleteFloorInput): Promise<ApiResult<Floor>>;
@@ -901,6 +910,8 @@ export interface ApiClient {
   ruleConfig: RuleConfigApi;
   share: ShareApi;
   spatial: SpatialApi;
+  /** M2 — tuỳ chọn: client giả/cũ có thể không có; vắng = dùng bảng gói kèm. */
+  suggestionRules?: SuggestionRulesApi;
   users: UsersApi;
   versions: VersionsApi;
 }
@@ -1279,6 +1290,13 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
         LibraryItemSchema,
         'library.read',
       ),
+  },
+  suggestionRules: {
+    read: async (options) => {
+      const result = await callGet<unknown>(http, ENDPOINTS.suggestionRules, options?.signal);
+      if (!result.ok && result.error.status === 404) return { ok: true, data: null };
+      return decodeSingle(result, SuggestionRulesetSchema, 'suggestionRules.read');
+    },
   },
   designConcept: {
     read: async ({ projectId, signal }) =>
