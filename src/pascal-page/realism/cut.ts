@@ -52,3 +52,30 @@ export function clippedAway(object: Object3D, point: Vector3 | undefined): boole
 export function isCutFaceMesh(id: string | undefined, name: string, wallIds: ReadonlySet<string>): boolean {
   return name === WALL_BATCH_MESH_NAME || (id !== undefined && wallIds.has(id));
 }
+
+/** Cao tầng mặc định (m) khi node `level` chưa có `height` (dữ liệu cũ). */
+export const DEFAULT_STOREY_M = 3.0;
+/** Trễ khi camera đi lên lại: chỉ cắt lại khi mắt cao hơn trần tầng thêm chừng này (m) — không nhấp nháy ở mép trần. */
+export const LIFT_HYSTERESIS_M = 0.6;
+/** Thời gian trượt mặt cắt giữa sàn + 1,0 m và trần (s). */
+export const LIFT_EASE_S = 0.3;
+
+/**
+ * Mặt cắt theo camera: mắt thấp hơn trần một tầng (đứng trong phòng, đi bộ, ngang mắt ngoài nhà) thì tầng ấy
+ * thôi cắt — tường đủ cao, trần hiện; lên cao lại thì cắt 1,0 m như cũ. Có trễ: đang nâng thì giữ tới khi mắt
+ * cao hơn trần + `LIFT_HYSTERESIS_M`. `eyeAboveFloor` âm (tầng nằm trên camera) cũng nâng.
+ */
+export function wantsLift(lifted: boolean, eyeAboveFloor: number, storeyM: number): boolean {
+  return eyeAboveFloor < storeyM + (lifted ? LIFT_HYSTERESIS_M : 0);
+}
+
+/** Bước trượt 0 (cắt) ↔ 1 (không cắt) về phía `lifted`, tuyến tính trong `LIFT_EASE_S`. */
+export function stepLift(lift: number, lifted: boolean, dtS: number): number {
+  const step = Math.max(0, dtS) / LIFT_EASE_S;
+  return lifted ? Math.min(1, lift + step) : Math.max(0, lift - step);
+}
+
+/** Độ cao thế giới mặt cắt khi đang trượt: sàn + 1,0 m (lift 0) → trần tầng (lift 1). Gọi hàm này chỉ khi lift < 1. */
+export function liftedCutY(levelWorldY: number, storeyM: number, lift: number): number {
+  return cutPlaneY(levelWorldY) + Math.max(0, storeyM - CUT_HEIGHT_M) * lift;
+}

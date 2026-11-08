@@ -24,8 +24,8 @@ describe('fitPose (QA-2 L2, FE3D-FIX-002 V5 D13)', () => {
   const VIEW = { width: 1920, height: 1080 }
   const DEG = Math.PI / 180
 
-  /** Screen extents of the plan box (floor..3 m) as fractions of the half-frame, via a real look-at. */
-  function screenFill(pose: ReturnType<typeof fitPose>, size: [number, number], center: [number, number]) {
+  /** Pixel extents of plan points (floor..3 m) through a real look-at from the pose. */
+  function screenBox(pose: ReturnType<typeof fitPose>, plan: [number, number][], view = VIEW) {
     const [px, py, pz] = pose.position
     const [tx, ty, tz] = pose.target
     const f = [tx - px, ty - py, tz - pz]
@@ -40,30 +40,39 @@ describe('fitPose (QA-2 L2, FE3D-FIX-002 V5 D13)', () => {
       rw[0]! * fw[1]! - rw[1]! * fw[0]!,
     ]
     const tanV = Math.tan(12 * DEG)
-    const tanH = tanV * (VIEW.width / VIEW.height)
-    let maxX = 0
-    let maxUp = 0
-    let maxDown = 0
-    for (const x of [-size[0] / 2, size[0] / 2])
-      for (const y of [0, 3])
-        for (const z of [-size[1] / 2, size[1] / 2]) {
-          const v = [center[0] + x - px, y - py, center[1] + z - pz]
-          const depth = v[0]! * fw[0]! + v[1]! * fw[1]! + v[2]! * fw[2]!
-          const sx = (v[0]! * rw[0]! + v[2]! * rw[2]!) / depth / tanH
-          const sy = (v[0]! * u[0]! + v[1]! * u[1]! + v[2]! * u[2]!) / depth / tanV
-          maxX = Math.max(maxX, Math.abs(sx))
-          maxUp = Math.max(maxUp, sy)
-          maxDown = Math.max(maxDown, -sy)
-        }
-    return { maxX, maxUp, maxDown }
+    const tanH = tanV * (view.width / view.height)
+    const box = { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity }
+    for (const [x, z] of plan)
+      for (const y of [0, 3]) {
+        const v = [x - px, y - py, z - pz]
+        const depth = v[0]! * fw[0]! + v[1]! * fw[1]! + v[2]! * fw[2]!
+        const sx = (v[0]! * rw[0]! + v[2]! * rw[2]!) / depth / tanH
+        const sy = (v[0]! * u[0]! + v[1]! * u[1]! + v[2]! * u[2]!) / depth / tanV
+        const X = ((sx + 1) / 2) * view.width
+        const Y = ((1 - sy) / 2) * view.height
+        box.left = Math.min(box.left, X)
+        box.right = Math.max(box.right, X)
+        box.top = Math.min(box.top, Y)
+        box.bottom = Math.max(box.bottom, Y)
+      }
+    return box
   }
+  const rect = (cx: number, cz: number, sx: number, sz: number): [number, number][] => [
+    [cx - sx / 2, cz - sz / 2],
+    [cx + sx / 2, cz - sz / 2],
+    [cx + sx / 2, cz + sz / 2],
+    [cx - sx / 2, cz + sz / 2],
+  ]
 
-  it('orbits the plan centre at ~52 deg elevation, 24 deg lens; square plans at 45 deg azimuth', () => {
+  it('orbits a floor point at ~52 deg elevation, 24 deg lens; square plans at 45 deg azimuth', () => {
+    // M3-web L1: the target is no longer the plan centre (the frame is centred below the toolbar, so the camera
+    // slides along the image plane); it stays on the floor, on the view ray, at the same azimuth/elevation.
     const pose = fitPose({ center: [10, -4], size: [12, 11] }, 'perspective', VIEW)
-    expect(pose.target).toEqual([10, 0, -4])
-    expect(pose.position[0] - 10).toBeCloseTo(pose.position[2] + 4)
+    const [tx, ty, tz] = pose.target
+    expect(ty).toBe(0)
+    expect(pose.position[0] - tx).toBeCloseTo(pose.position[2] - tz)
     expect(pose.fov).toBe(24)
-    const horizontal = Math.hypot(pose.position[0] - 10, pose.position[2] + 4)
+    const horizontal = Math.hypot(pose.position[0] - tx, pose.position[2] - tz)
     expect(Math.atan2(pose.position[1], horizontal) / DEG).toBeCloseTo(52)
   })
 
@@ -72,7 +81,7 @@ describe('fitPose (QA-2 L2, FE3D-FIX-002 V5 D13)', () => {
     expect(fitAzimuth([8, 30]) / DEG).toBeCloseTo(65)
     // Long along X: the camera sits mostly on +Z, so X runs left-right on screen.
     const pose = fitPose({ center: [0, 0], size: [30, 8] }, 'perspective', VIEW)
-    expect(Math.atan2(pose.position[0], pose.position[2]) / DEG).toBeCloseTo(25)
+    expect(Math.atan2(pose.position[0] - pose.target[0], pose.position[2] - pose.target[2]) / DEG).toBeCloseTo(25)
   })
 
   it('V14: uses the canvas rect, not the window (the sidebar is not part of the frame)', () => {
@@ -87,28 +96,59 @@ describe('fitPose (QA-2 L2, FE3D-FIX-002 V5 D13)', () => {
     }
   })
 
+  // M3-web L1 (was: ~90% of the half-frame around the canvas centre, which left ch-04 at 36% x 56%):
+  // the plan spans 90% of the area below the toolbar on its tight axis, centred there, so the
+  // limiting axis fills >= 70% of the whole canvas at any aspect.
   it.each([
-    [[40, 20]],
-    [[12, 12]],
-    [[30, 6]],
-    [[8, 25]],
-  ] as [[number, number]][])('plan %j fills ~90%% of the free frame on its tightest side', (size) => {
-    const pose = fitPose({ center: [3, 2], size }, 'perspective', VIEW)
-    const { maxX, maxUp, maxDown } = screenFill(pose, size, [3, 2])
-    const upLimit = 1 - (2 * TOP_RESERVED_PX) / VIEW.height
-    // Nothing leaves 90% of the frame (top: below the toolbar)...
-    expect(maxX).toBeLessThanOrEqual(0.9 + 1e-6)
-    expect(maxDown).toBeLessThanOrEqual(0.9 + 1e-6)
-    expect(maxUp).toBeLessThanOrEqual(0.9 * upLimit + 1e-6)
-    // ...and one side touches it (no dead space).
-    expect(Math.max(maxX / 0.9, maxDown / 0.9, maxUp / (0.9 * upLimit))).toBeGreaterThan(0.999)
+    ['16:9 square', { width: 1920, height: 1080 }, [12, 11]],
+    ['16:9 long 3:1', { width: 1920, height: 1080 }, [30, 10]],
+    ['16:9 deep 1:3', { width: 1920, height: 1080 }, [8, 24]],
+    ['4:3 square', { width: 1024, height: 768 }, [12, 11]],
+    ['4:3 long 3:1', { width: 1024, height: 768 }, [30, 10]],
+    ['16:9 small flat 20 m2', { width: 1920, height: 1080 }, [5, 4]],
+    ['4:3 large house 300 m2', { width: 1024, height: 768 }, [20, 15]],
+  ] as [string, { width: number; height: number }, [number, number]][])('%s: >= 70%% on the limiting axis, centred below the toolbar', (_, view, size) => {
+    const pose = fitPose({ center: [3, 2], size }, 'perspective', view)
+    const box = screenBox(pose, rect(3, 2, size[0], size[1]), view)
+    const top = Math.min(TOP_RESERVED_PX, view.height / 3)
+    expect(box.top).toBeGreaterThanOrEqual(top - 0.5)
+    expect(box.bottom).toBeLessThanOrEqual(view.height + 0.5)
+    expect(box.left).toBeGreaterThanOrEqual(-0.5)
+    expect(box.right).toBeLessThanOrEqual(view.width + 0.5)
+    const fill = Math.max((box.right - box.left) / view.width, (box.bottom - box.top) / view.height)
+    expect(fill).toBeGreaterThanOrEqual(0.7)
+    // Centring slides the camera by the image-plane offset at the frame distance: exact for the mean depth, a few px off
+    // for near/far points (<= 1.5% of the height), well under the 10% margin FILL leaves.
+    expect(Math.abs((box.top + box.bottom) / 2 - (top + view.height) / 2)).toBeLessThan(0.015 * view.height)
+    expect(Math.abs((box.left + box.right) / 2 - view.width / 2)).toBeLessThan(0.015 * view.width)
+  })
+
+  it('frames the plan outline, not its box: an L-shaped plan comes closer than its bounding box', () => {
+    const outline: [number, number][] = [[0, 0], [12, 0], [12, 4], [4, 4], [4, 12], [0, 12]]
+    const bounds = { center: [6, 6] as [number, number], size: [12, 12] as [number, number] }
+    const box = fitPose(bounds, 'perspective', VIEW)
+    const lShape = fitPose({ ...bounds, points: outline }, 'perspective', VIEW)
+    const dist = (p: typeof box) => Math.hypot(p.position[0] - p.target[0], p.position[1] - p.target[1], p.position[2] - p.target[2])
+    expect(dist(lShape)).toBeLessThan(dist(box))
+    const shot = screenBox(lShape, outline)
+    expect(shot.top).toBeGreaterThanOrEqual(TOP_RESERVED_PX - 0.5)
+    expect(Math.max((shot.right - shot.left) / VIEW.width, (shot.bottom - shot.top) / VIEW.height)).toBeGreaterThanOrEqual(0.7)
+  })
+
+  it('a free rect (dock, panel) is honoured: the plan stays inside it', () => {
+    const free = { left: 0, top: 120, right: 1500, bottom: 1000 }
+    const pose = fitPose({ center: [0, 0], size: [14, 10] }, 'perspective', VIEW, 0, free)
+    const box = screenBox(pose, rect(0, 0, 14, 10))
+    expect(box.right).toBeLessThanOrEqual(free.right + 0.5)
+    expect(box.bottom).toBeLessThanOrEqual(free.bottom + 0.5)
+    expect(box.top).toBeGreaterThanOrEqual(free.top - 0.5)
   })
 
   it('UX-R2 K38: baseY lifts target and camera together (a solo floor keeps its stacked height)', () => {
     const bounds = { center: [3, 2], size: [12, 9] } as { center: [number, number]; size: [number, number] }
     const ground = fitPose(bounds, 'perspective', VIEW)
     const lifted = fitPose(bounds, 'perspective', VIEW, 6.6)
-    expect(lifted.target).toEqual([3, 6.6, 2])
+    expect(lifted.target).toEqual([ground.target[0], 6.6, ground.target[2]])
     expect(lifted.position[1]).toBeCloseTo(ground.position[1] + 6.6)
     expect(lifted.position[0]).toBeCloseTo(ground.position[0])
   })
@@ -133,7 +173,7 @@ describe('planBoundsXZ (FE3D-FIX-004 V14)', () => {
       w2: { type: 'wall', start: [30, 5], end: [30, 13] },
       zone: { type: 'zone', polygon: [[10, 5], [30, 5], [30, 13], [10, 13]] },
     }
-    expect(planBoundsXZ(nodes)).toEqual({ center: [20, 9], size: [20, 8] })
+    expect(planBoundsXZ(nodes)).toMatchObject({ center: [20, 9], size: [20, 8] })
   })
 
   it('UX-R2 K38: with a level id, frames only that floor (walls and zones whose parent is the level)', () => {
@@ -142,7 +182,9 @@ describe('planBoundsXZ (FE3D-FIX-004 V14)', () => {
       b: { type: 'zone', parentId: 'level_1', polygon: [[0, 0], [10, 0], [10, 6], [0, 6]] },
       c: { type: 'wall', parentId: 'level_2', start: [100, 50], end: [140, 50] },
     }
-    expect(planBoundsXZ(nodes, 'level_1')).toEqual({ center: [5, 3], size: [10, 6] })
+    expect(planBoundsXZ(nodes, 'level_1')).toMatchObject({ center: [5, 3], size: [10, 6] })
+    // M3-web L1: the outline (wall ends + zone vertices) rides along for the fit.
+    expect(planBoundsXZ(nodes, 'level_1')?.points).toHaveLength(6)
     expect(planBoundsXZ(nodes, 'level_9')).toBeNull()
   })
 

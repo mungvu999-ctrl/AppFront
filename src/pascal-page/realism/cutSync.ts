@@ -9,12 +9,15 @@
  *   (`capCutMaterial`, luật `r9y-cut-cap.mjs` trên `wall-materials.ts`): hai mặt cố định, mặt sau + mặt hướng
  *   lên (lòng tường lộ qua mặt cắt) tô PHẲNG màu nắp sáng khi uniform `cutOn` = 1. Đổi chế độ chỉ đổi
  *   `cutOn.value`, không `needsUpdate`.
+ * - Theo camera (`wantsLift`): mắt thấp hơn trần của tầng thì mặt cắt tầng ấy trượt lên trần trong 0,3 s rồi thành
+ *   1e6 (không cắt); lên cao lại (quá trần + 0,6 m) thì trượt về sàn + 1,0 m. Vẫn chỉ dời `constant`.
  */
-import { BackSide, DoubleSide, FrontSide, type Material, type Object3D, Plane, Vector3 } from 'three';
-import { color, frontFacing, materialColor, materialEmissive, normalWorld, select, uniform, vec3 } from 'three/tsl';
+import { BackSide, DoubleSide, FrontSide, type Material, type Object3D, Plane, type Side, Vector3 } from 'three';
+import { color, frontFacing, materialColor, materialEmissive, normalWorld, select, uniform, vec3, vec4 } from 'three/tsl';
 import type { Node, NodeMaterial } from 'three/webgpu';
 
-import { CUT_CAP_COLOR, cutPlaneY, lowCutActive } from './cut';
+import { CUT_CAP_COLOR, DEFAULT_STOREY_M, liftedCutY, lowCutActive, stepLift, wantsLift } from './cut';
+import { markDirty } from './idle';
 
 /** Hằng mặt phẳng khi không cắt: cao hơn mọi công trình → giữ hết. */
 export const NO_CUT_CONSTANT = 1e6;
@@ -42,6 +45,15 @@ const capped = new WeakSet<Material>();
 const worldPos = new Vector3();
 const NO_IDS: ReadonlySet<string> = new Set();
 let lowCut = false;
+/** Trạng thái nâng mặt cắt theo camera, từng nhóm tầng. */
+const lifts = new WeakMap<Object3D, { lifted: boolean; lift: number }>();
+let lastSyncMs: number | null = null;
+
+/** Camera + cao tầng cho mặt cắt theo camera; thiếu thì cắt 1,0 m như trước. */
+export interface CutView {
+  eye: { y: number };
+  storeyHeight: (levelId: string) => number | undefined;
+}
 
 /**
  * Cắt thấp đang bật (khung gần nhất). Trần + đồ treo trần của tầng bị cắt theo nhóm tầng, nhưng phần
@@ -75,7 +87,40 @@ export function capCutMaterial<T extends Material>(material: T): T {
   return material;
 }
 
-function clipLevel(level: Object3D & ClipGroupFields): void {
+const itemCapped = new WeakSet<Material>();
+
+/**
+ * Biến thể của `capCutMaterial` cho vật liệu ĐỒ (luật `r7-item-materials.mjs`, chỉ đồ cao quá mặt cắt): khi `cutOn` = 1
+ * chỉ MẶT SAU (ruột lộ qua mặt cắt) tô phẳng màu nắp; mặt hướng lên (mặt bàn, mặt giường) giữ vật liệu. Giữ alpha của
+ * màu (lá cây alphaTest). Vật liệu GLB thường (không NodeMaterial) cũng vá được: WebGPURenderer đổi sang NodeMaterial lúc
+ * dựng bằng cách chép mọi khoá (`NodeLibrary.fromMaterial`), kể cả colorNode/emissiveNode. Bỏ qua vật liệu trong suốt và
+ * vật liệu vốn hai mặt / mặt sau (mặt sau là mặt thật: rèm, lá). `userData.cutCapSide` giữ phía gốc: bản clone chép
+ * userData + side đã đổi nhưng (vật liệu thường) không chép colorNode → vẫn nhận ra để vá lại.
+ */
+export function capCutItemMaterial<T extends Material>(material: T): T {
+  if (itemCapped.has(material) || material.transparent) return material;
+  const ud = material.userData;
+  const side = (ud.cutCapSide as Side | undefined) ?? material.side;
+  if (side !== FrontSide) return material;
+  itemCapped.add(material);
+  ud.cutCapSide = side;
+  const m = material as unknown as ColorMaterial;
+  const cap = cutOn.greaterThan(0.5).and(frontFacing.not());
+  const base = vec4((m.colorNode ?? materialColor) as Node<'vec4'>);
+  m.colorNode = select(cap, vec4(0, 0, 0, base.a), base);
+  m.emissiveNode = select(
+    cap,
+    vec3(color(CUT_CAP_COLOR) as unknown as Node<'vec3'>),
+    vec3((m.emissiveNode ?? materialEmissive) as Node<'vec3'>),
+  );
+  material.shadowSide ??= BackSide;
+  material.side = DoubleSide;
+  material.needsUpdate = true;
+  return material;
+}
+
+/** Trả `true` khi tầng còn bị cắt (chưa nâng hết). */
+function clipLevel(level: Object3D & ClipGroupFields, storeyM: number, view: CutView | undefined, dtS: number): boolean {
   let plane = level.clippingPlanes?.[0];
   if (!plane) {
     // Mặt phẳng hướng xuống: giữ phần dưới mặt cắt (khoảng cách ≥ 0). Bật một lần, không tắt nữa.
@@ -86,19 +131,50 @@ function clipLevel(level: Object3D & ClipGroupFields): void {
     level.enabled = true;
     level.clipShadows = true;
   }
-  if (lowCut) {
-    level.getWorldPosition(worldPos);
-    plane.constant = cutPlaneY(worldPos.y);
-  } else {
+  if (!lowCut) {
     plane.constant = NO_CUT_CONSTANT;
+    return false;
   }
+  level.getWorldPosition(worldPos);
+  let state = lifts.get(level);
+  if (!state) {
+    // Lần đầu: nhảy thẳng về trạng thái đúng, không trượt lúc mở.
+    const lifted = view ? wantsLift(false, view.eye.y - worldPos.y, storeyM) : false;
+    state = { lifted, lift: lifted ? 1 : 0 };
+    lifts.set(level, state);
+  } else if (view) {
+    state.lifted = wantsLift(state.lifted, view.eye.y - worldPos.y, storeyM);
+    state.lift = stepLift(state.lift, state.lifted, dtS);
+  } else {
+    state.lifted = false;
+    state.lift = 0;
+  }
+  if (state.lift >= 1) {
+    plane.constant = NO_CUT_CONSTANT;
+    return false;
+  }
+  plane.constant = liftedCutY(worldPos.y, storeyM, state.lift);
+  if (state.lift > 0 || state.lifted) markDirty('cut-lift');
+  return true;
 }
 
-export function syncLowCut(registry: CutRegistry, wallMode: string): void {
+export function syncLowCut(registry: CutRegistry, wallMode: string, view?: CutView, nowMs = performance.now()): void {
+  const dtS = lastSyncMs === null ? 0 : Math.min(0.1, (nowMs - lastSyncMs) / 1000);
+  lastSyncMs = nowMs;
   lowCut = lowCutActive(wallMode);
-  cutOn.value = lowCut ? 1 : 0;
+  let anyCut = false;
+  let shown = 0;
   for (const id of registry.byType['level'] ?? NO_IDS) {
     const level = registry.nodes.get(id);
-    if (level) clipLevel(level as Object3D & ClipGroupFields);
+    if (!level) continue;
+    // Mặt phẳng dời cho mọi tầng, nhưng chỉ tầng đang hiện (hệ tầng vendor đặt `visible`, vd. "Tầng: từng tầng")
+    // quyết định tô nắp chung: tầng ẩn còn cắt không được bật nắp/tắt quầng đèn của tầng đang xem đã nâng.
+    const cut = clipLevel(level as Object3D & ClipGroupFields, view?.storeyHeight(id) ?? DEFAULT_STOREY_M, view, dtS);
+    if (level.visible === false) continue;
+    shown++;
+    if (cut) anyCut = true;
   }
+  // Mọi tầng đang hiện đã nâng (camera trong nhà): thôi tô nắp, quầng đèn trần hiện lại.
+  if (lowCut && !anyCut && shown > 0) lowCut = false;
+  cutOn.value = lowCut ? 1 : 0;
 }

@@ -3,6 +3,7 @@
  * cắt cả tầng ở sàn + 1,0 m (tường, vách giữa hai phòng, cửa, cửa sổ, đồ cao, trần) và tô mặt cắt gần đen.
  * Logic: `src/pascal-page/realism/cut.ts`; phần chạy mỗi khung: `cutSync.ts` (gắn vào bộ hệ tường).
  * "Tường: cao đủ" / "thấp" / "trong mờ" giữ nguyên.
+ * Mặt cắt theo camera (mắt dưới trần thì thôi cắt): luật `u61-cut-camera.mjs` truyền camera + cao tầng.
  */
 export const RULES = {
   'nodes/src/wall/system.tsx': [

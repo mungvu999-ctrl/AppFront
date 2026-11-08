@@ -32,6 +32,8 @@ import { PERF_OVERLAY_ENABLED } from '../../lib/gpu-perf'
 import { inkedEdges } from '../../lib/ink-edges'
 import { refreshIsolation } from '../../lib/isolation'
 import { LayerPassIndex, LayerPassNode } from '../../lib/layer-pass'
+import { installLazyBvhRaycast } from '../../lib/lazy-bvh-raycast'
+import { ShadowCache } from '../../lib/shadow-cache'
 import { GRID_LAYER, OVERLAY_LAYER, SCENE_LAYER, ZONE_LAYER } from '../../lib/layers'
 import { isLiveFrameHeld } from '../../lib/live-frame-hold'
 import { mergedOutline } from '../../lib/merged-outline-node'
@@ -67,6 +69,25 @@ export const SSGI_PARAMS = {
 }
 
 // Diagnostic toggles for thermal A/B testing. Add
+// Pointer raycasts through a lazily-built BVH (lib/lazy-bvh-raycast) — the viewer
+// is the one module every 3D page loads, so install the patch here.
+installLazyBvhRaycast()
+
+// Shadow maps re-render only when what the shadow pass reads changes
+// (lib/shadow-cache); `?disable=shadowcache` restores three's every-frame update.
+const shadowCache =
+  typeof window !== 'undefined' &&
+  (new URLSearchParams(window.location.search).get('disable') ?? '').split(',').includes('shadowcache')
+    ? null
+    : new ShadowCache()
+// `?disable=hoverdrag`: keep the hover outline while the camera is dragged (A/B).
+const HOVER_DURING_DRAG =
+  typeof window !== 'undefined' &&
+  (new URLSearchParams(window.location.search).get('disable') ?? '').split(',').includes('hoverdrag')
+if (shadowCache && typeof window !== 'undefined') {
+  ;(window as unknown as { __pascalShadowCache?: ShadowCache }).__pascalShadowCache = shadowCache
+}
+
 // `?disable=ao,denoise,outline,postFx`
 // to the URL (any subset) and reload to skip those passes. Each flag prevents
 // allocation + per-frame work for that stage, so device temperature deltas
@@ -763,6 +784,11 @@ const PostProcessingPasses = ({
 
     const outliner = useViewer.getState().outliner
     const restoreAtmosphere = refreshIsolation(scene)
+    shadowCache?.sync(scene)
+    // Hover outline is noise while orbiting (the pointer sweeps across items): skip its ~8 passes.
+    if (resourcesRef.current?.outline && !HOVER_DURING_DRAG) {
+      resourcesRef.current.outline.suppressSecondary = useViewer.getState().cameraDragging
+    }
     sanitizeOutlineObjects(outliner.selectedObjects)
     sanitizeOutlineObjects(outliner.hoveredObjects)
 

@@ -1,4 +1,4 @@
-import { DefaultLoadingManager, Group, LoadingManager } from 'three'
+import { DefaultLoadingManager, Group, LoadingManager, type Material, type Mesh, Texture } from 'three'
 import { type GLTF, GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
 const ITEM_ASSET_UNAVAILABLE_KEY = 'pascalItemAssetUnavailable'
@@ -60,6 +60,83 @@ export function getUnavailableItemAsset(gltf: GLTF): ItemAssetUnavailable | null
   return typeof candidate.url === 'string' && typeof candidate.message === 'string'
     ? { url: candidate.url, message: candidate.message }
     : null
+}
+
+/**
+ * Bản đồ phụ (pháp tuyến / nhám / kim loại / AO) của mẫu GLB thu về tối đa 512 px lúc tải; `map` (màu) giữ nguyên.
+ * ch-04 (09/11): 33 texture 1024² RGBA chưa nén ≈ 185 MB GPU, đa số là bản đồ phụ — chi tiết của chúng không
+ * thấy ở khoảng cách xem mặt bằng, mipmap vẫn sinh như cũ (minFilter của GLTFLoader).
+ */
+export const ITEM_AUX_TEXTURE_MAX = 512
+const ITEM_AUX_SLOTS = ['normalMap', 'roughnessMap', 'metalnessMap', 'aoMap'] as const
+/** `?disable=auxcap`: giữ cỡ gốc (bộ đo so trước/sau). */
+const AUX_CAP_OFF =
+  typeof window !== 'undefined' &&
+  (new URLSearchParams(window.location.search).get('disable') ?? '').split(',').includes('auxcap')
+
+export function auxTextureTargetSize(width: number, height: number, max = ITEM_AUX_TEXTURE_MAX) {
+  const side = Math.max(width, height)
+  if (!side || side <= max) return null
+  const k = max / side
+  return { width: Math.max(1, Math.round(width * k)), height: Math.max(1, Math.round(height * k)) }
+}
+
+type AuxImage = { width: number; height: number; close?: () => void }
+export type AuxResize = (image: AuxImage, size: { width: number; height: number }) => Promise<AuxImage>
+
+const resizeWithImageBitmap: AuxResize = (image, size) =>
+  createImageBitmap(image as unknown as ImageBitmapSource, {
+    resizeWidth: size.width,
+    resizeHeight: size.height,
+    resizeQuality: 'high',
+    premultiplyAlpha: 'none',
+    colorSpaceConversion: 'none',
+  })
+
+/**
+ * Thu nhỏ theo `Source` (three `Texture.clone()` và GLTFLoader dùng chung Source giữa các texture): mỗi Source
+ * thu nhỏ một lần, mọi texture trỏ tới nó cùng nhận ảnh mới. Source mà bất kỳ khe KHÔNG phụ nào (map, emissiveMap,
+ * …) cũng dùng thì giữ nguyên cỡ. Ảnh gốc chỉ đóng khi mọi người dùng đã chuyển sang ảnh nhỏ.
+ */
+export async function capItemAuxTextures(gltf: GLTF, resize: AuxResize = resizeWithImageBitmap): Promise<void> {
+  if (!gltf.scene || AUX_CAP_OFF) return
+  if (resize === resizeWithImageBitmap && typeof createImageBitmap === 'undefined') return
+  const users = new Map<Texture['source'], Set<Texture>>()
+  const keep = new Set<Texture['source']>()
+  const aux = new Set<string>(ITEM_AUX_SLOTS)
+  gltf.scene.traverse((object) => {
+    const material = (object as Mesh).material as Material | Material[] | undefined
+    if (!material) return
+    for (const m of Array.isArray(material) ? material : [material]) {
+      const slots = m as unknown as Record<string, unknown>
+      for (const key in slots) {
+        const texture = slots[key]
+        if (!(texture instanceof Texture)) continue
+        if (!aux.has(key)) keep.add(texture.source)
+        let set = users.get(texture.source)
+        if (!set) users.set(texture.source, (set = new Set()))
+        set.add(texture)
+      }
+    }
+  })
+  const jobs: Promise<void>[] = []
+  for (const [source, textures] of users) {
+    if (keep.has(source)) continue
+    const sample = textures.values().next().value as Texture & { isDataTexture?: boolean; isCompressedTexture?: boolean }
+    if (sample.isDataTexture || sample.isCompressedTexture) continue
+    const image = source.data as AuxImage | null
+    if (!image || typeof image.width !== 'number' || typeof image.height !== 'number') continue
+    const size = auxTextureTargetSize(image.width, image.height)
+    if (!size) continue
+    jobs.push(
+      resize(image, size).then((small) => {
+        source.data = small
+        for (const texture of textures) texture.needsUpdate = true
+        image.close?.()
+      }),
+    )
+  }
+  await Promise.allSettled(jobs)
 }
 
 export function cancelItemModelLoad(url: string) {
@@ -129,7 +206,7 @@ export class ItemGLTFLoader extends GLTFLoader {
         cancel()
         return
       }
-      super.load(url, complete, onProgress, (error) => {
+      super.load(url, (gltf) => void capItemAuxTextures(gltf).finally(() => complete(gltf)), onProgress, (error) => {
         if (wasCancelled()) {
           cancel()
           return

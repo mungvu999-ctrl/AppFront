@@ -37,6 +37,14 @@ describe('aoFactor', () => {
     expect(aoFactor(0.4, albedo * AO_DIRECT_HI * 2, albedo)).toBeCloseTo(1);
   });
 
+  it('vùng bóng Ban ngày (E ≈ 0,9: môi trường 0,8 + hemi 0,25 + ambient 0,1) → AO đủ', () => {
+    expect(aoFactor(0.4, albedo * 0.9, albedo)).toBeCloseTo(0.4);
+  });
+
+  it('nắng Ban ngày trên sàn (E ≈ 2,9) → không AO', () => {
+    expect(aoFactor(0.4, albedo * 2.9, albedo)).toBeCloseTo(1);
+  });
+
   it('giữa hai ngưỡng → nằm giữa, tăng theo độ rọi', () => {
     const mid = aoFactor(0.4, albedo * ((AO_DIRECT_LO + AO_DIRECT_HI) / 2), albedo);
     expect(mid).toBeGreaterThan(0.4);

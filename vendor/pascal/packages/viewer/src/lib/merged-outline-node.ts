@@ -130,6 +130,8 @@ export class MergedOutlineNode extends TempNode {
   camera: any
   primaryObjects: Object3D[]
   secondaryObjects: Object3D[]
+  /** Skip the hover (secondary) group, e.g. while the camera is being dragged. */
+  suppressSecondary = false
   primaryEdgeThicknessNode: any
   secondaryEdgeThicknessNode: any
   primaryEdgeGlowNode: any
@@ -326,7 +328,7 @@ export class MergedOutlineNode extends TempNode {
 
   updateBefore(frame: any) {
     const hasPrimary = this.primaryObjects.length > 0
-    const hasSecondary = this.secondaryObjects.length > 0
+    const hasSecondary = this.secondaryObjects.length > 0 && !this.suppressSecondary
     const hasAny = hasPrimary || hasSecondary
 
     // Fast-path: nothing to render and nothing was rendered last frame either,

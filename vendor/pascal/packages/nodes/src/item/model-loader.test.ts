@@ -1,6 +1,9 @@
 import { afterAll, afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { LoadingManager } from 'three'
+import * as THREE from 'three'
 import {
+  auxTextureTargetSize,
+  capItemAuxTextures,
   cancelItemModelLoad,
   classifyItemModelLoadFailure,
   getUnavailableItemAsset,
@@ -157,5 +160,48 @@ describe('ItemGLTFLoader', () => {
 
     expect(request).toHaveBeenCalledTimes(1)
     expect(hostLoads).toBe(1)
+  })
+})
+
+test('aux item textures above 512 px shrink to 512 on the long side, keeping aspect', () => {
+  expect(auxTextureTargetSize(1024, 1024)).toEqual({ width: 512, height: 512 })
+  expect(auxTextureTargetSize(2048, 1024)).toEqual({ width: 512, height: 256 })
+  expect(auxTextureTargetSize(512, 512)).toBeNull()
+  expect(auxTextureTargetSize(0, 0)).toBeNull()
+})
+
+describe('capItemAuxTextures shares work per Source', () => {
+  const img = (w: number) => ({ width: w, height: w, closed: false, close() { this.closed = true } })
+  const resize = async (_: unknown, size: { width: number; height: number }) => ({ ...size })
+  const gltfOf = (...materials: THREE.Material[]) => {
+    const scene = new THREE.Group()
+    for (const m of materials) scene.add(new THREE.Mesh(new THREE.BoxGeometry(), m))
+    return { scene } as never
+  }
+
+  test('a Source also used as map (clone with other UV transform) keeps full size', async () => {
+    const base = new THREE.Texture(img(1024) as never)
+    const normal = base.clone() // three clone → same Source
+    const m = new THREE.MeshStandardMaterial({ map: base, normalMap: normal })
+    const calls: unknown[] = []
+    await capItemAuxTextures(gltfOf(m), async (i, s) => (calls.push(i), resize(i, s)))
+    expect(calls).toHaveLength(0)
+    expect((base.image as { width: number }).width).toBe(1024)
+  })
+
+  test('aux-only Source shrinks once for every texture using it; original closed', async () => {
+    const original = img(1024)
+    const rough = new THREE.Texture(original as never)
+    const ao = rough.clone()
+    const own = new THREE.Texture(img(1024) as never)
+    const a = new THREE.MeshStandardMaterial({ roughnessMap: rough, aoMap: ao, map: own })
+    const b = new THREE.MeshStandardMaterial({ metalnessMap: rough.clone() })
+    let calls = 0
+    await capItemAuxTextures(gltfOf(a, b), async (i, s) => (calls++, resize(i, s)))
+    expect(calls).toBe(1)
+    expect((rough.image as { width: number }).width).toBe(512)
+    expect((ao.image as { width: number }).width).toBe(512)
+    expect(original.closed).toBe(true)
+    expect((own.image as { width: number }).width).toBe(1024)
   })
 })

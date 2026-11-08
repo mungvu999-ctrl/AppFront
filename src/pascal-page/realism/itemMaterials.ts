@@ -9,6 +9,8 @@
 import { Color, LinearSRGBColorSpace, MeshPhysicalMaterial, MeshStandardMaterial, SRGBColorSpace } from 'three';
 import type { EventDispatcher, Material, Texture } from 'three';
 import { MeshPhysicalNodeMaterial } from 'three/webgpu';
+import { CUT_HEIGHT_M } from './cut';
+import { capCutItemMaterial } from './cutSync';
 import { AUTO, autoPatch, folderOf, itemKindOf, KIND_LOOK, nameKind, tunedRoughness, type KindLook } from './itemLook';
 import { hasPendingTextures, whenTexturesReady } from './texturePreload';
 import { useRealism } from './store';
@@ -198,6 +200,14 @@ export function tuneItemMaterial(mat: Material, ctx: TuneContext): Material {
   next.needsUpdate = true;
   cache.set(key, next);
   return next;
+}
+
+/**
+ * Đồ cao quá mặt cắt thấp (đỉnh `topM` tính từ sàn > 1,0 m: tủ áo, tủ bếp, cây…) → vá nắp cắt cho vật liệu, ruột tủ lộ
+ * qua mặt cắt tô màu nắp thay vì đen. Đồ thấp không vá (khỏi hai mặt + nhánh shader). Gọi từ luật r7 sau `tuneItemMaterial`.
+ */
+export function capTallItemMaterial(mat: Material, topM: number): Material {
+  return topM > CUT_HEIGHT_M ? capCutItemMaterial(mat) : mat;
 }
 
 /**

@@ -84,7 +84,7 @@ describe('u40/u42: nhan ten phong thuong truc, khoi cho tai noi that thap va co 
   it('u40: nhan theo co roomLabels, nam ngoai showZones, bam dup moi bay toi phong (N1, U45)', () => {
     const out = apply('nodes/src/zone/renderer.tsx');
     assert.match(out, /useFloorplanAnnotationVisibility\(\(s\) => s\.visibility\.roomLabels\)/);
-    const label = out.indexOf('{showRoomLabelsU40 && node.name && (');
+    const label = out.indexOf('{showRoomLabelsU40 && levelShownU70 && levelVisibleU70 && node.visible !== false && node.name && (');
     assert.ok(label > 0 && label < out.indexOf('{showZones && ('));
     const block = out.slice(label, out.indexOf('{showZones && ('));
     // Html boc ngoai khong an chuot; nut ben trong chi an chuot o che do Chon / Xem truoc.
@@ -97,6 +97,25 @@ describe('u40/u42: nhan ten phong thuong truc, khoi cho tai noi that thap va co 
     // R3F nghe pointerdown/up tren khung chua canvas: chan o nut thi khong chon tuong phia sau.
     assert.match(block, /onPointerDown=\{\(e\) => e\.stopPropagation\(\)\}/);
     assert.match(block, /onPointerUp=\{\(e\) => e\.stopPropagation\(\)\}/);
+  });
+
+  it('u70: nhan chi ve khi tang cua vung dang hien (luat chung isLevelShown)', () => {
+    const out = apply('nodes/src/zone/renderer.tsx');
+    assert.match(out, /import \{ isLevelShown \} from '@\/pascal-page\/upstream\/lib\/level-shown'/);
+    assert.match(out, /isSelected: s\.selection\.levelId === node\.parentId \}\)\)/);
+    assert.match(out, /s\.nodes\[node\.parentId\]\?\.visible : undefined\) !== false\)/);
+  });
+});
+
+describe('u70: tang an khong do bong (khong con shadow-only)', () => {
+  it('resolveLevelVisibility dung isLevelShown, shadowOnly luon false', () => {
+    const full = path.join(PACKAGES, 'viewer/src/systems/level/level-utils.ts');
+    const raw = readFileSync(full, 'utf8');
+    const out = transformRealism(raw, full);
+    assert.match(raw, /index > selectedIndex/);
+    assert.doesNotMatch(out, /index > selectedIndex/);
+    assert.match(out, /return \{ visible: isLevelShown\(\{ levelMode, hasSelectedLevel, isSelected \}\), shadowOnly: false \}/);
+    assert.match(out, /import \{ isLevelShown \} from '@\/pascal-page\/upstream\/lib\/level-shown'/);
   });
 });
 

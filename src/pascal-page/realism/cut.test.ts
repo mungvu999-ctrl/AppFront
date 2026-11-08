@@ -2,7 +2,19 @@ import { describe, expect, it } from 'vitest';
 
 import { Group, Plane, Vector3 } from 'three';
 
-import { clippedAway, CUT_HEIGHT_M, cutPlaneY, isCutFaceMesh, lowCutActive, WALL_BATCH_MESH_NAME } from './cut';
+import {
+  clippedAway,
+  CUT_HEIGHT_M,
+  cutPlaneY,
+  isCutFaceMesh,
+  LIFT_EASE_S,
+  LIFT_HYSTERESIS_M,
+  liftedCutY,
+  lowCutActive,
+  stepLift,
+  WALL_BATCH_MESH_NAME,
+  wantsLift,
+} from './cut';
 
 describe('cut', () => {
   it('điểm trên mặt cắt của nhóm tầng là phần không vẽ; dưới mặt cắt, hoặc ngoài nhóm: vẫn còn', () => {
@@ -35,5 +47,29 @@ describe('cut', () => {
     expect(isCutFaceMesh(undefined, WALL_BATCH_MESH_NAME, walls)).toBe(true);
     expect(isCutFaceMesh('door1', 'door', walls)).toBe(false);
     expect(isCutFaceMesh(undefined, 'item', walls)).toBe(false);
+  });
+});
+
+describe('mặt cắt theo camera', () => {
+  it('nâng khi mắt dưới trần, cắt lại chỉ khi quá trần + trễ', () => {
+    expect(wantsLift(false, 1.6, 3)).toBe(true);
+    expect(wantsLift(false, -1.7, 3)).toBe(true);
+    expect(wantsLift(false, 3.2, 3)).toBe(false);
+    expect(wantsLift(true, 3.2, 3)).toBe(true);
+    expect(wantsLift(true, 3 + LIFT_HYSTERESIS_M + 0.01, 3)).toBe(false);
+    expect(wantsLift(false, 20, 3.3)).toBe(false);
+  });
+
+  it('trượt tuyến tính trong LIFT_EASE_S, kẹp 0..1', () => {
+    expect(stepLift(0, true, LIFT_EASE_S / 2)).toBeCloseTo(0.5);
+    expect(stepLift(0.9, true, LIFT_EASE_S)).toBe(1);
+    expect(stepLift(0.1, false, LIFT_EASE_S)).toBe(0);
+    expect(stepLift(0.5, true, -1)).toBe(0.5);
+  });
+
+  it('độ cao mặt cắt đi từ sàn + 1 m tới trần', () => {
+    expect(liftedCutY(3, 3.3, 0)).toBeCloseTo(cutPlaneY(3));
+    expect(liftedCutY(3, 3.3, 1)).toBeCloseTo(6.3);
+    expect(liftedCutY(0, 3, 0.5)).toBeCloseTo(2);
   });
 });
