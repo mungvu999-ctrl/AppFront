@@ -7,13 +7,13 @@
  */
 
 import type { SuggestionRuleset } from '@/api/schemas/suggestionRules';
-import { isEffectiveSuggestion, type Suggestion } from '@/api/schemas/suggestions';
+import { isEffectiveSuggestion, validSuggestions, type Suggestion } from '@/api/schemas/suggestions';
 import type { NormalizedSpatial } from '@/domain/spatial/normalize';
 import type { SpatialGraph } from '@/domain/spatial/types';
 import { RENDERED_KINDS } from '@/lib/pascal/suggestions';
 import { previewSuggestions } from '@/lib/suggestions/mirror';
 import { DEFAULT_RULESET, ruleNameVi } from '@/lib/suggestions/ruleset';
-import type { FloorSuggestions } from '@/store/spatialSlice';
+import type { FloorSuggestions } from '@/lib/suggestions/state';
 
 /**
  * Đề xuất mà cảnh 3D dựng: mọi tầng đang bật lớp (`enabled`). Tầng có sửa chưa lưu (`preview.unsaved`)
@@ -113,7 +113,8 @@ export function floorSuggestionsView(input: {
   const { entry, ruleset, spatial } = input;
   const order = Object.keys(ruleset.rules);
   const rank = (rule: string): number => (order.includes(rule) ? order.indexOf(rule) : order.length);
-  const live = entry.suggestions.filter((s) => s.stale === undefined);
+  const all = validSuggestions(entry.suggestions);
+  const live = all.filter((s) => s.stale === undefined);
   const rules = [...new Set(live.map((s) => s.rule))].sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : 1));
 
   return {
@@ -132,7 +133,7 @@ export function floorSuggestionsView(input: {
         items: items.map((s) => ({ id: s.id, label: labelOf(s, spatial), on: isEffectiveSuggestion(s), adopted: s.state === 'adopted' })),
       };
     }),
-    stale: entry.suggestions
+    stale: all
       .filter((s) => s.stale !== undefined)
       .map((s) => ({ id: s.id, label: labelOf(s, spatial), reason: s.stale?.reasonVi ?? '' })),
   };

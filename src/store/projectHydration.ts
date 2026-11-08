@@ -6,7 +6,9 @@ import type { EntityId, Level, LevelId, SpatialGraph } from '../domain/spatial/t
 import type { Project, ProjectRole } from '../types/project';
 import { resetCommitRun } from './commit';
 import { useStore } from './index';
-import { floorMetaEntryOf, versionIdFor, type FloorMetaEntry, type FloorSuggestions } from './spatialSlice';
+import { floorMetaEntryOf, versionIdFor, type FloorMetaEntry } from './spatialSlice';
+import type { FloorSuggestions } from '../lib/suggestions/state';
+import { useSuggestionStore } from './suggestionStore';
 
 /**
  * Loading a project's whole graph (N15) into the store — F-04x-2 step 2.
@@ -60,8 +62,10 @@ export function hydrateProject({ document, project, roles }: ProjectHydrationInp
   state.setSpatial(normalizeSpatial(document.graph), null, {
     floorRevisions: revisionsOf(document),
     projectId: project.id,
-    floorSuggestions: suggestionsOf(document),
   });
+  // M2: kho lớp đề xuất riêng (cùng chunk `commit`, ngoài chunk vào).
+  const floorSuggestions = suggestionsOf(document);
+  useSuggestionStore.getState().replaceFloorSuggestions(floorSuggestions);
 }
 
 /** Everything one level holds in the N15 graph; an opening goes with its wall's level. */

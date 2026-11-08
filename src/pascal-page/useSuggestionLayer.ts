@@ -6,7 +6,9 @@
 import { useMemo } from 'react';
 
 import { DEFAULT_RULESET } from '@/lib/suggestions/ruleset';
+import { changedEntry, enabledEntry } from '@/lib/suggestions/state';
 import { useStore } from '@/store';
+import { useSuggestionStore } from '@/store/suggestionStore';
 
 import { floorSuggestionsView, type FloorSuggestionsView } from './suggestionLayer';
 
@@ -18,7 +20,7 @@ export interface SuggestionLayerView {
 }
 
 export function useSuggestionLayer(readOnly: boolean): SuggestionLayerView {
-  const floorSuggestions = useStore((state) => state.floorSuggestions);
+  const floorSuggestions = useSuggestionStore((state) => state.floorSuggestions);
   const levels = useStore((state) => state.floors);
   const spatial = useStore((state) => state.spatial);
 
@@ -39,12 +41,19 @@ export function useSuggestionLayer(readOnly: boolean): SuggestionLayerView {
   return {
     floors,
     readOnly,
-    onToggleVisible: (floorId) =>
-      useStore.getState().setSuggestionsEnabled(floorId, useStore.getState().floorSuggestions[floorId]?.enabled !== true),
+    onToggleVisible: (floorId) => {
+      const current = useSuggestionStore.getState().floorSuggestions[floorId];
+      useSuggestionStore.getState().putFloorSuggestions(floorId, enabledEntry(current, current?.enabled !== true));
+    },
     onToggleItem: (floorId, id, on) => {
-      const target = useStore.getState().floorSuggestions[floorId]?.suggestions.find((s) => s.id === id);
+      const target = useSuggestionStore.getState().floorSuggestions[floorId]?.suggestions.find((s) => s.id === id);
       if (target === undefined || target.state === 'adopted') return;
-      useStore.getState().changeSuggestionState(floorId, id, on ? (target.override === undefined ? 'active' : 'overridden') : 'disabled');
+      const next = changedEntry(
+        useSuggestionStore.getState().floorSuggestions[floorId],
+        id,
+        on ? (target.override === undefined ? 'active' : 'overridden') : 'disabled',
+      );
+      if (next !== null) useSuggestionStore.getState().putFloorSuggestions(floorId, next);
     },
   };
 }

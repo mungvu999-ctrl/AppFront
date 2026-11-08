@@ -14,8 +14,6 @@ import type { PipelineRun } from '../schemas/pipelineRuns';
 import type { ProjectRuleConfig } from '../schemas/ruleConfig';
 import type { FloorLayerDocument } from '../schemas/spatialLayer';
 import type { Suggestion, SuggestionsMeta } from '../schemas/suggestions';
-import { DEFAULT_RULESET } from '@/lib/suggestions/ruleset';
-import { applySuggestionState } from '@/lib/suggestions/state';
 import type {
   AdminUser,
   AdminUserList,
@@ -1299,6 +1297,19 @@ const writtenOrigins = new Map<string, { x: number; y: number }>();
  */
 const mockSuggestions = new Map<string, { suggestions: Suggestion[]; meta: SuggestionsMeta; enabled: boolean }>();
 
+/** Như `lib/suggestions/state.applySuggestionState` (chép gọn: client giả không kéo tệp ấy vào chunk khác). */
+const applyMockState = (current: Suggestion[], rows: readonly { id: string; state: Suggestion['state']; override?: Record<string, string | number | boolean> | undefined }[]): Suggestion[] => {
+  const sent = new Map(rows.map((row) => [row.id, row]));
+  if (rows.some((row) => !current.some((s) => s.id === row.id))) throw new Error('id đề xuất lạ');
+  return current.map((s) => {
+    const row = sent.get(s.id);
+    const { override: _o, adoptedAs, ...rest } = s;
+    void _o;
+    const state = row?.state ?? 'active';
+    return { ...rest, state, ...(row?.override === undefined ? {} : { override: row.override }), ...(state === 'adopted' && adoptedAs !== undefined ? { adoptedAs } : {}) } as Suggestion;
+  });
+};
+
 export const seedMockSuggestions = (floorId: string, suggestions: readonly Suggestion[], meta: SuggestionsMeta): void => {
   mockSuggestions.set(floorId, { suggestions: clone([...suggestions]), meta: { ...meta }, enabled: true });
 };
@@ -1807,7 +1818,8 @@ export const createMockApiClient = (): ApiClient => {
     },
     // AID-01: mock không có AI phong cách — thẻ giữ năm kiểu cũ.
     suggestionRules: {
-      read: async () => ok(clone(DEFAULT_RULESET)),
+      // `null` = "máy chủ không có bảng" (như 404): nơi gọi dùng bảng gói kèm — client giả không kéo bảng vào gói.
+      read: async () => ok(null),
     },
     designConcept: {
       read: async () => ok({ enabled: false }),
@@ -2211,7 +2223,7 @@ export const createMockApiClient = (): ApiClient => {
         const stored = mockSuggestions.get(floorId);
         if (body.suggestionState !== undefined && stored !== undefined) {
           try {
-            stored.suggestions = applySuggestionState(stored.suggestions, body.suggestionState);
+            stored.suggestions = applyMockState(stored.suggestions, body.suggestionState);
           } catch {
             return failed(mockWireError(422, 'VALIDATION', requestId, { code: 'VALIDATION', field: 'suggestionState', message: 'id đề xuất lạ', requestId }));
           }

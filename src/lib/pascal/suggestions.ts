@@ -18,14 +18,28 @@
  * `disabled`, `adopted` (đã nằm trong `furniture[]`) và `stale` không vẽ. Không có bản ghi nào → cảnh như cũ.
  */
 
-import { effectiveParams, isEffectiveSuggestion, type Suggestion, type SuggestionOf } from '@/api/schemas/suggestions';
-import type { Furniture, FurnitureId, FurnitureOrigin, LevelId, Opening, Point, Room, RoomId, SpatialGraph, Wall } from '@/domain/spatial/types';
+import { effectiveParams, isEffectiveSuggestion, validSuggestions, type Suggestion, type SuggestionOf } from '@/api/schemas/suggestions';
+import type { Furniture, FurnitureId, FurnitureKind, FurnitureOrigin, LevelId, Opening, Point, Room, RoomId, SpatialGraph, Wall } from '@/domain/spatial/types';
 import { degrees, millimetres, millimetresToMetres } from '@/domain/units/types';
-import { furnitureKindOf } from '@/lib/suggestions/state';
 
 import { CATALOG_MODELS } from './furnitureCatalog';
 import { insideOutline } from './swingDirection';
 import type { PascalNode, PascalNodeId, PascalWallTrim } from './types';
+
+const FURNITURE_KINDS: ReadonlySet<string> = new Set<FurnitureKind>([
+  'table',
+  'chair',
+  'bed',
+  'wardrobe',
+  'kitchenCabinet',
+  'sanitaryFixture',
+  'washingMachine',
+  'shower',
+  'other',
+]);
+
+/** `furnitureKind` của luật về `FurnitureKind` của AppFront; lạ thì `other` (mẫu vẫn theo `modelId`). */
+const furnitureKindOf = (kind: string): FurnitureKind => (FURNITURE_KINDS.has(kind) ? (kind as FurnitureKind) : 'other');
 
 export interface SkirtingPatch {
   readonly heightMm: number;
@@ -167,6 +181,7 @@ export function suggestionPlanOf(
   offIds: ReadonlySet<string> = new Set(),
 ): SuggestionPlan {
   if (suggestions === undefined || suggestions.length === 0) return EMPTY_PLAN;
+  const checked = validSuggestions(suggestions);
   const at: Lookup = {
     walls: new Map(graph.walls.map((w) => [w.id, w])),
     rooms: new Map(graph.rooms.map((r) => [r.id, r])),
@@ -182,11 +197,11 @@ export function suggestionPlanOf(
   const railings: SuggestedRailing[] = [];
   const furniture: { furniture: Furniture; folder?: string; origin: FurnitureOrigin }[] = [];
 
-  if (suggestions.some((s) => s.kind === 'ceilingLight')) {
+  if (checked.some((s) => s.kind === 'ceilingLight')) {
     for (const room of graph.rooms) light.set(room.id, 'off');
   }
 
-  for (const s of suggestions) {
+  for (const s of checked) {
     const live = isEffectiveSuggestion(s) && !offIds.has(s.id);
     if (s.kind === 'railing' && s.hostRef.room !== undefined) railingRooms.add(s.hostRef.room);
     if (s.kind === 'skirting' && s.hostRef.wall !== undefined && !live && !skirting.has(s.hostRef.wall)) {

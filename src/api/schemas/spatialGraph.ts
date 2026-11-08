@@ -14,7 +14,7 @@ import {
   RoomSchema,
   WallSchema,
 } from './spatial';
-import { floorSuggestionsShape } from './suggestions';
+import { floorSuggestionsShape } from './suggestionWire';
 
 /**
  * `GET /api/projects/{project_id}/spatial` — cả đồ thị của một công trình, kèm

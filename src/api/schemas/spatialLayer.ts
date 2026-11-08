@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { VersionedWriteSchema } from './common';
 import { AxisSchema, DimensionSchema, LevelSchema, SpatialLayerSchema } from './spatial';
-import { floorSuggestionsShape, SuggestionStateRowSchema } from './suggestions';
+import { floorSuggestionsShape, SuggestionStateRowSchema } from './suggestionWire';
 
 /**
  * `GET` và `PUT /api/projects/{project_id}/floors/{floor_id}/spatial/layer` —

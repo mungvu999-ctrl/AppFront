@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { materialRefSchema } from './spatial';
+import { suggestionBaseShape, type SuggestionKind } from './suggestionWire';
 
 /**
  * M2 — lớp đề xuất của một tầng (`suggestions` + `suggestionsMeta` trong tài liệu tầng), mirror của
@@ -11,11 +12,19 @@ import { materialRefSchema } from './spatial';
  * Người dùng chỉ sở hữu `state` + `override`; phần còn lại máy chủ sinh.
  */
 
-export const SUGGESTION_ID_PATTERN = /^DRESS-[A-Za-z0-9_.:-]{1,160}$/;
-/** Trần khoá `override` của một bản ghi (AppBack `OVERRIDE_MAX`). */
-const OVERRIDE_MAX = 16;
+export {
+  floorSuggestionsShape,
+  HostRefSchema,
+  StaleSchema,
+  SUGGESTION_ID_PATTERN,
+  SUGGESTION_KINDS,
+  SuggestionStateRowSchema,
+  SuggestionStateSchema,
+  SuggestionsMetaSchema,
+  SUGGESTIONS_MAX,
+} from './suggestionWire';
+export type { SuggestionKind, SuggestionState, SuggestionStateRow, SuggestionsMeta } from './suggestionWire';
 
-const suggestionIdSchema = z.string().regex(SUGGESTION_ID_PATTERN);
 const entityIdSchema = z.string().min(1);
 const mm = z.number().finite();
 const positiveMm = z.number().positive().finite();
@@ -24,9 +33,6 @@ const spanSchema = z.tuple([nonNegativeMm, nonNegativeMm]);
 const pointSchema = z.object({ x: mm, y: mm }).strict();
 const textSchema = z.string().min(1);
 const rotationSchema = z.number().nonnegative().lt(360);
-
-export const SuggestionStateSchema = z.enum(['active', 'disabled', 'overridden', 'adopted']);
-export type SuggestionState = z.infer<typeof SuggestionStateSchema>;
 
 const side = z.enum(['left', 'right']);
 
@@ -150,44 +156,10 @@ export const PARAMS_BY_KIND = {
   modelPick: ModelPickParamsSchema,
 } as const;
 
-export type SuggestionKind = keyof typeof PARAMS_BY_KIND;
-export const SUGGESTION_KINDS = Object.keys(PARAMS_BY_KIND) as readonly SuggestionKind[];
-
-export const HostRefSchema = z
-  .object({
-    wall: entityIdSchema.optional(),
-    room: entityIdSchema.optional(),
-    opening: entityIdSchema.optional(),
-    furniture: entityIdSchema.optional(),
-    suggestion: suggestionIdSchema.optional(),
-  })
-  .strict()
-  .refine((ref) => Object.values(ref).some((value) => value !== undefined), { message: 'hostRef rỗng' });
-
-export const StaleSchema = z.object({ since: z.number().int().nonnegative(), reasonVi: textSchema }).strict();
-
-const scalarSchema = z.union([z.string(), z.boolean(), z.number().finite()]);
-const overrideSchema = z
-  .record(z.string().regex(/^[a-z][A-Za-z0-9]{0,39}$/), scalarSchema)
-  .refine((value) => {
-    const size = Object.keys(value).length;
-    return size >= 1 && size <= OVERRIDE_MAX;
-  });
-
-const baseShape = {
-  id: suggestionIdSchema,
-  rule: z.string().regex(/^[A-Z][A-Z0-9]{0,5}$/),
-  ruleVersion: z.number().int().min(1),
-  hostRef: HostRefSchema,
-  state: SuggestionStateSchema.default('active'),
-  override: overrideSchema.optional(),
-  createdRevision: z.number().int().nonnegative(),
-  stale: StaleSchema.optional(),
-  adoptedAs: entityIdSchema.optional(),
-} as const;
+PARAMS_BY_KIND satisfies Record<SuggestionKind, z.ZodTypeAny>;
 
 const variant = <K extends SuggestionKind>(kind: K) =>
-  z.object({ ...baseShape, kind: z.literal(kind), params: PARAMS_BY_KIND[kind] }).strict();
+  z.object({ ...suggestionBaseShape, kind: z.literal(kind), params: PARAMS_BY_KIND[kind] }).strict();
 
 /** Một bản ghi đề xuất; `params` kiểm theo `kind`, khoá `override` phải là khoá của `params` cùng kind. */
 export const SuggestionSchema = z
@@ -214,35 +186,12 @@ export const SuggestionSchema = z
 export type Suggestion = z.infer<typeof SuggestionSchema>;
 export type SuggestionOf<K extends SuggestionKind> = Extract<Suggestion, { kind: K }>;
 
-export const SuggestionsMetaSchema = z
-  .object({
-    ruleset: textSchema,
-    rulesetSha: z.string().regex(/^[0-9a-f]{64}$/),
-    basisRevision: z.number().int().nonnegative(),
-  })
-  .strict();
-
-export type SuggestionsMeta = z.infer<typeof SuggestionsMetaSchema>;
-
-/** Một dòng `suggestionState` của thân #35: chỉ bản ghi `state ≠ active` hoặc có `override`. */
-export const SuggestionStateRowSchema = z
-  .object({ id: suggestionIdSchema, state: SuggestionStateSchema, override: overrideSchema.optional() })
-  .strict();
-
-export type SuggestionStateRow = z.infer<typeof SuggestionStateRowSchema>;
-
-/** Trần số bản ghi mỗi tầng (AppBack `SUGGESTIONS_CAP`). */
-export const SUGGESTIONS_MAX = 2000;
-
 /**
- * Khoá tuỳ chọn của tài liệu tầng (N16), kết quả #35 và (đề xuất) mỗi tầng trong N15: `suggestions`/`suggestionsMeta`
- * vắng khi rỗng; `suggestionsEnabled` chỉ có giá trị `true` (vắng = lớp tắt), như AppBack `suggestion_fields`.
+ * Bản ghi có `params` đúng lược đồ của kind (biên tài liệu tầng chỉ kiểm khung, `./suggestionWire.ts`). Bản sai bị
+ * bỏ — editor không vẽ thứ nó không hiểu — thay vì làm hỏng cả cảnh.
  */
-export const floorSuggestionsShape = {
-  suggestions: z.array(SuggestionSchema).max(SUGGESTIONS_MAX).optional(),
-  suggestionsMeta: SuggestionsMetaSchema.optional(),
-  suggestionsEnabled: z.literal(true).optional(),
-} as const;
+export const validSuggestions = (items: readonly Suggestion[]): Suggestion[] =>
+  items.filter((item) => SuggestionSchema.safeParse(item).success);
 
 /** Giá trị hiệu lực: `override` > `params` (hợp đồng §3). */
 export const effectiveParams = <S extends Suggestion>(suggestion: S): S['params'] =>

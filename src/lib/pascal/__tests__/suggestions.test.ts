@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { SuggestionSchema, type Suggestion } from '@/api/schemas/suggestions';
 import { CH04, goldenGraphOf, storedSuggestionsOf } from '@/lib/suggestions/__fixtures__/golden';
-import { adoptedFurnitureOf, adoptionsOf } from '@/lib/suggestions/state';
+import { adoptionsOf } from '@/lib/suggestions/state';
 
 import { toPascalId } from '../ids';
 import { toPascalScene } from '../toPascal';
@@ -100,17 +100,6 @@ describe('M2 — vẽ lớp đề xuất đã lưu (toPascal)', () => {
     }
   });
 
-  it('nhận nuôi: đồ thật source human kèm origin {suggestionId, rule, ruleVersion}', () => {
-    const adopted = adoptedFurnitureOf(ITEM, { levelId: GRAPH.levels[0]!.id, centre: { x: 7600, y: 3100 } });
-    expect(adopted).toMatchObject({
-      source: 'human',
-      reviewed: true,
-      kind: 'bed',
-      centre: { x: 7600, y: 3100 },
-      origin: { suggestionId: ITEM.id, rule: 'P1', ruleVersion: 1 },
-    });
-    expect(adopted.id.startsWith('F-')).toBe(true);
-  });
 
   it('nhận nuôi trong cảnh: dời món đề xuất → đồ thật mang origin, lượt về giữ origin; bản ghi cần chuyển adopted', () => {
     const scene = toPascalScene(GRAPH, { suggestions: [...STORED, ITEM] }).scene;

@@ -400,3 +400,6 @@ export function discardPreview(): void {
     useStore.getState().discardDraft();
   }
 }
+
+/** M2 — phần lớp đề xuất của bộ tự lưu đi cùng chunk này (xem `suggestionSave.ts`). */
+export { withSuggestions } from './suggestionSave';

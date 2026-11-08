@@ -28,6 +28,7 @@ import { startAppSession } from '@/routes/sessionSetup';
 import { LEVEL_HEIGHT_UNSAVED, usePascalEdits } from '@/screens/viewer/PascalViewer/usePascalEdits';
 import { selectViewerSpatial } from '@/screens/viewer/ViewerShell/viewerShellGateway';
 import { useStore } from '@/store';
+import { useSuggestionStore } from '@/store/suggestionStore';
 import type { ProjectRole } from '@/types/project';
 
 import { visibleSuggestionsOf } from '../suggestionLayer';
@@ -468,7 +469,8 @@ export function usePascalProjectBridge(
     // Đồ AI bổ sung (AID-01) và chế độ tự bày dự phòng đi cùng phong cách: chốt một lần mỗi lượt
     // mở trang, mọi lượt dựng dùng chung, không thì "sửa ma".
     // M2 — lớp đề xuất đã lưu của các tầng đang bật lớp; khoá để chỉ dựng lại khi nó đổi thật.
-    const { floorSuggestions, unsavedFloorIds } = useStore.getState();
+    const { unsavedFloorIds } = useStore.getState();
+    const { floorSuggestions } = useSuggestionStore.getState();
     const suggestions = visibleSuggestionsOf(floorSuggestions, { graph, unsaved: unsavedFloorIds });
     suggestionKey.current = JSON.stringify(suggestions);
     const scene = toPascalScene(graph, {
@@ -519,7 +521,8 @@ export function usePascalProjectBridge(
     const rebuild = (): void => {
       if (loadedScene === null) return;
       const current = selectViewerSpatial(useStore.getState());
-      const { floorSuggestions, unsavedFloorIds } = useStore.getState();
+      const { unsavedFloorIds } = useStore.getState();
+      const { floorSuggestions } = useSuggestionStore.getState();
       const graph = current === null ? undefined : denormalizeSpatial(current);
       const next = visibleSuggestionsOf(floorSuggestions, graph === undefined ? undefined : { graph, unsaved: unsavedFloorIds });
       if (JSON.stringify(next) === suggestionKey.current) return;
@@ -527,7 +530,7 @@ export function usePascalProjectBridge(
       const rebuilt = editorScene?.();
       if (rebuilt !== undefined) rebaseOnRebuilt(rebuilt as PascalScene);
     };
-    return useStore.subscribe((state, previous) => {
+    return useSuggestionStore.subscribe((state, previous) => {
       if (state.floorSuggestions !== previous.floorSuggestions) rebuild();
     });
   }, [editorScene, loadedScene, rebaseOnRebuilt, revertToStore]);

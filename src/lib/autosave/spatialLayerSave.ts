@@ -253,6 +253,8 @@ export interface FloorLayerSaverPorts {
    * trạng thái bẩn, `suggestionsEnabled` khi người dùng bật/tắt lớp của tầng. `null` = không mang gì (hợp đồng M2 §4).
    */
   readSuggestionBody?(floorId: string): Pick<FloorLayerWriteBody, 'suggestionState' | 'suggestionsEnabled'> | null;
+  /** M2 — tầng vừa có sửa lớp đề xuất chưa gửi (bộ bọc `store/suggestionSave` gọi): nơi gọi đánh dấu bẩn + hẹn lưu. */
+  onSuggestionTouched?(floorIds: string[]): void;
   /** `scaleSent` chỉ có mặt (luôn `true`) khi thân mang tỉ lệ — kho gỡ `scaleStatus` của tầng. */
   onSaved(floorId: string, result: FloorLayerWriteResult, info: { redirtied: boolean; scaleSent?: true }): void;
   queue?: typeof runExclusive;
