@@ -138,7 +138,7 @@ export type ApiErrorBody = z.infer<typeof ApiErrorBodySchema>;
 /* -------------------------------------------------------------------------- */
 
 /**
- * Bảy loại thực thể mà nhật ký thay đổi theo trường biết nói về.
+ * Chín loại thực thể mà nhật ký thay đổi theo trường biết nói về.
  *
  * Danh sách này phải **bằng** `EntityKind` của
  * `lib/versioning/mergeStrategies.ts:1`, và phép so ấy là việc của
@@ -165,6 +165,7 @@ export const VERSION_ENTITY_KINDS = [
   'room',
   'dimension',
   'roof',
+  'suggestion',
 ] as const satisfies readonly EntityKind[];
 
 /**

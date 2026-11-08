@@ -70,6 +70,7 @@ const ENTITY_KIND_LABELS: Readonly<Record<EntityKind, string>> = {
   furniture: 'Nội thất',
   room: 'Phòng',
   roof: 'Mái',
+  suggestion: 'Đề xuất',
   vertex: 'Điểm',
   wall: 'Tường',
   window: 'Cửa sổ',

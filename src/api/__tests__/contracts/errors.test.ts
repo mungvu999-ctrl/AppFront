@@ -147,7 +147,7 @@ describe('step — bản sao của PIPELINE_STAGES', () => {
 });
 
 describe('VERSION_ENTITY_KINDS', () => {
-  it('là đúng tám họ của mergeStrategies (thêm mái), đúng thứ tự', () => {
+  it('là đúng chín họ của mergeStrategies (thêm mái, đề xuất), đúng thứ tự', () => {
     expect(VERSION_ENTITY_KINDS).toStrictEqual([
       'vertex',
       'wall',
@@ -157,6 +157,7 @@ describe('VERSION_ENTITY_KINDS', () => {
       'room',
       'dimension',
       'roof',
+      'suggestion',
     ]);
   });
 });
@@ -241,6 +242,15 @@ describe('VersionConflictBodySchema', () => {
     remoteChanges: [fullChange],
     requestId: 'req-01J9ZQK7X4',
   } as const;
+
+  it('nhận thân 409 có entityType "suggestion" (nhật ký thay đổi của lớp đề xuất M2)', () => {
+    const change = { ...fullChange, entityId: 'DRESS-R1-R-1-W-2', entityType: 'suggestion', field: 'state', value: 'disabled' } as const;
+
+    expect(VersionConflictBodySchema.parse({ ...fullConflict, remoteChanges: [change] })).toStrictEqual({
+      currentVersion: 7,
+      remoteChanges: [{ ...change }],
+    });
+  });
 
   it('bỏ code và requestId khỏi đầu ra, giữ đúng hai trường bộ trộn cần', () => {
     expect(VersionConflictBodySchema.parse(fullConflict)).toStrictEqual({

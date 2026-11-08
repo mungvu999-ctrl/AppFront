@@ -27,6 +27,17 @@ const remote = (
 });
 
 describe('resolveConflict', () => {
+  it('thay đổi từ xa của đề xuất được gọi là "đề xuất" trong thông báo', () => {
+    const result = resolveConflict({
+      baseVersion: 10,
+      localChanges: [local('#W-005', 'thickness_mm', 220)],
+      remoteChanges: [{ ...remote('DRESS-R1-R-1-W-2', 'state', 'disabled'), entityType: 'suggestion' }],
+      serverVersion: 11,
+    });
+
+    expect(JSON.stringify(result)).toContain('đề xuất');
+  });
+
   it('level 1 — auto-merges when local and remote touch different entities entirely', () => {
     const result = resolveConflict({
       baseVersion: 10,

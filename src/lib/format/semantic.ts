@@ -102,7 +102,8 @@ export type ChangeEntityKind =
   | 'furniture'
   | 'room'
   | 'dimension'
-  | 'roof';
+  | 'roof'
+  | 'suggestion';
 
 /** What happened to the entity. */
 export type ChangeKind = 'added' | 'changed' | 'removed';
@@ -137,6 +138,7 @@ const ENTITY_LABELS: Readonly<Record<ChangeEntityKind, string>> = {
   vertex: 'điểm',
   wall: 'tường',
   window: 'cửa sổ',
+  suggestion: 'đề xuất',
 };
 
 /** How a field's value is measured, which decides the formatter it goes through. */

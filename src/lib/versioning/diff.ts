@@ -8,7 +8,9 @@ export interface EntityRecord {
   [field: string]: unknown;
 }
 
-export type VersionSnapshot = Record<EntityKind, Record<string, EntityRecord>>;
+/** Ảnh chụp phiên bản chỉ có các họ thực thể của đồ thị; lớp đề xuất không nằm trong đó. */
+export type SnapshotKind = Exclude<EntityKind, 'suggestion'>;
+export type VersionSnapshot = Record<SnapshotKind, Record<string, EntityRecord>>;
 
 export type DiffChangeKind = 'added' | 'changed' | 'removed';
 
@@ -27,7 +29,7 @@ export interface VersionDiff {
   removed: DiffEntry[];
 }
 
-const ENTITY_KINDS: readonly EntityKind[] = ['vertex', 'wall', 'door', 'window', 'furniture', 'room', 'dimension', 'roof'];
+const ENTITY_KINDS: readonly SnapshotKind[] = ['vertex', 'wall', 'door', 'window', 'furniture', 'room', 'dimension', 'roof'];
 
 const valuesEqual = (a: unknown, b: unknown): boolean => {
   if (a === b) {

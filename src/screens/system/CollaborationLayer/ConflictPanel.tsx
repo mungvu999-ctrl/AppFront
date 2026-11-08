@@ -64,7 +64,7 @@ const DEFER_NOTE =
   'Hoãn lại không phải là một lựa chọn: không giá trị nào bị ghi đè, và xung đột vẫn còn đó.';
 
 /**
- * Bảng khép kín: `EntityKind` có bảy giá trị, thiếu một khoá là hỏng ở bước
+ * Bảng khép kín: `EntityKind` có chín giá trị, thiếu một khoá là hỏng ở bước
  * typecheck chứ không phải hiện ra chữ tiếng Anh trên màn của người dùng.
  */
 const ENTITY_KIND_LABEL: Readonly<Record<ConflictVm['entityType'], string>> = {
@@ -76,6 +76,7 @@ const ENTITY_KIND_LABEL: Readonly<Record<ConflictVm['entityType'], string>> = {
   room: 'phòng',
   dimension: 'kích thước',
   roof: 'mái',
+  suggestion: 'đề xuất',
 };
 
 /* -------------------------------------------------------------------------- */
