@@ -18,15 +18,18 @@ import sharp from 'sharp';
 import { createServer } from 'vite';
 
 import { sourceFor } from '../pascal-material-webp.mjs';
-import { buildDefaults, collectRefs, decodeKtx2, missingRefs, parseConstString, parseStringRecord, resolveFinishes, sourceOfMap } from './lib.mjs';
+import { OUT_MARKER, buildDefaults, collectRefs, decodeKtx2, missingRefs, parseConstString, parseStringRecord, resolveFinishes, sourceOfMap, unsafeOutReason } from './lib.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const ASSETS = join(ROOT, 'vendor', 'pascal', 'assets');
 const { values } = parseArgs({ args: process.argv.slice(2).filter((a) => a !== '--'), options: { out: { type: 'string' }, version: { type: 'string' } }, strict: false });
 if (!values.out || !values.version) throw new Error('Cần --out <dir> --version <v>');
 const OUT = resolve(values.out);
+const unsafe = unsafeOutReason(values.out, ROOT, { exists: existsSync, readdir: readdirSync });
+if (unsafe) throw new Error(`Không xoá ${OUT}: ${unsafe}`);
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(join(OUT, 'textures'), { recursive: true });
+writeFileSync(join(OUT, OUT_MARKER), 'export-pack\n');
 mkdirSync(join(OUT, 'models'), { recursive: true });
 
 const vite = await createServer({ root: ROOT, server: { middlewareMode: true, hmr: false, watch: null }, appType: 'custom', logLevel: 'error' });
@@ -204,6 +207,7 @@ const files = {};
 const walk = (d) =>
   readdirSync(d).forEach((n) => {
     const p = join(d, n);
+    if (p === join(OUT, OUT_MARKER)) return;
     if (statSync(p).isDirectory()) return walk(p);
     files[relative(OUT, p).replaceAll('\\', '/')] = createHash('sha256').update(readFileSync(p)).digest('hex');
   });

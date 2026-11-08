@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import sharp from 'sharp';
 
-import { buildDefaults, collectRefs, decodeKtx2, missingRefs, parseConstString, parseStringRecord, resolveFinishes, sourceOfMap } from '../export-pack/lib.mjs';
+import { join, parse, resolve } from 'node:path';
+
+import { OUT_MARKER, buildDefaults, collectRefs, decodeKtx2, missingRefs, parseConstString, parseStringRecord, resolveFinishes, sourceOfMap, unsafeOutReason } from '../export-pack/lib.mjs';
 
 describe('export-pack lib', () => {
   it('sourceOfMap: ktx2 qua sourceFor, webp thẳng, thiếu → null', () => {
@@ -41,5 +43,23 @@ describe('export-pack lib', () => {
     const { info } = await img.raw().toBuffer({ resolveWithObject: true });
     expect([info.width, info.height, info.channels]).toEqual([512, 512, 4]);
     expect(await decodeKtx2(new URL('plaster_painted_thumb.webp', dir), sharp)).toBeNull();
+  });
+  it('unsafeOutReason: chặn đường tương đối, gốc ổ, repo, thư mục lạ; cho phép rỗng/chưa có/có dấu', () => {
+    const root = resolve('/ws/AppFront');
+    const none = { exists: () => false, readdir: () => [] };
+    const dir = (d, names) => ({ exists: (p) => p === d || names.some((n) => join(d, n) === p), readdir: () => names });
+    expect(unsafeOutReason('pack', root, none)).toMatch(/tuyệt đối/);
+    expect(unsafeOutReason(undefined, root, none)).toMatch(/tuyệt đối/);
+    expect(unsafeOutReason(parse(root).root, root, none)).toMatch(/gốc ổ/);
+    expect(unsafeOutReason(root, root, none)).toMatch(/chứa thư mục repo/);
+    expect(unsafeOutReason(resolve('/ws'), root, none)).toMatch(/chứa thư mục repo/);
+    expect(unsafeOutReason(join(root, 'src'), root, none)).toMatch(/nằm trong repo/);
+    expect(unsafeOutReason(join(root, 'node_modules', '.cache', 'export-pack'), root, none)).toMatch(/nằm trong repo/);
+    expect(unsafeOutReason(join(root, 'node_modules', '.cache', 'export-pack', 'p1'), root, none)).toBeNull();
+    expect(unsafeOutReason(resolve('/ws/AppFront-other'), root, none)).toBeNull();
+    const out = resolve('/runs/pack');
+    expect(unsafeOutReason(out, root, dir(out, []))).toBeNull();
+    expect(unsafeOutReason(out, root, dir(out, ['manifest.json', OUT_MARKER]))).toBeNull();
+    expect(unsafeOutReason(out, root, dir(out, ['notes.txt']))).toMatch(/không rỗng/);
   });
 });

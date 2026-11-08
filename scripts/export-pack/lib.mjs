@@ -1,7 +1,7 @@
 // Hàm của build.mjs (có test): ánh xạ đường danh mục → ảnh nguồn, giải nén KTX2, sinh furniture-defaults.
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import vm from 'node:vm';
 
 /** Đường ảnh nguồn (webp/jpg/png) trong `assets` cho một map của danh mục; `.ktx2` qua `sourceFor`. */
@@ -110,4 +110,27 @@ export async function decodeKtx2(file, sharp) {
     ktx.close();
     ktx.delete();
   }
+}
+
+/** Tệp đánh dấu build.mjs ghi vào `--out`; chỉ thư mục có nó (hoặc rỗng/chưa có) mới được xoá để dựng lại. */
+export const OUT_MARKER = '.export-pack-out';
+
+const within = (parent, child) => {
+  const r = relative(parent, child);
+  return r === '' || (!isAbsolute(r) && r !== '..' && !r.startsWith('..' + sep));
+};
+
+/**
+ * Lý do từ chối xoá `--out` (F1), hoặc null nếu xoá được: phải là đường tuyệt đối, không là gốc ổ, không chứa
+ * và không nằm trong repo (trừ dưới `node_modules/.cache/export-pack/`), và thư mục có sẵn phải rỗng hoặc có OUT_MARKER.
+ */
+export function unsafeOutReason(rawOut, root, { exists, readdir }) {
+  if (!rawOut || !isAbsolute(rawOut)) return '--out phải là đường tuyệt đối';
+  const out = resolve(rawOut);
+  if (parse(out).root === out) return '--out là gốc ổ đĩa';
+  const cache = join(root, 'node_modules', '.cache', 'export-pack');
+  if (within(out, root)) return '--out chứa thư mục repo';
+  if (within(root, out) && (out === cache || !within(cache, out))) return '--out nằm trong repo (chỉ được dưới node_modules/.cache/export-pack/<tên>)';
+  if (!exists(out) || readdir(out).length === 0 || exists(join(out, OUT_MARKER))) return null;
+  return `thư mục có sẵn, không rỗng và không có ${OUT_MARKER} của lần dựng trước`;
 }
