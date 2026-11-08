@@ -50,4 +50,17 @@ describe('floorSuggestions (M2)', () => {
     expect(onTouched).toHaveBeenCalledWith([FLOOR]);
     stop();
   });
+
+  it('saver_recreated__dirty_suggestions_marked_for_save: kho đã bẩn trước khi dựng bộ lưu thì báo lưu tầng ấy', async () => {
+    useSuggestionStore.getState().putFloorSuggestions(FLOOR, enabledEntry(receivedEntry(undefined, SERVER, true)!, false));
+    const onTouched = vi.fn();
+    const stop = watchSuggestions(useStore, useSuggestionStore, onTouched);
+    await Promise.resolve();
+    expect(onTouched).toHaveBeenCalledWith([FLOOR]);
+    stop();
+    const late = vi.fn();
+    watchSuggestions(useStore, useSuggestionStore, late)();
+    await Promise.resolve();
+    expect(late).not.toHaveBeenCalled();
+  });
 });

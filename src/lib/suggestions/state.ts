@@ -209,7 +209,15 @@ export function watchSuggestions(
     const touched = suggestionFloorsToSave(state.floorSuggestions, previous.floorSuggestions);
     if (touched.length > 0) onTouched(touched);
   });
+  // Bộ lưu dựng lại (rời màn/đổi dự án) mà kho còn sửa chưa gửi: quét một lần. Hoãn một nhịp vì lúc `watchSuggestions`
+  // chạy bộ lưu chưa gắn xong nên `onTouched` chưa đánh dấu được.
+  let stopped = false;
+  queueMicrotask(() => {
+    const pending = stopped ? [] : suggestionFloorsToSave(store.getState().floorSuggestions, {});
+    if (pending.length > 0) onTouched(pending);
+  });
   return () => {
+    stopped = true;
     stopSpatial();
     stopLayer();
   };
