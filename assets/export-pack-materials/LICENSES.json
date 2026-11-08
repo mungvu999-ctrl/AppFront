@@ -1,0 +1,62 @@
+{
+ "flooring-tile20": {
+  "assetId": "Tiles071",
+  "author": "ambientCG",
+  "license": "CC0",
+  "licenseUrl": "https://docs.ambientcg.com/license/",
+  "source": "https://ambientcg.com/a/Tiles071",
+  "fetchedFrom": "local catalogue F:/assets-archviz",
+  "sizePx": 512,
+  "normal": "OpenGL (NormalGL)",
+  "files": {
+   "base": "base.jpg",
+   "normal": "normal.jpg",
+   "rough": "rough.png"
+  }
+ },
+ "fabric-linen": {
+  "assetId": "Fabric086",
+  "author": "ambientCG",
+  "license": "CC0",
+  "licenseUrl": "https://docs.ambientcg.com/license/",
+  "source": "https://ambientcg.com/a/Fabric086",
+  "fetchedFrom": "local catalogue F:/assets-archviz",
+  "sizePx": 512,
+  "normal": "OpenGL (NormalGL)",
+  "files": {
+   "base": "base.jpg",
+   "normal": "normal.jpg",
+   "rough": "rough.png"
+  }
+ },
+ "fabric-wool": {
+  "assetId": "Carpet016",
+  "author": "ambientCG",
+  "license": "CC0",
+  "licenseUrl": "https://docs.ambientcg.com/license/",
+  "source": "https://ambientcg.com/a/Carpet016",
+  "fetchedFrom": "local catalogue F:/assets-archviz",
+  "sizePx": 512,
+  "normal": "OpenGL (NormalGL)",
+  "files": {
+   "base": "base.jpg",
+   "normal": "normal.jpg",
+   "rough": "rough.png"
+  }
+ },
+ "flooring-statuarettowhite": {
+  "assetId": "Marble021",
+  "author": "ambientCG",
+  "license": "CC0",
+  "licenseUrl": "https://docs.ambientcg.com/license/",
+  "source": "https://ambientcg.com/a/Marble021",
+  "fetchedFrom": "https://ambientcg.com/get?file=Marble021_1K-JPG.zip (08/11/2026)",
+  "sizePx": 512,
+  "normal": "OpenGL (NormalGL)",
+  "files": {
+   "base": "base.jpg",
+   "normal": "normal.jpg",
+   "rough": "rough.png"
+  }
+ }
+}

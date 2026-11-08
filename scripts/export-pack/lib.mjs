@@ -134,3 +134,25 @@ export function unsafeOutReason(rawOut, root, { exists, readdir }) {
   if (!exists(out) || readdir(out).length === 0 || exists(join(out, OUT_MARKER))) return null;
   return `thư mục có sẵn, không rỗng và không có ${OUT_MARKER} của lần dựng trước`;
 }
+
+
+/**
+ * M2 — giấy phép được phép trong gói xuất: CC0, CC BY (mọi bản), MIT của Pascal. Mỗi mục có ảnh/mẫu phải ghi
+ * giấy phép thuộc tập này VÀ tác giả. Trả danh sách câu lỗi (rỗng = đạt); `build.mjs` hỏng nếu khác rỗng.
+ * Vật liệu màu phẳng (không ảnh) không có gì để cấp phép nên không xét.
+ */
+export const ALLOWED_LICENCE = /^(CC0\b|CC BY\b|CC-BY\b|MIT \(Pascal\)$)/;
+
+export function licenceProblems({ materials = {}, sceneMaterials = {}, models = {} }) {
+  const problems = [];
+  const check = (what, id, entry) => {
+    if (!ALLOWED_LICENCE.test(String(entry.license ?? '').trim())) problems.push(`${what}:${id} giấy phép "${entry.license ?? ''}" không thuộc CC0/CC-BY/MIT-Pascal`);
+    if (!String(entry.author ?? '').trim()) problems.push(`${what}:${id} thiếu tác giả`);
+  };
+  for (const [id, m] of Object.entries({ ...materials, ...sceneMaterials })) if (Object.keys(m.maps ?? {}).length > 0) check('material', id, m);
+  for (const [id, m] of Object.entries(models)) check('model', id, m);
+  return problems;
+}
+
+/** Mét thật của một lần lặp ảnh: UV của Pascal tính bằng mét, `repeatX` lần lặp mỗi mét → `1 / repeatX`. */
+export const repeatMOf = (repeatX) => (typeof repeatX === 'number' && repeatX > 0 ? Math.round((1 / repeatX) * 10000) / 10000 : 1);

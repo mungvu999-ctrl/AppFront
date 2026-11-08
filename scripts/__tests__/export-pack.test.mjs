@@ -4,7 +4,9 @@ import sharp from 'sharp';
 
 import { join, parse, resolve } from 'node:path';
 
-import { OUT_MARKER, buildDefaults, collectRefs, decodeKtx2, missingRefs, parseConstString, parseStringRecord, resolveFinishes, sourceOfMap, unsafeOutReason } from '../export-pack/lib.mjs';
+import { readFileSync } from 'node:fs';
+
+import { OUT_MARKER, buildDefaults, collectRefs, decodeKtx2, licenceProblems, missingRefs, parseConstString, parseStringRecord, repeatMOf, resolveFinishes, sourceOfMap, unsafeOutReason } from '../export-pack/lib.mjs';
 
 describe('export-pack lib', () => {
   it('sourceOfMap: ktx2 qua sourceFor, webp thẳng, thiếu → null', () => {
@@ -61,5 +63,42 @@ describe('export-pack lib', () => {
     expect(unsafeOutReason(out, root, dir(out, []))).toBeNull();
     expect(unsafeOutReason(out, root, dir(out, ['manifest.json', OUT_MARKER]))).toBeNull();
     expect(unsafeOutReason(out, root, dir(out, ['notes.txt']))).toMatch(/không rỗng/);
+  });
+});
+
+describe('export-pack giấy phép (M2)', () => {
+  const OVERRIDE_DIR = resolve(import.meta.dirname, '..', '..', 'assets', 'export-pack-materials');
+  const overrides = JSON.parse(readFileSync(join(OVERRIDE_DIR, 'LICENSES.json'), 'utf8'));
+
+  it('licenceProblems: CC0/CC BY/MIT (Pascal) có tác giả thì đạt; "chưa rõ", thiếu tác giả thì hỏng; màu phẳng không xét', () => {
+    const ok = { license: 'CC0', author: 'ambientCG', maps: { base: 'x' } };
+    expect(licenceProblems({ materials: { a: ok, b: { ...ok, license: 'MIT (Pascal)', author: 'Pascal' } }, models: { m: { license: 'CC BY 4.0 (https://…)', author: 'X' } } })).toEqual([]);
+    const bad = licenceProblems({
+      materials: { a: { ...ok, license: 'Pascal, MIT?' }, flat: { maps: {} } },
+      models: { m: { license: 'chưa rõ', author: 'AppFront' }, n: { license: 'CC0 1.0', author: '' }, p: { license: 'project code', author: 'AppFront' } },
+    });
+    expect(bad).toHaveLength(4);
+    expect(bad.join(' ')).toMatch(/material:a/);
+    expect(bad.join(' ')).toMatch(/model:n thiếu tác giả/);
+  });
+
+  it('repeatMOf: mét mỗi lần lặp = 1 / repeatX; số lạ → 1', () => {
+    expect(repeatMOf(1)).toBe(1);
+    expect(repeatMOf(4)).toBe(0.25);
+    expect(repeatMOf(3)).toBe(0.3333);
+    expect(repeatMOf(0)).toBe(1);
+    expect(repeatMOf(undefined)).toBe(1);
+  });
+
+  it('bốn ảnh thay thế: ambientCG CC0 có tác giả, đủ tệp, đúng 512 px', async () => {
+    expect(Object.keys(overrides).sort()).toEqual(['fabric-linen', 'fabric-wool', 'flooring-statuarettowhite', 'flooring-tile20']);
+    expect(licenceProblems({ materials: Object.fromEntries(Object.entries(overrides).map(([id, o]) => [id, { ...o, maps: o.files }])) })).toEqual([]);
+    for (const [id, o] of Object.entries(overrides)) {
+      expect(o.source).toMatch(/^https:\/\/ambientcg\.com\/a\//);
+      for (const file of Object.values(o.files)) {
+        const meta = await sharp(join(OVERRIDE_DIR, id, file)).metadata();
+        expect([meta.width, meta.height], `${id}/${file}`).toEqual([512, 512]);
+      }
+    }
   });
 });

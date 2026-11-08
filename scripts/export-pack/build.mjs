@@ -18,7 +18,7 @@ import sharp from 'sharp';
 import { createServer } from 'vite';
 
 import { sourceFor } from '../pascal-material-webp.mjs';
-import { OUT_MARKER, buildDefaults, collectRefs, decodeKtx2, missingRefs, parseConstString, parseStringRecord, resolveFinishes, sourceOfMap, unsafeOutReason } from './lib.mjs';
+import { OUT_MARKER, buildDefaults, collectRefs, decodeKtx2, licenceProblems, missingRefs, parseConstString, parseStringRecord, repeatMOf, resolveFinishes, sourceOfMap, unsafeOutReason } from './lib.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const ASSETS = join(ROOT, 'vendor', 'pascal', 'assets');
@@ -49,19 +49,42 @@ const hex = (c) => (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c) ? c.toLow
 
 // ── vật liệu ──
 const ROLES = { albedoMap: ['base', 'jpg'], normalMap: ['normal', 'png'], roughnessMap: ['rough', 'png'] };
+/* M2 — ảnh thay thế CC0 (ambientCG) cho vật liệu Pascal có nguồn ảnh chưa xác minh: `assets/export-pack-materials`. */
+const OVERRIDE_DIR = join(ROOT, 'assets', 'export-pack-materials');
+const OVERRIDES = JSON.parse(readFileSync(join(OVERRIDE_DIR, 'LICENSES.json'), 'utf8'));
+const PASCAL_MATERIAL = { license: 'MIT (Pascal)', author: 'Pascal', source: 'https://github.com/pascalorg/editor (vendor/pascal/assets/material)' };
 const materials = {};
 for (const item of MATERIAL_CATALOG) {
   const p = item.preset ?? {};
   const mp = p.mapProperties ?? p.properties ?? {};
+  const override = OVERRIDES[item.id];
   const entry = {
     label: item.label,
-    color: hex(mp.color ?? item.previewColor),
+    color: hex(override ? '#ffffff' : (mp.color ?? item.previewColor)),
     roughness: mp.roughness ?? 0.5,
     metalness: mp.metalness ?? 0,
     repeatX: mp.repeatX ?? 1,
+    repeatM: repeatMOf(mp.repeatX ?? 1),
     maps: {},
     hasTexture: false,
+    ...(override ? { license: override.license, author: override.author, source: override.source } : PASCAL_MATERIAL),
   };
+  if (override) {
+    entry.hasTexture = true;
+    for (const [role, ext] of Object.values(ROLES)) {
+      const src = join(OVERRIDE_DIR, item.id, override.files[role]);
+      if (!existsSync(src)) {
+        missing.push(`material:${item.id}:${role} (ảnh thay thế ${override.files[role]})`);
+        continue;
+      }
+      const file = `textures/${item.id}_${role}.${ext}`;
+      const img = sharp(src).resize({ width: 1024, height: 1024, fit: 'inside', withoutEnlargement: true });
+      await (ext === 'jpg' ? img.jpeg({ quality: 88 }) : img.png({ compressionLevel: 9 })).toFile(join(OUT, file));
+      entry.maps[role] = file;
+    }
+    materials[item.id] = entry;
+    continue;
+  }
   const wanted = Object.entries(ROLES).filter(([k]) => p.maps?.[k]);
   entry.hasTexture = wanted.length > 0;
   for (const [key, [role, ext]] of wanted) {
@@ -91,6 +114,7 @@ for (const m of [...SCENE_MATERIALS, ...SCENE_STYLE_MATERIALS]) {
     roughness: pr.roughness ?? 0.5,
     metalness: pr.metalness ?? 0,
     repeatX: 1,
+    repeatM: 1,
     opacity: pr.opacity ?? 1,
     transparent: !!pr.transparent,
     maps: {},
@@ -161,6 +185,8 @@ for (const id of folders) {
   };
 }
 writeFileSync(join(OUT, 'models.json'), JSON.stringify(models, null, 1));
+/* M2 — mọi vật liệu có ảnh và mọi mẫu phải là CC0/CC-BY/MIT-Pascal có tác giả: sai thì cả lượt dựng hỏng (cuối tệp). */
+const licence = licenceProblems({ materials, sceneMaterials, models });
 
 // ── mặc định chọn mẫu: đúng hàm toPascal dùng (modelFolderOf + VARIANT_MODEL) ──
 const style = sceneStyleOf(DEFAULT_SCENE_STYLE);
@@ -205,7 +231,7 @@ const rows = Object.entries(models).map(([id, m]) => `| ${id} | ${m.author} | ${
 writeFileSync(join(OUT, 'LICENSE-PASCAL-MIT.txt'), readFileSync(join(ROOT, 'vendor', 'pascal', 'LICENSE')));
 writeFileSync(
   join(OUT, 'LICENSES.md'),
-  `# Giấy phép mẫu đồ trong gói ${values.version}\n\nVật liệu: ảnh từ vendor/pascal/assets/material (Pascal, MIT). Toàn văn giấy phép MIT của Pascal: LICENSE-PASCAL-MIT.txt.\n\n| Mẫu | Tác giả | Giấy phép | Nguồn |\n|---|---|---|---|\n${rows.join('\n')}\n`,
+  `# Giấy phép mẫu đồ trong gói ${values.version}\n\nVật liệu: ảnh từ vendor/pascal/assets/material (Pascal, MIT), trừ các vật liệu ghi dưới đây (ambientCG, CC0). Toàn văn giấy phép MIT của Pascal: LICENSE-PASCAL-MIT.txt.\n\n| Vật liệu | Tác giả | Giấy phép | Nguồn |\n|---|---|---|---|\n${Object.entries(OVERRIDES).map(([id, o]) => `| ${id} | ${o.author} | ${o.license} | ${o.source} |`).join('\n')}\n\n| Mẫu | Tác giả | Giấy phép | Nguồn |\n|---|---|---|---|\n${rows.join('\n')}\n`,
 );
 
 const files = {};
@@ -224,6 +250,7 @@ const manifest = {
   files,
   missing,
   decodedFromKtx2,
+  licenceProblems: licence,
 };
 writeFileSync(join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 1));
 await vite.close();
@@ -244,3 +271,7 @@ console.log(
   }),
 );
 if (missing.length) console.log('missing:\n  ' + missing.slice(0, 40).join('\n  '));
+if (licence.length) {
+  console.error('Giấy phép không đạt (CC0/CC-BY/MIT-Pascal + tác giả):\n  ' + licence.join('\n  '));
+  process.exitCode = 1;
+}
