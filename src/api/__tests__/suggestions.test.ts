@@ -54,7 +54,7 @@ describe('M2 lớp đề xuất — schema và client', () => {
     expect(FloorLayerWriteBodySchema.safeParse({ refreshSuggestions: true }).success).toBe(true);
     expect(FloorLayerWriteBodySchema.safeParse({}).success).toBe(false);
     const parsed = FloorLayerWriteResultSchema.parse({ layer: CH04.layer, revision: 2, suggestions: storedSuggestionsOf(CH04), suggestionsMeta: META });
-    expect(parsed.suggestions?.length).toBe(CH04.drafts.length);
+    expect(parsed.suggestions?.length).toBe(CH04.drafts.length + CH04.serverDrafts.length);
   });
 
   it('mock: N16 trả lớp đã nạp, #35 áp trạng thái thưa, id lạ → 422', async () => {

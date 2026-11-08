@@ -12,30 +12,38 @@ import ch04Golden from './ch-04.golden.json';
 import ch04Layer from './ch-04.layer.json';
 import ch06Golden from './ch-06.golden.json';
 import ch06Layer from './ch-06.layer.json';
+import penthouseGolden from './syn-penthouse.golden.json';
+import penthouseLayer from './syn-penthouse.layer.json';
 
 export interface GoldenCase {
   readonly name: string;
   readonly rulesetSha: string;
   readonly rules: readonly string[];
-  /** Bản nháp như máy chủ ghi trong tệp vàng: `id, rule, ruleVersion, kind, hostRef, params`. */
+  /** Bản nháp các luật FE chép (R1, R4, C2, F1, L1) như tệp vàng: `id, rule, ruleVersion, kind, hostRef, params`. */
   readonly drafts: readonly Record<string, unknown>[];
+  /** Bản nháp luật chỉ máy chủ chạy (đặt đồ, tủ bếp, ốp gạch, phào…), để test vẽ. */
+  readonly serverDrafts: readonly Record<string, unknown>[];
   readonly layer: SpatialLayer;
 }
 
 export const GOLDEN_CASES: readonly GoldenCase[] = [
   { name: 'ch-04', golden: ch04Golden, layer: ch04Layer },
   { name: 'ch-06', golden: ch06Golden, layer: ch06Layer },
+  { name: 'syn-penthouse', golden: penthouseGolden, layer: penthouseLayer },
 ].map(({ name, golden, layer }) => ({
   name,
   rulesetSha: golden.rulesetSha,
   rules: golden.rules,
   drafts: golden.suggestions as readonly Record<string, unknown>[],
+  serverDrafts: golden.serverSuggestions as readonly Record<string, unknown>[],
   layer: SpatialLayerSchema.parse(layer) as SpatialLayer,
 }));
 
-/** Bản ghi đã lưu của một ca vàng (`active`, `createdRevision` 1), như N16 sẽ trả. */
+/** Bản ghi đã lưu của một ca vàng (`active`, `createdRevision` 1), như N16 sẽ trả: luật FE chép + luật máy chủ, sắp theo id. */
 export const storedSuggestionsOf = (golden: GoldenCase): Suggestion[] =>
-  golden.drafts.map((draft) => SuggestionSchema.parse({ ...draft, state: 'active', createdRevision: 1 }));
+  [...golden.drafts, ...golden.serverDrafts]
+    .map((draft) => SuggestionSchema.parse({ ...draft, state: 'active', createdRevision: 1 }))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
 export const CH04 = GOLDEN_CASES[0]!;
 

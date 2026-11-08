@@ -1,0 +1,2100 @@
+{
+ "case": "syn-penthouse",
+ "layer": "syn-penthouse.layer.json",
+ "rulesetSha": "9bbae40783ecfc9e6855ded122696fe5672046095730fc175e18c3b316f32370",
+ "rules": [
+  "R1",
+  "R4",
+  "C2",
+  "F1",
+  "L1"
+ ],
+ "suggestions": [
+  {
+   "id": "DRESS-C2-D-03H62D0EQMF6142PZPRYNL6ME",
+   "rule": "C2",
+   "ruleVersion": 1,
+   "kind": "sash",
+   "hostRef": {
+    "opening": "D-03H62D0EQMF6142PZPRYNL6ME"
+   },
+   "params": {
+    "frameWidthMm": 40,
+    "frameDepthMm": 45
+   }
+  },
+  {
+   "id": "DRESS-C2-D-03H62D0EQNJW66QSP2NT3WA65",
+   "rule": "C2",
+   "ruleVersion": 1,
+   "kind": "sash",
+   "hostRef": {
+    "opening": "D-03H62D0EQNJW66QSP2NT3WA65"
+   },
+   "params": {
+    "frameWidthMm": 40,
+    "frameDepthMm": 45
+   }
+  },
+  {
+   "id": "DRESS-C2-D-03H62D0EQO3V4GJFBJ9F42522",
+   "rule": "C2",
+   "ruleVersion": 1,
+   "kind": "sash",
+   "hostRef": {
+    "opening": "D-03H62D0EQO3V4GJFBJ9F42522"
+   },
+   "params": {
+    "frameWidthMm": 40,
+    "frameDepthMm": 45
+   }
+  },
+  {
+   "id": "DRESS-C2-D-03H62D0EQOJWTD76ZCSFI292B",
+   "rule": "C2",
+   "ruleVersion": 1,
+   "kind": "sash",
+   "hostRef": {
+    "opening": "D-03H62D0EQOJWTD76ZCSFI292B"
+   },
+   "params": {
+    "frameWidthMm": 40,
+    "frameDepthMm": 45
+   }
+  },
+  {
+   "id": "DRESS-C2-D-03H62D0EQOUSXXWLXHLUL1KD2",
+   "rule": "C2",
+   "ruleVersion": 1,
+   "kind": "sash",
+   "hostRef": {
+    "opening": "D-03H62D0EQOUSXXWLXHLUL1KD2"
+   },
+   "params": {
+    "frameWidthMm": 40,
+    "frameDepthMm": 45
+   }
+  },
+  {
+   "id": "DRESS-C2-D-03H62D0EQP5BXQILE1I6ZHFN7",
+   "rule": "C2",
+   "ruleVersion": 1,
+   "kind": "sash",
+   "hostRef": {
+    "opening": "D-03H62D0EQP5BXQILE1I6ZHFN7"
+   },
+   "params": {
+    "frameWidthMm": 40,
+    "frameDepthMm": 45
+   }
+  },
+  {
+   "id": "DRESS-C2-D-03H62D0EQP77IJNNBJHSXRZ36",
+   "rule": "C2",
+   "ruleVersion": 1,
+   "kind": "sash",
+   "hostRef": {
+    "opening": "D-03H62D0EQP77IJNNBJHSXRZ36"
+   },
+   "params": {
+    "frameWidthMm": 40,
+    "frameDepthMm": 45
+   }
+  },
+  {
+   "id": "DRESS-C2-D-03H62D0EQP904OHAS4OJ0CYHC",
+   "rule": "C2",
+   "ruleVersion": 1,
+   "kind": "sash",
+   "hostRef": {
+    "opening": "D-03H62D0EQP904OHAS4OJ0CYHC"
+   },
+   "params": {
+    "frameWidthMm": 40,
+    "frameDepthMm": 45
+   }
+  },
+  {
+   "id": "DRESS-C2-D-03H62D0EQPIUEGAWNKL3XL792",
+   "rule": "C2",
+   "ruleVersion": 1,
+   "kind": "sash",
+   "hostRef": {
+    "opening": "D-03H62D0EQPIUEGAWNKL3XL792"
+   },
+   "params": {
+    "frameWidthMm": 40,
+    "frameDepthMm": 45
+   }
+  },
+  {
+   "id": "DRESS-C2-D-03H62D0EQQFNW8IMX75MHJ742",
+   "rule": "C2",
+   "ruleVersion": 1,
+   "kind": "sash",
+   "hostRef": {
+    "opening": "D-03H62D0EQQFNW8IMX75MHJ742"
+   },
+   "params": {
+    "frameWidthMm": 40,
+    "frameDepthMm": 45
+   }
+  },
+  {
+   "id": "DRESS-C2-D-03H62D0EQQNL88YXNCP9ERISA",
+   "rule": "C2",
+   "ruleVersion": 1,
+   "kind": "sash",
+   "hostRef": {
+    "opening": "D-03H62D0EQQNL88YXNCP9ERISA"
+   },
+   "params": {
+    "frameWidthMm": 40,
+    "frameDepthMm": 45
+   }
+  },
+  {
+   "id": "DRESS-C2-D-03H62D0EQQQ7538RFKJYF2NFB",
+   "rule": "C2",
+   "ruleVersion": 1,
+   "kind": "sash",
+   "hostRef": {
+    "opening": "D-03H62D0EQQQ7538RFKJYF2NFB"
+   },
+   "params": {
+    "frameWidthMm": 40,
+    "frameDepthMm": 45
+   }
+  },
+  {
+   "id": "DRESS-C2-D-03H62D0EQR8YF3JGNA1WH5TZN",
+   "rule": "C2",
+   "ruleVersion": 1,
+   "kind": "sash",
+   "hostRef": {
+    "opening": "D-03H62D0EQR8YF3JGNA1WH5TZN"
+   },
+   "params": {
+    "frameWidthMm": 40,
+    "frameDepthMm": 45
+   }
+  },
+  {
+   "id": "DRESS-C2-D-03H62D0EQR9R4WCM6U9Y7YOQM",
+   "rule": "C2",
+   "ruleVersion": 1,
+   "kind": "sash",
+   "hostRef": {
+    "opening": "D-03H62D0EQR9R4WCM6U9Y7YOQM"
+   },
+   "params": {
+    "frameWidthMm": 40,
+    "frameDepthMm": 45
+   }
+  },
+  {
+   "id": "DRESS-C2-D-03H62D0EQRD4EX3VI61CH0EJX",
+   "rule": "C2",
+   "ruleVersion": 1,
+   "kind": "sash",
+   "hostRef": {
+    "opening": "D-03H62D0EQRD4EX3VI61CH0EJX"
+   },
+   "params": {
+    "frameWidthMm": 40,
+    "frameDepthMm": 45
+   }
+  },
+  {
+   "id": "DRESS-F1-F-03H62D0F2IJEYGC2SH0XZWG4V",
+   "rule": "F1",
+   "ruleVersion": 1,
+   "kind": "modelPick",
+   "hostRef": {
+    "furniture": "F-03H62D0F2IJEYGC2SH0XZWG4V"
+   },
+   "params": {
+    "modelId": "vanity-sf",
+    "scale": 1.0,
+    "reasonVi": "hộp 1,06 × 0,75 m → tủ chậu rửa"
+   }
+  },
+  {
+   "id": "DRESS-F1-F-03H62D0F3ANJP3CCQOUZMH4IL",
+   "rule": "F1",
+   "ruleVersion": 1,
+   "kind": "modelPick",
+   "hostRef": {
+    "furniture": "F-03H62D0F3ANJP3CCQOUZMH4IL"
+   },
+   "params": {
+    "modelId": "vanity-sf",
+    "scale": 0.935,
+    "reasonVi": "hộp 0,86 × 0,60 m → tủ chậu rửa"
+   }
+  },
+  {
+   "id": "DRESS-L1-R-03H62D0F1F7B3ONYP5CDBEHTC",
+   "rule": "L1",
+   "ruleVersion": 1,
+   "kind": "ceilingLight",
+   "hostRef": {
+    "room": "R-03H62D0F1F7B3ONYP5CDBEHTC"
+   },
+   "params": {
+    "centre": {
+     "x": 17098,
+     "y": 12793
+    },
+    "fixture": "panel",
+    "sizeMm": [
+     300,
+     300,
+     40
+    ]
+   }
+  },
+  {
+   "id": "DRESS-L1-R-03H62D0F1FDVX1H1MKPC1IL0C",
+   "rule": "L1",
+   "ruleVersion": 1,
+   "kind": "ceilingLight",
+   "hostRef": {
+    "room": "R-03H62D0F1FDVX1H1MKPC1IL0C"
+   },
+   "params": {
+    "centre": {
+     "x": 19615,
+     "y": 12069
+    },
+    "fixture": "pendant",
+    "modelId": "ceiling-lamp-ph"
+   }
+  },
+  {
+   "id": "DRESS-L1-R-03H62D0F1FQFDR1BXV31L242E",
+   "rule": "L1",
+   "ruleVersion": 1,
+   "kind": "ceilingLight",
+   "hostRef": {
+    "room": "R-03H62D0F1FQFDR1BXV31L242E"
+   },
+   "params": {
+    "centre": {
+     "x": 19988,
+     "y": 8672
+    },
+    "fixture": "pendant",
+    "modelId": "ceiling-lamp-ph"
+   }
+  },
+  {
+   "id": "DRESS-L1-R-03H62D0F1GAZWYG6RNXVOTIK2",
+   "rule": "L1",
+   "ruleVersion": 1,
+   "kind": "ceilingLight",
+   "hostRef": {
+    "room": "R-03H62D0F1GAZWYG6RNXVOTIK2"
+   },
+   "params": {
+    "centre": {
+     "x": 6445,
+     "y": 8300
+    },
+    "fixture": "pendant",
+    "modelId": "ceiling-lamp-ph"
+   }
+  },
+  {
+   "id": "DRESS-L1-R-03H62D0F1HQQLG1DFJU47L7ID",
+   "rule": "L1",
+   "ruleVersion": 1,
+   "kind": "ceilingLight",
+   "hostRef": {
+    "room": "R-03H62D0F1HQQLG1DFJU47L7ID"
+   },
+   "params": {
+    "centre": {
+     "x": 16184,
+     "y": 17818
+    },
+    "fixture": "panel",
+    "sizeMm": [
+     300,
+     300,
+     40
+    ]
+   }
+  },
+  {
+   "id": "DRESS-L1-R-03H62D0F1HUUY4636OZ63G649",
+   "rule": "L1",
+   "ruleVersion": 1,
+   "kind": "ceilingLight",
+   "hostRef": {
+    "room": "R-03H62D0F1HUUY4636OZ63G649"
+   },
+   "params": {
+    "centre": {
+     "x": 19595,
+     "y": 16292
+    },
+    "fixture": "pendant",
+    "modelId": "ceiling-lamp-ph"
+   }
+  },
+  {
+   "id": "DRESS-L1-R-03H62D0F1I9J0WS3MNLIU2U75",
+   "rule": "L1",
+   "ruleVersion": 1,
+   "kind": "ceilingLight",
+   "hostRef": {
+    "room": "R-03H62D0F1I9J0WS3MNLIU2U75"
+   },
+   "params": {
+    "centre": {
+     "x": 15596,
+     "y": 7900
+    },
+    "fixture": "panel",
+    "sizeMm": [
+     300,
+     300,
+     40
+    ]
+   }
+  },
+  {
+   "id": "DRESS-L1-R-03H62D0F1IGH37Z68IYR8N4PS",
+   "rule": "L1",
+   "ruleVersion": 1,
+   "kind": "ceilingLight",
+   "hostRef": {
+    "room": "R-03H62D0F1IGH37Z68IYR8N4PS"
+   },
+   "params": {
+    "centre": {
+     "x": 17197,
+     "y": 7900
+    },
+    "fixture": "panel",
+    "sizeMm": [
+     300,
+     300,
+     40
+    ]
+   }
+  },
+  {
+   "id": "DRESS-L1-R-03H62D0F1IH3DPWRJY4C8TODQ",
+   "rule": "L1",
+   "ruleVersion": 1,
+   "kind": "ceilingLight",
+   "hostRef": {
+    "room": "R-03H62D0F1IH3DPWRJY4C8TODQ"
+   },
+   "params": {
+    "centre": {
+     "x": 14395,
+     "y": 7900
+    },
+    "fixture": "panel",
+    "sizeMm": [
+     300,
+     300,
+     40
+    ]
+   }
+  },
+  {
+   "id": "DRESS-L1-R-03H62D0F1JDGT099FQNJAJCP2",
+   "rule": "L1",
+   "ruleVersion": 1,
+   "kind": "ceilingLight",
+   "hostRef": {
+    "room": "R-03H62D0F1JDGT099FQNJAJCP2"
+   },
+   "params": {
+    "centre": {
+     "x": 16195,
+     "y": 14993
+    },
+    "fixture": "panel",
+    "sizeMm": [
+     300,
+     300,
+     40
+    ]
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1FDVX1H1MKPC1IL0C-W-03H62D0EQNJIN6RMLWL1D773K",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQNJIN6RMLWL1D773K",
+    "room": "R-03H62D0F1FDVX1H1MKPC1IL0C"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      3594,
+      6787
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1FDVX1H1MKPC1IL0C-W-03H62D0EQO7P50NHLX1GEQJ62",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQO7P50NHLX1GEQJ62",
+    "room": "R-03H62D0F1FDVX1H1MKPC1IL0C"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      0,
+      5598
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1FDVX1H1MKPC1IL0C-W-03H62D0EQOTFBNPDAMXQQX9LZ",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQOTFBNPDAMXQQX9LZ",
+    "room": "R-03H62D0F1FDVX1H1MKPC1IL0C"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      0,
+      833
+     ],
+     [
+      1670,
+      1801
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1FDVX1H1MKPC1IL0C-W-03H62D0EQPW8B3R5YGHQC365Z",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQPW8B3R5YGHQC365Z",
+    "room": "R-03H62D0F1FDVX1H1MKPC1IL0C"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      3594,
+      3828
+     ],
+     [
+      4762,
+      4993
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1FDVX1H1MKPC1IL0C-W-03H62D0EQPWBC8WM6WCOZNNHI",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQPWBC8WM6WCOZNNHI",
+    "room": "R-03H62D0F1FDVX1H1MKPC1IL0C"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      2913,
+      6710
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1FDVX1H1MKPC1IL0C-W-03H62D0EQQ120APKAGYN48PKM",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQQ120APKAGYN48PKM",
+    "room": "R-03H62D0F1FDVX1H1MKPC1IL0C"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      0,
+      1794
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1FQFDR1BXV31L242E-W-03H62D0EQMXR4LWJMZSQZ3D9F",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQMXR4LWJMZSQZ3D9F",
+    "room": "R-03H62D0F1FQFDR1BXV31L242E"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      4916,
+      8515
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1FQFDR1BXV31L242E-W-03H62D0EQNJIN6RMLWL1D773K",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQNJIN6RMLWL1D773K",
+    "room": "R-03H62D0F1FQFDR1BXV31L242E"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      0,
+      3594
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1FQFDR1BXV31L242E-W-03H62D0EQO7P50NHLX1GEQJ62",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQO7P50NHLX1GEQJ62",
+    "room": "R-03H62D0F1FQFDR1BXV31L242E"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      0,
+      5598
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1FQFDR1BXV31L242E-W-03H62D0EQPKX87D52LRDYOPQ8",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQPKX87D52LRDYOPQ8",
+    "room": "R-03H62D0F1FQFDR1BXV31L242E"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      0,
+      1993
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1FQFDR1BXV31L242E-W-03H62D0EQPW8B3R5YGHQC365Z",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQPW8B3R5YGHQC365Z",
+    "room": "R-03H62D0F1FQFDR1BXV31L242E"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      1993,
+      2332
+     ],
+     [
+      3266,
+      3594
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1FQFDR1BXV31L242E-W-03H62D0EQQDVJKZJ2OGAH6OIP",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQQDVJKZJ2OGAH6OIP",
+    "room": "R-03H62D0F1FQFDR1BXV31L242E"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      0,
+      1035
+     ],
+     [
+      1874,
+      1999
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1GAZWYG6RNXVOTIK2-W-03H62D0EQOGP9GYXD9AQS5P2A",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQOGP9GYXD9AQS5P2A",
+    "room": "R-03H62D0F1GAZWYG6RNXVOTIK2"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      0,
+      3097
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1GAZWYG6RNXVOTIK2-W-03H62D0EQOQ18EE1P19OX74KQ",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQOQ18EE1P19OX74KQ",
+    "room": "R-03H62D0F1GAZWYG6RNXVOTIK2"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      0,
+      230
+     ],
+     [
+      1161,
+      2794
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1GAZWYG6RNXVOTIK2-W-03H62D0EQRGWXNKGJ4XBUW46U",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQRGWXNKGJ4XBUW46U",
+    "room": "R-03H62D0F1GAZWYG6RNXVOTIK2"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      0,
+      3097
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1GAZWYG6RNXVOTIK2-W-03H62D0EQRL22CQGPXPE5CXZB",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQRL22CQGPXPE5CXZB",
+    "room": "R-03H62D0F1GAZWYG6RNXVOTIK2"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      0,
+      2794
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1HUUY4636OZ63G649-W-03H62D0EQNJIN6RMLWL1D773K",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQNJIN6RMLWL1D773K",
+    "room": "R-03H62D0F1HUUY4636OZ63G649"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      6787,
+      11991
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1HUUY4636OZ63G649-W-03H62D0EQPWBC8WM6WCOZNNHI",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQPWBC8WM6WCOZNNHI",
+    "room": "R-03H62D0F1HUUY4636OZ63G649"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      2310,
+      6710
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1HUUY4636OZ63G649-W-03H62D0EQR870KY53I9T7R8DE",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQR870KY53I9T7R8DE",
+    "room": "R-03H62D0F1HUUY4636OZ63G649"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      0,
+      1010
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1HUUY4636OZ63G649-W-03H62D0EQRGW2FALUIAAOPFM4",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQRGW2FALUIAAOPFM4",
+    "room": "R-03H62D0F1HUUY4636OZ63G649"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      2401,
+      6801
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1HUUY4636OZ63G649-W-03H62D0EQRP0BXCCWU4A80MAC",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQRP0BXCCWU4A80MAC",
+    "room": "R-03H62D0F1HUUY4636OZ63G649"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      0,
+      3204
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1I9J0WS3MNLIU2U75-W-03H62D0EQMXR4LWJMZSQZ3D9F",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQMXR4LWJMZSQZ3D9F",
+    "room": "R-03H62D0F1I9J0WS3MNLIU2U75"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      1714,
+      2917
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1I9J0WS3MNLIU2U75-W-03H62D0EQPW8B3R5YGHQC365Z",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQPW8B3R5YGHQC365Z",
+    "room": "R-03H62D0F1I9J0WS3MNLIU2U75"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      0,
+      1993
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1I9J0WS3MNLIU2U75-W-03H62D0EQQT0ECOLUQH7Y51UC",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQQT0ECOLUQH7Y51UC",
+    "room": "R-03H62D0F1I9J0WS3MNLIU2U75"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      0,
+      1993
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1I9J0WS3MNLIU2U75-W-03H62D0F29VPAQX9C65C3DKRH",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0F29VPAQX9C65C3DKRH",
+    "room": "R-03H62D0F1I9J0WS3MNLIU2U75"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      0,
+      1203
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1JDGT099FQNJAJCP2-W-03H62D0EQOR74Y8Y2SX4XPWWT",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQOR74Y8Y2SX4XPWWT",
+    "room": "R-03H62D0F1JDGT099FQNJAJCP2"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      0,
+      942
+     ],
+     [
+      1872,
+      2401
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1JDGT099FQNJAJCP2-W-03H62D0EQPVSSFUYRC76R0AR7",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQPVSSFUYRC76R0AR7",
+    "room": "R-03H62D0F1JDGT099FQNJAJCP2"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      190,
+      296
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1JDGT099FQNJAJCP2-W-03H62D0EQPWBC8WM6WCOZNNHI",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQPWBC8WM6WCOZNNHI",
+    "room": "R-03H62D0F1JDGT099FQNJAJCP2"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      984,
+      2310
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1JDGT099FQNJAJCP2-W-03H62D0EQQXO94KX9T8A24U5O",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQQXO94KX9T8A24U5O",
+    "room": "R-03H62D0F1JDGT099FQNJAJCP2"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      0,
+      2500
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1JDGT099FQNJAJCP2-W-03H62D0EQR870KY53I9T7R8DE",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQR870KY53I9T7R8DE",
+    "room": "R-03H62D0F1JDGT099FQNJAJCP2"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      0,
+      1010
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  },
+  {
+   "id": "DRESS-R1-R-03H62D0F1JDGT099FQNJAJCP2-W-03H62D0EQRP0BXCCWU4A80MAC",
+   "rule": "R1",
+   "ruleVersion": 1,
+   "kind": "skirting",
+   "hostRef": {
+    "wall": "W-03H62D0EQRP0BXCCWU4A80MAC",
+    "room": "R-03H62D0F1JDGT099FQNJAJCP2"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      0,
+      606
+     ]
+    ],
+    "heightMm": 90,
+    "thicknessMm": 12,
+    "material": "library:paint-white"
+   }
+  }
+ ],
+ "serverRules": [
+  "R2",
+  "R3",
+  "F2",
+  "F3",
+  "P1",
+  "P2",
+  "D1",
+  "P3",
+  "D3",
+  "D4",
+  "D5"
+ ],
+ "serverSuggestions": [
+  {
+   "id": "DRESS-D3-P2-F-03H62D0F2W4UFXC8ARJPRJH86-L",
+   "rule": "D3",
+   "ruleVersion": 1,
+   "kind": "item",
+   "hostRef": {
+    "room": "R-03H62D0F1FDVX1H1MKPC1IL0C",
+    "suggestion": "DRESS-P2-F-03H62D0F2W4UFXC8ARJPRJH86-L"
+   },
+   "params": {
+    "furnitureKind": "other",
+    "variant": "vase",
+    "modelId": "ceramic-vase",
+    "centre": {
+     "x": 18574,
+     "y": 10830
+    },
+    "sizeMm": [
+     204,
+     203,
+     400
+    ],
+    "rotationDeg": 0.0,
+    "liftMm": 551
+   }
+  },
+  {
+   "id": "DRESS-D3-P2-F-03H62D0F2W4UFXC8ARJPRJH86-R",
+   "rule": "D3",
+   "ruleVersion": 1,
+   "kind": "item",
+   "hostRef": {
+    "room": "R-03H62D0F1FDVX1H1MKPC1IL0C",
+    "suggestion": "DRESS-P2-F-03H62D0F2W4UFXC8ARJPRJH86-R"
+   },
+   "params": {
+    "furnitureKind": "other",
+    "variant": "vase",
+    "modelId": "ceramic-vase",
+    "centre": {
+     "x": 20814,
+     "y": 10830
+    },
+    "sizeMm": [
+     204,
+     203,
+     400
+    ],
+    "rotationDeg": 0.0,
+    "liftMm": 551
+   }
+  },
+  {
+   "id": "DRESS-D3-P2-F-03H62D0F2WKUQUE06JMSDQL62-L",
+   "rule": "D3",
+   "ruleVersion": 1,
+   "kind": "item",
+   "hostRef": {
+    "room": "R-03H62D0F1FQFDR1BXV31L242E",
+    "suggestion": "DRESS-P2-F-03H62D0F2WKUQUE06JMSDQL62-L"
+   },
+   "params": {
+    "furnitureKind": "other",
+    "variant": "vase",
+    "modelId": "ceramic-vase",
+    "centre": {
+     "x": 20821,
+     "y": 10175
+    },
+    "sizeMm": [
+     204,
+     203,
+     400
+    ],
+    "rotationDeg": 0.0,
+    "liftMm": 551
+   }
+  },
+  {
+   "id": "DRESS-D3-P2-F-03H62D0F2WKUQUE06JMSDQL62-R",
+   "rule": "D3",
+   "ruleVersion": 1,
+   "kind": "item",
+   "hostRef": {
+    "room": "R-03H62D0F1FQFDR1BXV31L242E",
+    "suggestion": "DRESS-P2-F-03H62D0F2WKUQUE06JMSDQL62-R"
+   },
+   "params": {
+    "furnitureKind": "other",
+    "variant": "vase",
+    "modelId": "ceramic-vase",
+    "centre": {
+     "x": 18583,
+     "y": 10175
+    },
+    "sizeMm": [
+     204,
+     203,
+     400
+    ],
+    "rotationDeg": 0.0,
+    "liftMm": 551
+   }
+  },
+  {
+   "id": "DRESS-D3-P2-F-03H62D0F32EQ40ABTNKLXDI8Z-R",
+   "rule": "D3",
+   "ruleVersion": 1,
+   "kind": "item",
+   "hostRef": {
+    "room": "R-03H62D0F1HUUY4636OZ63G649",
+    "suggestion": "DRESS-P2-F-03H62D0F32EQ40ABTNKLXDI8Z-R"
+   },
+   "params": {
+    "furnitureKind": "other",
+    "variant": "vase",
+    "modelId": "ceramic-vase",
+    "centre": {
+     "x": 21113,
+     "y": 14030
+    },
+    "sizeMm": [
+     204,
+     203,
+     400
+    ],
+    "rotationDeg": 0.0,
+    "liftMm": 551
+   }
+  },
+  {
+   "id": "DRESS-D4-R-03H62D0F1FDVX1H1MKPC1IL0C",
+   "rule": "D4",
+   "ruleVersion": 1,
+   "kind": "item",
+   "hostRef": {
+    "room": "R-03H62D0F1FDVX1H1MKPC1IL0C"
+   },
+   "params": {
+    "furnitureKind": "other",
+    "variant": "artwork",
+    "modelId": "picture-ph",
+    "centre": {
+     "x": 18966,
+     "y": 10564
+    },
+    "sizeMm": [
+     752,
+     33,
+     500
+    ],
+    "rotationDeg": 0.0,
+    "liftMm": 1300
+   }
+  },
+  {
+   "id": "DRESS-D4-R-03H62D0F1FQFDR1BXV31L242E",
+   "rule": "D4",
+   "ruleVersion": 1,
+   "kind": "item",
+   "hostRef": {
+    "room": "R-03H62D0F1FQFDR1BXV31L242E"
+   },
+   "params": {
+    "furnitureKind": "other",
+    "variant": "artwork",
+    "modelId": "picture-ph",
+    "centre": {
+     "x": 18966,
+     "y": 10431
+    },
+    "sizeMm": [
+     752,
+     33,
+     500
+    ],
+    "rotationDeg": 180.0,
+    "liftMm": 1300
+   }
+  },
+  {
+   "id": "DRESS-D4-R-03H62D0F1HUUY4636OZ63G649",
+   "rule": "D4",
+   "ruleVersion": 1,
+   "kind": "item",
+   "hostRef": {
+    "room": "R-03H62D0F1HUUY4636OZ63G649"
+   },
+   "params": {
+    "furnitureKind": "other",
+    "variant": "artwork",
+    "modelId": "picture-ph",
+    "centre": {
+     "x": 19565,
+     "y": 13757
+    },
+    "sizeMm": [
+     752,
+     33,
+     500
+    ],
+    "rotationDeg": 0.0,
+    "liftMm": 1300
+   }
+  },
+  {
+   "id": "DRESS-P1-R-03H62D0F1HUUY4636OZ63G649-wardrobe",
+   "rule": "P1",
+   "ruleVersion": 1,
+   "kind": "item",
+   "hostRef": {
+    "room": "R-03H62D0F1HUUY4636OZ63G649"
+   },
+   "params": {
+    "furnitureKind": "wardrobe",
+    "variant": "wardrobe",
+    "modelId": "wardrobe-sf",
+    "centre": {
+     "x": 18047,
+     "y": 14069
+    },
+    "sizeMm": [
+     1204,
+     637,
+     2200
+    ],
+    "rotationDeg": 0.0,
+    "liftMm": 0
+   }
+  },
+  {
+   "id": "DRESS-P2-F-03H62D0F2W4UFXC8ARJPRJH86-L",
+   "rule": "P2",
+   "ruleVersion": 1,
+   "kind": "item",
+   "hostRef": {
+    "room": "R-03H62D0F1FDVX1H1MKPC1IL0C",
+    "furniture": "F-03H62D0F2W4UFXC8ARJPRJH86"
+   },
+   "params": {
+    "furnitureKind": "other",
+    "variant": "nightstand",
+    "modelId": "bedside-table-ph",
+    "centre": {
+     "x": 18574,
+     "y": 10830
+    },
+    "sizeMm": [
+     550,
+     450,
+     551
+    ],
+    "rotationDeg": 0.0,
+    "liftMm": 0
+   }
+  },
+  {
+   "id": "DRESS-P2-F-03H62D0F2W4UFXC8ARJPRJH86-R",
+   "rule": "P2",
+   "ruleVersion": 1,
+   "kind": "item",
+   "hostRef": {
+    "room": "R-03H62D0F1FDVX1H1MKPC1IL0C",
+    "furniture": "F-03H62D0F2W4UFXC8ARJPRJH86"
+   },
+   "params": {
+    "furnitureKind": "other",
+    "variant": "nightstand",
+    "modelId": "bedside-table-ph",
+    "centre": {
+     "x": 20814,
+     "y": 10830
+    },
+    "sizeMm": [
+     550,
+     450,
+     551
+    ],
+    "rotationDeg": 0.0,
+    "liftMm": 0
+   }
+  },
+  {
+   "id": "DRESS-P2-F-03H62D0F2WKUQUE06JMSDQL62-L",
+   "rule": "P2",
+   "ruleVersion": 1,
+   "kind": "item",
+   "hostRef": {
+    "room": "R-03H62D0F1FQFDR1BXV31L242E",
+    "furniture": "F-03H62D0F2WKUQUE06JMSDQL62"
+   },
+   "params": {
+    "furnitureKind": "other",
+    "variant": "nightstand",
+    "modelId": "bedside-table-ph",
+    "centre": {
+     "x": 20821,
+     "y": 10175
+    },
+    "sizeMm": [
+     550,
+     450,
+     551
+    ],
+    "rotationDeg": 180.0,
+    "liftMm": 0
+   }
+  },
+  {
+   "id": "DRESS-P2-F-03H62D0F2WKUQUE06JMSDQL62-R",
+   "rule": "P2",
+   "ruleVersion": 1,
+   "kind": "item",
+   "hostRef": {
+    "room": "R-03H62D0F1FQFDR1BXV31L242E",
+    "furniture": "F-03H62D0F2WKUQUE06JMSDQL62"
+   },
+   "params": {
+    "furnitureKind": "other",
+    "variant": "nightstand",
+    "modelId": "bedside-table-ph",
+    "centre": {
+     "x": 18583,
+     "y": 10175
+    },
+    "sizeMm": [
+     550,
+     450,
+     551
+    ],
+    "rotationDeg": 180.0,
+    "liftMm": 0
+   }
+  },
+  {
+   "id": "DRESS-P2-F-03H62D0F32EQ40ABTNKLXDI8Z-R",
+   "rule": "P2",
+   "ruleVersion": 1,
+   "kind": "item",
+   "hostRef": {
+    "room": "R-03H62D0F1HUUY4636OZ63G649",
+    "furniture": "F-03H62D0F32EQ40ABTNKLXDI8Z"
+   },
+   "params": {
+    "furnitureKind": "other",
+    "variant": "nightstand",
+    "modelId": "bedside-table-ph",
+    "centre": {
+     "x": 21113,
+     "y": 14030
+    },
+    "sizeMm": [
+     550,
+     450,
+     551
+    ],
+    "rotationDeg": 0.0,
+    "liftMm": 0
+   }
+  },
+  {
+   "id": "DRESS-R2-R-03H62D0F1F7B3ONYP5CDBEHTC-W-03H62D0EQOTFBNPDAMXQQX9LZ",
+   "rule": "R2",
+   "ruleVersion": 1,
+   "kind": "wallTile",
+   "hostRef": {
+    "wall": "W-03H62D0EQOTFBNPDAMXQQX9LZ",
+    "room": "R-03H62D0F1F7B3ONYP5CDBEHTC"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      0,
+      903
+     ],
+     [
+      1600,
+      1801
+     ]
+    ],
+    "heightMm": 2400,
+    "thicknessMm": 8,
+    "tileMm": 300,
+    "material": "library:flooring-tile20"
+   }
+  },
+  {
+   "id": "DRESS-R2-R-03H62D0F1F7B3ONYP5CDBEHTC-W-03H62D0EQPW8B3R5YGHQC365Z",
+   "rule": "R2",
+   "ruleVersion": 1,
+   "kind": "wallTile",
+   "hostRef": {
+    "wall": "W-03H62D0EQPW8B3R5YGHQC365Z",
+    "room": "R-03H62D0F1F7B3ONYP5CDBEHTC"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      4993,
+      6787
+     ]
+    ],
+    "heightMm": 2400,
+    "thicknessMm": 8,
+    "tileMm": 300,
+    "material": "library:flooring-tile20"
+   }
+  },
+  {
+   "id": "DRESS-R2-R-03H62D0F1F7B3ONYP5CDBEHTC-W-03H62D0EQPWBC8WM6WCOZNNHI",
+   "rule": "R2",
+   "ruleVersion": 1,
+   "kind": "wallTile",
+   "hostRef": {
+    "wall": "W-03H62D0EQPWBC8WM6WCOZNNHI",
+    "room": "R-03H62D0F1F7B3ONYP5CDBEHTC"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      1112,
+      2913
+     ]
+    ],
+    "heightMm": 2400,
+    "thicknessMm": 8,
+    "tileMm": 300,
+    "material": "library:flooring-tile20"
+   }
+  },
+  {
+   "id": "DRESS-R2-R-03H62D0F1F7B3ONYP5CDBEHTC-W-03H62D0EQQ120APKAGYN48PKM",
+   "rule": "R2",
+   "ruleVersion": 1,
+   "kind": "wallTile",
+   "hostRef": {
+    "wall": "W-03H62D0EQQ120APKAGYN48PKM",
+    "room": "R-03H62D0F1F7B3ONYP5CDBEHTC"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      0,
+      1794
+     ]
+    ],
+    "heightMm": 2400,
+    "thicknessMm": 8,
+    "tileMm": 300,
+    "material": "library:flooring-tile20"
+   }
+  },
+  {
+   "id": "DRESS-R2-R-03H62D0F1HQQLG1DFJU47L7ID-W-03H62D0EQPW1YM9C942U6YL0A",
+   "rule": "R2",
+   "ruleVersion": 1,
+   "kind": "wallTile",
+   "hostRef": {
+    "wall": "W-03H62D0EQPW1YM9C942U6YL0A",
+    "room": "R-03H62D0F1HQQLG1DFJU47L7ID"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      0,
+      165
+     ]
+    ],
+    "heightMm": 2400,
+    "thicknessMm": 8,
+    "tileMm": 300,
+    "material": "library:flooring-tile20"
+   }
+  },
+  {
+   "id": "DRESS-R2-R-03H62D0F1HQQLG1DFJU47L7ID-W-03H62D0EQR3CU41GIELG7S4ZQ",
+   "rule": "R2",
+   "ruleVersion": 1,
+   "kind": "wallTile",
+   "hostRef": {
+    "wall": "W-03H62D0EQR3CU41GIELG7S4ZQ",
+    "room": "R-03H62D0F1HQQLG1DFJU47L7ID"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      0,
+      2208
+     ]
+    ],
+    "heightMm": 2400,
+    "thicknessMm": 8,
+    "tileMm": 300,
+    "material": "library:flooring-tile20"
+   }
+  },
+  {
+   "id": "DRESS-R2-R-03H62D0F1HQQLG1DFJU47L7ID-W-03H62D0EQRGW2FALUIAAOPFM4",
+   "rule": "R2",
+   "ruleVersion": 1,
+   "kind": "wallTile",
+   "hostRef": {
+    "wall": "W-03H62D0EQRGW2FALUIAAOPFM4",
+    "room": "R-03H62D0F1HQQLG1DFJU47L7ID"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      0,
+      305
+     ],
+     [
+      2100,
+      2401
+     ]
+    ],
+    "sillSpansMm": [
+     [
+      305,
+      2100,
+      900
+     ]
+    ],
+    "heightMm": 2400,
+    "thicknessMm": 8,
+    "tileMm": 300,
+    "material": "library:flooring-tile20"
+   }
+  },
+  {
+   "id": "DRESS-R2-R-03H62D0F1HQQLG1DFJU47L7ID-W-03H62D0EQRP0BXCCWU4A80MAC",
+   "rule": "R2",
+   "ruleVersion": 1,
+   "kind": "wallTile",
+   "hostRef": {
+    "wall": "W-03H62D0EQRP0BXCCWU4A80MAC",
+    "room": "R-03H62D0F1HQQLG1DFJU47L7ID"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      1102,
+      3204
+     ]
+    ],
+    "heightMm": 2400,
+    "thicknessMm": 8,
+    "tileMm": 300,
+    "material": "library:flooring-tile20"
+   }
+  },
+  {
+   "id": "DRESS-R2-R-03H62D0F1IGH37Z68IYR8N4PS-W-03H62D0EQMXR4LWJMZSQZ3D9F",
+   "rule": "R2",
+   "ruleVersion": 1,
+   "kind": "wallTile",
+   "hostRef": {
+    "wall": "W-03H62D0EQMXR4LWJMZSQZ3D9F",
+    "room": "R-03H62D0F1IGH37Z68IYR8N4PS"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      2917,
+      3326
+     ],
+     [
+      3868,
+      4916
+     ]
+    ],
+    "sillSpansMm": [
+     [
+      3326,
+      3868,
+      900
+     ]
+    ],
+    "heightMm": 2400,
+    "thicknessMm": 8,
+    "tileMm": 300,
+    "material": "library:flooring-tile20"
+   }
+  },
+  {
+   "id": "DRESS-R2-R-03H62D0F1IGH37Z68IYR8N4PS-W-03H62D0EQPKX87D52LRDYOPQ8",
+   "rule": "R2",
+   "ruleVersion": 1,
+   "kind": "wallTile",
+   "hostRef": {
+    "wall": "W-03H62D0EQPKX87D52LRDYOPQ8",
+    "room": "R-03H62D0F1IGH37Z68IYR8N4PS"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      0,
+      1993
+     ]
+    ],
+    "heightMm": 2400,
+    "thicknessMm": 8,
+    "tileMm": 300,
+    "material": "library:flooring-tile20"
+   }
+  },
+  {
+   "id": "DRESS-R2-R-03H62D0F1IGH37Z68IYR8N4PS-W-03H62D0EQPW8B3R5YGHQC365Z",
+   "rule": "R2",
+   "ruleVersion": 1,
+   "kind": "wallTile",
+   "hostRef": {
+    "wall": "W-03H62D0EQPW8B3R5YGHQC365Z",
+    "room": "R-03H62D0F1IGH37Z68IYR8N4PS"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      0,
+      1993
+     ]
+    ],
+    "heightMm": 2400,
+    "thicknessMm": 8,
+    "tileMm": 300,
+    "material": "library:flooring-tile20"
+   }
+  },
+  {
+   "id": "DRESS-R2-R-03H62D0F1IGH37Z68IYR8N4PS-W-03H62D0EQQDVJKZJ2OGAH6OIP",
+   "rule": "R2",
+   "ruleVersion": 1,
+   "kind": "wallTile",
+   "hostRef": {
+    "wall": "W-03H62D0EQQDVJKZJ2OGAH6OIP",
+    "room": "R-03H62D0F1IGH37Z68IYR8N4PS"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      0,
+      1105
+     ],
+     [
+      1804,
+      1999
+     ]
+    ],
+    "heightMm": 2400,
+    "thicknessMm": 8,
+    "tileMm": 300,
+    "material": "library:flooring-tile20"
+   }
+  },
+  {
+   "id": "DRESS-R2-R-03H62D0F1IH3DPWRJY4C8TODQ-W-03H62D0EQMXR4LWJMZSQZ3D9F",
+   "rule": "R2",
+   "ruleVersion": 1,
+   "kind": "wallTile",
+   "hostRef": {
+    "wall": "W-03H62D0EQMXR4LWJMZSQZ3D9F",
+    "room": "R-03H62D0F1IH3DPWRJY4C8TODQ"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      516,
+      823
+     ],
+     [
+      1413,
+      1714
+     ]
+    ],
+    "sillSpansMm": [
+     [
+      823,
+      1413,
+      900
+     ]
+    ],
+    "heightMm": 2400,
+    "thicknessMm": 8,
+    "tileMm": 300,
+    "material": "library:flooring-tile20"
+   }
+  },
+  {
+   "id": "DRESS-R2-R-03H62D0F1IH3DPWRJY4C8TODQ-W-03H62D0EQNOTME97EKMO7AU62",
+   "rule": "R2",
+   "ruleVersion": 1,
+   "kind": "wallTile",
+   "hostRef": {
+    "wall": "W-03H62D0EQNOTME97EKMO7AU62",
+    "room": "R-03H62D0F1IH3DPWRJY4C8TODQ"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      0,
+      400
+     ],
+     [
+      1093,
+      1993
+     ]
+    ],
+    "heightMm": 2400,
+    "thicknessMm": 8,
+    "tileMm": 300,
+    "material": "library:flooring-tile20"
+   }
+  },
+  {
+   "id": "DRESS-R2-R-03H62D0F1IH3DPWRJY4C8TODQ-W-03H62D0EQQT0ECOLUQH7Y51UC",
+   "rule": "R2",
+   "ruleVersion": 1,
+   "kind": "wallTile",
+   "hostRef": {
+    "wall": "W-03H62D0EQQT0ECOLUQH7Y51UC",
+    "room": "R-03H62D0F1IH3DPWRJY4C8TODQ"
+   },
+   "params": {
+    "side": "left",
+    "spansMm": [
+     [
+      0,
+      1993
+     ]
+    ],
+    "heightMm": 2400,
+    "thicknessMm": 8,
+    "tileMm": 300,
+    "material": "library:flooring-tile20"
+   }
+  },
+  {
+   "id": "DRESS-R2-R-03H62D0F1IH3DPWRJY4C8TODQ-W-03H62D0EQQZ51QX6D8VVALI46",
+   "rule": "R2",
+   "ruleVersion": 1,
+   "kind": "wallTile",
+   "hostRef": {
+    "wall": "W-03H62D0EQQZ51QX6D8VVALI46",
+    "room": "R-03H62D0F1IH3DPWRJY4C8TODQ"
+   },
+   "params": {
+    "side": "right",
+    "spansMm": [
+     [
+      0,
+      1198
+     ]
+    ],
+    "heightMm": 2400,
+    "thicknessMm": 8,
+    "tileMm": 300,
+    "material": "library:flooring-tile20"
+   }
+  },
+  {
+   "id": "DRESS-R3-R-03H62D0F1FDVX1H1MKPC1IL0C",
+   "rule": "R3",
+   "ruleVersion": 1,
+   "kind": "cornice",
+   "hostRef": {
+    "room": "R-03H62D0F1FDVX1H1MKPC1IL0C"
+   },
+   "params": {
+    "heightMm": 50,
+    "depthMm": 30
+   }
+  },
+  {
+   "id": "DRESS-R3-R-03H62D0F1FQFDR1BXV31L242E",
+   "rule": "R3",
+   "ruleVersion": 1,
+   "kind": "cornice",
+   "hostRef": {
+    "room": "R-03H62D0F1FQFDR1BXV31L242E"
+   },
+   "params": {
+    "heightMm": 50,
+    "depthMm": 30
+   }
+  },
+  {
+   "id": "DRESS-R3-R-03H62D0F1GAZWYG6RNXVOTIK2",
+   "rule": "R3",
+   "ruleVersion": 1,
+   "kind": "cornice",
+   "hostRef": {
+    "room": "R-03H62D0F1GAZWYG6RNXVOTIK2"
+   },
+   "params": {
+    "heightMm": 50,
+    "depthMm": 30
+   }
+  },
+  {
+   "id": "DRESS-R3-R-03H62D0F1HUUY4636OZ63G649",
+   "rule": "R3",
+   "ruleVersion": 1,
+   "kind": "cornice",
+   "hostRef": {
+    "room": "R-03H62D0F1HUUY4636OZ63G649"
+   },
+   "params": {
+    "heightMm": 50,
+    "depthMm": 30
+   }
+  },
+  {
+   "id": "DRESS-R3-R-03H62D0F1I9J0WS3MNLIU2U75",
+   "rule": "R3",
+   "ruleVersion": 1,
+   "kind": "cornice",
+   "hostRef": {
+    "room": "R-03H62D0F1I9J0WS3MNLIU2U75"
+   },
+   "params": {
+    "heightMm": 50,
+    "depthMm": 30
+   }
+  },
+  {
+   "id": "DRESS-R3-R-03H62D0F1JDGT099FQNJAJCP2",
+   "rule": "R3",
+   "ruleVersion": 1,
+   "kind": "cornice",
+   "hostRef": {
+    "room": "R-03H62D0F1JDGT099FQNJAJCP2"
+   },
+   "params": {
+    "heightMm": 50,
+    "depthMm": 30
+   }
+  }
+ ],
+ "collisions": [
+  {
+   "label": "doc",
+   "type": "item-item",
+   "item": "F-03H62D0F2HPXNFVUTDEQZ5C1Q",
+   "other": "F-03H62D0F2IZFSO5SMTIVGIQ52",
+   "areaMm2": 220384
+  },
+  {
+   "label": "doc",
+   "type": "item-item",
+   "item": "F-03H62D0F2HPXNFVUTDEQZ5C1Q",
+   "other": "F-03H62D0F2UP5HR6VWMUO6ZFHW",
+   "areaMm2": 280539
+  },
+  {
+   "label": "doc",
+   "type": "opening-clearance",
+   "item": "F-03H62D0F2HPXNFVUTDEQZ5C1Q",
+   "areaMm2": 662013
+  },
+  {
+   "label": "doc",
+   "type": "opening-clearance",
+   "item": "F-03H62D0F2IJEYGC2SH0XZWG4V",
+   "areaMm2": 20955
+  },
+  {
+   "label": "doc",
+   "type": "window",
+   "item": "F-03H62D0F2IRKZXDD3P7Q0D2FE",
+   "areaMm2": 43092
+  },
+  {
+   "label": "doc",
+   "type": "item-item",
+   "item": "F-03H62D0F2NT4TBO12HHATFXQ0",
+   "other": "F-03H62D0F2PBXGCN5A7I5XDVBM",
+   "areaMm2": 111240
+  },
+  {
+   "label": "doc",
+   "type": "opening-clearance",
+   "item": "F-03H62D0F2NT4TBO12HHATFXQ0",
+   "areaMm2": 22500
+  },
+  {
+   "label": "doc",
+   "type": "opening-clearance",
+   "item": "F-03H62D0F2PBXGCN5A7I5XDVBM",
+   "areaMm2": 71936
+  },
+  {
+   "label": "doc",
+   "type": "item-item",
+   "item": "F-03H62D0F2RZ8KR5GNIN5DKL90",
+   "other": "F-03H62D0F2UBRPR7X6ECBIXVPY",
+   "areaMm2": 134980
+  },
+  {
+   "label": "doc",
+   "type": "item-item",
+   "item": "F-03H62D0F2XBITXK3UVVVZYB08",
+   "other": "F-03H62D0F31NVU2N57LGDT8163",
+   "areaMm2": 105315
+  },
+  {
+   "label": "doc",
+   "type": "opening-clearance",
+   "item": "F-03H62D0F36I6FCZF0QMKDDA9U",
+   "areaMm2": 206276
+  },
+  {
+   "label": "doc",
+   "type": "opening-clearance",
+   "item": "F-03H62D0F37LBTJ9NJI8SRCYPQ",
+   "areaMm2": 11578
+  },
+  {
+   "label": "doc",
+   "type": "opening-clearance",
+   "item": "F-03H62D0F3ANJP3CCQOUZMH4IL",
+   "areaMm2": 166922
+  },
+  {
+   "label": "doc",
+   "type": "opening-clearance",
+   "item": "F-03H62D0F3BYDYK05MGZXQZSUW",
+   "areaMm2": 194565
+  },
+  {
+   "label": "doc",
+   "type": "opening-clearance",
+   "item": "F-03H62D0F3D5Y1GYPZY0MM1S1Y",
+   "areaMm2": 216984
+  }
+ ]
+}

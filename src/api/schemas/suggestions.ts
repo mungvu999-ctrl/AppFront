@@ -37,6 +37,8 @@ export const WallTileParamsSchema = z
   .object({
     side,
     spansMm: z.array(spanSchema),
+    /** `(from, to, topMm)`: dưới cửa sổ, ốp từ sàn tới bậu. */
+    sillSpansMm: z.array(z.tuple([nonNegativeMm, nonNegativeMm, positiveMm])).optional(),
     heightMm: positiveMm,
     thicknessMm: positiveMm,
     tileMm: positiveMm,
@@ -67,6 +69,9 @@ export const RailingParamsSchema = z
 export const CabinetRunParamsSchema = z
   .object({
     slot: z.enum(['base', 'upper']),
+    /** Đường lưng (sát tường) `start → end`; dãy nằm phía pháp tuyến trái (−dy, dx), sâu `depthMm`. */
+    start: pointSchema,
+    end: pointSchema,
     lengthMm: positiveMm,
     depthMm: positiveMm,
     bottomMm: nonNegativeMm,
@@ -74,6 +79,9 @@ export const CabinetRunParamsSchema = z
     moduleMm: positiveMm,
     material: materialRefSchema.optional(),
     countertopMaterial: materialRefSchema.optional(),
+    /** Hộp trùng gộp vào dãy này: mẫu của chúng cũng không dựng. */
+    mergedIds: z.array(entityIdSchema).optional(),
+    degradedVi: textSchema.optional(),
   })
   .strict();
 export const CurtainParamsSchema = z
@@ -108,6 +116,7 @@ export const CeilingLightParamsSchema = z
 export const ItemParamsSchema = z
   .object({
     furnitureKind: textSchema,
+    variant: textSchema.optional(),
     modelId: textSchema,
     centre: pointSchema,
     sizeMm: z.tuple([positiveMm, positiveMm, positiveMm]),

@@ -1328,7 +1328,12 @@ export const toPascalScene = (
 
   /* Đồ AI chưa duyệt còn góc 0 quay theo bàn/tường (`orientDetected`); quầy bếp cỡ khối đặc tách thành dãy tủ
      sát tường (`kitchenRuns`) — cả hai chỉ ở cảnh, không ghi về BE khi chưa sửa. */
-  const furnitureToBuild = expandKitchenRuns(orientDetectedFurniture(graph.furniture, graph.walls), builtWalls).filter((f) => !offIds.has(f.id));
+  /* M2 — hộp có dãy tủ đề xuất (F2/F3) không tách `kitchenRuns` nữa: node vẫn có (ẩn) để lượt lưu không đọc thành xoá. */
+  const oriented = orientDetectedFurniture(graph.furniture, graph.walls);
+  const furnitureToBuild = [
+    ...expandKitchenRuns(oriented.filter((f) => !plan.cabinetHosts.has(f.id)), builtWalls),
+    ...oriented.filter((f) => plan.cabinetHosts.has(f.id)),
+  ].filter((f) => !offIds.has(f.id));
 
   /* Vai trò theo ngữ cảnh phòng (bồn cầu thừa → lavabo, bàn nhỏ xa giường → bàn phụ): chỉ đổi mẫu. */
   const contextUsageOf = (f: Pick<Furniture, 'roomId'>) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId));
@@ -1413,7 +1418,7 @@ export const toPascalScene = (
 
     /* Hộp quầy gốc vẫn phải có node (thiếu = lượt lưu đọc thành xoá) nhưng ẩn; dãy tủ thay nó là đồ sinh ra.
        Thảm lạc ngoài phòng (`isStrayRug`) cũng vậy: giữ node để lưu không xoá, chỉ không trải ra sân trống. */
-    nodes[node.id] = isKitchenRunHost(furniture) || isStrayRug(furniture, builtRooms)
+    nodes[node.id] = isKitchenRunHost(furniture) || plan.cabinetHosts.has(furniture.id) || isStrayRug(furniture, builtRooms)
       ? { ...node, visible: false }
       : isGeneratedNodeId(node.id)
         ? { ...node, metadata: { ...node.metadata, generated: 'dressing' } }

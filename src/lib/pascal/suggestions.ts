@@ -51,6 +51,8 @@ export interface SuggestionPlan {
   readonly modelFolder: ReadonlyMap<string, string>;
   /** Phòng → chỗ đèn trần (mm) hoặc `'off'`; vắng = như cũ (`interiorPointOf`). */
   readonly light: ReadonlyMap<string, Point | 'off'>;
+  /** Hộp tủ bếp (chủ F2/F3 + hộp trùng gộp vào) có dãy hiệu lực: ẩn hộp, không tách `kitchenRuns`. */
+  readonly cabinetHosts: ReadonlySet<string>;
   /** Phòng có bản R4 (bất kể trạng thái): máy chủ nắm lan can mép hở của phòng ấy. */
   readonly railingRooms: ReadonlySet<string>;
   readonly railings: readonly SuggestedRailing[];
@@ -65,6 +67,7 @@ const EMPTY_PLAN: SuggestionPlan = {
   modelFolder: new Map(),
   light: new Map(),
   railingRooms: new Set(),
+  cabinetHosts: new Set(),
   railings: [],
   furniture: [],
 };
@@ -175,6 +178,7 @@ export function suggestionPlanOf(
   const modelFolder = new Map<string, string>();
   const light = new Map<string, Point | 'off'>();
   const railingRooms = new Set<string>();
+  const cabinetHosts = new Set<string>();
   const railings: SuggestedRailing[] = [];
   const furniture: { furniture: Furniture; folder?: string; origin: FurnitureOrigin }[] = [];
 
@@ -258,14 +262,19 @@ export function suggestionPlanOf(
       }
       case 'cabinetRun': {
         const host = s.hostRef.furniture === undefined ? undefined : at.furniture.get(s.hostRef.furniture);
-        if (host === undefined) break;
         const p = effectiveParams(s);
+        const length = Math.hypot(p.end.x - p.start.x, p.end.y - p.start.y);
+        if (host === undefined || !(length > 0)) break;
+        [host.id, ...(p.mergedIds ?? [])].forEach((id) => cabinetHosts.add(id));
+        // Dãy nằm phía pháp tuyến trái của đường lưng, tâm lùi nửa chiều sâu.
+        const [ux, uy] = [(p.end.x - p.start.x) / length, (p.end.y - p.start.y) / length];
+        const centre = { x: (p.start.x + p.end.x) / 2 - uy * (p.depthMm / 2), y: (p.start.y + p.end.y) / 2 + ux * (p.depthMm / 2) };
         furniture.push({
           furniture: virtualOf(s, levelId, host.roomId, {
             kind: 'kitchenCabinet',
-            centre: host.centre,
+            centre: { x: mm(centre.x), y: mm(centre.y) },
             boundingBox: boxOf(p.lengthMm, p.depthMm),
-            rotationDeg: host.rotationDeg,
+            rotationDeg: degrees((Math.atan2(uy, ux) * 180) / Math.PI),
             heightMm: millimetres(p.topMm - p.bottomMm),
             ...(p.bottomMm === 0 ? {} : { liftMm: millimetres(p.bottomMm) }),
           }),
@@ -280,7 +289,7 @@ export function suggestionPlanOf(
     }
   }
 
-  return { active: true, skirting, sash, modelFolder, light, railingRooms, railings, furniture };
+  return { active: true, skirting, sash, modelFolder, light, railingRooms, cabinetHosts, railings, furniture };
 }
 
 /** Kind nào editor vẽ được (đầy đủ hay một phần) — bảng "Lớp đề xuất" ghi "chỉ liệt kê" cho phần còn lại. */

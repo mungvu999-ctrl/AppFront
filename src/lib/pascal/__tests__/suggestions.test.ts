@@ -128,4 +128,15 @@ describe('M2 — vẽ lớp đề xuất đã lưu (toPascal)', () => {
     expect(adoptionsOf([adopted!], [ITEM])).toEqual([[ITEM.id, adopted!.id]]);
     expect(adoptionsOf([adopted!], [{ ...ITEM, state: 'adopted', adoptedAs: adopted!.id }])).toEqual([]);
   });
+
+  it('luật máy chủ (ca vàng): mọi item/rug/cabinetRun hiệu lực thành node đồ ảo; hộp tủ bếp chủ bị ẩn', () => {
+    const drawable = STORED.filter((s) => s.kind === 'item' || s.kind === 'rug' || s.kind === 'cabinetRun');
+    expect(drawable.length).toBeGreaterThan(0);
+    for (const s of drawable) {
+      expect(node<PascalItemNode>(SAVED, toPascalId('item', s.id))?.metadata?.generated, s.id).toBe('dressing');
+    }
+    for (const run of STORED.filter((s) => s.kind === 'cabinetRun')) {
+      expect(node<PascalItemNode>(SAVED, toPascalId('item', run.hostRef.furniture!))?.visible).toBe(false);
+    }
+  });
 });

@@ -10,12 +10,12 @@
     "R2": {
       "version": 1, "majorSince": 1, "kind": "wallTile", "nameVi": "Ốp gạch phòng ướt", "editor": "render",
       "params": {"heightMm": 2400, "thicknessMm": 8, "tileMm": 300, "material": "library:flooring-tile20",
-                 "usages": ["bathroom"]},
+                 "usages": ["bathroom"], "faceToleranceMm": 60, "minSpanMm": 100, "minSillMm": 100},
       "overridable": ["heightMm", "material"]
     },
     "R3": {
       "version": 1, "majorSince": 1, "kind": "cornice", "nameVi": "Phào trần", "editor": "list",
-      "params": {"heightMm": 50, "depthMm": 30},
+      "params": {"heightMm": 50, "depthMm": 30, "skipUsages": ["bathroom", "loggia"]},
       "overridable": ["heightMm", "depthMm", "material"]
     },
     "R4": {
@@ -66,45 +66,55 @@
     "F2": {
       "version": 1, "majorSince": 1, "kind": "cabinetRun", "nameVi": "Tủ bếp dưới", "editor": "render",
       "params": {"depthMm": 600, "heightMm": 860, "plinthMm": 100, "countertopMm": 40, "moduleMm": 600,
-                 "gapMm": 4, "minRunMm": 900},
+                 "gapMm": 4, "minRunMm": 900, "maxBoxDepthMm": 900, "dupOverlapPct": 50,
+                 "roomUsages": ["kitchen", "livingRoom", "dining", "other"], "wallMaxMm": 150, "wallCoverPct": 80},
       "overridable": ["material", "countertopMaterial"]
     },
     "F3": {
       "version": 1, "majorSince": 1, "kind": "cabinetRun", "nameVi": "Tủ bếp trên", "editor": "render",
-      "params": {"depthMm": 350, "bottomMm": 1450, "topMm": 2150, "moduleMm": 600, "gapMm": 4},
+      "params": {"depthMm": 350, "bottomMm": 1450, "topMm": 2150, "moduleMm": 600, "gapMm": 4,
+                 "openingClearMm": 50},
       "overridable": ["material"]
     },
     "P1": {
       "version": 1, "majorSince": 1, "kind": "item", "nameVi": "Đồ chính theo công năng", "editor": "render",
       "params": {
-        "gapMm": 30, "doorClearMm": 800,
+        "gapMm": 30, "solidMarginMm": 100, "scaleTolPct": 10, "stepMm": 50,
         "roles": {
-          "bedroom": [{"slot": "bed", "kinds": ["bed"], "variants": ["bed"], "modelId": "bed-sf"},
+          "bedroom": [{"slot": "bed", "kinds": ["bed"], "variants": ["bed"], "modelId": "bed-sf",
+                       "kind": "bed", "prefer": "centre", "solid": true},
                       {"slot": "wardrobe", "kinds": ["wardrobe"], "variants": ["wardrobe"],
-                       "modelId": "wardrobe-sf", "minAreaM2": 7}],
-          "livingRoom": [{"slot": "sofa", "kinds": [], "variants": ["sofa"], "modelId": "sofa-ph"}],
-          "bathroom": [{"slot": "wc", "kinds": [], "variants": ["wc"], "modelId": "toilet-sf"},
+                       "modelId": "wardrobe-sf", "minAreaM2": 7, "kind": "wardrobe", "prefer": "ends", "solid": true}],
+          "livingRoom": [{"slot": "sofa", "kinds": [], "variants": ["sofa"], "modelId": "sofa-ph",
+                          "boxKinds": ["chair"], "boxMinLongMm": 1400, "boxMinShortMm": 600,
+                          "kind": "chair", "prefer": "centre", "solid": false}],
+          "bathroom": [{"slot": "wc", "kinds": ["sanitaryFixture"], "variants": ["wc"], "modelId": "toilet-sf",
+                        "kind": "sanitaryFixture", "prefer": "ends", "solid": false},
                        {"slot": "basin", "kinds": [], "variants": ["basin"], "modelId": "vanity-sf",
-                        "minAreaM2": 3}],
-          "kitchen": [{"slot": "fridge", "kinds": [], "variants": ["fridge"], "modelId": "fridge-sf"}],
-          "loggia": [{"slot": "planter", "kinds": [], "variants": ["planter"], "modelId": "planter-ph"}]
+                        "minAreaM2": 3, "kind": "sanitaryFixture", "prefer": "ends", "solid": false}],
+          "kitchen": [{"slot": "fridge", "kinds": [], "variants": ["fridge"], "modelId": "fridge-sf",
+                       "kind": "other", "prefer": "ends", "solid": false}],
+          "loggia": [{"slot": "planter", "kinds": [], "variants": ["planter"], "modelId": "planter-ph",
+                      "kind": "other", "prefer": "ends", "solid": false}]
         }
       },
       "overridable": ["modelId"]
     },
     "P2": {
       "version": 1, "majorSince": 1, "kind": "item", "nameVi": "Tab đầu giường", "editor": "render",
-      "params": {"modelId": "bedside-table-ph", "gapMm": 40},
+      "params": {"modelId": "bedside-table-ph", "gapMm": 40, "wallGapMm": 20, "clearMm": 10},
       "overridable": ["modelId"]
     },
     "P3": {
       "version": 1, "majorSince": 1, "kind": "item", "nameVi": "Bàn trà", "editor": "render",
-      "params": {"modelId": "coffee-table-sf", "distanceMm": 450},
+      "params": {"modelId": "coffee-table-sf", "distanceMm": 450, "clearMm": 10, "sofaMinLongMm": 1400,
+                 "sofaMinShortMm": 600},
       "overridable": ["modelId"]
     },
     "D1": {
       "version": 1, "majorSince": 1, "kind": "rug", "nameVi": "Thảm", "editor": "render",
-      "params": {"sizeMm": [2300, 1600], "thicknessMm": 12, "minInsidePct": 70},
+      "params": {"sizeMm": [2300, 1600], "thicknessMm": 12, "minInsidePct": 70, "offsetMm": 750, "insetMm": 100,
+                 "sofaMinLongMm": 1400, "sofaMinShortMm": 600},
       "overridable": ["material"]
     },
     "D2": {
@@ -122,12 +132,13 @@
     },
     "D4": {
       "version": 1, "majorSince": 1, "kind": "item", "nameVi": "Tranh", "editor": "render",
-      "params": {"modelId": "picture-ph", "centreHeightMm": 1550, "tallItemMm": 1200},
+      "params": {"modelId": "picture-ph", "centreHeightMm": 1550, "tallItemMm": 1200, "sideMarginMm": 200,
+                 "usages": ["bedroom", "livingRoom"]},
       "overridable": ["modelId"]
     },
     "D5": {
       "version": 1, "majorSince": 1, "kind": "item", "nameVi": "Cây góc phòng", "editor": "render",
-      "params": {"modelId": "plant-ph"},
+      "params": {"modelId": "plant-ph", "usages": ["livingRoom"], "gapMm": 30, "scaleTolPct": 10, "stepMm": 50},
       "overridable": ["modelId"]
     },
     "L1": {
