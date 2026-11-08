@@ -18,7 +18,7 @@ import sharp from 'sharp';
 import { createServer } from 'vite';
 
 import { sourceFor } from '../pascal-material-webp.mjs';
-import { OUT_MARKER, buildDefaults, collectRefs, decodeKtx2, licenceProblems, missingRefs, parseConstString, parseStringRecord, repeatMOf, resolveFinishes, sourceOfMap, unsafeOutReason } from './lib.mjs';
+import { OUT_MARKER, PROJECT_CODE, PROJECT_CODE_CREDIT, buildDefaults, collectRefs, decodeKtx2, licenceProblems, missingRefs, parseConstString, parseStringRecord, repeatMOf, resolveFinishes, sourceOfMap, unsafeOutReason } from './lib.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const ASSETS = join(ROOT, 'vendor', 'pascal', 'assets');
@@ -178,7 +178,8 @@ for (const id of folders) {
       : { source: 'https://github.com/pascalorg/editor (vendor/pascal/NGUON.md)', license: 'MIT (Pascal)' });
   models[id] = {
     file: `models/${id}.glb`,
-    license: l.license,
+    // Dòng ghi đích danh "project code" (mẫu AppFront tự dựng) → lớp `project-code`; dòng thiếu vẫn "chưa rõ" → hỏng.
+    license: l.license === 'project code' ? PROJECT_CODE : l.license,
     author: authorOf(l.source),
     source: l.source,
     sizeMm: { w: Math.round(m[0] * 1000), d: Math.round(m[2] * 1000), h: Math.round(m[1] * 1000) },
@@ -226,7 +227,7 @@ missing.push(...missingRefs(collectRefs(editorDefaults), materials, sceneMateria
 writeFileSync(join(OUT, 'editor-defaults.json'), JSON.stringify(editorDefaults, null, 1));
 
 // ── giấy phép + manifest ──
-const rows = Object.entries(models).map(([id, m]) => `| ${id} | ${m.author} | ${m.license} | ${m.source} |`);
+const rows = Object.entries(models).map(([id, m]) => `| ${id} | ${m.author} | ${m.license === PROJECT_CODE ? PROJECT_CODE_CREDIT : m.license} | ${m.source} |`);
 // MIT bắt buộc kèm thông báo bản quyền: chép nguyên LICENSE của Pascal vào gói.
 writeFileSync(join(OUT, 'LICENSE-PASCAL-MIT.txt'), readFileSync(join(ROOT, 'vendor', 'pascal', 'LICENSE')));
 writeFileSync(

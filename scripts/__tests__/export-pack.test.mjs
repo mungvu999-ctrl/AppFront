@@ -70,6 +70,11 @@ describe('export-pack giấy phép (M2)', () => {
   const OVERRIDE_DIR = resolve(import.meta.dirname, '..', '..', 'assets', 'export-pack-materials');
   const overrides = JSON.parse(readFileSync(join(OVERRIDE_DIR, 'LICENSES.json'), 'utf8'));
 
+  it('licenceProblems: project-code chỉ đạt khi tác giả AppFront', () => {
+    expect(licenceProblems({ models: { c: { license: 'project-code', author: 'AppFront' } } })).toEqual([]);
+    expect(licenceProblems({ models: { c: { license: 'project-code', author: 'Ai đó' } } })).toHaveLength(1);
+  });
+
   it('licenceProblems: CC0/CC BY/MIT (Pascal) có tác giả thì đạt; "chưa rõ", thiếu tác giả thì hỏng; màu phẳng không xét', () => {
     const ok = { license: 'CC0', author: 'ambientCG', maps: { base: 'x' } };
     expect(licenceProblems({ materials: { a: ok, b: { ...ok, license: 'MIT (Pascal)', author: 'Pascal' } }, models: { m: { license: 'CC BY 4.0 (https://…)', author: 'X' } } })).toEqual([]);

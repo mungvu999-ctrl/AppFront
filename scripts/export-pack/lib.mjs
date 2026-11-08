@@ -137,16 +137,21 @@ export function unsafeOutReason(rawOut, root, { exists, readdir }) {
 
 
 /**
- * M2 — giấy phép được phép trong gói xuất: CC0, CC BY (mọi bản), MIT của Pascal. Mỗi mục có ảnh/mẫu phải ghi
- * giấy phép thuộc tập này VÀ tác giả. Trả danh sách câu lỗi (rỗng = đạt); `build.mjs` hỏng nếu khác rỗng.
- * Vật liệu màu phẳng (không ảnh) không có gì để cấp phép nên không xét.
+ * M2 — giấy phép được phép trong gói xuất: CC0, CC BY (mọi bản), MIT của Pascal, và `project-code` (mã riêng của
+ * dự án) CHỈ khi tác giả là `AppFront` — `build.mjs` chỉ gán lớp này cho dòng LICENSES.md ghi đích danh "project
+ * code", không đoán. Mỗi mục có ảnh/mẫu phải ghi giấy phép thuộc tập này VÀ tác giả. Trả danh sách câu lỗi
+ * (rỗng = đạt); `build.mjs` hỏng nếu khác rỗng. Vật liệu màu phẳng (không ảnh) không có gì để cấp phép nên không xét.
  */
 export const ALLOWED_LICENCE = /^(CC0\b|CC BY\b|CC-BY\b|MIT \(Pascal\)$)/;
+export const PROJECT_CODE = 'project-code';
+/** Câu ghi công cho mẫu `project-code` (giấy phép ra ngoài chờ chủ dự án chốt). */
+export const PROJECT_CODE_CREDIT = 'AppFront project code, bản quyền thuộc chủ dự án';
 
 export function licenceProblems({ materials = {}, sceneMaterials = {}, models = {} }) {
   const problems = [];
   const check = (what, id, entry) => {
-    if (!ALLOWED_LICENCE.test(String(entry.license ?? '').trim())) problems.push(`${what}:${id} giấy phép "${entry.license ?? ''}" không thuộc CC0/CC-BY/MIT-Pascal`);
+    const projectCode = entry.license === PROJECT_CODE && entry.author === 'AppFront';
+    if (!projectCode && !ALLOWED_LICENCE.test(String(entry.license ?? '').trim())) problems.push(`${what}:${id} giấy phép "${entry.license ?? ''}" không thuộc CC0/CC-BY/MIT-Pascal/project-code (AppFront)`);
     if (!String(entry.author ?? '').trim()) problems.push(`${what}:${id} thiếu tác giả`);
   };
   for (const [id, m] of Object.entries({ ...materials, ...sceneMaterials })) if (Object.keys(m.maps ?? {}).length > 0) check('material', id, m);
