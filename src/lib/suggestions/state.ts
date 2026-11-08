@@ -83,7 +83,6 @@ export function floorAdoptionsOf(
   });
 }
 
-
 /**
  * Lớp đề xuất của một tầng trong kho: bản máy chủ trả gần nhất + phần người dùng chưa gửi.
  * `enabled`: lớp bật (`suggestionsEnabled`); `dirty`: `state` đổi tại máy, lượt #35 sau mang `suggestionState`;
@@ -152,7 +151,6 @@ export function suggestionFloorsToSave(
     .filter(([floorId, entry]) => entry !== previous[floorId] && (entry.dirty === true || entry.enabledChanged === true))
     .map(([floorId]) => floorId);
 }
-
 
 /** Cổng kho tối thiểu (lib không nhập store): đọc mục tầng và thay một mục. */
 export interface FloorSuggestionStore {

@@ -383,7 +383,6 @@ const attachSaver = (target: SaverBook, loaded: Pipes): void => {
         return;
       }
 
-
       if (redirtied) {
         // Sửa đang chờ giữ nguyên; `scaleStatus` chỉ mất khi chính lượt này mang tỉ lệ.
         const held = scaleSent ? undefined : useStore.getState().floorMeta[floorId];

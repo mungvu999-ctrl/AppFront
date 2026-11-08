@@ -14,25 +14,25 @@ import { useSuggestionStore } from './suggestionStore';
 export const withSuggestions =
   (create: (projectId: string, ports: FloorLayerSaverPorts) => FloorLayerSaver) =>
   (projectId: string, ports: FloorLayerSaverPorts): FloorLayerSaver => {
-      const saver = create(projectId, {
-        ...ports,
-        readSuggestionBody: (floorId) => {
-          // Máy chủ trước M2: không gửi khoá lớp đề xuất (nó trả 422 và khối cả tầng, cả phần hình học).
-          const { floorSuggestions, supported } = useSuggestionStore.getState();
-          return supported ? suggestionBodyOf(floorSuggestions[floorId]) : null;
-        },
-        onSaved(floorId, result, info) {
-          // Lượt xả muộn sau khi đổi dự án: kho lớp đề xuất giờ là của dự án khác, không ghi vào.
-          if (useStore.getState().spatialProjectId === projectId) storeReceived(useSuggestionStore, floorId, result, !info.redirtied);
-          ports.onSaved(floorId, result, info);
-        },
-      });
-      const stop = watchSuggestions(useStore, useSuggestionStore, (floorIds) => ports.onSuggestionTouched?.(floorIds));
-      return {
-        ...saver,
-        dispose() {
-          stop();
-          saver.dispose();
-        },
-      };
+    const saver = create(projectId, {
+      ...ports,
+      readSuggestionBody: (floorId) => {
+        // Máy chủ trước M2: không gửi khoá lớp đề xuất (nó trả 422 và khối cả tầng, cả phần hình học).
+        const { floorSuggestions, supported } = useSuggestionStore.getState();
+        return supported ? suggestionBodyOf(floorSuggestions[floorId]) : null;
+      },
+      onSaved(floorId, result, info) {
+        // Lượt xả muộn sau khi đổi dự án: kho lớp đề xuất giờ là của dự án khác, không ghi vào.
+        if (useStore.getState().spatialProjectId === projectId) storeReceived(useSuggestionStore, floorId, result, !info.redirtied);
+        ports.onSaved(floorId, result, info);
+      },
+    });
+    const stop = watchSuggestions(useStore, useSuggestionStore, (floorIds) => ports.onSuggestionTouched?.(floorIds));
+    return {
+      ...saver,
+      dispose() {
+        stop();
+        saver.dispose();
+      },
     };
+  };

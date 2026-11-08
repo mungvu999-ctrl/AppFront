@@ -2221,8 +2221,10 @@ export const createMockApiClient = (): ApiClient => {
 
         // M2: trạng thái thưa thay cả trạng thái người dùng của tầng; id lạ → 422 như máy chủ (hợp đồng §4).
         const stored = mockSuggestions.get(floorId);
-        if (body.suggestionState !== undefined && stored !== undefined) {
+        if (body.suggestionState !== undefined && (stored !== undefined || body.suggestionState.length > 0)) {
           try {
+            // Tầng chưa có lớp đề xuất nào: mọi id đều lạ → 422 như máy chủ.
+            if (stored === undefined) throw new Error('unknown');
             stored.suggestions = applyMockState(stored.suggestions, body.suggestionState);
           } catch {
             return failed(mockWireError(422, 'VALIDATION', requestId, { code: 'VALIDATION', field: 'suggestionState', message: 'id đề xuất lạ', requestId }));

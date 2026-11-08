@@ -100,4 +100,14 @@ describe('M2 lớp đề xuất — schema và client', () => {
     expect(bad.ok).toBe(false);
     __resetMockLayerState();
   });
+
+  it('mock: suggestionState trên tầng chưa có lớp đề xuất → 422 như máy chủ; danh sách rỗng thì qua', async () => {
+    __resetMockLayerState();
+    const client = createMockApiClient();
+    const put = (suggestionState: { id: string; state: 'disabled' }[], baseVersion: number) =>
+      client.spatial.writeLayer({ baseVersion, body: { suggestionState }, floorId: 'L-02', projectId: 'project-1' });
+    expect((await put([], 0)).ok).toBe(true);
+    expect((await put([{ id: 'DRESS-X-nope', state: 'disabled' }], 1)).ok).toBe(false);
+    __resetMockLayerState();
+  });
 });
