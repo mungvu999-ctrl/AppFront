@@ -1,9 +1,12 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { expectAccessible } from '@/lib/testing/expectAccessible';
+
 import { ExportPanel } from './ExportPanel';
 import { DEFAULT_FLOORS, buildExportPanelProps, formatsSelecting } from './exportPanelFixtures';
 import { ServerGlbExportSection } from './ServerGlbExportSection';
+import * as stories from './ServerGlbExportSection.stories';
 import { SERVER_GLB_DISCLAIMER, type ServerGlbExportView } from './useServerGlbExport';
 
 const base = (patch: Partial<ServerGlbExportView> = {}): ServerGlbExportView => ({
@@ -83,6 +86,14 @@ describe('ServerGlbExportSection', () => {
   it('lỗi: hiện câu tiếng Việt', () => {
     render(<ServerGlbExportSection view={base({ errorMessage: 'Chưa lưu được thay đổi — chưa xuất.' })} />);
     expect(screen.getByText('Chưa lưu được thay đổi — chưa xuất.')).toBeTruthy();
+  });
+});
+
+describe('ServerGlbExportSection — story + a11y (R-50)', () => {
+  const cases = Object.entries(stories).filter(([name]) => name !== 'default') as [string, { args: { view: ServerGlbExportView } }][];
+  it.each(cases)('%s: không lỗi a11y', (_name, story) => {
+    const { container } = render(<ServerGlbExportSection view={story.args.view} />);
+    expectAccessible(container);
   });
 });
 
