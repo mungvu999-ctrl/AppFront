@@ -193,9 +193,15 @@ export type SuggestionOf<K extends SuggestionKind> = Extract<Suggestion, { kind:
 export const validSuggestions = (items: readonly Suggestion[]): Suggestion[] =>
   items.filter((item) => SuggestionSchema.safeParse(item).success);
 
-/** Giá trị hiệu lực: `override` > `params` (hợp đồng §3). */
-export const effectiveParams = <S extends Suggestion>(suggestion: S): S['params'] =>
-  ({ ...suggestion.params, ...(suggestion.override ?? {}) }) as S['params'];
+/**
+ * Giá trị hiệu lực: `override` > `params` (hợp đồng §3). Bản trộn phải qua lược đồ `params` của kind (kiểu, miền);
+ * `override` sai thì bỏ, dùng `params` — không để số âm/chuỗi/NaN đi vào hình học.
+ */
+export const effectiveParams = <S extends Suggestion>(suggestion: S): S['params'] => {
+  if (suggestion.override === undefined) return suggestion.params;
+  const merged = { ...suggestion.params, ...suggestion.override };
+  return (PARAMS_BY_KIND[suggestion.kind].safeParse(merged).success ? merged : suggestion.params) as S['params'];
+};
 
 /** Editor/compiler dựng bản này: `active|overridden` và không `stale` (`adopted` đã nằm trong `layer`). */
 export const isEffectiveSuggestion = (suggestion: Pick<Suggestion, 'state' | 'stale'>): boolean =>

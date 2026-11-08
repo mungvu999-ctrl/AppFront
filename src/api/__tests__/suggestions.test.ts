@@ -55,6 +55,16 @@ describe('M2 lớp đề xuất — schema và client', () => {
     expect(isEffectiveSuggestion({ state: 'active', stale: { since: 2, reasonVi: 'x' } })).toBe(false);
   });
 
+  it('effectiveParams__invalid_override_dropped: override sai kiểu/miền bị bỏ, giữ params, không ra NaN', () => {
+    const skirting = storedSuggestionsOf(CH04).find((s) => s.kind === 'skirting')!;
+    for (const bad of [-5, 0, 'cao']) {
+      const p = effectiveParams({ ...skirting, state: 'overridden', override: { heightMm: bad } });
+      expect(p.heightMm).toBe(skirting.params.heightMm);
+      expect(Number.isFinite(p.heightMm)).toBe(true);
+    }
+    expect(effectiveParams({ ...skirting, state: 'overridden', override: { heightMm: 100, thicknessMm: -1 } }).heightMm).toBe(skirting.params.heightMm);
+  });
+
   it('thân #35 chỉ mang suggestionState / suggestionsEnabled là hợp lệ; kết quả ghi nhận suggestions', () => {
     expect(FloorLayerWriteBodySchema.safeParse({ suggestionState: [] }).success).toBe(true);
     expect(FloorLayerWriteBodySchema.safeParse({ suggestionsEnabled: false }).success).toBe(true);
