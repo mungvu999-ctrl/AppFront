@@ -51,8 +51,11 @@ export function fitRoom(zoneId: string) {
   emitter.emit('camera-controls:apply-pose', fitRoomPose(planBoundsXZ({ [zoneId]: zone }), cameraMode, viewportOf(), freeRect(), baseY))
 }
 
-/** Frame the viewed floor (solo) or the whole model; `apply-pose`, because upstream's `fit-scene` is ignored in Preview. */
+/**
+ * Frame the viewed floor (solo) or the whole model, centred in the canvas part no toolbar/dock/panel covers;
+ * `apply-pose`, because upstream's `fit-scene` is ignored in Preview.
+ */
 export function fitModel() {
   const { bounds, baseY } = viewedFrame()
-  emitter.emit('camera-controls:apply-pose', fitPose(bounds, useViewer.getState().cameraMode, undefined, baseY))
+  emitter.emit('camera-controls:apply-pose', fitPose(bounds, useViewer.getState().cameraMode, viewportOf(), baseY, freeRect()))
 }

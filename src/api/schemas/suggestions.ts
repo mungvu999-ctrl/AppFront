@@ -83,6 +83,10 @@ export const CabinetRunParamsSchema = z
     bottomMm: nonNegativeMm,
     topMm: positiveMm,
     moduleMm: positiveMm,
+    /** Khe cánh; tủ dưới thêm chân + mặt đá — chép từ bảng luật để compiler/editor dựng theo bản ghi (AppBack review F7). */
+    gapMm: nonNegativeMm.optional(),
+    plinthMm: nonNegativeMm.optional(),
+    countertopMm: positiveMm.optional(),
     material: materialRefSchema.optional(),
     countertopMaterial: materialRefSchema.optional(),
     /** Hộp trùng gộp vào dãy này: mẫu của chúng cũng không dựng. */

@@ -11,16 +11,20 @@
 import process from 'node:process';
 import { createServer } from 'vite';
 
+/** `DEV3D_PORT`/`DEV3D_PASCAL_PORT`: chạy bản thứ hai cạnh 18080 (so trước/sau); nhớ đặt `VITE_API_PROXY_ORIGIN`. */
+const MAIN_PORT = Number(process.env.DEV3D_PORT ?? 18080);
+const PASCAL_PORT = Number(process.env.DEV3D_PASCAL_PORT ?? 18082);
+
 const pascal = await createServer({
   configFile: 'vite.pascal.config.ts',
   // IPv4 cố định: với `localhost`, Node thử ::1 rồi 127.0.0.1, mỗi lần 250 ms — lúc vite
   // đang dịch hàng nghìn module Pascal, proxy hỏng hàng loạt ETIMEDOUT.
-  server: { host: '127.0.0.1', port: 18082, strictPort: true },
+  server: { host: '127.0.0.1', port: PASCAL_PORT, strictPort: true },
 });
 await pascal.listen();
 
-process.env.PASCAL_DEV_URL = 'http://127.0.0.1:18082';
-const main = await createServer({ mode: 'be', server: { port: 18080, strictPort: true } });
+process.env.PASCAL_DEV_URL = `http://127.0.0.1:${PASCAL_PORT}`;
+const main = await createServer({ mode: 'be', server: { port: MAIN_PORT, strictPort: true } });
 await main.listen();
 main.printUrls();
-console.log('  Trang 3D (HMR): /editor3d.html → Pascal dev server ở :18082');
+console.log(`  Trang 3D (HMR): /editor3d.html → Pascal dev server ở :${PASCAL_PORT}`);

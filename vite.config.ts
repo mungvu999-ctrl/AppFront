@@ -68,6 +68,9 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: env.VITE_API_PROXY_TARGET || 'http://localhost:8080',
           changeOrigin: false,
+          // Dev server thứ hai (cổng khác 18080) vẫn đăng nhập được vào stack f14: đặt
+          // `VITE_API_PROXY_ORIGIN=http://localhost:18080` để proxy gửi đúng Origin BE chờ.
+          ...(env.VITE_API_PROXY_ORIGIN && { headers: { origin: env.VITE_API_PROXY_ORIGIN } }),
         },
         // `pnpm dev:3d` (`scripts/dev-3d.mjs`): trang 3D lấy từ dev server Pascal (HMR)
         // thay vì bản dựng tĩnh trong `public/`. `base` của Pascal là `/assets/pascal/`

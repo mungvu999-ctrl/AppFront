@@ -1167,6 +1167,9 @@
     "bottomMm": 0,
     "topMm": 860,
     "moduleMm": 600,
+    "gapMm": 4,
+    "plinthMm": 100,
+    "countertopMm": 40,
     "mergedIds": [
      "F-03H62A4X0SJXGMJT08VZQ0KLF"
     ],
@@ -1196,7 +1199,8 @@
     "depthMm": 350,
     "bottomMm": 1450,
     "topMm": 2150,
-    "moduleMm": 600
+    "moduleMm": 600,
+    "gapMm": 4
    }
   },
   {

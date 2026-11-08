@@ -4,14 +4,16 @@
  * A fixed timer fired before the controls existed on a cold first open, so the fit was lost.
  * Here we wait for the controls to publish their first pose, then fit with `apply-pose`
  * (honoured in Preview too). The pose is ≈52° elevation with a 24° lens (upstream 50°; FE3D-FIX-002
- * Q2 had 40°/40°), at the distance that makes the plan fill ~90% of the canvas (V5 D13).
+ * Q2 had 40°/40°), at the distance that makes the plan outline fill 90% of the free canvas (V5 D13),
+ * centred in it (M3-web L1: the old box-corner fit at canvas centre left ch-04 at 36% of the width).
  * FE3D-FIX-004 V14: bounds come from walls + zones only (`planBoundsXZ`), the frame is the real
  * canvas rect (not the window, which counts the sidebar), and the azimuth turns the long side of
  * the plan across the screen.
  */
 import type { CameraPose } from '@pascal-app/core'
 
-type Bounds = { center: [number, number]; size: [number, number] }
+/** `points`: the plan outline (wall ends, zone vertices) the fit frames; absent → the box corners. */
+type Bounds = { center: [number, number]; size: [number, number]; points?: [number, number][] }
 type Viewport = { width: number; height: number }
 
 /**
@@ -44,9 +46,11 @@ export function planBoundsXZ(nodes: Record<string, unknown> | unknown[], levelId
   let minZ = Infinity
   let maxX = -Infinity
   let maxZ = -Infinity
+  const points: [number, number][] = []
   const add = (p: unknown) => {
     if (!Array.isArray(p) || typeof p[0] !== 'number' || typeof p[1] !== 'number') return
     if (!Number.isFinite(p[0]) || !Number.isFinite(p[1])) return
+    points.push([p[0], p[1]])
     minX = Math.min(minX, p[0])
     maxX = Math.max(maxX, p[0])
     minZ = Math.min(minZ, p[1])
@@ -62,7 +66,7 @@ export function planBoundsXZ(nodes: Record<string, unknown> | unknown[], levelId
     }
   }
   if (minX > maxX) return null
-  return { center: [(minX + maxX) / 2, (minZ + maxZ) / 2], size: [maxX - minX, maxZ - minZ] }
+  return { center: [(minX + maxX) / 2, (minZ + maxZ) / 2], size: [maxX - minX, maxZ - minZ], points }
 }
 
 export type RoomEntry = { id: string; name: string; areaM2: number }
@@ -108,106 +112,80 @@ export function fitAzimuth([sx, sz]: [number, number]): number {
   return Math.PI / 4
 }
 
+/** The canvas area no panel covers, in px from the canvas's top-left corner. */
+export type FreeRect = { left: number; top: number; right: number; bottom: number }
+
+/** Canvas minus the top toolbar + scale banner (what `fitPose` frames into when no panel rect is given). */
+export function belowToolbar(viewport: Viewport): FreeRect {
+  return { left: 0, top: Math.min(TOP_RESERVED_PX, viewport.height / 3), right: viewport.width, bottom: viewport.height }
+}
+
+type Point3 = readonly [number, number, number]
+
 /**
- * Azimuth from `fitAzimuth`, 52° elevation, 24° lens. The distance is the smallest one at which every
- * corner of the plan box (floor to wall tops) projects inside FILL of the canvas below the toolbar —
- * exact per-corner perspective test, so long or square plans fill the frame alike. `baseY` lifts the
- * frame to a floor that stands above ground (solo mode keeps its stacked height, UX-R2 K38).
+ * Frame points, relative to the plan centre: the plan's own outline (wall ends, zone vertices) when known — at a
+ * diagonal azimuth the box corners are empty diamond tips nothing occupies (ch-04: the far box corner set the
+ * frame 80 px above the real roof line) — else the box corners. Each at floor and at `top`.
  */
-export function fitPose(
-  bounds: Bounds | null,
-  projection: CameraPose['projection'],
-  viewport: Viewport = viewportOf(),
-  baseY = 0,
-): CameraPose {
-  if (!bounds) return { position: [20, 20, 20], target: [0, 0, 0], projection }
+function framePoints(bounds: Bounds, top: number): Point3[] {
   const [cx, cz] = bounds.center
   const [sx, sz] = bounds.size
-  const cos = Math.cos(ELEVATION)
+  const plan: [number, number][] = bounds.points?.length
+    ? bounds.points.map(([x, z]): [number, number] => [x - cx, z - cz])
+    : [[-sx / 2, -sz / 2], [sx / 2, -sz / 2], [sx / 2, sz / 2], [-sx / 2, sz / 2]]
+  return plan.flatMap(([x, z]) => [[x, 0, z] as const, [x, top, z] as const])
+}
+
+/**
+ * Azimuth from `fitAzimuth`, 52° elevation, 24° lens. The smallest distance at which the points span FILL of
+ * `free` on both axes (exact perspective, bisection), then the camera slides parallel to the image so the points
+ * sit centred in `free` — the toolbar's reserve is paid once, not twice (old fit kept the plan centre at the canvas
+ * centre: the top half lost 120 px and the bottom half kept ~160 px empty). The target then returns to the floor
+ * along the view ray: same picture, and orbit still turns around a point on the floor.
+ */
+function framePose(
+  bounds: Bounds,
+  top: number,
+  projection: CameraPose['projection'],
+  viewport: Viewport,
+  free: FreeRect,
+  baseY: number,
+): CameraPose {
+  const [cx, cz] = bounds.center
+  const azimuth = fitAzimuth(bounds.size)
   const sin = Math.sin(ELEVATION)
-  const azimuth = fitAzimuth([sx, sz])
+  const cos = Math.cos(ELEVATION)
   const sa = Math.sin(azimuth)
   const ca = Math.cos(azimuth)
   // Camera basis: back (target -> camera), right, up.
   const back = [cos * sa, sin, cos * ca] as const
   const right = [ca, 0, -sa] as const
   const up = [-sin * sa, cos, -sin * ca] as const
-  const tanV = Math.tan((FIT_FOV * Math.PI) / 360)
-  const tanH = tanV * (viewport.width / viewport.height)
-  // The toolbar + banner cover the top TOP_RESERVED_PX of the upper half-frame; the target stays at the canvas centre.
-  const tanUp = tanV * Math.max(0.5, 1 - (2 * TOP_RESERVED_PX) / viewport.height)
   const dot = (a: readonly number[], b: readonly number[]) => a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!
-  let distance = MIN_DISTANCE
-  for (const x of [-sx / 2, sx / 2])
-    for (const y of [0, WALL_TOP])
-      for (const z of [-sz / 2, sz / 2]) {
-        const corner = [x, y, z]
-        const depthGain = dot(corner, back)
-        const r = Math.abs(dot(corner, right))
-        const u = dot(corner, up)
-        distance = Math.max(
-          distance,
-          r / (FILL * tanH) + depthGain,
-          Math.abs(u) / (FILL * (u > 0 ? tanUp : tanV)) + depthGain,
-        )
-      }
-  return {
-    position: [cx + distance * back[0], baseY + distance * back[1], cz + distance * back[2]],
-    target: [cx, baseY, cz],
-    projection,
-    fov: FIT_FOV,
-  }
-}
-
-/** The canvas area no panel covers, in px from the canvas's top-left corner. */
-export type FreeRect = { left: number; top: number; right: number; bottom: number }
-
-/** Room frame height (m): floor and furniture must show; tall wall tops may run behind the toolbar. */
-const ROOM_FRAME_TOP = 1.2
-
-/**
- * One room filling FILL of `free`. `fitPose` keeps the target at the canvas centre, so the toolbar's reserve bites
- * twice (a 620 px canvas: 61% of the upper half, a 15 m² room at 34 m); here the room is centred in `free` by sliding
- * the camera parallel to the image, so no margin is paid twice. The target then returns to the floor along the view
- * ray: same picture, and orbit still turns around a point on the floor.
- */
-export function fitRoomPose(
-  bounds: Bounds | null,
-  projection: CameraPose['projection'],
-  viewport: Viewport,
-  free: FreeRect,
-  baseY = 0,
-): CameraPose {
-  if (!bounds) return { position: [20, 20, 20], target: [0, 0, 0], projection }
-  const [cx, cz] = bounds.center
-  const [sx, sz] = bounds.size
-  const azimuth = fitAzimuth([sx, sz])
-  const sin = Math.sin(ELEVATION)
-  const cos = Math.cos(ELEVATION)
-  const sa = Math.sin(azimuth)
-  const ca = Math.cos(azimuth)
-  const back = [cos * sa, sin, cos * ca] as const
-  const right = [ca, 0, -sa] as const
-  const up = [-sin * sa, cos, -sin * ca] as const
-  const dot = (a: readonly number[], b: readonly number[]) => a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!
-  const corners = [-sx / 2, sx / 2].flatMap((x) =>
-    [0, ROOM_FRAME_TOP].flatMap((y) => [-sz / 2, sz / 2].map((z) => [x, y, z] as const)),
-  )
+  const points = framePoints(bounds, top).map((c) => [dot(c, right), dot(c, up), dot(c, back)] as const)
   const tanV = Math.tan((FIT_FOV * Math.PI) / 360)
   const tanH = tanV * (viewport.width / viewport.height)
   const freeX = [((2 * free.left) / viewport.width - 1) * tanH, ((2 * free.right) / viewport.width - 1) * tanH] as const
   const freeY = [(1 - (2 * free.bottom) / viewport.height) * tanV, (1 - (2 * free.top) / viewport.height) * tanV] as const
   // Extents on the image plane at distance d (image coordinates in tan units).
   const extents = (d: number) => {
-    const xs = corners.map((c) => dot(c, right) / (d - dot(c, back)))
-    const ys = corners.map((c) => dot(c, up) / (d - dot(c, back)))
-    return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }
+    const e = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity }
+    for (const [r, u, b] of points) {
+      const x = r / (d - b)
+      const y = u / (d - b)
+      e.x0 = Math.min(e.x0, x)
+      e.x1 = Math.max(e.x1, x)
+      e.y0 = Math.min(e.y0, y)
+      e.y1 = Math.max(e.y1, y)
+    }
+    return e
   }
   const fits = (d: number) => {
     const e = extents(d)
     return e.x1 - e.x0 <= FILL * (freeX[1] - freeX[0]) && e.y1 - e.y0 <= FILL * (freeY[1] - freeY[0])
   }
-  let near = Math.max(MIN_DISTANCE, ...corners.map((c) => dot(c, back) + 0.5))
+  let near = MIN_DISTANCE
+  for (const p of points) near = Math.max(near, p[2] + 0.5)
   let far = near
   while (!fits(far) && far < 1e4) far *= 1.5
   for (let i = 0; i < 30 && far - near > 0.01; i++) {
@@ -228,6 +206,36 @@ export function fitRoomPose(
     projection,
     fov: FIT_FOV,
   }
+}
+
+/**
+ * The whole plan (floor to wall tops) filling FILL of `free` — by default the canvas below the toolbar. `baseY`
+ * lifts the frame to a floor that stands above ground (solo mode keeps its stacked height, UX-R2 K38).
+ */
+export function fitPose(
+  bounds: Bounds | null,
+  projection: CameraPose['projection'],
+  viewport: Viewport = viewportOf(),
+  baseY = 0,
+  free: FreeRect = belowToolbar(viewport),
+): CameraPose {
+  if (!bounds) return { position: [20, 20, 20], target: [0, 0, 0], projection }
+  return framePose(bounds, WALL_TOP, projection, viewport, free, baseY)
+}
+
+/** Room frame height (m): floor and furniture must show; tall wall tops may run behind the toolbar. */
+const ROOM_FRAME_TOP = 1.2
+
+/** UX-R4 U40: one room filling FILL of `free` (same solver as `fitPose`, frame height ROOM_FRAME_TOP). */
+export function fitRoomPose(
+  bounds: Bounds | null,
+  projection: CameraPose['projection'],
+  viewport: Viewport,
+  free: FreeRect,
+  baseY = 0,
+): CameraPose {
+  if (!bounds) return { position: [20, 20, 20], target: [0, 0, 0], projection }
+  return framePose(bounds, ROOM_FRAME_TOP, projection, viewport, free, baseY)
 }
 
 /**

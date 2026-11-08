@@ -28,12 +28,16 @@ export const GTAO_POW = 1.4;
 /** Albedo tối hơn mức này coi như bằng nó (tránh chia cho ~0 ở đồ đen). */
 export const AO_ALBEDO_FLOOR = 0.04;
 /**
- * Ngưỡng độ rọi E (tuyến tính, trước tone map): dưới `LO` = chỉ ambient/hemi → AO đủ; trên `HI` = nắng/đèn trực
- * tiếp → không AO. ponytail: ước lượng theo tỉ lệ ảnh/albedo, specular cũng bị tính là "sáng"; chỉnh theo mắt trên
- * cảnh thật nếu góc trong nắng còn tối hoặc góc khuất bị nhạt.
+ * Ngưỡng độ rọi E (tuyến tính, trước tone map): dưới `LO` = chỉ ánh sáng nền → AO đủ; trên `HI` = nắng/đèn trực
+ * tiếp → không AO. ponytail: ước lượng theo tỉ lệ ảnh/albedo, specular cũng bị tính là "sáng".
+ *
+ * L3 (m3-web): 0,6/1,2 → 1,0/1,8. Ước E vùng BÓNG của Ban ngày (mặc định): môi trường 0,8 × trời gradient (luma
+ * trung bình nửa cầu trên ≈ 0,7) + hemi 0,25 + ambient 0,1 ≈ 0,9 ở sàn, ≈ 0,75 ở tường → ngưỡng cũ làm AO sàn mờ
+ * còn ~một nửa đúng ở chân tường/dưới đồ (ảnh `F:/runs/m3/web/l3-1`). Nắng: 3,2 × sin 39° + 0,9 ≈ 2,9 ở sàn;
+ * đèn chính chủ đề tối 1,7 × 0,8 + ~0,45 ≈ 1,8 → vẫn trên `HI`, chỗ nắng/đèn trực tiếp không bị AO làm tối.
  */
-export const AO_DIRECT_LO = 0.6;
-export const AO_DIRECT_HI = 1.2;
+export const AO_DIRECT_LO = 1.0;
+export const AO_DIRECT_HI = 1.8;
 
 export interface AoInput {
   /** `isWebGpuBackend(renderer)` — WebGL2 không có chuỗi hậu kỳ. */
