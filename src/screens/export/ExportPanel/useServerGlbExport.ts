@@ -25,6 +25,11 @@ export const GLB_ENGINE_LABELS: Readonly<Record<GlbEngine, string>> = {
   server: 'GLB dựng trên máy chủ (có vật liệu)',
 };
 
+/**
+ * Nợ NO-M1-12 (Chặn bật mặc định): editor tự bày đồ bằng mẫu thư viện máy chủ khi thư viện đã nạp
+ * (master a2238c11), còn gói xuất chỉ có mẫu vendor/AppFront → GLB máy chủ lệch editor ở phần lớn đồ
+ * tự bày, không chỉ đồ người dùng thêm/đổi. Câu này chỉ đủ khi cờ `VITE_EXPORT_ENGINE` còn tắt.
+ */
 export const SERVER_GLB_DISCLAIMER =
   'Bản dựng trên máy chủ từ dữ liệu đã lưu; chưa có mái, tủ âm, decor; có thể khác editor ở vật liệu mặc định và đồ chưa có trong gói xuất.';
 export const SERVER_GLB_STALE_NOTE = 'Dữ liệu đã thay đổi sau lần xuất này — xuất lại để có bản mới.';
