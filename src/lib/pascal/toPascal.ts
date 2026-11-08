@@ -22,6 +22,7 @@
  */
 
 import type { DesignAddition } from '@/api/schemas/designConcept';
+import type { Suggestion } from '@/api/schemas/suggestions';
 import { describeUsage } from '@/domain/rooms/classify';
 import { arcApex } from '@/domain/spatial/arc';
 import type {
@@ -71,6 +72,7 @@ import {
 import { SCENE_STYLE_MATERIALS, sceneStyleOf, type SceneStyle } from './sceneStyles';
 import { dressingOf, hostTopMm } from './sceneDressingRules';
 import { furnishEmptyRooms } from './sceneFurnish';
+import { applySuggestionPatches, suggestionPlanOf } from './suggestions';
 import { furnishingUsageOf, isPlausibleStair, lShapedRunArms, orphanWallIds, weldWallEnds } from './structureFixes';
 import { contextRolesOf, isThinHob, isThinSink, modelFolderOf, roleOf, withoutOverlaps } from './sceneVariety';
 import type {
@@ -292,7 +294,15 @@ const OPEN_RAILING_THICKNESS_MM = 100;
  * (lượt về đọc `height` của tường) nhưng ẩn; lan can là đồ sinh ra `DRESS-`, chỉ lưu khi người dùng sửa (thành đồ thật) hoặc xoá (`dressingOff`).
  */
 const railingNodeOf = (
-  { anchor, levelId, start, end, thicknessMm }: { anchor: string; levelId: Wall['levelId'] } & Segment & { thicknessMm: number },
+  {
+    anchor,
+    levelId,
+    start,
+    end,
+    thicknessMm,
+    dressId,
+    heightMm = LOGGIA_RAILING_MM,
+  }: { anchor: string; levelId: Wall['levelId'] } & Segment & { thicknessMm: number; dressId?: string; heightMm?: number },
   levelNodeId: PascalNodeId,
   levelHeightMm: number,
   style: SceneStyle,
@@ -301,13 +311,13 @@ const railingNodeOf = (
   const half = { x: length / 2, y: thicknessMm / 2 };
   const node = itemNodeOf(
     {
-      id: `${GENERATED_DRESS_PREFIX}railing-${anchor}` as FurnitureId,
+      id: (dressId ?? `${GENERATED_DRESS_PREFIX}railing-${anchor}`) as FurnitureId,
       levelId,
       kind: 'other',
       centre: { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 },
       boundingBox: { min: { x: -half.x, y: -half.y }, max: { x: half.x, y: half.y } },
       rotationDeg: degrees((Math.atan2(end.y - start.y, end.x - start.x) * 180) / Math.PI),
-      heightMm: millimetres(Math.min(LOGGIA_RAILING_MM, levelHeightMm)),
+      heightMm: millimetres(Math.min(heightMm, levelHeightMm)),
       confidence: 1,
       source: 'human',
       reviewed: true,
@@ -921,6 +931,8 @@ const itemNodeOf = (
         ...(furniture.variant === undefined ? {} : { variant: furniture.variant }),
         ...(furniture.heightMm === undefined ? {} : { heightMm: furniture.heightMm }),
         ...(furniture.liftMm === undefined ? {} : { liftMm: furniture.liftMm }),
+        // M2 — đồ nhận nuôi giữ dấu luật nguồn qua lượt về (`toSpatial.itemFieldsOf`).
+        ...(furniture.origin === undefined ? {} : { origin: furniture.origin }),
       }),
     },
   };
@@ -1069,12 +1081,15 @@ export const toPascalScene = (
     style = sceneStyleOf(undefined),
     furnish = 'off',
     additions = [],
+    suggestions,
   }: {
     readonly style?: SceneStyle;
     /** Đồ tự bày (bày phòng trống + bày biện) — mặc định tắt: cảnh chỉ có đồ của bản vẽ (C1). */
     readonly furnish?: 'off' | 'on';
     /** AID-01 — đồ AI bổ sung của concept đang dùng: đồ sinh ra như đồ tự bày, chạy cả khi `furnish: 'off'`. */
     readonly additions?: readonly DesignAddition[];
+    /** M2 — lớp đề xuất đã lưu của các tầng (`suggestions.ts`); vắng/rỗng = cảnh như trước M2. */
+    readonly suggestions?: readonly Suggestion[];
   } = {},
 ): PascalSceneResult => {
   const nodes: Record<PascalNodeId, PascalNode> = {};
@@ -1088,6 +1103,7 @@ export const toPascalScene = (
    */
   /* H4 — món tự bày / đèn người dùng đã xoá hoặc đã thành đồ thật: không sinh lại ở bất kỳ đường nào dưới đây. */
   const offIds = new Set(graph.rooms.flatMap((room) => room.dressingOff ?? []));
+  const plan = suggestionPlanOf(suggestions, graph, offIds);
   /** Chỗ đèn trần tự chọn của từng phòng (m), để lượt về biết đèn đã dời chưa. */
   const roomsWithLight = new Set<string>();
 
@@ -1275,11 +1291,12 @@ export const toPascalScene = (
     }
 
     /* Trần + đèn sinh từ phòng (sân ngoài trời thì không); đèn là con của trần (trần tự giữ `children`). */
-    const generated = ceilingNodesOf(room, levelNodeId, style);
+    const lightPlan = plan.light.get(room.id);
+    const generated = ceilingNodesOf(room, levelNodeId, style, lightPlan === 'off' ? undefined : lightPlan);
 
     if (generated !== undefined) {
       const [ceiling, light] = generated;
-      const lightOn = !offIds.has(lightOffIdOf(room.id));
+      const lightOn = lightPlan !== 'off' && !offIds.has(lightOffIdOf(room.id));
 
       nodes[ceiling.id] = lightOn ? ceiling : { ...ceiling, children: [] };
       adopt(levelNodeId, ceiling.id);
@@ -1294,7 +1311,16 @@ export const toPascalScene = (
   for (const room of builtRooms) {
     const levelNodeId = levelNodeIdOf.get(room.levelId);
     const levelHeightMm = levelHeightMmOf.get(room.levelId);
-    if (room.usage !== 'loggia' || levelNodeId === undefined || levelHeightMm === undefined) continue;
+    if (levelNodeId === undefined || levelHeightMm === undefined) continue;
+    /* M2 — máy chủ nắm lan can mép hở của phòng (có bản R4): dựng đúng đoạn đã lưu, không tự dò. */
+    if (plan.railingRooms.has(room.id)) {
+      for (const rail of plan.railings.filter((r) => r.roomId === room.id)) {
+        const { id, heightMm, start, end } = rail;
+        addRailing({ anchor: id, dressId: id, heightMm, levelId: room.levelId, start, end, thicknessMm: OPEN_RAILING_THICKNESS_MM }, levelNodeId, levelHeightMm);
+      }
+      continue;
+    }
+    if (room.usage !== 'loggia') continue;
     for (const { key, start, end } of loggiaOpenSpansOf(room, builtWalls, graph.rooms)) {
       addRailing({ anchor: `${room.id}-${key}`, levelId: room.levelId, start, end, thicknessMm: OPEN_RAILING_THICKNESS_MM }, levelNodeId, levelHeightMm);
     }
@@ -1373,6 +1399,7 @@ export const toPascalScene = (
     const usageOf = (f: Furniture) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId));
     const contextRole = contextRoles.get(furniture.id);
     const sinkFolder =
+      plan.modelFolder.get(furniture.id) ??
       sinkFolderOf(furniture, furnitureToBuild, usageOf) ??
       (contextRole === undefined ? undefined : (modelFolderOf(furniture, style, usage, contextRole) ?? undefined));
     const node =
@@ -1427,10 +1454,17 @@ export const toPascalScene = (
   ).filter(notOff);
   const dressIdsOf = new Map<string, string[]>();
   // AI (designAdditionsOf) đặt thảm theo tâm nó tự chọn và thảm không bị chặn chồng: tâm ngoài phòng → bỏ.
-  const generatedAll = withoutOverlaps(
-    [...furnished, ...dressed, ...aiAdded].filter((f) => !isStrayRug(f, builtRooms)),
-    builtFurniture,
-  );
+  /* M2 — đồ đề xuất đã lưu: máy chủ đã đặt chỗ, không qua `withoutOverlaps`; mẫu theo `modelId` của bản ghi. */
+  const suggestedFolder = new Map(plan.furniture.flatMap(({ furniture: f, folder }) => (folder === undefined ? [] : [[f.id as string, folder] as const])));
+  /* Dấu luật trên node: nhận nuôi (dời/xoay) thì `toSpatial` ghi `origin` vào đồ thật (hợp đồng M2 §2.4). */
+  const suggestionOf = new Map(plan.furniture.map(({ furniture: f, origin }) => [f.id as string, origin]));
+  const generatedAll = [
+    ...withoutOverlaps(
+      [...furnished, ...dressed, ...aiAdded].filter((f) => !isStrayRug(f, builtRooms)),
+      builtFurniture,
+    ),
+    ...plan.furniture.map(({ furniture: f }) => f),
+  ];
   /* Chậu/mặt bếp sinh ra nằm trên mặt đá dãy tủ sinh ra (hoặc thật), như đường đồ thật ở trên. */
   const counterPool = [...builtFurniture, ...generatedAll];
   const usageOfGenerated = (f: Furniture) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId));
@@ -1449,10 +1483,11 @@ export const toPascalScene = (
       style,
       usage,
       counterTopMmOf(furniture, counterPool, style, usageOfGenerated),
-      sinkFolderOf(furniture, counterPool, usageOfGenerated),
+      suggestedFolder.get(furniture.id) ?? sinkFolderOf(furniture, counterPool, usageOfGenerated),
     );
 
-    nodes[node.id] = { ...node, metadata: { ...node.metadata, generated: 'dressing' } };
+    const suggestion = suggestionOf.get(furniture.id);
+    nodes[node.id] = { ...node, metadata: { ...node.metadata, generated: 'dressing', ...(suggestion === undefined ? {} : { suggestion }) } };
     adopt(levelNodeId, node.id);
     if (furniture.roomId !== undefined) dressIdsOf.set(furniture.roomId, [...(dressIdsOf.get(furniture.roomId) ?? []), furniture.id]);
   }
@@ -1578,6 +1613,8 @@ export const toPascalScene = (
     // (`scripts/pascal-render.mjs` luật 5) — nhà mẫu trang đăng nhập không có ranh đất.
   };
 
+
+  applySuggestionPatches(nodes, plan, (kind, id) => toPascalId(kind, id));
 
   const materials = Object.fromEntries([...SCENE_MATERIALS, ...SCENE_STYLE_MATERIALS].map((material) => [material.id, material]));
   /* Báo cáo 2.8.2: tầng căn được theo lưới trục chung thì xoay + dời khi HIỂN THỊ; lượt về gỡ ra. */

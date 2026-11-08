@@ -374,13 +374,15 @@ export const ceilingNodesOf = (
   room: Pick<Room, 'id' | 'outline' | 'finish' | 'ceilingMaterial'>,
   levelNodeId: PascalNodeId,
   style: SceneStyle = DEFAULT_STYLE,
+  /** M2 — chỗ đèn từ đề xuất L1 đã lưu (mm, polylabel của máy chủ); vắng = `interiorPointOf`. */
+  lightAtMm?: { readonly x: number; readonly y: number },
 ): readonly [PascalCeilingNode, PascalItemNode] | undefined => {
   if (room.finish === 'decking') return undefined;
 
   const ceilingId = toPascalId('ceiling', room.id);
   const lightId = toPascalId('item', `${GENERATED_LIGHT_PREFIX}${room.id}`);
   const polygon = room.outline.map((point): PascalPoint2 => [metresOf(point.x), metresOf(point.y)]);
-  const [lightX, lightZ] = interiorPointOf(polygon);
+  const [lightX, lightZ] = lightAtMm === undefined ? interiorPointOf(polygon) : [metresOf(lightAtMm.x), metresOf(lightAtMm.y)];
   const model = CATALOG_MODELS['recessed-light'];
 
   if (model === undefined) throw new Error('bảng mô hình thiếu recessed-light');

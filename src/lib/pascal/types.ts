@@ -219,6 +219,9 @@ export interface PascalWindowNode extends PascalNodeCommon {
   readonly windowType?: 'fixed' | 'sliding' | 'casement';
   readonly casementStyle?: 'single' | 'french';
   readonly hingesSide?: 'left' | 'right';
+  /** Bề rộng/sâu thanh khung (m, `window.ts:93-94`); vắng = mặc định Pascal. M2: từ đề xuất C2. */
+  readonly frameThickness?: number;
+  readonly frameDepth?: number;
   /** Vật liệu khung/kính (`frame`/`glass`), tham chiếu `library:`/`scene:` — `window.ts:34-37`. */
   readonly slots?: Readonly<Record<string, string>>;
 }

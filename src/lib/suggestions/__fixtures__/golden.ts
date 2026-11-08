@@ -5,6 +5,8 @@
 import { SpatialLayerSchema } from '@/api/schemas/spatial';
 import { SuggestionSchema, type Suggestion } from '@/api/schemas/suggestions';
 import type { SpatialLayer } from '@/api/client';
+import type { LevelId, SpatialGraph } from '@/domain/spatial/types';
+import { millimetres } from '@/domain/units/types';
 
 import ch04Golden from './ch-04.golden.json';
 import ch04Layer from './ch-04.layer.json';
@@ -36,3 +38,21 @@ export const storedSuggestionsOf = (golden: GoldenCase): Suggestion[] =>
   golden.drafts.map((draft) => SuggestionSchema.parse({ ...draft, state: 'active', createdRevision: 1 }));
 
 export const CH04 = GOLDEN_CASES[0]!;
+
+/** Đồ thị một tầng của ca vàng (tầng cao 3,3 m như bench), để dựng cảnh Pascal. */
+export const goldenGraphOf = (golden: GoldenCase): SpatialGraph => {
+  const levelId = (golden.layer.walls[0]?.levelId ?? 'L-1') as LevelId;
+  return {
+    axes: [],
+    building: { confidence: 1, datumElevationMm: millimetres(0), name: golden.name, reviewed: true, source: 'human' },
+    dimensions: [],
+    furniture: [...golden.layer.furniture],
+    levels: [
+      { id: levelId, name: 'Tầng 1', order: 0, elevationMm: millimetres(0), heightMm: millimetres(3300), confidence: 1, reviewed: true, source: 'human' },
+    ],
+    notes: [],
+    openings: [...golden.layer.openings],
+    rooms: [...golden.layer.rooms],
+    walls: [...golden.layer.walls],
+  };
+};
