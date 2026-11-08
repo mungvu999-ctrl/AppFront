@@ -142,7 +142,26 @@ export function unsafeOutReason(rawOut, root, { exists, readdir }) {
  * code", không đoán. Mỗi mục có ảnh/mẫu phải ghi giấy phép thuộc tập này VÀ tác giả. Trả danh sách câu lỗi
  * (rỗng = đạt); `build.mjs` hỏng nếu khác rỗng. Vật liệu màu phẳng (không ảnh) không có gì để cấp phép nên không xét.
  */
-export const ALLOWED_LICENCE = /^(CC0\b|CC BY\b|CC-BY\b|MIT \(Pascal\)$)/;
+const ALLOWED_LICENCES = new Set(['CC0', 'CC0-1.0', 'CC0 1.0', 'CC BY 4.0', 'CC-BY 4.0', 'CC-BY-4.0', 'MIT (Pascal)']);
+/** Bỏ đoạn "(nguồn / https://…)" ghi kèm cuối; còn chữ NC/ND/SA (kể cả trong URL) thì loại; rồi so khớp chính xác với bảng cho phép. */
+export const ALLOWED_LICENCE = {
+  test(raw) {
+    const text = String(raw ?? '').trim();
+    if (/(^|[^A-Za-z])(NC|ND|SA)([^A-Za-z]|$)|\/by-(nc|nd|sa)/i.test(text)) return false;
+    return ALLOWED_LICENCES.has(text) || ALLOWED_LICENCES.has(text.replace(/\s*\([^)]*\)$/, ''));
+  },
+};
+
+/** Xong dựng ở `stage`: đạt thì thay `out` bằng `stage`; không đạt thì xoá `stage` và KHÔNG đụng `out`. */
+export function finalizePack({ stage, out, problems }, { rm, rename }) {
+  if (problems.length) {
+    rm(stage);
+    return false;
+  }
+  rm(out);
+  rename(stage, out);
+  return true;
+}
 export const PROJECT_CODE = 'project-code';
 /** Câu ghi công cho mẫu `project-code` (giấy phép ra ngoài chờ chủ dự án chốt). */
 export const PROJECT_CODE_CREDIT = 'AppFront project code, bản quyền thuộc chủ dự án';

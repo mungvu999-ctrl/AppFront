@@ -4,7 +4,7 @@
  * TS (danh mục vật liệu, bảng mẫu) nhập qua `ssrLoadModule` của Vite (có sẵn, alias `@/` theo vite.config).
  */
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -18,15 +18,17 @@ import sharp from 'sharp';
 import { createServer } from 'vite';
 
 import { sourceFor } from '../pascal-material-webp.mjs';
-import { OUT_MARKER, PROJECT_CODE, PROJECT_CODE_CREDIT, buildDefaults, collectRefs, decodeKtx2, licenceProblems, missingRefs, parseConstString, parseStringRecord, repeatMOf, resolveFinishes, sourceOfMap, unsafeOutReason } from './lib.mjs';
+import { OUT_MARKER, PROJECT_CODE, PROJECT_CODE_CREDIT, buildDefaults, collectRefs, decodeKtx2, finalizePack, licenceProblems, missingRefs, parseConstString, parseStringRecord, repeatMOf, resolveFinishes, sourceOfMap, unsafeOutReason } from './lib.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const ASSETS = join(ROOT, 'vendor', 'pascal', 'assets');
 const { values } = parseArgs({ args: process.argv.slice(2).filter((a) => a !== '--'), options: { out: { type: 'string' }, version: { type: 'string' } }, strict: false });
 if (!values.out || !values.version) throw new Error('Cần --out <dir> --version <v>');
-const OUT = resolve(values.out);
+const FINAL = resolve(values.out);
+// Dựng vào thư mục tạm cạnh đích; chỉ khi đạt giấy phép mới đổi tên thành --out (gói chưa đạt không nằm trên đĩa).
+const OUT = `${FINAL}.staging`;
 const unsafe = unsafeOutReason(values.out, ROOT, { exists: existsSync, readdir: readdirSync });
-if (unsafe) throw new Error(`Không xoá ${OUT}: ${unsafe}`);
+if (unsafe) throw new Error(`Không xoá ${FINAL}: ${unsafe}`);
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(join(OUT, 'textures'), { recursive: true });
 writeFileSync(join(OUT, OUT_MARKER), 'export-pack\n');
@@ -272,7 +274,8 @@ console.log(
   }),
 );
 if (missing.length) console.log('missing:\n  ' + missing.slice(0, 40).join('\n  '));
-if (licence.length) {
-  console.error('Giấy phép không đạt (CC0/CC-BY/MIT-Pascal + tác giả):\n  ' + licence.join('\n  '));
+const rmDir = (d) => rmSync(d, { recursive: true, force: true });
+if (!finalizePack({ stage: OUT, out: FINAL, problems: licence }, { rm: rmDir, rename: renameSync })) {
+  console.error('Giấy phép không đạt (CC0/CC-BY/MIT-Pascal + tác giả), không ghi gói:\n  ' + licence.join('\n  '));
   process.exitCode = 1;
 }

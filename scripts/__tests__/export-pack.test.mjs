@@ -6,7 +6,7 @@ import { join, parse, resolve } from 'node:path';
 
 import { readFileSync } from 'node:fs';
 
-import { OUT_MARKER, buildDefaults, collectRefs, decodeKtx2, licenceProblems, missingRefs, parseConstString, parseStringRecord, repeatMOf, resolveFinishes, sourceOfMap, unsafeOutReason } from '../export-pack/lib.mjs';
+import { OUT_MARKER, buildDefaults, collectRefs, decodeKtx2, finalizePack, licenceProblems, missingRefs, parseConstString, parseStringRecord, repeatMOf, resolveFinishes, sourceOfMap, unsafeOutReason } from '../export-pack/lib.mjs';
 
 describe('export-pack lib', () => {
   it('sourceOfMap: ktx2 qua sourceFor, webp thẳng, thiếu → null', () => {
@@ -85,6 +85,25 @@ describe('export-pack giấy phép (M2)', () => {
     expect(bad).toHaveLength(4);
     expect(bad.join(' ')).toMatch(/material:a/);
     expect(bad.join(' ')).toMatch(/model:n thiếu tác giả/);
+  });
+
+  it('licenceProblems: biến thể NC/ND/SA bị từ chối, bảng cho phép khớp chính xác', () => {
+    for (const lic of ['CC BY-NC 4.0', 'CC-BY-NC-SA', 'CC BY-ND 4.0', 'CC BY-SA 4.0', 'CC0-NC', 'CC BY 4.0 NC', 'CC BY 4.0 (https://creativecommons.org/licenses/by-nc/4.0/)', 'CC BY 3.0 extra', 'MIT']) {
+      expect(licenceProblems({ models: { m: { license: lic, author: 'X' } } }), lic).toHaveLength(1);
+    }
+    for (const lic of ['CC0', 'CC0 1.0', 'CC BY 4.0', 'CC-BY 4.0', 'MIT (Pascal)', 'CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)']) {
+      expect(licenceProblems({ models: { m: { license: lic, author: 'X' } } }), lic).toEqual([]);
+    }
+  });
+
+  it('finalizePack: giấy phép hỏng thì xoá thư mục tạm và không đụng --out; đạt thì đổi tên', () => {
+    const calls = [];
+    const fs = { rm: (p) => calls.push(['rm', p]), rename: (a, b) => calls.push(['mv', a, b]) };
+    expect(finalizePack({ stage: 's', out: 'o', problems: ['x'] }, fs)).toBe(false);
+    expect(calls).toEqual([['rm', 's']]);
+    calls.length = 0;
+    expect(finalizePack({ stage: 's', out: 'o', problems: [] }, fs)).toBe(true);
+    expect(calls).toEqual([['rm', 'o'], ['mv', 's', 'o']]);
   });
 
   it('repeatMOf: mét mỗi lần lặp = 1 / repeatX; số lạ → 1', () => {
