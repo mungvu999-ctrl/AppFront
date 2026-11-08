@@ -114,7 +114,7 @@ for (const line of lic.split('\n')) {
 const authorOf = (src) => {
   const by = / by ([^(]+?) \(/.exec(src)?.[1];
   if (by) return by.trim();
-  return /polyhaven/i.test(src) ? 'Poly Haven' : /procedural|project code/i.test(src) ? 'AppFront' : 'Pascal';
+  return /polyhaven/i.test(src) ? 'Poly Haven' : /procedural|project code|AppFront/i.test(src) ? 'AppFront' : 'Pascal';
 };
 
 const dracoDec = await draco3d.createDecoderModule();
@@ -144,10 +144,13 @@ for (const id of folders) {
   root.listExtensionsUsed().filter((e) => e.extensionName === 'EXT_texture_webp').forEach((e) => e.dispose());
   await io.write(join(OUT, 'models', `${id}.glb`), doc);
   const m = (VENDOR_MODELS[id] ?? APPFRONT_MODELS[id]).dimensions;
+  // Mẫu của assets/appfront-items phải có dòng trong LICENSES.md: thiếu thì ghi vào `missing`, không đoán giấy phép.
+  const fromAppFront = src.includes('appfront-items');
+  if (fromAppFront && !licenseRows.has(id)) missing.push(`licence:${id} (thiếu dòng trong assets/appfront-items/LICENSES.md)`);
   const l =
     licenseRows.get(id) ??
-    (src.includes('appfront-items')
-      ? { source: 'AppFront', license: 'project code' }
+    (fromAppFront
+      ? { source: 'AppFront', license: 'chưa rõ' }
       : { source: 'https://github.com/pascalorg/editor (vendor/pascal/NGUON.md)', license: 'MIT (Pascal)' });
   models[id] = {
     file: `models/${id}.glb`,
@@ -198,9 +201,11 @@ writeFileSync(join(OUT, 'editor-defaults.json'), JSON.stringify(editorDefaults, 
 
 // ── giấy phép + manifest ──
 const rows = Object.entries(models).map(([id, m]) => `| ${id} | ${m.author} | ${m.license} | ${m.source} |`);
+// MIT bắt buộc kèm thông báo bản quyền: chép nguyên LICENSE của Pascal vào gói.
+writeFileSync(join(OUT, 'LICENSE-PASCAL-MIT.txt'), readFileSync(join(ROOT, 'vendor', 'pascal', 'LICENSE')));
 writeFileSync(
   join(OUT, 'LICENSES.md'),
-  `# Giấy phép mẫu đồ trong gói ${values.version}\n\nVật liệu: ảnh từ vendor/pascal/assets/material (Pascal, MIT).\n\n| Mẫu | Tác giả | Giấy phép | Nguồn |\n|---|---|---|---|\n${rows.join('\n')}\n`,
+  `# Giấy phép mẫu đồ trong gói ${values.version}\n\nVật liệu: ảnh từ vendor/pascal/assets/material (Pascal, MIT). Toàn văn giấy phép MIT của Pascal: LICENSE-PASCAL-MIT.txt.\n\n| Mẫu | Tác giả | Giấy phép | Nguồn |\n|---|---|---|---|\n${rows.join('\n')}\n`,
 );
 
 const files = {};

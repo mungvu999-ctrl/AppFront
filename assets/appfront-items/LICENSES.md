@@ -22,8 +22,8 @@ Thumbnails are neutral icon cards with the item name (sharp, no 3D render).
 | ceiling-lamp-ph | https://polyhaven.com/a/modern_ceiling_lamp_01 (1k glTF; pack 2A) | CC0 1.0 (Poly Haven) |
 | picture-ph | https://polyhaven.com/a/hanging_picture_frame_02 (1k glTF; pack 2A) | CC0 1.0 (Poly Haven) |
 | planter-long | https://polyhaven.com/a/planter_box_02 (stretched 1.9 x 0.9 x 1.4) + 3 copies of the foliage of https://polyhaven.com/a/potted_plant_02 (real `*_leaves_alpha_1k.png`; pack 2A) | CC0 1.0 (Poly Haven) |
-| rug-nf | vendor Pascal `rectangular-carpet` with the fringe tabs removed (`scripts/realism-assets/carpet.mjs`; review2 pack 1) | same as vendor/pascal assets |
-| closet-gen, kitchen-counter-gen, kitchen-cabinet-gen, kitchen-shelf-gen, tv-stand-gen | procedural, `scripts/realism-assets/cabinets.mjs` (AppFront; pack 4B, replace the Pascal box cabinets) | project code |
+| rug-nf | vendor Pascal `rectangular-carpet` with the fringe tabs removed (`scripts/realism-assets/carpet.mjs`; review2 pack 1) | MIT (Pascal) |
+| closet-gen, kitchen-counter-gen, kitchen-cabinet-gen, kitchen-sink-gen, kitchen-shelf-gen, tv-stand-gen | procedural, `scripts/realism-assets/cabinets.mjs` (AppFront; pack 4B, replace the Pascal box cabinets) | project code |
 
 Downloaded 2026-10-21 from `https://api.polyhaven.com/files/<id>` -> `gltf.1k`.
 
