@@ -96,6 +96,12 @@ describe('ExportPanel + đường máy chủ (M1-01)', () => {
     expect(screen.getByRole('button', { name: /^Xuất \.glb$/u })).not.toBeDisabled();
   });
 
+  it('đang dựng trên máy chủ: khoá nút "Xuất .glb"', () => {
+    const props = buildExportPanelProps('success', { formats: formatsSelecting('glb'), floors: noFloors });
+    render(<ExportPanel {...props} serverGlb={base({ isBusy: true })} />);
+    expect(screen.getByRole('button', { name: /^Xuất \.glb$/u })).toBeDisabled();
+  });
+
   it('đường nhanh giữ nguyên: còn tuỳ chọn và vẫn chặn khi chưa chọn tầng', () => {
     const props = buildExportPanelProps('success', { formats: formatsSelecting('glb'), floors: noFloors });
     render(<ExportPanel {...props} serverGlb={base({ engine: 'quick' })} />);

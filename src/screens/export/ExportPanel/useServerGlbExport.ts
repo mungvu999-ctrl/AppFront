@@ -216,27 +216,35 @@ export function useServerGlbExport(options: UseServerGlbExportOptions): UseServe
     return () => clearTimeout(timer);
   }, [pending, readLatest, state.job]);
 
+  // Chốt đồng bộ: hai cú bấm liền nhau chạy trước khi `phase` kịp đổi trong state.
+  const inFlight = useRef(false);
   const start = useCallback(() => {
     const api = apiRef.current;
-    if (api === undefined) return;
+    // Đang lưu/gửi/dựng thì bỏ qua: bấm lại không tạo thêm lượt N49 (lượt trước sẽ thành `superseded`).
+    if (api === undefined || inFlight.current || pending) return;
+    inFlight.current = true;
     void (async () => {
-      setState((s) => ({ ...s, phase: 'flushing', error: null }));
-      const flushed = await flush();
-      if (!alive.current) return;
-      if (!flushed.ok) {
-        setState((s) => ({ ...s, phase: 'idle', error: FLUSH_FAILED_MESSAGE }));
-        return;
+      try {
+        setState((s) => ({ ...s, phase: 'flushing', error: null }));
+        const flushed = await flush();
+        if (!alive.current) return;
+        if (!flushed.ok) {
+          setState((s) => ({ ...s, phase: 'idle', error: FLUSH_FAILED_MESSAGE }));
+          return;
+        }
+        setState((s) => ({ ...s, phase: 'starting' }));
+        const result = await api.modelExports.start(projectId);
+        if (!alive.current) return;
+        setState((s) =>
+          result.ok
+            ? { ...s, phase: 'idle', job: result.data, error: null }
+            : { ...s, phase: 'idle', error: messageForHttpError(result.error) },
+        );
+      } finally {
+        inFlight.current = false;
       }
-      setState((s) => ({ ...s, phase: 'starting' }));
-      const result = await api.modelExports.start(projectId);
-      if (!alive.current) return;
-      setState((s) =>
-        result.ok
-          ? { ...s, phase: 'idle', job: result.data, error: null }
-          : { ...s, phase: 'idle', error: messageForHttpError(result.error) },
-      );
     })();
-  }, [flush, projectId]);
+  }, [flush, pending, projectId]);
 
   const jobId = state.job?.id;
   const onDownload = useCallback<ServerGlbExportView['onDownload']>(

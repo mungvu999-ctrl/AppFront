@@ -266,6 +266,8 @@ export function ExportPanel(props: ExportPanelProps) {
   const onServer = selectedFormat?.id === 'glb' && props.serverGlb?.engine === 'server';
   const canExportSelected =
     selectedFormat !== null && (onServer || canDeliverFormat(selectedFormat.id, capabilities, floors));
+  // Đang lưu/gửi/dựng trên máy chủ: khoá nút "Xuất .glb" để không gửi N49 lần hai.
+  const serverBusy = onServer && props.serverGlb?.isBusy === true;
 
   const head = (withStatus: boolean) => (
     <PageHead
@@ -415,7 +417,7 @@ export function ExportPanel(props: ExportPanelProps) {
         blockedReason={noticeCaption ?? (selectedFormat?.id === 'glb' && !onServer ? NO_FLOOR_CAPTION : null)}
         destinationCaption={destinationCaption}
         pendingNote={props.pendingNote ?? null}
-        isLoading={isLoading}
+        isLoading={isLoading || serverBusy}
         onExport={onExport}
         onCancel={onCancel}
         {...(onBackToProject !== undefined ? { onBackToProject } : {})}

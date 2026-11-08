@@ -69,6 +69,22 @@ describe('useServerGlbExport', () => {
     expect(result.current.view.errorMessage).toBe(FLUSH_FAILED_MESSAGE);
   });
 
+  it('bấm "Xuất" lần hai khi đang gửi hoặc đang dựng → N49 chỉ một lần', async () => {
+    const api = fakeApi([null], job({ status: 'running' }));
+    const { result } = renderHook(() => useServerGlbExport({ api, enabled: true, flush: flushOk, projectId: 'p' }));
+    await settle();
+    act(() => {
+      result.current.start();
+      result.current.start();
+    });
+    expect(result.current.view.isBusy).toBe(true);
+    await settle();
+    expect(result.current.view.isBusy).toBe(true);
+    act(() => result.current.start());
+    await settle();
+    expect(api.modelExports.start).toHaveBeenCalledOnce();
+  });
+
   it('cache 200 trả job done → hiện kết quả ngay, không thăm dò', async () => {
     const api = fakeApi([null], done());
     const { result } = renderHook(() => useServerGlbExport({ api, enabled: true, flush: flushOk, projectId: 'p' }));
