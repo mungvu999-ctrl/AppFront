@@ -16,6 +16,7 @@ import { type Object3D, PointLight, type Scene, Vector3 } from 'three';
 
 import { NIGHT_THEME_ID } from '../renderLook';
 import { syncStudioGround } from './horizon';
+import { lightFlagOn } from './lightFlag';
 import { sceneTier } from './tiers';
 
 /** Bề rộng vùng nửa tối mong muốn (m) của bóng nắng. */
@@ -122,6 +123,58 @@ export function planRoomLights(rooms: readonly RoomInput[], max = ROOM_LIGHT_MAX
     });
 }
 
+/**
+ * `?light=lamp-cal`. Gốc "sàn cháy": PointLight three r186 là cd thật, decay 2 → rọi sàn ngay dưới đèn = I/h².
+ * Phòng ≥ 30 m² → 15 cd ở 2,3 m → đỉnh 2,84, gấp ~4 lần nắng/đèn chính chủ đề `night` trên sàn
+ * (1,2 × cos 54,7° = 0,69), trong khi góc phòng chỉ ~0,25. Giữ tổng quang thông (Φ = 4πI, không giảm sáng chung)
+ * nhưng chia thành n đèn dọc cạnh dài để mỗi đèn có I/h² ≤ `LAMP_CAL_PEAK_E`. Dùng ô thừa của pool, không thêm đèn.
+ */
+export const LAMP_CAL_PEAK_E = 1;
+export const LAMP_CAL_MAX_SPLIT = 3;
+
+export function pointInPolygon(x: number, z: number, poly: Polygon): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, zi] = poly[i]!;
+    const [xj, zj] = poly[j]!;
+    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/** Điểm chia đều dọc cạnh dài của khung bao, qua trọng tâm; có điểm ngoài phòng (chữ L) → `undefined`. */
+// ponytail: chia theo khung bao; phòng chữ L/chéo giữ một đèn. Cần thì chia theo trục chính (PCA).
+function splitPoints(poly: Polygon, c: { x: number; z: number }, n: number): { x: number; z: number }[] | undefined {
+  const xs = poly.map((p) => p[0]);
+  const zs = poly.map((p) => p[1]);
+  const [x0, x1, z0, z1] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
+  const alongX = x1 - x0 >= z1 - z0;
+  const pts = Array.from({ length: n }, (_, i) => {
+    const t = (i + 0.5) / n;
+    return alongX ? { x: x0 + t * (x1 - x0), z: c.z } : { x: c.x, z: z0 + t * (z1 - z0) };
+  });
+  return pts.every((p) => pointInPolygon(p.x, p.z, poly)) ? pts : undefined;
+}
+
+export function calibrateRoomLights(
+  plan: readonly RoomLightPlan[],
+  rooms: readonly RoomInput[],
+  max = ROOM_LIGHT_MAX,
+  height = ROOM_LIGHT_HEIGHT_M,
+): RoomLightPlan[] {
+  let spare = max - plan.length;
+  const capCd = LAMP_CAL_PEAK_E * height * height;
+  return plan.flatMap((p) => {
+    const want = Math.min(LAMP_CAL_MAX_SPLIT, Math.ceil(p.intensity / capCd));
+    const n = Math.min(want, 1 + Math.max(0, spare));
+    const poly = rooms[p.index]!.polygon;
+    const pts = n > 1 ? splitPoints(poly, p, n) : undefined;
+    if (!pts) return [p];
+    spare -= n - 1;
+    return pts.map((q) => ({ index: p.index, x: q.x, z: q.z, intensity: p.intensity / n, range: roomLightRange(poly, q, height) }));
+  });
+}
+
 interface RegistryLike {
   nodes: Map<string, Object3D>;
   byType: Record<string, Set<string> | undefined>;
@@ -168,7 +221,8 @@ export function syncRoomLights(
     const node = nodes[id] as ZoneNodeLike;
     if (obj && node?.polygon && shown(obj)) zones.push({ obj, room: { polygon: node.polygon, name: node.name } });
   }
-  const plan = planRoomLights(zones.map((z) => z.room));
+  const rooms = zones.map((z) => z.room);
+  const plan = lightFlagOn('lamp-cal') ? calibrateRoomLights(planRoomLights(rooms), rooms) : planRoomLights(rooms);
   pool.forEach((l, i) => {
     const p = plan[i];
     if (!p) {
