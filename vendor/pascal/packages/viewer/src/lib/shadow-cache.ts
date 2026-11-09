@@ -12,6 +12,14 @@
 // misses. Skinned/morphed casters push NaN, so they update every frame as before.
 import type { Light, Material, Mesh, Object3D, Plane } from 'three'
 
+type VersionedAttr = { version?: number; isInterleavedBufferAttribute?: boolean; data?: { version: number } }
+/** InterleavedBufferAttribute keeps its version on `.data`; a plain attribute on itself. */
+const attrVersion = (a: unknown): number => {
+  const v = a as VersionedAttr | null | undefined
+  if (!v) return -1
+  return (v.isInterleavedBufferAttribute ? v.data?.version : v.version) ?? -1
+}
+
 export const SHADOW_REFRESH_FRAMES = 30
 
 type ShadowLight = Light & {
@@ -55,7 +63,7 @@ export class ShadowCache {
   private pushMaterial(m: Material | undefined) {
     if (!m) return this.push(-1)
     const r = m as Material & Record<string, { id?: number; version?: number } | undefined>
-    this.push(m.id)
+    this.push((m as unknown as { id: number }).id)
     this.push(m.version)
     this.push(m.visible ? 1 : 0)
     this.push(m.alphaTest)
@@ -100,8 +108,8 @@ export class ShadowCache {
       if (mesh.isSkinnedMesh || g.morphAttributes.position) return this.push(Number.NaN)
       this.push(mesh.id)
       this.push(g.id)
-      this.push(g.attributes.position?.version ?? -1)
-      this.push(g.index?.version ?? -1)
+      this.push(attrVersion(g.attributes.position))
+      this.push(attrVersion(g.index))
       this.push(g.drawRange.start)
       this.push(g.drawRange.count)
       this.push(mesh.layers.mask)

@@ -12,7 +12,7 @@ interface WithNodes {
 
 describe('nắp cắt cho đồ cao (U62)', () => {
   it('đồ cao quá 1,0 m: vá một lần, hai mặt cố định; đổi chế độ không needsUpdate', () => {
-    const mat = new MeshStandardMaterial({ color: '#8a6a4a' });
+    const mat = new MeshStandardMaterial();
     expect(capTallItemMaterial(mat, 2.1)).toBe(mat);
     expect(mat.side).toBe(DoubleSide);
     expect(mat.shadowSide).toBe(BackSide);

@@ -505,7 +505,7 @@ describe('usePascalProjectBridge', () => {
 
     await waitFor(() => expect(applied).toHaveLength(1));
     expect(saver.reloaded).toEqual(['L-1']);
-    expect(result.current.save?.notices.map((item) => item.text)).toEqual(['Tầng đã đổi trên máy chủ.']);
+    await waitFor(() => expect(result.current.save?.notices.map((item) => item.text)).toEqual(['Tầng đã đổi trên máy chủ.']));
     /* eslint-disable-next-line local/no-direct-set -- dọn lại */
     useStore.setState({ unsavedFloorIds: [] });
   });
