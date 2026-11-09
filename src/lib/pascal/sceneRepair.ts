@@ -32,6 +32,7 @@ import {
   rectOfFurniture,
   rectsOverlap,
   roomEdges,
+  tuckedSeat,
   wallRects,
   type Rect,
 } from './placement';
@@ -66,8 +67,7 @@ const BATH_NAME = /\b(wc|toilet|bath)|vệ sinh|tắm/iu;
 /** Ghế cách mép bàn tới mức này coi là ghế của bàn (đi theo khi bàn dời). */
 const SEAT_REACH_MM = 300;
 const isTable = (f: Furniture): boolean => f.kind === 'table' || f.kind === 'kitchenCabinet';
-/** Ghế kê dưới bàn/quầy là chồng hình hợp lệ, không phải lỗi. */
-const tucked = (a: Furniture, b: Furniture): boolean => (a.kind === 'chair' && isTable(b)) || (b.kind === 'chair' && isTable(a));
+const tucked = tuckedSeat;
 const isFlat = (f: Furniture): boolean => f.heightMm !== undefined && f.heightMm < FLAT_MAX_MM;
 const repairable = (f: Furniture): boolean =>
   classOf(f) === 'ai' && f.suggested !== true && f.kind !== 'stair' && !isFlat(f);

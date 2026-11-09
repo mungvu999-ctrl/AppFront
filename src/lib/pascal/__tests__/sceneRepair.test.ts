@@ -203,6 +203,7 @@ describe('repairScene', () => {
     const dx = (byId(graph, 'F-tb')?.centre.x ?? 0) - 700;
     expect(byId(graph, 'F-c1')?.centre.x).toBe(900 + dx);
     expect(repairScene(g).repairs).toEqual([]);
+    expect(scenePlacementIssues(g)).toEqual([]);
   });
 
   it('duplicateFixture: hai bồn cầu một phòng → ẩn món AI thừa, giữ món người dùng', () => {
