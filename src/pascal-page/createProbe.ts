@@ -24,6 +24,10 @@ export interface PascalProbe {
   setCamera(pos: Vec3, target: Vec3, fov: number | 'top-ortho'): void;
   /** Hình học tường (m, toạ độ tầng) cho C9. */
   walls(): ProbeWall[];
+  /** Phòng (node `zone`): id, công năng (`metadata.appfront.usage`), đa giác (m, toạ độ tầng), tầng. */
+  rooms(): ProbeRoom[];
+  /** Cửa đi/cửa sổ: `position[0]` = khoảng cách (m) từ đầu tường `wallId` tới tâm ô mở, `position[1]` = cao độ tâm. */
+  openings(): ProbeOpening[];
   /** Vị trí, góc quay (rad) và mô hình của item cho C8. */
   items(): ProbeItem[];
   /** Móc kiểm thử C13: `useScene.updateNode(id, patch)` — chỉ có khi `?probe=1`. */
@@ -48,6 +52,24 @@ export interface ProbeItem {
   dimensions: Vec3 | undefined;
 }
 
+export interface ProbeRoom {
+  id: string;
+  name: string | undefined;
+  usage: string | undefined;
+  polygon: [number, number][];
+  levelId: string | undefined;
+  /** Số thứ tự tầng (`level.level`, 0 = tầng trệt); undefined khi không đọc được. */
+  levelIndex: number | undefined;
+}
+
+export interface ProbeOpening {
+  id: string;
+  type: 'door' | 'window';
+  wallId: string | undefined;
+  position: Vec3 | undefined;
+  width: number | undefined;
+}
+
 export interface ProbeWall {
   id: string;
   start: [number, number];
@@ -68,6 +90,13 @@ interface LooseNode {
   readonly height?: number;
   readonly position?: Vec3;
   readonly rotation?: Vec3;
+  readonly name?: string;
+  readonly level?: number;
+  readonly wallId?: string;
+  readonly width?: number;
+  readonly parentId?: string;
+  readonly polygon?: [number, number][];
+  readonly metadata?: { readonly appfront?: { readonly usage?: string } };
   readonly asset?: { readonly src?: string; readonly scale?: Vec3; readonly dimensions?: Vec3 };
 }
 
@@ -111,7 +140,8 @@ export interface PascalProbeStores {
 }
 
 export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter, useInteractive, look }: PascalProbeStores): PascalProbe => {
-  const entries = () => Object.entries(useScene.getState().nodes as Record<string, LooseNode>);
+  const nodes = () => useScene.getState().nodes as Record<string, LooseNode>;
+  const entries = () => Object.entries(nodes());
   const entriesOf = (type: string) => entries().filter(([, n]) => n.type === type);
 
   return {
@@ -153,6 +183,19 @@ export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter,
         thickness: n.thickness,
         height: n.height,
       })),
+    rooms: () =>
+      entriesOf('zone').map(([id, n]) => ({
+        id,
+        name: n.name,
+        usage: n.metadata?.appfront?.usage,
+        polygon: n.polygon ?? [],
+        levelId: n.parentId,
+        levelIndex: n.parentId === undefined ? undefined : (nodes()[n.parentId] as LooseNode | undefined)?.level,
+      })),
+    openings: () =>
+      entries()
+        .filter(([, n]) => n.type === 'window' || n.type === 'door')
+        .map(([id, n]) => ({ id, type: n.type as 'door' | 'window', wallId: n.wallId, position: n.position, width: n.width })),
     items: () =>
       entriesOf('item').map(([id, n]) => ({
         id,
