@@ -164,6 +164,25 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[]): Step[] => {
     return graph.rooms.find((r) => r.levelId === f.levelId && containsPoint(r, f.centre));
   };
 
+  /** `first` rồi các phòng cùng tầng phủ lên thân món, nhiều điểm mẫu (lưới 5 × 5) nhất trước. */
+  const roomsUnder = (f: Furniture, first: Room): Room[] => {
+    const r = rectOfFurniture(f);
+    const t = (r.rotationDeg * Math.PI) / 180;
+    const samples: Point[] = [];
+    for (let i = -2; i <= 2; i += 1)
+      for (let j = -2; j <= 2; j += 1) {
+        const u = (i / 5) * r.w;
+        const v = (j / 5) * r.d;
+        samples.push({ x: r.cx + u * Math.cos(t) - v * Math.sin(t), y: r.cy + u * Math.sin(t) + v * Math.cos(t) });
+      }
+    const scored = graph.rooms
+      .filter((room) => room.levelId === f.levelId && room.id !== first.id)
+      .map((room) => ({ room, n: samples.filter((p) => containsPoint(room, p)).length }))
+      .filter((x) => x.n > 0)
+      .sort((a, b) => b.n - a.n || (a.room.id < b.room.id ? -1 : 1));
+    return [first, ...scored.map((x) => x.room)];
+  };
+
   const priority = (f: Furniture): readonly [number, number, number] => [
     repairable(f) ? 0 : 1,
     MAJOR_ROLES.has(roleOf(f)) || f.kind === 'kitchenCabinet' ? 1 : 0,
@@ -182,25 +201,33 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[]): Step[] => {
       .filter((o) => o.id !== f.id && o.levelId === f.levelId && o.suggested !== true && !isFlat(o) && (!strongerOnly || outranks(o, f)))
       .map(rectOfFurniture);
 
-  const valid = (rect: Rect, f: Furniture, room: Room, obstacles: readonly Rect[]): boolean => {
+  /**
+   * Chỗ hợp lệ như `sceneFurnish` (lùi 100 mm, khe 50 mm, không chạm vùng mở cửa/thân tường). `relaxed`: đúng ngưỡng
+   * của bộ báo lỗi (`scenePlacementIssues`: lấn ≤ 50 mm) — phương án cuối trước khi phải ẩn món (phòng nhỏ vừa khít giường).
+   */
+  const valid = (rect: Rect, f: Furniture, room: Room, obstacles: readonly Rect[], relaxed = false): boolean => {
     const { walls, swings } = levelOf(f.levelId);
     const centre = { x: rect.cx, y: rect.cy };
+    const slack = relaxed ? -SLACK_MM : 0;
     return (
-      rectInsidePolygon(rect, room.outline, INSET_MM) &&
+      rectInsidePolygon(rect, room.outline, relaxed ? 0 : INSET_MM) &&
       !graph.rooms.some((r) => r.id !== room.id && r.levelId === room.levelId && containsPoint(r, centre)) &&
-      !obstacles.some((o) => rectsOverlap(rect, o, GAP_MM)) &&
-      !swings.some((s) => rectsOverlap(rect, s)) &&
-      !walls.some((w) => rectsOverlap(rect, w))
+      !obstacles.some((o) => rectsOverlap(rect, o, relaxed ? 0 : GAP_MM)) &&
+      !swings.some((s) => rectsOverlap(rect, s, slack)) &&
+      !walls.some((w) => rectsOverlap(rect, w, slack))
     );
   };
 
-  /** Chỗ hợp lệ gần nhất giữ nguyên góc, trong bán kính `max`: đủ khe với mọi đồ trước, rồi chỉ với món ưu tiên hơn. */
+  /**
+   * Chỗ hợp lệ gần nhất giữ nguyên góc, trong bán kính `max`: đủ khe với mọi đồ trước, rồi chỉ với món ưu tiên hơn,
+   * rồi ngưỡng nới (`valid` relaxed).
+   */
   const nearestShift = (f: Furniture, room: Room, max: number, rotationDeg = rectOfFurniture(f).rotationDeg): Placed | null => {
-    for (const strongerOnly of [false, true]) {
+    for (const [strongerOnly, relaxed] of [[false, false], [true, false], [true, true]] as const) {
       const obstacles = obstaclesOf(f, strongerOnly);
       for (const o of offsetsWithin(max)) {
         const at = { centre: { x: f.centre.x + o.x, y: f.centre.y + o.y }, rotationDeg };
-        if (valid(rectAt(f, at), f, room, obstacles)) return at;
+        if (valid(rectAt(f, at), f, room, obstacles, relaxed)) return at;
       }
     }
     return null;
@@ -276,12 +303,17 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[]): Step[] => {
         : null;
     if (rule === null) continue;
     const what = rule === 'outsideRoom' ? `lòi ra ngoài ${roomName(room)}` : `lấn vào tường ${roomName(room)}`;
-    const at = nearestShift(f, room, MAX_SHIFT_MM);
-    commit(
-      at === null
-        ? { id: f.id, rule, reasonVi: `${capital(labelOf(f))} ${what}, không có chỗ hợp lệ trong vòng 1,5 m: ẩn trong cảnh.`, after: null }
-        : { id: f.id, rule, reasonVi: `${capital(labelOf(f))} ${what}: dịch vào trong ${mm(dist(at.centre, f.centre))}.`, after: movedTo(f, at, room.id) },
-    );
+    // Phòng chứa tâm trước, rồi các phòng chứa phần lớn thân món (tâm rơi vào dải phòng hẹp cạnh phòng thật).
+    let placed: Step | null = null;
+    for (const target of roomsUnder(f, room)) {
+      // Tủ áo/kệ/tủ bếp: ưu tiên chỗ áp lưng tường gần nhất (không để tủ đứng giữa phòng), rồi mới dịch giữ góc.
+      const at = (hugsWall(f) ? wallSpots(f, target, f.centre, MAX_SHIFT_MM) : null) ?? nearestShift(f, target, MAX_SHIFT_MM);
+      if (at === null) continue;
+      const where = target.id === room.id ? 'dịch vào trong' : `dịch sang ${roomName(target)}`;
+      placed = { id: f.id, rule, reasonVi: `${capital(labelOf(f))} ${what}: ${where} ${mm(dist(at.centre, f.centre))}.`, after: movedTo(f, at, target.id) };
+      break;
+    }
+    commit(placed ?? { id: f.id, rule, reasonVi: `${capital(labelOf(f))} ${what}, không có chỗ hợp lệ trong vòng 1,5 m: ẩn trong cảnh.`, after: null });
   }
 
   // 4. notAgainstWall

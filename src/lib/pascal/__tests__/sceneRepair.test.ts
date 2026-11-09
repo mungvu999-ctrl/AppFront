@@ -131,6 +131,23 @@ describe('repairScene', () => {
     expect(graph.furniture).toEqual([]);
   });
 
+  it('outsideRoom: tâm rơi vào dải phòng hẹp → dịch sang phòng chứa phần lớn thân món', () => {
+    const strip = room('R-S', 'other', box(0, 0, 4000, 600), 'Hành lang hẹp');
+    const bed = room('R-B', 'bedroom', box(0, 600, 4000, 4000), 'Phòng ngủ');
+    const { graph, repairs } = repairScene(graphOf([strip, bed], [item('F-bed', 'bed', [1600, 2000], 2000, 500, { roomId: 'R-S' } as Partial<Furniture>)]));
+    expect(repairs[0]).toMatchObject({ action: 'moved', rule: 'outsideRoom' });
+    expect(repairs[0]?.reasonVi).toContain('dịch sang “Phòng ngủ”');
+    expect(byId(graph, 'F-bed')?.roomId).toBe('R-B');
+  });
+
+  it('outsideRoom: phòng vừa khít giường → nới tới ngưỡng bộ báo lỗi (lấn ≤ 50 mm) thay vì ẩn', () => {
+    const snug = room('R-N', 'bedroom', box(0, 0, 1750, 2200), 'Phòng ngủ nhỏ');
+    const { graph, repairs } = repairScene(graphOf([snug], [item('F-bed', 'bed', [1600, 2000], 500, 1100)]));
+    expect(repairs[0]).toMatchObject({ action: 'moved', rule: 'outsideRoom' });
+    expect(scenePlacementIssues(graph)).toEqual([]);
+    expect(repairScene(graph).repairs).toEqual([]);
+  });
+
   it('wallOverlap: giường lấn thân tường > 50 mm (vẫn trong outline) dịch ra', () => {
     const { graph, repairs } = repairScene(graphOf([BED_ROOM], [item('F-bed', 'bed', [1600, 2000], 840, 1500)]));
     expect(repairs[0]).toMatchObject({ action: 'moved', rule: 'wallOverlap' });
