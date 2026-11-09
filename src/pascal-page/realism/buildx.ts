@@ -2,7 +2,7 @@
  * M5 làn 3c — thử nghiệm cấu tạo/mật độ, bật bằng `?buildx=<cờ>[,<cờ>]` (mặc định: không cờ = cảnh hiện tại).
  * - `trim`: phào trần profile cove 90 mm + len chân profile base-modern (thay 50 mm/100 mm phẳng).
  * - `win`: cửa sổ cố định có đố chia ô theo bề rộng (ô ~0,7 m) + ô lật trên khi cao ≥ 1,3 m.
- * - `dense`: thêm cây góc phòng khách/phòng ngủ + đèn sàn cạnh sofa (`sceneDressingRules.ts`, id `DRESS-…`).
+ * - `dense`: thêm cây góc phòng khách/phòng ngủ + đèn sàn cạnh sofa (`sceneDressingRules.ts`, id `DRESS-floorLamp-…` / `DRESS-plantx-…` — không trùng `DRESS-plant-` của `sceneFurnish`).
  * - `minimal`: chỉ giữ thảm + rèm trong lớp trang trí (bỏ gối, chăn, bình, tranh, đèn bàn, thảm chân).
  * `trim`/`win` chỉ đổi trường hiển thị của node tường/cửa sổ (lượt về không đọc `crown`/`skirting`/`columnRatios`),
  * nên không lưu, tải lại ra y hệt. Không nhập store/types để khỏi vòng phụ thuộc với `toPascal.ts`.

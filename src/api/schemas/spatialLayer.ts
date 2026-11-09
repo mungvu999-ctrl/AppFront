@@ -215,7 +215,10 @@ export const FloorLayerWriteResultSchema = z
   .object({
     layer: SpatialLayerSchema,
     revision: revisionSchema,
+    /** Phản hồi #35 trên M2 mang lớp đề xuất — nhận rồi bỏ như `FloorLayerDocumentSchema`. */
+    ...ignoredSuggestionLayerShape,
   })
-  .strict();
+  .strict()
+  .transform(({ layer, revision }) => ({ layer, revision }));
 
 export type FloorLayerWriteResult = z.infer<typeof FloorLayerWriteResultSchema>;

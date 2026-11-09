@@ -77,7 +77,7 @@ describe('buildx (M5 làn 3c)', () => {
     const base = ids();
     setBuildxFlags(['dense']);
     const dense = ids();
-    expect(dense).toEqual(expect.arrayContaining([...base, 'DRESS-floorLamp-F-sofa', 'DRESS-plant-R-liv']));
+    expect(dense).toEqual(expect.arrayContaining([...base, 'DRESS-floorLamp-F-sofa', 'DRESS-plantx-R-liv']));
     expect(ids()).toEqual(dense);
     setBuildxFlags(['minimal']);
     expect(ids().every((id) => /^DRESS-(rug|curtain)-/.test(id))).toBe(true);

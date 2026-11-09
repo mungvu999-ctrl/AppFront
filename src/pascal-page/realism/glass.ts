@@ -9,7 +9,7 @@
  *              phần cộng chủ yếu là phản xạ PBR (F≈0,04 nhìn thẳng → 1 khi xiên); α = 1 − (1−F)·T. Không ghi
  *              normal/diffuseColor/velocity vào MRT (SSGI/denoise/TRAA thấy mặt sau kính như khi không có kính).
  * - `transmission`: MeshPhysicalNodeMaterial transmission=1 (three tự chép khung đang vẽ làm ảnh khúc xạ).
- * Tier low / WebGL → luôn `alpha` (vật liệu cũ).
+ * Tier low / backend khác `webgpu` (WebGL, `unknown`) → luôn `alpha` (vật liệu cũ).
  * M5-L3b `?matx=glass`: ép `sheet` + env riêng có hình (`matGlass.ts`), tint xanh nhẹ trên phản xạ.
  */
 import { type Color, CustomBlending, type Material, OneFactor, OneMinusSrcAlphaFactor, type Side } from 'three';
@@ -25,10 +25,14 @@ export type GlassMode = 'alpha' | 'sheet' | 'transmission';
 /** Chế độ khi không có `?glass=`: `sheet` từ vòng 4 (đề xuất làn 3b: hết vạch "sữa" chân trời 3/3 ca); `?glass=alpha` = kính vendor cũ. */
 export const GLASS_DEFAULT: GlassMode = 'sheet';
 
-/** Chế độ kính: cờ URL (A/B), rồi hạ về `alpha` ở tier low hoặc WebGL. */
+/**
+ * Chế độ kính: cờ URL (A/B), rồi hạ về `alpha` ở tier low hoặc khi backend CHƯA chắc là WebGPU: store khởi đầu
+ * `unknown` tới effect của `GPUDeviceWatcher`, và vật liệu tạo lúc đó nằm trong cache vendor suốt phiên — máy rơi về
+ * WebGL2 không được giữ `sheet` (MRT pass-through) từ lúc chưa biết.
+ */
 export function pickGlassMode(query: string | null, tier: RealismTier, backend: RealismBackend): GlassMode {
   const want: GlassMode = query === 'alpha' || query === 'sheet' || query === 'transmission' ? query : GLASS_DEFAULT;
-  return tier === 'low' || backend === 'webgl' ? 'alpha' : want;
+  return tier === 'low' || backend !== 'webgpu' ? 'alpha' : want;
 }
 
 const glassQuery = (): string | null =>

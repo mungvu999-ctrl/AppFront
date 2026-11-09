@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { FurnitureSchema } from '../spatial';
 import { FloorRevisionSchema } from '../spatialGraph';
-import { FloorLayerDocumentSchema } from '../spatialLayer';
+import { FloorLayerDocumentSchema, FloorLayerWriteResultSchema } from '../spatialLayer';
 
 /**
  * Stack f14 (vá nóng AppBack M1-01/M2-QL) trả thêm ba khoá lớp đề xuất ở N16 và `floorRevisions` của N15, và
@@ -59,6 +59,26 @@ describe('N16 — khoá lớp đề xuất M2', () => {
   });
 });
 
+describe('#35 PUT — phản hồi có khoá lớp đề xuất M2', () => {
+  const result = { layer: document.layer, revision: 24 };
+
+  it('nhận rồi bỏ, ra đúng {layer, revision}', () => {
+    expect(FloorLayerWriteResultSchema.parse({ ...result, ...SUGGESTION_KEYS })).toStrictEqual(
+      FloorLayerWriteResultSchema.parse(result),
+    );
+    expect(Object.keys(FloorLayerWriteResultSchema.parse({ ...result, ...SUGGESTION_KEYS })).sort()).toEqual([
+      'layer',
+      'revision',
+    ]);
+  });
+
+  it('khoá lạ khác vẫn bị chặn', () => {
+    expect(FloorLayerWriteResultSchema.safeParse({ ...result, ...SUGGESTION_KEYS, suggestionState: [] }).success).toBe(
+      false,
+    );
+  });
+});
+
 describe('N15 floorRevisions — khoá lớp đề xuất M2', () => {
   it('dòng có gợi ý ra đúng {floorId, revision}', () => {
     expect(FloorRevisionSchema.parse({ floorId: 'L-LEVEL00', revision: 23, ...SUGGESTION_KEYS })).toStrictEqual({
@@ -73,8 +93,12 @@ describe('N15 floorRevisions — khoá lớp đề xuất M2', () => {
 });
 
 describe('Furniture — kiểu cầu thang trên dây', () => {
-  it.each(['straight', 'curved', 'spiral'])('cầu thang %s đọc được, kiểu bị bỏ', (variant) => {
-    expect(FurnitureSchema.parse({ ...stair, variant })).toStrictEqual(FurnitureSchema.parse(stair));
+  it.each(['straight', 'curved', 'spiral'])('cầu thang %s đọc được, kiểu GIỮ nguyên để ghi trả', (variant) => {
+    expect(FurnitureSchema.parse({ ...stair, variant })).toStrictEqual({ ...FurnitureSchema.parse(stair), variant });
+  });
+
+  it('kiểu thang lạ ngoài hợp đồng BE là lỗi đọc (không mở, không ghi đè)', () => {
+    expect(FurnitureSchema.safeParse({ ...stair, variant: 'winder' }).success).toBe(false);
   });
 
   it('kiểu cầu thang trên món không phải cầu thang là lỗi', () => {

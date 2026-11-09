@@ -786,6 +786,8 @@ const stairNodesOf = (
           kind: furniture.kind,
           boundingBox: furniture.boundingBox,
           ...(furniture.roomId === undefined ? {} : { roomId: furniture.roomId }),
+          // Chỉ để ghi trả (`toSpatial`): nhánh này luôn dựng thang thẳng.
+          ...(furniture.variant === undefined ? {} : { variant: furniture.variant }),
         }),
       },
     },

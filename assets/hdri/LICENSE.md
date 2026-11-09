@@ -9,4 +9,4 @@ CC0 1.0: public domain, https://creativecommons.org/publicdomain/zero/1.0/. Khô
 `src/pascal-page/realism/lighting.ts` `DAY_HDRI_URL`). Nắng chiều giữ Venice (`vendor/pascal/assets/hdri/`).
 | `lebombo_1k.hdr` (1 476 953 B, md5 eb75d6df7d824e83940e2c7f2ef65c70) | Poly Haven `lebombo` (Greg Zaal), https://polyhaven.com/a/lebombo — chép từ `F:/assets-archviz/hdri/polyhaven/lebombo/` | CC0 1.0 |
 
-`lebombo_1k.hdr`: thử nghiệm M5 làn 3a (`?lightx=env`, `src/pascal-page/realism/lightx.ts`); hiện chép tay sang `public/pascal/hdri/lebombo-v1-1k.hdr`.
+`lebombo_1k.hdr`: thử nghiệm M5 làn 3a (`?lightx=env`, `src/pascal-page/realism/lightx.ts`); `scripts/copy-pascal-assets.mjs` chép sang `public/pascal/hdri/lebombo-v1-1k.hdr`.

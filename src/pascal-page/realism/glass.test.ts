@@ -5,11 +5,12 @@ import { GLASS_DEFAULT, glassVariant, isGlassCandidate, pickGlassMode } from './
 import { useRealism } from './store';
 
 describe('glass (R10D)', () => {
-  it('pickGlassMode: cờ URL A/B, tier low / WebGL luôn về vật liệu cũ', () => {
+  it('pickGlassMode: cờ URL A/B, tier low / WebGL / backend chưa biết luôn về vật liệu cũ', () => {
     expect(pickGlassMode(null, 'medium', 'webgpu')).toBe(GLASS_DEFAULT);
     expect(pickGlassMode('rác', 'high', 'webgpu')).toBe(GLASS_DEFAULT);
     expect(pickGlassMode('sheet', 'medium', 'webgpu')).toBe('sheet');
-    expect(pickGlassMode('transmission', 'high', 'unknown')).toBe('transmission');
+    expect(pickGlassMode('transmission', 'high', 'webgpu')).toBe('transmission');
+    expect(pickGlassMode(null, 'high', 'unknown')).toBe('alpha');
     expect(pickGlassMode('sheet', 'low', 'webgpu')).toBe('alpha');
     expect(pickGlassMode('transmission', 'medium', 'webgl')).toBe('alpha');
   });
@@ -33,6 +34,8 @@ describe('glass (R10D)', () => {
       useRealism.setState({ tier: 'high', backend: 'webgl' });
       expect(glassVariant(glass)).toBeNull();
       useRealism.setState({ tier: 'low', backend: 'webgpu' });
+      expect(glassVariant(glass)).toBeNull();
+      useRealism.setState({ tier: 'high', backend: 'unknown' });
       expect(glassVariant(glass)).toBeNull();
     } finally {
       useRealism.setState({ tier: prev.tier, backend: prev.backend });

@@ -79,7 +79,7 @@ export function lightxExposure(exposure: number, on = lightxOn('tone')): number 
 }
 
 // ---------- env ----------
-/** `assets/hdri/lebombo_1k.hdr` chép tay sang đây (tích hợp: thêm dòng vào `scripts/copy-pascal-assets.mjs`). */
+/** `assets/hdri/lebombo_1k.hdr` do `scripts/copy-pascal-assets.mjs` chép sang. */
 export const LIGHTX_ENV_URL = '/pascal/hdri/lebombo-v1-1k.hdr';
 const ENV_WAIT_MS = 15_000;
 

@@ -544,7 +544,8 @@ export const dressingOf = (graph: SpatialGraph, style: SceneStyle): readonly Fur
             });
           })
           .filter((r) => !windows.some((w) => rectsOverlap(r, w, WINDOW_CLEAR_MM)));
-        tryPlace(`DRESS-plant-${room.id}`, corners, new Set(), 'plant');
+        // `plantx`, không `plant`: `sceneFurnish` (bày phòng trống) đã dùng `DRESS-plant-<phòng>` → trùng node, xoá ghi nhầm `dressingOff`.
+        tryPlace(`DRESS-plantx-${room.id}`, corners, new Set(), 'plant');
       }
     }
   }

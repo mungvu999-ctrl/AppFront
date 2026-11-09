@@ -7,7 +7,6 @@ import type {
   Dimension,
   EntityId,
   Furniture,
-  FurnitureVariant,
   Level,
   MaterialRef,
   Note,
@@ -17,9 +16,10 @@ import type {
   Roof,
   Room,
   Segment,
+  StairVariant,
   Wall,
 } from '@/domain/spatial/types';
-import { FURNITURE_VARIANTS } from '@/domain/spatial/types';
+import { FURNITURE_VARIANTS, isFurnitureVariant, STAIR_VARIANTS } from '@/domain/spatial/types';
 import { millimetresPerPixel } from '@/domain/units/scale';
 
 import { isoInstantSchema } from './common';
@@ -355,14 +355,14 @@ export const RoomSchema: z.ZodType<Room, z.ZodTypeDef, unknown> = z
  * lại đối tượng trong `.transform()` thay vì trả thẳng kết quả phân tích.
  */
 /**
- * Kiểu cầu thang trên dây (`kind: 'stair'`): BE nhận `straight`/`curved`/`spiral` (M1-01, chưa vào nhánh này) và
- * stack f14 đã có dữ liệu mang chúng. Nhánh này luôn dựng thang thẳng và `toSpatial` không ghi kiểu thang, nên
- * ĐỌC thì nhận rồi bỏ (không có chỗ trong `FurnitureVariant`); ngoài `kind: 'stair'` vẫn là lỗi.
+ * Kiểu cầu thang trên dây (`kind: 'stair'`): BE nhận `straight`/`curved`/`spiral` (M1-01) và stack f14 đã có dữ liệu
+ * mang chúng. Nhánh này luôn dựng thang thẳng, nhưng GIỮ kiểu thang từ lượt đọc tới lượt ghi (`toPascal` cất vào
+ * `metadata.appfront.fields.variant`, `toSpatial` ghi lại): `PUT` thay cả lớp nên bỏ kiểu ở đây là xoá nó trên máy
+ * chủ. Ngoài `kind: 'stair'` vẫn là lỗi.
  */
-export const WIRE_STAIR_VARIANTS = ['straight', 'curved', 'spiral'] as const;
+export const WIRE_STAIR_VARIANTS = STAIR_VARIANTS;
 
-const isFurnitureVariant = (value: string): value is FurnitureVariant =>
-  (FURNITURE_VARIANTS as readonly string[]).includes(value);
+const isStairVariant = (value: string): value is StairVariant => (STAIR_VARIANTS as readonly string[]).includes(value);
 
 export const FurnitureSchema: z.ZodType<Furniture, z.ZodTypeDef, unknown> = z
   .object({
@@ -412,7 +412,8 @@ export const FurnitureSchema: z.ZodType<Furniture, z.ZodTypeDef, unknown> = z
     ...(wireFurniture.roomId !== undefined ? { roomId: wireFurniture.roomId } : {}),
     rotationDeg: wireFurniture.rotationDeg,
     source: wireFurniture.source,
-    ...(wireFurniture.variant !== undefined && isFurnitureVariant(wireFurniture.variant)
+    ...(wireFurniture.variant !== undefined &&
+    (isFurnitureVariant(wireFurniture.variant) || (wireFurniture.kind === 'stair' && isStairVariant(wireFurniture.variant)))
       ? { variant: wireFurniture.variant }
       : {}),
     ...(wireFurniture.heightMm !== undefined ? { heightMm: wireFurniture.heightMm } : {}),
