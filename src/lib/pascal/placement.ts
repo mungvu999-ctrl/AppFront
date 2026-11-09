@@ -261,10 +261,37 @@ export const overlapAreaMm2 = (a: Rect, b: Rect): number => {
 
 export interface PlacementIssue {
   /** `roomMismatch` / `duplicateFixture` / `facing`: luật thiết bị vệ sinh (`sanitaryRules.ts`). */
-  readonly kind: 'overlap' | 'doorSwing' | 'wall' | 'roomMismatch' | 'duplicateFixture' | 'facing';
+  /** `outside`: món nằm ngoài nhà (ngoài mọi phòng của tầng, `outsideAllRooms`). */
+  readonly kind: 'overlap' | 'doorSwing' | 'wall' | 'outside' | 'roomMismatch' | 'duplicateFixture' | 'facing';
   readonly furnitureIds: readonly string[];
   readonly message: string;
 }
+
+/**
+ * Món nằm ngoài nhà: tâm ngoài mọi phòng cùng tầng, hoặc quá nửa thân (lưới 5 × 5 tâm ô) ngoài mọi phòng — món
+ * vắt qua hai phòng liền nhau vẫn là trong nhà. Tầng không có phòng nào thì không xét (`false`).
+ */
+export const outsideAllRooms = (
+  f: Pick<Furniture, 'levelId' | 'centre' | 'boundingBox' | 'rotationDeg'>,
+  rooms: readonly Pick<Room, 'levelId' | 'outline'>[],
+): boolean => {
+  const outlines = rooms
+    .filter((r) => r.levelId === f.levelId && r.outline.length >= 3 && r.outline.every(isFinitePoint))
+    .map((r) => r.outline.map(toPointMm));
+  const r = rectOfFurniture(f);
+  if (outlines.length === 0 || ![r.cx, r.cy, r.w, r.d, r.rotationDeg].every(Number.isFinite)) return false;
+  const inside = (p: Point): boolean => outlines.some((o) => outlineContains(o, toPointMm(p)));
+  if (!inside(f.centre)) return true;
+  const [ex, ey] = axesOf(r);
+  let n = 0;
+  for (let i = -2; i <= 2; i += 1)
+    for (let j = -2; j <= 2; j += 1) {
+      const u = (i / 5) * r.w;
+      const v = (j / 5) * r.d;
+      if (inside({ x: r.cx + ex.x * u + ey.x * v, y: r.cy + ex.y * u + ey.y * v })) n += 1;
+    }
+  return n * 2 < 25;
+};
 
 /** Hai món chồng nhau quá tỉ lệ này của món nhỏ hơn là lỗi. */
 const OVERLAP_MAX_FRACTION = 0.3;
@@ -280,14 +307,17 @@ export const tuckedSeat = (a: Pick<Furniture, 'kind'>, b: Pick<Furniture, 'kind'
   (a.kind === 'chair' && SEAT_HOSTS.has(b.kind)) || (b.kind === 'chair' && SEAT_HOSTS.has(a.kind));
 
 /**
- * C7 — lỗi đặt đồ của cả đồ thị (chỉ báo, không dời): chồng nhau > 30 % diện tích món nhỏ, chắn vùng
- * mở cửa đi, xuyên tường. Bỏ đồ gợi ý chưa nhận, thang, thảm và ghế kê dưới bàn/quầy.
+ * C7 — lỗi đặt đồ của cả đồ thị (chỉ báo, không dời): nằm ngoài nhà, chồng nhau > 30 % diện tích món nhỏ, chắn
+ * vùng mở cửa đi, xuyên tường. Ngoài nhà xét mọi món trừ thang (viền gợi ý, thảm vẫn hiện ngoài nhà); các lỗi còn
+ * lại bỏ đồ gợi ý chưa nhận, thang, thảm và ghế kê dưới bàn/quầy.
  */
 export const scenePlacementIssues = (graph: SpatialGraph): PlacementIssue[] => {
+  const issues: PlacementIssue[] = graph.furniture
+    .filter((f) => f.kind !== 'stair' && outsideAllRooms(f, graph.rooms))
+    .map((f) => ({ kind: 'outside', furnitureIds: [f.id], message: `${capital(FURNITURE_KIND_LABELS[f.kind])} nằm ngoài nhà` }));
   const items = graph.furniture.filter(
     (f) => f.suggested !== true && f.kind !== 'stair' && !(f.heightMm !== undefined && f.heightMm < FLAT_MAX_MM),
   );
-  const issues: PlacementIssue[] = [];
   const levels = new Set(items.map((f) => f.levelId));
   for (const levelId of levels) {
     const onLevel = items.filter((f) => f.levelId === levelId).map((f) => ({ f, r: rectOfFurniture(f) }));

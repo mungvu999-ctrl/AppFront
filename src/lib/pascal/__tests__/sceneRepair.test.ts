@@ -305,4 +305,41 @@ describe('repairScene', () => {
       expect((result.graph as unknown as { roofs?: unknown[] }).roofs).toEqual([roof]);
     }
   });
+
+  it('outside: món AI ngoài nhà cách phòng hợp lệ ≤ 3 m dời vào phòng; xa hơn thì ẩn kèm lý do; món người dùng giữ nguyên', () => {
+    const g = graphOf(
+      [BED_ROOM, BATH],
+      [
+        item('F-near', 'table', [800, 500], 2000, 4500),
+        item('F-far', 'table', [800, 500], 2000, 12000),
+        item('F-mine', 'table', [800, 500], 2000, 13000, HUMAN),
+        item('F-sug', 'bed', [1600, 2000], 20000, 1500, { suggested: true }),
+      ],
+    );
+    const { graph, repairs } = repairScene(g);
+    const near = byId(graph, 'F-near');
+    expect(near).toBeDefined();
+    expect(validIn(graph, near as Furniture, BED_ROOM)).toBe(true);
+    expect(near?.roomId).toBe('R-BED');
+    const rep = (id: string) => repairs.find((r) => r.furnitureId === id);
+    expect(rep('F-near')).toMatchObject({ action: 'moved', rule: 'outside' });
+    expect(rep('F-near')?.reasonVi).toContain('nằm ngoài nhà: dời vào “Phòng ngủ”');
+    expect(rep('F-far')).toMatchObject({ action: 'hidden', rule: 'outside', reasonVi: 'Món AI nằm ngoài nhà, không có chỗ hợp lệ' });
+    expect(rep('F-sug')).toMatchObject({ action: 'hidden', rule: 'outside' });
+    expect(byId(graph, 'F-far')).toBeUndefined();
+    expect(byId(graph, 'F-mine')).toBe(byId(g, 'F-mine'));
+    expect(rep('F-mine')).toBeUndefined();
+    // Món người dùng vẫn là lỗi trên chip; đồ AI đã xử lý hết.
+    expect(scenePlacementIssues(graph).filter((i) => i.kind === 'outside').map((i) => i.furnitureIds[0])).toEqual(['F-mine']);
+    // Tất định + idempotent.
+    expect(repairScene(g)).toEqual({ graph, repairs });
+    expect(repairScene(graph).repairs).toEqual([]);
+  });
+
+  it('outside: chỉ phòng sai vai trong tầm (bồn cầu cạnh phòng ngủ, không WC gần) → ẩn; tầng không có phòng → không sửa', () => {
+    const g = graphOf([BED_ROOM], [wc('F-wc', 2000, 4500)]);
+    expect(repairScene(g).repairs).toMatchObject([{ furnitureId: 'F-wc', action: 'hidden', rule: 'outside' }]);
+    const bare = graphOf([], [item('F-t', 'table', [800, 500], 2000, 12000)]);
+    expect(repairScene(bare).repairs).toEqual([]);
+  });
 });

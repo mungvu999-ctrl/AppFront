@@ -43,7 +43,7 @@ export type SceneRepairAction = 'moved' | 'rotated' | 'hidden' | 'rescaled';
 export interface SceneRepair {
   readonly furnitureId: FurnitureId;
   readonly action: SceneRepairAction;
-  /** Mã luật (`roomMismatch`, `outsideRoom`, `wallOverlap`, `overlap`, `notAgainstWall`, `duplicateFixture`, `facing`). */
+  /** Mã luật (`outside`, `roomMismatch`, `outsideRoom`, `wallOverlap`, `overlap`, `notAgainstWall`, `duplicateFixture`, `facing`). */
   readonly rule: string;
   readonly reasonVi: string;
   /** Trạng thái gốc để hoàn/đối chiếu. */

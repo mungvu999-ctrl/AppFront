@@ -3,7 +3,10 @@
  * mỗi lần sửa ghi một `SceneRepair` có lý do. Thuần, tất định, không đổi dữ liệu đã lưu — nơi gọi (cầu nối 3D)
  * chỉ trao đồ thị đã sửa cho `toPascalScene`, kho vẫn giữ bản gốc nên tự lưu ghi đúng dữ liệu gốc.
  *
- * Chỉ đụng món `classOf(f) === 'ai'`, không `suggested`, không thang, không thảm/tấm mỏng. Thứ tự luật cố định:
+ * Chỉ đụng món `classOf(f) === 'ai'`, không `suggested`, không thang, không thảm/tấm mỏng (luật 0 thì xét cả gợi ý và
+ * thảm: viền/thảm ngoài nhà vẫn hiện trong cảnh). Thứ tự luật cố định:
+ *   0. `outside` — món nằm ngoài nhà (`outsideAllRooms`): đặt lại vào phòng cùng tầng có vai hợp lệ gần nhất (chỗ
+ *      cách món ≤ 3 m: dịch giữ góc rồi áp tường), không có thì ẩn.
  *   1. `roomMismatch`  — thiết bị vệ sinh trong phòng ngủ/khách/bếp: dời sát tường phòng tắm/WC cùng tầng gần nhất
  *      còn chỗ (bồn cầu/bồn tắm chỉ sang phòng chưa có món cùng loại), không có thì ẩn.
  *   2. `duplicateFixture` — phòng có ≥ 2 bồn cầu/bồn tắm: giữ một (người xác nhận > lớn hơn), ẩn món AI thừa.
@@ -26,6 +29,7 @@ import { FURNITURE_KIND_LABELS, toPointMm } from '@/lib/commands/business/shared
 import { orientDetectedFurniture } from './orientDetected';
 import {
   doorSwingRects,
+  outsideAllRooms,
   furnitureFacingDeg,
   overlapAreaMm2,
   rectInsidePolygon,
@@ -60,6 +64,8 @@ const FLAT_MAX_MM = 50;
 /** Dịch tối đa khi xoay bồn cầu/lavabo đối diện. */
 const FACING_SHIFT_MM = 300;
 const MAX_ROUNDS = 6;
+/** Đặt lại món ngoài nhà: chỗ mới cách món tối đa chừng này; xa hơn là món dò nhầm ngoài bản vẽ nhà (chú thích, khung tên) → ẩn. */
+const RELOCATE_MAX_MM = 3000;
 
 /**
  * Chính sách ẩn (cần chủ dự án xác nhận): đồ chính (giường, sofa/ghế dài, bàn lớn, tủ áo, tủ bếp, thang) KHÔNG bao giờ
@@ -87,6 +93,30 @@ const isFlat = (f: Furniture): boolean => f.heightMm !== undefined && f.heightMm
 const repairable = (f: Furniture): boolean =>
   classOf(f) === 'ai' && f.suggested !== true && f.kind !== 'stair' && !isFlat(f);
 const isBath = (room: Room): boolean => furnishingUsageOf(room) === 'bathroom' || BATH_NAME.test(room.name);
+/** Vai hợp lệ của món trong phòng (luật `outside`): thiết bị vệ sinh vào phòng tắm/WC (lavabo cả bếp), phòng tắm chỉ
+ * nhận thêm máy giặt; giường/tủ áo vào phòng ngủ, tủ bếp vào bếp; hành lang/cầu thang không nhận gì; phòng chưa rõ
+ * công năng nhận mọi món không phải đồ vệ sinh. */
+const SOLE_USAGE: Partial<Record<Furniture['kind'], Room['usage']>> = { bed: 'bedroom', wardrobe: 'bedroom', kitchenCabinet: 'kitchen' };
+const fitsRoom = (f: Furniture, room: Room): boolean => {
+  const usage = furnishingUsageOf(room);
+  if (f.kind === 'sanitaryFixture' || f.kind === 'shower') return isBath(room) || (usage === 'kitchen' && sanitaryRoleOf(f) === 'basin');
+  if (isBath(room)) return f.kind === 'washingMachine';
+  if (usage === 'corridor' || usage === 'stairwell') return false;
+  const sole = SOLE_USAGE[f.kind];
+  return sole === undefined || usage === 'other' || usage === sole;
+};
+/** Khoảng cách từ điểm tới phòng (0 khi điểm trong phòng). */
+const distToRoom = (room: Room, p: Point): number => {
+  if (containsPoint(room, p)) return 0;
+  return Math.min(
+    ...room.outline.map((a, i) => {
+      const b = room.outline[(i + 1) % room.outline.length] as Point;
+      const len2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+      const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / len2));
+      return dist(p, { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) });
+    }),
+  );
+};
 const hugsWall = (f: Furniture): boolean =>
   f.kind === 'wardrobe' || f.kind === 'kitchenCabinet' || f.variant === 'shelves' || f.variant === 'cabinet';
 
@@ -235,7 +265,7 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[]): Step[] => {
   /** Vật chắn của `f`: mọi đồ đứng sàn cùng tầng (trừ cặp ghế–bàn); `strongerOnly` thì chỉ món ưu tiên hơn (món yếu hơn sẽ tự nhường ở luật chồng). */
   const obstaclesOf = (f: Furniture, strongerOnly = false): Rect[] =>
     current()
-      .filter((o) => o.id !== f.id && o.levelId === f.levelId && o.suggested !== true && !isFlat(o) && !tucked(o, f) && (!strongerOnly || outranks(o, f)))
+      .filter((o) => o.id !== f.id && o.levelId === f.levelId && (o.suggested !== true || f.suggested === true) && !isFlat(o) && !tucked(o, f) && (!strongerOnly || outranks(o, f)))
       .map(rectOfFurniture);
 
   /**
@@ -296,6 +326,24 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[]): Step[] => {
     return f !== undefined && repairable(f) && !done.has(id) ? f : undefined;
   };
 
+  // 0. outside — mọi món AI (cả gợi ý, thảm), trừ thang.
+  for (const f of current()) {
+    if (classOf(f) !== 'ai' || f.kind === 'stair' || done.has(f.id) || !outsideAllRooms(f, graph.rooms)) continue;
+    const targets = graph.rooms
+      .filter((r) => r.levelId === f.levelId && r.outline.length >= 3 && fitsRoom(f, r))
+      .map((room) => ({ room, d: distToRoom(room, f.centre) }))
+      .filter((x) => x.d <= RELOCATE_MAX_MM)
+      .sort((a, b) => a.d - b.d || (a.room.id < b.room.id ? -1 : 1));
+    let placed: Step | null = null;
+    for (const { room } of targets) {
+      const at = nearestShift(f, room, MAX_SHIFT_MM) ?? wallSpots(f, room, f.centre, RELOCATE_MAX_MM);
+      if (at === null) continue;
+      placed = { id: f.id, rule: 'outside', reasonVi: `${capital(labelOf(f))} nằm ngoài nhà: dời vào ${roomName(room)} ${mm(dist(at.centre, f.centre))}.`, after: movedTo(f, at, room.id) };
+      break;
+    }
+    commit(placed ?? { id: f.id, rule: 'outside', reasonVi: 'Món AI nằm ngoài nhà, không có chỗ hợp lệ', after: null });
+  }
+
   // 1. roomMismatch
   for (const issue of sanitary().filter((i) => i.kind === 'roomMismatch')) {
     const f = live(issue.furnitureIds[0] ?? '');
@@ -331,7 +379,7 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[]): Step[] => {
   for (const f of current()) {
     if (live(f.id) === undefined) continue;
     const room = roomOf(f);
-    if (room === undefined) continue; // ponytail: món ngoài mọi phòng (ban công chưa vẽ phòng) để nguyên.
+    if (room === undefined) continue; // món ngoài mọi phòng: luật 0 đã xử lý (tâm ngoài nhà).
     const rect = rectOfFurniture(f);
     const rule = !rectInsidePolygon(rect, room.outline, -SLACK_MM)
       ? 'outsideRoom'
