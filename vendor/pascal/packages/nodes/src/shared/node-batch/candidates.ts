@@ -19,7 +19,20 @@ import type { BatchCandidate, BatchEntry } from './types'
  * each node's mounted subtree instead of a single wall mesh.
  */
 
-/** Kinds the batch system manages. Walls keep their merged-geometry batch. */
+/**
+ * `?disable=batch`: wall trims (skirting/crown, `WallTreatments`) draw themselves again.
+ * Default: a wall node joins the node batch with its TRIM meshes only — the wall mesh itself
+ * keeps its merged-geometry batch (`wall-batch-system`). Trims are static between wall edits
+ * (the dirty mark restages them) and were ~35 % of the scene-pass draws (ch-10: 73 of 201 objects).
+ */
+export const WALL_TRIM_BATCH =
+  typeof window === 'undefined' ||
+  !(new URLSearchParams(window.location?.search ?? '').get('disable') ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .includes('batch')
+
+/** Kinds the batch system manages. Walls contribute only their trims (see WALL_TRIM_BATCH). */
 export const BATCH_KINDS: ReadonlySet<string> = new Set([
   'item',
   'column',
@@ -27,7 +40,13 @@ export const BATCH_KINDS: ReadonlySet<string> = new Set([
   'window',
   'ceiling',
   'slab',
+  ...(WALL_TRIM_BATCH ? ['wall'] : []),
 ])
+
+/** A wall's batchable meshes: its trims (`WallTreatments` tags them with `userData.slotId`). */
+export function isWallTrimMesh(mesh: Mesh, wallMesh: Object3D): boolean {
+  return mesh !== wallMesh && (mesh.userData as { slotId?: unknown }).slotId !== undefined
+}
 
 const rootInverse = new Matrix4()
 
@@ -67,6 +86,7 @@ function resolveLevelId(node: AnyNode, nodes: Record<string, AnyNode | undefined
   const parent = node.parentId ? nodes[node.parentId] : undefined
   if (!parent) return null
   if (
+    node.type === 'wall' ||
     node.type === 'item' ||
     node.type === 'column' ||
     node.type === 'ceiling' ||
@@ -99,6 +119,7 @@ function isExcluded(node: AnyNode): boolean {
   if (node.type === 'window') {
     return node.id in useInteractive.getState().windowAnimations
   }
+  if (node.type === 'wall') return (node as { wallType?: string }).wallType === 'curtain'
   return false
 }
 
@@ -151,8 +172,9 @@ export function collectBatchCandidate(nodeId: string): BatchCandidate | null {
     }
   }
 
-  const meshes: Mesh[] = []
+  let meshes: Mesh[] = []
   collectMeshes(group, meshes, hostedRoots)
+  if (node.type === 'wall') meshes = meshes.filter((mesh) => isWallTrimMesh(mesh, group))
   if (meshes.length === 0) return null
 
   levelRoot.updateWorldMatrix(true, false)
@@ -175,7 +197,9 @@ export function collectBatchCandidate(nodeId: string): BatchCandidate | null {
       nodeId,
       levelId,
       allocationKey:
-        node.type === 'ceiling' || node.type === 'slab' ? `${nodeId}:${meshIndex}` : undefined,
+        node.type === 'ceiling' || node.type === 'slab' || node.type === 'wall'
+          ? `${nodeId}:${meshIndex}`
+          : undefined,
       mesh,
       geometry: mesh.geometry,
       material,

@@ -23,8 +23,9 @@
  *
  * Vendored from R3F 9.6.1:
  * https://raw.githubusercontent.com/pmndrs/react-three-fiber/v9.6.1/packages/fiber/src/core/events.ts
- * Ray collection is cached; camera-drag moves are throttled before stock dispatch.
- * The throttle is a vendored-manager policy; dev ?stockEvents uses untouched R3F.
+ * Ray collection is cached; camera-drag moves skip the raycast (drag end re-hovers once;
+ * `?disable=hoverdrag` = old 10 Hz throttle) before stock dispatch.
+ * This is a vendored-manager policy; dev ?stockEvents uses untouched R3F.
  */
 
 import {
@@ -276,16 +277,54 @@ function createCachedRaycast() {
   }
 }
 
+/**
+ * What a pointer move does while the camera is dragged. Default: `defer` — no raycast at all
+ * (hover would only flicker under a sweeping pointer and the outline is off while orbiting);
+ * the pointer position is still recorded, and the drag-end hover refresh raycasts there once.
+ * A pointer capture (an object grabbed the pointer) always dispatches. `?disable=hoverdrag`
+ * keeps the old 10 Hz throttle (`throttle`).
+ */
+export function cameraDragMoveAction(state: {
+  cameraDragging: boolean
+  captured: boolean
+  hoverDuringDrag: boolean
+}): 'dispatch' | 'defer' | 'throttle' {
+  if (!state.cameraDragging || state.captured) return 'dispatch'
+  return state.hoverDuringDrag ? 'throttle' : 'defer'
+}
+
+function hoverDuringDragFromUrl(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    (new URLSearchParams(window.location?.search ?? '').get('disable') ?? '')
+      .split(',')
+      .includes('hoverdrag')
+  )
+}
+
 export function createPascalPointerEvents(store: RootStore): EventManager<HTMLElement> {
   const manager = createWebEvents(store)
   const { handlePointer } = createEvents(store)
   for (const name of Object.keys(manager.handlers!) as (keyof Events)[]) {
     manager.handlers![name] = handlePointer(name) as Events[typeof name]
   }
+  const hoverDuringDrag = hoverDuringDragFromUrl()
   const move = manager.handlers!.onPointerMove
   let lastCameraDragMove = Number.NEGATIVE_INFINITY
   manager.handlers!.onPointerMove = (event) => {
-    if (useViewer.getState().cameraDragging) {
+    const { internal } = store.getState()
+    const action = cameraDragMoveAction({
+      cameraDragging: useViewer.getState().cameraDragging,
+      captured: internal.capturedMap.size > 0,
+      hoverDuringDrag,
+    })
+    if (action === 'defer') {
+      // No raycast; keep the pointer position so `manager.update()` at drag end
+      // (realism rule u45 `refreshHover`) re-hovers where the pointer really is.
+      internal.lastEvent.current = event as DomEvent
+      return
+    }
+    if (action === 'throttle') {
       const now = performance.now()
       if (now - lastCameraDragMove < CAMERA_DRAG_MOVE_INTERVAL_MS) return
       lastCameraDragMove = now
