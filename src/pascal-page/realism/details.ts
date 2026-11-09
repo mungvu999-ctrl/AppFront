@@ -43,8 +43,8 @@ export const INTERIOR_SKIRTING = {
   enabled: true,
   sides: 'interior',
   height: 0.1,
-  proud: 0.015,
-  profile: 'flat',
+  proud: 0.018,
+  profile: 'base-modern',
 } as const
 
 /**

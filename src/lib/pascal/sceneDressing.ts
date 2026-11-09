@@ -140,7 +140,7 @@ export const wallDressingOf = (
   return {
     slots: painted(interior, wall.kind === 'partition' ? interior : exterior),
     skirting: { ...INTERIOR_SKIRTING },
-    crown: { enabled: true, sides: 'interior', height: 0.05, proud: 0.02, profile: 'flat' },
+    crown: { enabled: true, sides: 'interior', height: 0.09, proud: 0.035, profile: 'crown-cove' },
   };
 };
 
