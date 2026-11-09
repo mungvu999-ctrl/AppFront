@@ -18,6 +18,8 @@ import type { Node, NodeMaterial } from 'three/webgpu';
 
 import { CUT_CAP_COLOR, CUT_HEIGHT_M, DEFAULT_STOREY_M, liftedCutY, lowCutActive, stepLift, wantsLift } from './cut';
 import { markDirty } from './idle';
+import { folderOf } from './itemLook';
+import { CAP_TOP_FOLDER, matOn } from './matx';
 import { hasPendingTextures, whenTexturesReady } from './texturePreload';
 
 /** Hằng mặt phẳng khi không cắt: cao hơn mọi công trình → giữ hết. */
@@ -122,8 +124,11 @@ function followSourceTextures(variant: Material, source: Material): void {
  * trong suốt và vật liệu vốn hai mặt / mặt sau (mặt sau là mặt thật: rèm, lá). `color` dùng CHUNG đối tượng với gốc:
  * nhuộm vải (`applyUpholstery`, có thể trễ khi chờ ảnh) đổi gốc thì biến thể đổi theo.
  */
-export function cutCapVariant<T extends Material>(material: T): T {
-  if (material.transparent || material.side !== FrontSide) return material;
+export function cutCapVariant<T extends Material>(material: T, capDoubleSided = false): T {
+  if (material.transparent) return material;
+  // `?mat=cap-top`: tủ GLB vốn hai mặt (không lá alphaTest) cũng nắp; mặt sau vẫn là lòng tủ lộ qua mặt cắt.
+  const doubleSided = capDoubleSided && material.side === DoubleSide && !material.alphaTest;
+  if (material.side !== FrontSide && !doubleSided) return material;
   const hit = itemCapVariants.get(material);
   if (hit) return hit as T;
   const variant = material.clone() as T;
@@ -140,7 +145,7 @@ export function cutCapVariant<T extends Material>(material: T): T {
     vec3(color(CUT_CAP_COLOR) as unknown as Node<'vec3'>),
     vec3((m.emissiveNode ?? materialEmissive) as Node<'vec3'>),
   );
-  variant.shadowSide ??= BackSide;
+  if (!doubleSided) variant.shadowSide ??= BackSide;
   variant.side = DoubleSide;
   variant.needsUpdate = true;
   itemCapVariants.set(material, variant);
@@ -168,10 +173,12 @@ export function meshTopAboveLevel(mesh: Mesh): number {
  * lúc dựng và mỗi lần vị trí/xoay/scale của node đổi. Quyết định theo TỪNG MESH và trạng thái thật: mesh vượt mặt cắt
  * thấp (đỉnh > sàn + 1,0 m) đổi sang biến thể có nắp; mesh thấp giữ vật liệu gốc (một mặt, không nhánh shader).
  */
-export function capItemMeshesForCut(meshes: readonly Mesh[]): void {
+export function capItemMeshesForCut(meshes: readonly Mesh[], src?: string | null): void {
+  const ds = matOn('cap-top') && CAP_TOP_FOLDER.test(folderOf(src) ?? '');
+  const cap = (m: Material): Material => cutCapVariant(m, ds);
   for (const mesh of meshes) {
     if (meshTopAboveLevel(mesh) <= CUT_HEIGHT_M) continue;
-    mesh.material = Array.isArray(mesh.material) ? mesh.material.map(cutCapVariant) : cutCapVariant(mesh.material);
+    mesh.material = Array.isArray(mesh.material) ? mesh.material.map(cap) : cap(mesh.material);
   }
 }
 

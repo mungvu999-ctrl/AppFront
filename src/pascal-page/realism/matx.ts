@@ -9,14 +9,34 @@
 export const MATX_NAMES = ['glass', 'fabric', 'floor', 'paint'] as const;
 export type MatxName = (typeof MATX_NAMES)[number];
 
-export function parseMatx(search: string): ReadonlySet<MatxName> {
-  const raw = new URLSearchParams(search).get('matx') ?? '';
-  const list = raw === 'all' ? [...MATX_NAMES] : raw.split(',');
-  return new Set(list.filter((n): n is MatxName => (MATX_NAMES as readonly string[]).includes(n)));
+function parseList<N extends string>(search: string, key: string, names: readonly N[]): ReadonlySet<N> {
+  const raw = new URLSearchParams(search).get(key) ?? '';
+  const list = raw === 'all' ? [...names] : raw.split(',');
+  return new Set(list.filter((n): n is N => (names as readonly string[]).includes(n)));
 }
 
-const active = typeof location === 'undefined' ? new Set<MatxName>() : parseMatx(location.search);
+export const parseMatx = (search: string): ReadonlySet<MatxName> => parseList(search, 'matx', MATX_NAMES);
+
+const search = typeof location === 'undefined' ? '' : location.search;
+const active = parseMatx(search);
 export const matxOn = (name: MatxName): boolean => active.has(name);
+
+/**
+ * M5-LC: cờ `?mat=cap-top,floor-rough` (hoặc `all`), độc lập với `?matx=`. Không cờ = y hiện tại.
+ * - cap-top    : đồ dạng tủ có vật liệu HAI MẶT (GLB thư viện/Sketchfab xuất doubleSided) bị mặt cắt 1,0 m của
+ *                "Tường: cắt" cắt ngang cũng được tô nắp phẳng như tường (trước đây bỏ qua → lòng tủ đen tuyền).
+ * - floor-rough: sàn trong nhà (gỗ/gạch/đá) nhám tối thiểu `FLOOR_ROUGH_MIN`, clearcoat 0 — bớt vệt cháy gần đèn.
+ */
+export const MAT_NAMES = ['cap-top', 'floor-rough'] as const;
+export type MatName = (typeof MAT_NAMES)[number];
+export const parseMat = (search: string): ReadonlySet<MatName> => parseList(search, 'mat', MAT_NAMES);
+const activeMat = parseMat(search);
+export const matOn = (name: MatName): boolean => activeMat.has(name);
+
+/** `?mat=floor-rough`: nhám tối thiểu của sàn trong nhà. */
+export const FLOOR_ROUGH_MIN = 0.45;
+/** `?mat=cap-top`: thư mục mẫu dạng tủ/khối kín (mẫu Pascal + thư viện máy chủ `/items/<id>/`). */
+export const CAP_TOP_FOLDER = /wardrobe|closet|cabinet|dresser|sideboard|storage|shelf|bookcase|fridge|commode|chest|console|tv-(?:stand|unit)/;
 
 /** Kính: độ truyền theo kênh (r, g, b) nhân vào phản xạ — kính float ~ xanh lục nhạt. */
 export const GLASS_TINT = [0.86, 0.95, 0.93] as const;

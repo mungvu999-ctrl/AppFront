@@ -14,7 +14,7 @@ import type { Node } from 'three/webgpu';
 
 import { SCENE_PALETTE } from '@/lib/pascal/scenePalette';
 
-import { FLOOR_GLOSS, type FloorKind, matxOn } from './matx';
+import { FLOOR_GLOSS, FLOOR_ROUGH_MIN, type FloorKind, matOn, matxOn } from './matx';
 import { useRealism } from './store';
 import { applySurfaceNoise, surfaceNoiseNode } from './surfaceNoise';
 
@@ -172,6 +172,17 @@ function glossFloor(m: NodeLike, finish: FloorFinish): boolean {
   return true;
 }
 
+/**
+ * M5-LC `?mat=floor-rough`: sàn trong nhà (gỗ/gạch/đá; bê tông = ngoài nhà, giữ nguyên) nhám ≥ `FLOOR_ROUGH_MIN`
+ * sau mọi chỉnh khác (kể cả `?matx=floor`), clearcoat 0 — bớt phản xạ gương cháy trắng gần đèn/cửa.
+ */
+export function roughFloor(m: NodeLike & { clearcoat?: number }, finish: FloorFinish): boolean {
+  if (finish.kind !== 'wood' && finish.kind !== 'tile' && finish.kind !== 'stone') return false;
+  m.roughnessNode = max((m.roughnessNode ?? materialRoughness) as Node<'float'>, FLOOR_ROUGH_MIN);
+  if (typeof m.clearcoat === 'number') m.clearcoat = 0;
+  return true;
+}
+
 /** Đổi màu + ron cho vật liệu node PBR của sàn trong bảng; mọi thứ khác trả nguyên. */
 export function tuneFloorFinish<T extends Material | null>(ref: string | undefined, mat: T): T {
   const finish = floorFinishOf(ref);
@@ -180,6 +191,7 @@ export function tuneFloorFinish<T extends Material | null>(ref: string | undefin
   if (m.userData[TUNED]) return mat;
   m.colorNode = finishColorNode(finish);
   if (!(matxOn('floor') && glossFloor(m, finish))) applySurfaceNoise(m);
+  if (matOn('floor-rough')) roughFloor(m, finish);
   m.userData[TUNED] = true;
   m.needsUpdate = true;
   return mat;
