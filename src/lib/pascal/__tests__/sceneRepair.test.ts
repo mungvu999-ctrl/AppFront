@@ -123,12 +123,23 @@ describe('repairScene', () => {
     expect(bed.centre).toEqual({ x: 900, y: 1500 });
   });
 
-  it('outsideRoom: không có chỗ hợp lệ → ẩn', () => {
+  it('outsideRoom: giường lòi tường không có chỗ hợp lệ → giữ nguyên, không ẩn (lỗi còn trên chip)', () => {
     const tiny = room('R-T', 'bedroom', box(0, 0, 1500, 1500));
-    const { graph, repairs } = repairScene(graphOf([tiny], [item('F-bed', 'bed', [1600, 2000], 750, 750)]));
-    expect(repairs[0]).toMatchObject({ action: 'hidden', rule: 'outsideRoom' });
-    expect(repairs[0]?.reasonVi).toContain('1,5 m');
-    expect(graph.furniture).toEqual([]);
+    const g = graphOf([tiny], [item('F-bed', 'bed', [1600, 2000], 750, 750)]);
+    const { graph, repairs } = repairScene(g);
+    expect(repairs).toEqual([]);
+    expect(graph).toBe(g);
+    expect(scenePlacementIssues(graph).some((i) => i.furnitureIds.includes('F-bed'))).toBe(true);
+  });
+
+  it('overlap: món nhỏ chồng lên đồ chính, không còn chỗ → ẩn; đồ chính chồng nhau không còn chỗ → giữ cả hai', () => {
+    const snug = room('R-N', 'bedroom', box(0, 0, 2000, 2400));
+    const small = repairScene(graphOf([snug], [item('F-bed', 'bed', [1600, 2000], 1000, 1200), item('F-x', 'other', [500, 400], 1000, 1200)]));
+    expect(small.repairs.map((r) => [r.furnitureId, r.action, r.rule])).toEqual([['F-x', 'hidden', 'overlap']]);
+    const g = graphOf([snug], [item('F-bed', 'bed', [1600, 2000], 1000, 1200), item('F-wr', 'wardrobe', [1600, 600], 1000, 1200, { rotationDeg: 0.01 })]);
+    const big = repairScene(g);
+    expect(big.repairs.filter((r) => r.action === 'hidden')).toEqual([]);
+    expect(big.graph.furniture.map((f) => f.id).sort()).toEqual(['F-bed', 'F-wr']);
   });
 
   it('outsideRoom: tâm rơi vào dải phòng hẹp → dịch sang phòng chứa phần lớn thân món', () => {
