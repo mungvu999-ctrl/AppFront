@@ -170,7 +170,7 @@ describe('repairScene', () => {
         item('F-bed', 'bed', [1600, 2000], 2000, 1500),
         item('F-ns', 'table', [450, 400], 2000, 2400),
         item('F-tb', 'table', [1200, 800], 1000, 3000, HUMAN),
-        item('F-ch', 'chair', [450, 450], 1000, 3000, { rotationDeg: 0.01 }),
+        item('F-ch', 'washingMachine', [600, 600], 1000, 3000, { rotationDeg: 0.01 }),
       ],
     );
     const { graph, repairs } = repairScene(g);
@@ -181,6 +181,28 @@ describe('repairScene', () => {
     expect(byId(graph, 'F-bed')).toBe(byId(g, 'F-bed'));
     expect(byId(graph, 'F-tb')).toBe(byId(g, 'F-tb'));
     expect(scenePlacementIssues(graph).filter((i) => i.kind === 'overlap')).toEqual([]);
+  });
+
+  it('ghế kê dưới bàn không phải lỗi chồng; bàn dời thì ghế đi theo', () => {
+    const g = graphOf(
+      [BED_ROOM],
+      [
+        item('F-tb', 'table', [1400, 800], 900, 1750),
+        item('F-c1', 'chair', [450, 450], 900, 1300, { rotationDeg: 0.01 }),
+        item('F-c2', 'chair', [450, 450], 900, 2200, { rotationDeg: 180 }),
+      ],
+    );
+    // Bàn lấn thân tường trái 100 mm (mép trái x = 0, mặt tường x = 100).
+    const shifted = { ...g, furniture: g.furniture.map((f) => (f.id === 'F-tb' ? item('F-tb', 'table', [1400, 800], 700, 1750) : f)) };
+    const { graph, repairs } = repairScene(shifted);
+    expect(repairs.map((r) => [r.furnitureId, r.rule])).toEqual([
+      ['F-tb', 'wallOverlap'],
+      ['F-c1', 'overlap'],
+      ['F-c2', 'overlap'],
+    ]);
+    const dx = (byId(graph, 'F-tb')?.centre.x ?? 0) - 700;
+    expect(byId(graph, 'F-c1')?.centre.x).toBe(900 + dx);
+    expect(repairScene(g).repairs).toEqual([]);
   });
 
   it('duplicateFixture: hai bồn cầu một phòng → ẩn món AI thừa, giữ món người dùng', () => {

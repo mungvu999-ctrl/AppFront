@@ -63,6 +63,11 @@ const MAX_ROUNDS = 6;
 const MAJOR_ROLES: ReadonlySet<string> = new Set(['singleBed', 'doubleBed', 'sofa', 'closet']);
 const BATH_NAME = /\b(wc|toilet|bath)|vệ sinh|tắm/iu;
 
+/** Ghế cách mép bàn tới mức này coi là ghế của bàn (đi theo khi bàn dời). */
+const SEAT_REACH_MM = 300;
+const isTable = (f: Furniture): boolean => f.kind === 'table' || f.kind === 'kitchenCabinet';
+/** Ghế kê dưới bàn/quầy là chồng hình hợp lệ, không phải lỗi. */
+const tucked = (a: Furniture, b: Furniture): boolean => (a.kind === 'chair' && isTable(b)) || (b.kind === 'chair' && isTable(a));
 const isFlat = (f: Furniture): boolean => f.heightMm !== undefined && f.heightMm < FLAT_MAX_MM;
 const repairable = (f: Furniture): boolean =>
   classOf(f) === 'ai' && f.suggested !== true && f.kind !== 'stair' && !isFlat(f);
@@ -139,10 +144,27 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[]): Step[] => {
   const steps: Step[] = [];
   const done = new Set<string>();
   const commit = (step: Step): void => {
+    const before = work.get(step.id);
     steps.push(step);
     done.add(step.id);
     if (step.after === null) work.delete(step.id);
     else work.set(step.id, step.after);
+    if (before !== undefined && step.after !== null && isTable(before)) moveSeats(before, step.after);
+  };
+  /** Bàn dời thì ghế AI kê quanh nó (cách mép ≤ SEAT_REACH_MM) dời theo cùng độ lệch nếu chỗ mới không cắt tường/cửa. */
+  const moveSeats = (table: Furniture, moved: Furniture): void => {
+    const dx = moved.centre.x - table.centre.x;
+    const dy = moved.centre.y - table.centre.y;
+    if (dx === 0 && dy === 0) return;
+    const reach = rectOfFurniture(table);
+    for (const seat of current()) {
+      if (seat.kind !== 'chair' || seat.levelId !== table.levelId || live(seat.id) === undefined) continue;
+      if (!rectsOverlap(rectOfFurniture(seat), reach, SEAT_REACH_MM)) continue;
+      const at = { centre: { x: seat.centre.x + dx, y: seat.centre.y + dy }, rotationDeg: rectOfFurniture(seat).rotationDeg };
+      const room = graph.rooms.find((r) => r.levelId === seat.levelId && containsPoint(r, at.centre));
+      if (room === undefined || !valid(rectAt(seat, at), seat, room, [], true)) continue;
+      commit({ id: seat.id, rule: 'overlap', reasonVi: `Ghế đi theo bàn: dịch ${mm(Math.hypot(dx, dy))}.`, after: movedTo(seat, at, room.id) });
+    }
   };
   const current = (): Furniture[] => [...work.values()];
   const graphNow = (): SpatialGraph => ({ ...graph, furniture: current() });
@@ -195,10 +217,10 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[]): Step[] => {
     for (let i = 0; i < pa.length; i += 1) if (pa[i] !== pb[i]) return (pa[i] as number) > (pb[i] as number);
     return a.id < b.id;
   };
-  /** Vật chắn của `f`: mọi đồ đứng sàn cùng tầng; `strongerOnly` thì chỉ món ưu tiên hơn (món yếu hơn sẽ tự nhường ở luật chồng). */
+  /** Vật chắn của `f`: mọi đồ đứng sàn cùng tầng (trừ cặp ghế–bàn); `strongerOnly` thì chỉ món ưu tiên hơn (món yếu hơn sẽ tự nhường ở luật chồng). */
   const obstaclesOf = (f: Furniture, strongerOnly = false): Rect[] =>
     current()
-      .filter((o) => o.id !== f.id && o.levelId === f.levelId && o.suggested !== true && !isFlat(o) && (!strongerOnly || outranks(o, f)))
+      .filter((o) => o.id !== f.id && o.levelId === f.levelId && o.suggested !== true && !isFlat(o) && !tucked(o, f) && (!strongerOnly || outranks(o, f)))
       .map(rectOfFurniture);
 
   /**
@@ -348,6 +370,7 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[]): Step[] => {
       const rb = rectOfFurniture(fb);
       const smaller = Math.min(ra.w * ra.d, rb.w * rb.d);
       if (!rectsOverlap(ra, rb) || !(smaller > 0) || overlapAreaMm2(ra, rb) / smaller <= OVERLAP_MAX_FRACTION) continue;
+      if (tucked(fa, fb)) continue;
       const [keep, yield_] = outranks(fa, fb) ? [fa, fb] : [fb, fa];
       if (live(yield_.id) === undefined) continue;
       const room = roomOf(yield_);
