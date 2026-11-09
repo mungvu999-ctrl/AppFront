@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { denormalizeSpatial } from '@/domain/spatial/normalize';
-import type { FurnitureId, SpatialGraph } from '@/domain/spatial/types';
+import type { SpatialGraph } from '@/domain/spatial/types';
 import { useFloorLayerAutosave } from '@/hooks/useAutosave';
 import { useSession } from '@/hooks/useSession';
 import { can } from '@/lib/auth/permissions';
@@ -21,7 +21,7 @@ import type { DesignAddition, DesignConcept, DesignConceptState, DesignStyleId }
 import { sceneStyleFromConcept } from '@/lib/pascal/designStyles';
 import { readSceneStyle, SCENE_STYLES, type SceneStyle, type SceneStyleId } from '@/lib/pascal/sceneStyles';
 import { toPascalId } from '@/lib/pascal/ids';
-import { freezeRepairs, reapplyRepairs, repairScene, type FrozenRepair } from '@/lib/pascal/sceneRepair';
+import { createRepairSession, sessionRepairs } from '@/lib/pascal/sceneRepair';
 import { standardSceneOf } from '@/lib/pascal/sceneStandard';
 import type { PascalNode, PascalNodeId, PascalScene } from '@/lib/pascal/types';
 import { ROUTES } from '@/routes/paths';
@@ -34,6 +34,7 @@ import type { ProjectRole } from '@/types/project';
 import { sceneRepairStore } from '../sceneRepairStore';
 import { scaleStatusOf } from '../useScaleStatus';
 import { resolveBackHref } from './backHref';
+import { createDerivedHistory, recordDerived, restoreDerived, touchedTargetFor } from './derivedHistory';
 import type { PascalBridge, PascalConfirm, PascalNotice, PascalSaveStatus, PascalSceneGraph } from './types';
 
 export { LAST_APP_PATH_KEY, rememberAppPath, RETURN_TO_PARAM } from './backHref';
@@ -448,32 +449,52 @@ export function usePascalProjectBridge(
      `toPascalScene` dùng chung nó, không thì giá trị sinh ra lệch nhau → "sửa ma". */
   /* Tầng chưa có tỷ lệ (cùng danh sách của dải cảnh báo): chốt ở `onLoad`, mọi lượt dựng lại dùng chung. */
   const missingFloors = useRef<ReadonlySet<string>>(new Set());
-  const frozenRepairs = useRef<ReadonlyMap<FurnitureId, FrozenRepair> | null>(null);
-  const sceneFromStore = useCallback((): PascalScene | null => {
+  /* Sửa cảnh (`sceneRepair.ts` `sessionRepairs`): tính theo chữ ký đầu vào, không chốt một lần — dời tường/đổi phòng/
+     dời đồ thì lượt dựng sau tính lại, món người dùng đã đụng trong phiên không bị sửa. `derived` nhớ các bản node
+     dẫn xuất từng trao cho editor để Ctrl+Z về chúng không bị coi là sửa (`derivedHistory.ts`). */
+  const repairSession = useRef(createRepairSession());
+  const derived = useRef(createDerivedHistory());
+  const storedGraph = useCallback((): SpatialGraph | null => {
     const current = selectViewerSpatial(useStore.getState());
-    if (current === null) return null;
-
-    const stored = withoutFloorContents(denormalizeSpatial(current), missingFloors.current);
-    /* Sửa cảnh cho đồ AI chưa xác nhận (`sceneRepair.ts`): chỉ trên đồ thị trao cho cảnh, kho giữ bản gốc nên tự lưu
-       ghi đúng dữ liệu gốc; lượt sửa sau chỉ ghi node người dùng đụng (chênh với mốc `loadedScene` = cảnh đã sửa).
-       Kết quả chốt ở lượt dựng đầu; lượt dựng lại giữa phiên áp lại đúng nó cho món AI chưa đụng (`reapplyRepairs`). */
-    if (frozenRepairs.current === null) frozenRepairs.current = freezeRepairs(stored, repairScene(stored));
-    const { graph, repairs } = sceneRepairStore.get().enabled
-      ? reapplyRepairs(stored, frozenRepairs.current)
-      : { graph: stored, repairs: [] };
-    // Hợp đồng lớp cảnh dẫn xuất v1 (`sceneLayer.ts`): mọi đường vào dùng `standardSceneOf`; sửa cảnh ghi lên node (`fields.repair`).
-    // Đồ AI bổ sung (AID-01) và chế độ tự bày dự phòng đi cùng phong cách: chốt một lần mỗi lượt
-    // mở trang, mọi lượt dựng dùng chung, không thì "sửa ma".
-    const { scene, layer } = standardSceneOf(graph, {
+    return current === null ? null : withoutFloorContents(denormalizeSpatial(current), missingFloors.current);
+  }, []);
+  const sceneOptions = useCallback(
+    () => ({
       style: style ?? readSceneStyle(() => localStorage),
       ...(furnish === undefined ? {} : { furnish }),
       ...(additions === undefined || additions.length === 0 ? {} : { additions }),
-      repairs: new Map(repairs.map((r) => [r.furnitureId, r])),
-    });
-    sceneRepairStore.set({ repairs, frozen: frozenRepairs.current, layer });
+    }),
+    [style, additions, furnish],
+  );
+  const sceneFromStore = useCallback((): PascalScene | null => {
+    const stored = storedGraph();
+    if (stored === null) return null;
+
+    /* Sửa cảnh cho đồ AI chưa xác nhận: chỉ trên đồ thị trao cho cảnh, kho giữ bản gốc nên tự lưu ghi đúng dữ liệu
+       gốc; lượt sửa sau chỉ ghi node người dùng đụng (chênh với mốc = cảnh editor sau lượt dựng gần nhất). */
+    const { graph, repairs } = sceneRepairStore.get().enabled ? sessionRepairs(repairSession.current, stored) : { graph: stored, repairs: [] };
+    // Hợp đồng lớp cảnh dẫn xuất v1 (`sceneLayer.ts`): mọi đường vào dùng `standardSceneOf`; sửa cảnh ghi lên node (`fields.repair`).
+    // Đồ AI bổ sung (AID-01) và chế độ tự bày dự phòng đi cùng phong cách: chốt một lần mỗi lượt
+    // mở trang, mọi lượt dựng dùng chung, không thì "sửa ma".
+    const { scene, layer } = standardSceneOf(graph, { ...sceneOptions(), repairs: new Map(repairs.map((r) => [r.furnitureId, r])) });
+    sceneRepairStore.set({ repairs, session: repairSession.current, layer });
 
     return markNotBuilt(scene, missingFloors.current);
-  }, [style, additions, furnish]);
+  }, [sceneOptions, storedGraph]);
+
+  /** Sửa cảnh của kho hiện tại khác danh sách lượt dựng gần nhất đã áp → cảnh editor phải dựng lại. */
+  const repairsStale = useCallback((): boolean => {
+    const stored = storedGraph();
+    if (stored === null) return false;
+    const next = sceneRepairStore.get().enabled ? sessionRepairs(repairSession.current, stored).repairs : [];
+    return JSON.stringify(next) !== JSON.stringify(sceneRepairStore.get().repairs);
+  }, [storedGraph]);
+
+  /** Node của món đã đụng ở dữ liệu trước khi đụng (đích hoàn tác về một vị trí đã sửa cảnh); dựng lười, chỉ khi cần. */
+  const touchedTargetOf = useCallback(
+    () => touchedTargetFor(repairSession.current, storedGraph, (graph) => standardSceneOf(graph, { ...sceneOptions(), repairs: new Map() }).scene),
+    [sceneOptions, storedGraph],
+  );
 
   /* Tải lại tầng bị khối (409/422/403): bỏ bản chưa lưu được, nạp lại tầng từ máy chủ vào kho rồi
      dựng lại cảnh từ kho. Không có `applyScene` thì nạp lại cả trang như trước. */
@@ -491,6 +512,13 @@ export function usePascalProjectBridge(
     if (reason !== null) showAlert(reason);
   }, [applyScene, isFloorBlocked, reloadFloor, saveBlock, sceneFromStore, showAlert]);
 
+  /* Cảnh editor sau lượt nạp (sceneLoader) hay dựng lại: thành mốc của lượt sửa sau và bản dẫn xuất hiện hành. */
+  const rebaseLoaded = useCallback((scene: PascalSceneGraph) => {
+    const hidden = sceneRepairStore.get().repairs.filter((r) => r.action === 'hidden').map((r) => toPascalId('item', r.furnitureId));
+    recordDerived(derived.current, scene as PascalScene, hidden);
+    setLoadedScene(scene as PascalScene);
+  }, []);
+
   const onLoad = useCallback(async (): Promise<PascalSceneGraph> => {
     const scale = await scaleStatusOf(projectId);
     missingFloors.current = new Set(scale.status === 'unresolved' ? scale.missingIds : []);
@@ -507,30 +535,40 @@ export function usePascalProjectBridge(
     if (restored !== null) applyScene?.(restored);
   }, [applyScene, sceneFromStore]);
 
-  /* "Hiện dữ liệu gốc" (chip lỗi đặt đồ) bật/tắt sửa cảnh: dựng lại từ kho rồi lấy cảnh mới làm mốc, như lượt nhận
-     gợi ý — đổi hiển thị không phải lượt sửa, không được ghi vị trí nào về máy chủ. */
+  /* Dựng lại cảnh từ kho (không bước hoàn tác) rồi lấy cảnh editor SAU khi dựng (đã điền mặc định) làm mốc — cả mốc
+     lượt sửa kế (`rebaseOnRebuilt`) lẫn mốc nạp (đồ sinh rời so với nó, `editedLooseNodeIds`): bản dựng không phải sửa. */
+  const rebuildFromStore = useCallback(() => {
+    revertToStore();
+    const rebuilt = editorScene?.();
+    if (rebuilt === undefined) return;
+    rebaseOnRebuilt(rebuilt as PascalScene);
+    rebaseLoaded(rebuilt);
+  }, [editorScene, rebaseLoaded, rebaseOnRebuilt, revertToStore]);
+
+  /* "Hiện dữ liệu gốc" (chip lỗi đặt đồ) bật/tắt sửa cảnh: dựng lại từ kho, như lượt nhận gợi ý — đổi hiển thị không
+     phải lượt sửa, không được ghi vị trí nào về máy chủ. */
   useEffect(() => {
     let last = sceneRepairStore.get().enabled;
     return sceneRepairStore.subscribe(() => {
       const { enabled } = sceneRepairStore.get();
       if (enabled === last) return;
       last = enabled;
-      revertToStore();
-      const rebuilt = editorScene?.();
-      if (rebuilt !== undefined) rebaseOnRebuilt(rebuilt as PascalScene);
+      rebuildFromStore();
     });
-  }, [editorScene, rebaseOnRebuilt, revertToStore]);
+  }, [rebuildFromStore]);
 
   const onSave = useCallback(
-    async (scene: unknown): Promise<void> => {
+    async (raw: unknown): Promise<void> => {
       if (readOnly) return;
 
+      // Ctrl+Z về node dẫn xuất cũ không phải lượt sửa: đưa về bản hiện hành trước khi so (`derivedHistory.ts`).
+      const { scene, restored } = restoreDerived(derived.current, raw as PascalScene, touchedTargetOf());
       rejection.current = null;
       massDeleteRef.current = null;
       pendingScene.current = scene;
       // Chạy cổng trước (phán quyết nhớ theo cảnh, `onSceneCommit` dùng lại): xoá nhiều → `onMassDelete` mở hộp hỏi.
-      validateCommit(scene as PascalScene);
-      const pending = onSceneCommit(scene as PascalScene).then(async (ok) => {
+      validateCommit(scene);
+      const pending = onSceneCommit(scene).then(async (ok) => {
         // `false` mà không có lời từ chối là "không có gì để ghi" (sửa node sinh ra) — vẫn là thành công.
         if (!ok && rejection.current !== null) {
           /* Lượt bị từ chối (luật toàn vẹn, node lạ, lệnh hỏng): kho không đổi, nên đặt lại cảnh
@@ -539,15 +577,16 @@ export function usePascalProjectBridge(
           if (massDeleteRef.current?.reason !== rejection.current) revertToStore();
           throw new Error(rejection.current);
         }
-        if (!ok) return;
-        /* Vừa nhận món gợi ý: tấm viền thành mẫu thật ngay. Không vào lịch sử Pascal; Ctrl+Z về cảnh còn tấm
-           viền và `suggestionEditOf` trả bản ghi gợi ý. */
-        if (takeSuggestionAccepted()) {
-          revertToStore();
-          // Cảnh editor giữ SAU khi dựng lại (đã điền mặc định, như `rebaseLoaded`) thành mốc: bản dựng không phải lượt sửa.
-          const rebuilt = editorScene?.();
-          if (rebuilt !== undefined) rebaseOnRebuilt(rebuilt as PascalScene);
+        // Hoàn tác chỉ chạm node dẫn xuất (không có gì để ghi): vẫn dựng lại để cảnh hết node cũ.
+        if (!ok) {
+          if (restored) rebuildFromStore();
+          return;
         }
+        /* Dựng lại cảnh từ kho khi: vừa nhận món gợi ý (tấm viền thành mẫu thật; Ctrl+Z về cảnh còn tấm viền và
+           `suggestionEditOf` trả bản ghi gợi ý), sửa cảnh của dữ liệu mới khác cảnh đang hiện (dời tường, dời món, …),
+           hay vừa gỡ node dẫn xuất cũ do hoàn tác. */
+        const accepted = takeSuggestionAccepted();
+        if (accepted || restored || repairsStale()) rebuildFromStore();
         /* Đợi đúng lượt PUT N16 rồi mới báo Pascal "đã lưu": lượt gửi hỏng hay tầng bị khối thì
            ném, để chỉ báo của editor không nói "đã lưu" khi máy chủ chưa nhận. */
         await autosave.saveNow().catch(() => undefined);
@@ -557,7 +596,7 @@ export function usePascalProjectBridge(
       lastSave = pending;
       await pending;
     },
-    [autosave, editorScene, isFloorBlocked, onSceneCommit, readOnly, rebaseOnRebuilt, revertToStore, takeSuggestionAccepted, validateCommit],
+    [autosave, isFloorBlocked, onSceneCommit, readOnly, rebuildFromStore, repairsStale, revertToStore, takeSuggestionAccepted, touchedTargetOf, validateCommit],
   );
 
   /* Đã xác nhận xoá nhiều: mở cổng cho đúng các node ấy rồi lưu (bản sao nông để không trúng phán
@@ -629,7 +668,7 @@ export function usePascalProjectBridge(
     readOnly,
     backHref,
     onLoad,
-    rebaseLoaded: setLoadedScene as (scene: PascalSceneGraph) => void,
+    rebaseLoaded,
     onSave,
     ...(readOnly ? {} : { save }),
   };

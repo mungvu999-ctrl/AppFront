@@ -32,6 +32,8 @@ export interface PascalProbe {
   items(): ProbeItem[];
   /** Móc kiểm thử C13: `useScene.updateNode(id, patch)` — chỉ có khi `?probe=1`. */
   editNode(id: string, patch: object): void;
+  /** Bản sao JSON của một node (đọc trước `editNode` để vá sâu, vd. `metadata`); `null` khi không có. */
+  node(id: string): unknown;
   /** Bật/tắt mọi đèn (công tắc trong `useInteractive.lampItems`) — C10 đo màu sàn khi tắt đèn. */
   setLights(on: boolean): void;
   /** Chẩn đoán vật liệu lúc chạy của các item có `src` chứa `match` (tên, loại, trong suốt, màu, kim loại, nhám, map). */
@@ -213,6 +215,10 @@ export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter,
         dimensions: n.asset?.dimensions,
       })),
     editNode: (id, patch) => useScene.getState().updateNode(id, patch),
+    node: (id) => {
+      const found = nodes()[id];
+      return found === undefined ? null : (JSON.parse(JSON.stringify(found)) as unknown);
+    },
     setLights: (on) => {
       const { lampItems, setControlValue } = useInteractive.getState();
       for (const [id, indices] of Object.entries(lampItems)) for (const i of indices) setControlValue(id, i, on);

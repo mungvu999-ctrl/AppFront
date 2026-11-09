@@ -111,6 +111,16 @@ describe('pascal probe', () => {
     expect(updateNode.mock.calls).toEqual([['w2', { thickness: 0.3 }]]);
   });
 
+  it('node() trả bản sao JSON của node (vá sâu trước editNode), null khi không có', () => {
+    const { stores } = fakeStores();
+    const probe = install('?probe=1', stores);
+    const copy = probe?.node('w2') as { thickness: number } | null;
+    expect(copy).toMatchObject({ type: 'wall', thickness: 0.2 });
+    if (copy !== null && copy !== undefined) copy.thickness = 9;
+    expect(probe?.node('w2')).toMatchObject({ thickness: 0.2 });
+    expect(probe?.node('khong-co')).toBeNull();
+  });
+
   it('setLights() bật/tắt công tắc của mọi đèn trong lampItems (C10)', () => {
     const { stores, setControlValue } = fakeStores();
     install('?probe=1', stores)?.setLights(false);

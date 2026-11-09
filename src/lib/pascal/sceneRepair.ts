@@ -478,47 +478,57 @@ export const repairScene = (graph: SpatialGraph): { graph: SpatialGraph; repairs
 export const repairsById = (repairs: readonly SceneRepair[]): ReadonlyMap<FurnitureId, SceneRepair> =>
   new Map(repairs.map((r) => [r.furnitureId, r]));
 
-/** Ảnh chụp một lần sửa: món gốc đã lưu và món trong cảnh (`null` = ẩn). */
-export interface FrozenRepair {
-  readonly before: Furniture;
-  readonly after: Furniture | null;
-  readonly repair: SceneRepair;
+/**
+ * Phiên sửa cảnh của một lượt mở trang. Thay cho "chốt một lần lúc nạp": kết quả sửa cảnh là hàm thuần của ĐẦU VÀO
+ * (tường/ô mở/phòng + đồ, với món người dùng đã đụng trong phiên coi như `human`), nhớ theo chữ ký đầu vào. Đầu vào
+ * đổi (dời tường, đổi phòng, dời/xác nhận đồ, hoàn tác, nhận gợi ý) → tính lại; không đổi → trả đúng kết quả cũ
+ * (cùng đầu vào → cùng kết quả, không "sửa ma").
+ *
+ * "Đã đụng" = hình học (tâm, góc, hộp, loại, tầng) khác lần đầu phiên thấy món ấy; dính tới hết phiên, như cờ
+ * `edited` máy chủ tự đặt (H1, không gỡ được) — nên món vừa kéo không bị luật kéo đi chỗ khác trong lúc chờ PUT.
+ * `roomId` không tính: tách phòng đổi nó mà người dùng không đụng món.
+ */
+export interface RepairSession {
+  /** Món như lần đầu phiên thấy (trước mọi sửa của người dùng) — đích khi hoàn tác về một vị trí đã sửa cảnh. */
+  readonly firstSeen: Map<FurnitureId, Furniture>;
+  readonly touched: Set<FurnitureId>;
+  /** Kết quả theo chữ ký đầu vào; vài mục vì cầu nối và chip đọc hai đồ thị hơi khác (tầng chưa có tỷ lệ). */
+  readonly cache: Map<string, RepairResult>;
 }
 
-/** Chốt kết quả `repairScene` để các lượt dựng lại sau trong cùng phiên áp đúng như lúc nạp. */
-export const freezeRepairs = (
-  stored: SpatialGraph,
-  result: { graph: SpatialGraph; repairs: readonly SceneRepair[] },
-): ReadonlyMap<FurnitureId, FrozenRepair> => {
+export interface RepairResult {
+  readonly graph: SpatialGraph;
+  readonly repairs: readonly SceneRepair[];
+}
+
+export const createRepairSession = (): RepairSession => ({ firstSeen: new Map(), touched: new Set(), cache: new Map() });
+
+const CACHE_MAX = 4;
+
+const geometryOf = (f: Furniture): string =>
+  JSON.stringify([f.centre, f.rotationDeg, f.boundingBox, f.kind, f.levelId]);
+
+/** Sửa cảnh của đồ thị đã lưu `stored` trong phiên `session` (ghi nhận món đã đụng, nhớ theo chữ ký đầu vào). */
+export const sessionRepairs = (session: RepairSession, stored: SpatialGraph): RepairResult => {
+  for (const f of stored.furniture) {
+    const first = session.firstSeen.get(f.id);
+    if (first === undefined) session.firstSeen.set(f.id, f);
+    else if (!session.touched.has(f.id) && geometryOf(first) !== geometryOf(f)) session.touched.add(f.id);
+  }
+  const furniture = stored.furniture.map((f) => (session.touched.has(f.id) && classOf(f) === 'ai' ? { ...f, edited: true } : f));
+  const key = JSON.stringify([stored.walls, stored.openings, stored.rooms, furniture]);
+  const hit = session.cache.get(key);
+  if (hit !== undefined) return hit;
+
+  const fixed = repairScene({ ...stored, furniture });
+  // Món đã đụng chỉ mang `edited` tạm để luật bỏ qua: trao cho cảnh đúng bản đã lưu.
   const storedById = new Map(stored.furniture.map((f) => [f.id, f]));
-  const afterById = new Map(result.graph.furniture.map((f) => [f.id, f]));
-  return new Map(
-    result.repairs.flatMap((repair) => {
-      const before = storedById.get(repair.furnitureId);
-      return before === undefined ? [] : [[repair.furnitureId, { before, after: afterById.get(repair.furnitureId) ?? null, repair }] as const];
-    }),
-  );
-};
-
-const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
-
-/**
- * Áp lại các lần sửa đã chốt lên đồ thị hiện tại: chỉ món còn y nguyên như lúc chốt (chưa ai sửa/duyệt) mới
- * được thay bằng bản trong cảnh. Nhờ vậy cảnh dựng lại giữa phiên (lượt bị từ chối, nhận gợi ý) khớp cảnh lúc nạp với
- * mọi món AI chưa đụng — không sinh chênh "sửa ma" — còn món người dùng vừa sửa thì theo dữ liệu thật.
- */
-// ponytail: xung đột mới do người dùng sửa giữa phiên chỉ được xử lý ở lượt mở trang sau.
-export const reapplyRepairs = (
-  graph: SpatialGraph,
-  frozen: ReadonlyMap<FurnitureId, FrozenRepair>,
-): { graph: SpatialGraph; repairs: readonly SceneRepair[] } => {
-  if (frozen.size === 0) return { graph, repairs: [] };
-  const repairs: SceneRepair[] = [];
-  const furniture = graph.furniture.flatMap((f) => {
-    const entry = frozen.get(f.id);
-    if (entry === undefined || !sameJson(f, entry.before)) return [f];
-    repairs.push(entry.repair);
-    return entry.after === null ? [] : [entry.after];
-  });
-  return repairs.length === 0 ? { graph, repairs } : { graph: { ...graph, furniture }, repairs };
+  const result: RepairResult = {
+    graph: fixed.repairs.length === 0 ? stored : { ...fixed.graph, furniture: fixed.graph.furniture.map((f) => (session.touched.has(f.id) ? (storedById.get(f.id) ?? f) : f)) },
+    repairs: fixed.repairs,
+  };
+  // ponytail: bỏ mục cũ nhất khi đầy, không LRU thật — chỉ hai người đọc.
+  if (session.cache.size >= CACHE_MAX) session.cache.delete(session.cache.keys().next().value as string);
+  session.cache.set(key, result);
+  return result;
 };
