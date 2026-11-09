@@ -96,7 +96,7 @@ interface LooseNode {
   readonly width?: number;
   readonly parentId?: string;
   readonly polygon?: [number, number][];
-  readonly metadata?: { readonly appfront?: { readonly usage?: string } };
+  readonly metadata?: { readonly appfront?: { readonly fields?: { readonly usage?: string } } };
   readonly asset?: { readonly src?: string; readonly scale?: Vec3; readonly dimensions?: Vec3 };
 }
 
@@ -187,7 +187,7 @@ export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter,
       entriesOf('zone').map(([id, n]) => ({
         id,
         name: n.name,
-        usage: n.metadata?.appfront?.usage,
+        usage: n.metadata?.appfront?.fields?.usage,
         polygon: n.polygon ?? [],
         levelId: n.parentId,
         levelIndex: n.parentId === undefined ? undefined : (nodes()[n.parentId] as LooseNode | undefined)?.level,

@@ -96,7 +96,7 @@ describe('pascal probe', () => {
     const { stores } = fakeStores();
     const nodes = {
       level_a: { type: 'level', level: 0 },
-      z1: { type: 'zone', name: 'PN', parentId: 'level_a', polygon: [[0, 0], [4, 0], [4, 3]], metadata: { appfront: { usage: 'bedroom' } } },
+      z1: { type: 'zone', name: 'PN', parentId: 'level_a', polygon: [[0, 0], [4, 0], [4, 3]], metadata: { appfront: { fields: { usage: 'bedroom' } } } },
       d1: { type: 'door', wallId: 'w2', position: [1, 1, 0], width: 0.9 },
       n1: { type: 'window', wallId: 'w2', position: [2, 1.5, 0], width: 1.2 },
     };
