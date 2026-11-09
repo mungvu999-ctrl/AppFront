@@ -1,6 +1,6 @@
 /**
  * Chip "⚠ N lỗi đặt đồ" của thanh trên trang 3D (C7, trước nằm lẫn trong menu Chất lượng).
- * `scenePlacementIssues`: chồng nhau, chắn cửa, lấn tường; `sanitaryPlacementIssues`: thiết bị vệ sinh sai
+ * `scenePlacementIssues`: ngoài nhà, chồng nhau, chắn cửa, lấn tường; `sanitaryPlacementIssues`: thiết bị vệ sinh sai
  * phòng, trùng, bồn cầu đối diện lavabo. Lỗi tính trên đồ thị ĐÃ sửa cảnh (`repairScene`, đồ AI chưa xác nhận);
  * mục "Đã tự xử lý N" liệt kê từng lần sửa kèm lý do, nút "Hiện dữ liệu gốc" tắt sửa cảnh trong phiên
  * (`sceneRepairStore` → cầu nối dựng lại). Bấm một dòng thì chọn món đồ đó trong trình dựng. Không có gì thì ẩn.

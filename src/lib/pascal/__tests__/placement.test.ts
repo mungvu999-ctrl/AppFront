@@ -3,16 +3,18 @@
 import { describe, expect, it } from 'vitest';
 
 import { createSampleBuilding } from '@/domain/spatial/__fixtures__/sampleBuilding';
-import type { Opening, Point, SpatialGraph, Wall } from '@/domain/spatial/types';
+import type { Furniture, Opening, Point, Room, SpatialGraph, Wall } from '@/domain/spatial/types';
 
 import {
   doorSwingRects,
   furnitureFacingDeg,
+  outsideAllRooms,
   rectCorners,
   rectInsidePolygon,
   rectOfFurniture,
   rectsOverlap,
   roomEdges,
+  scenePlacementIssues,
   wallRects,
   type Rect,
 } from '../placement';
@@ -183,5 +185,52 @@ describe('furnitureFacingDeg + rectOfFurniture', () => {
     expect(
       rectOfFurniture({ centre: { x: 3000, y: 2000 }, boundingBox: { min: { x: 2000, y: 1700 }, max: { x: 4000, y: 2300 } }, rotationDeg: 90 }),
     ).toEqual(rect(3000, 2000, 2000, 600, 90));
+  });
+});
+
+describe('outsideAllRooms + lỗi `outside` (món ngoài nhà)', () => {
+  const sq = (x0: number, y0: number, x1: number, y1: number): Point[] => [
+    { x: x0, y: y0 },
+    { x: x1, y: y0 },
+    { x: x1, y: y1 },
+    { x: x0, y: y1 },
+  ];
+  const roomOf = (id: string, outline: Point[], levelId: string = LEVEL): Room => ({ ...meta, id, levelId, name: id, usage: 'other', outline, areaM2: 12, wallIds: [] }) as unknown as Room;
+  const piece = (id: string, x: number, y: number, [w, d]: [number, number] = [1000, 600], extra: Partial<Furniture> = {}): Furniture =>
+    ({ ...meta, id, levelId: LEVEL, kind: 'table', centre: { x, y }, boundingBox: { min: { x: x - w / 2, y: y - d / 2 }, max: { x: x + w / 2, y: y + d / 2 } }, rotationDeg: 0, ...extra }) as Furniture;
+  const A = roomOf('R-A', sq(0, 0, 4000, 3000));
+  const B = roomOf('R-B', sq(4000, 0, 8000, 3000));
+
+  it('tâm ngoài mọi phòng → ngoài nhà; trong phòng → không', () => {
+    expect(outsideAllRooms(piece('F-1', 10000, 1500), [A, B])).toBe(true);
+    expect(outsideAllRooms(piece('F-2', 2000, 1500), [A, B])).toBe(false);
+  });
+
+  it('tâm trong phòng nhưng quá nửa thân ở ngoài → ngoài nhà; lòi ít → không', () => {
+    // Bàn 3000 × 600 giữa phòng hẹp 1 m: chỉ 1/5 cột lưới mẫu trong phòng.
+    expect(outsideAllRooms(piece('F-3', 500, 1500, [3000, 600]), [roomOf('R-N', sq(0, 0, 1000, 3000))])).toBe(true);
+    expect(outsideAllRooms(piece('F-4', 3700, 1500, [1000, 600]), [A])).toBe(false);
+  });
+
+  it('món vắt qua hai phòng liền nhau là trong nhà', () => {
+    expect(outsideAllRooms(piece('F-5', 4010, 1500, [2000, 600]), [A, B])).toBe(false);
+    // Chỉ có một phòng thì cùng món đó quá nửa ở ngoài.
+    expect(outsideAllRooms(piece('F-6', 4010, 1500, [2000, 600]), [A])).toBe(true);
+  });
+
+  it('tầng không có phòng (phòng chỉ ở tầng khác): bỏ qua', () => {
+    expect(outsideAllRooms(piece('F-7', 10000, 1500), [])).toBe(false);
+    expect(outsideAllRooms(piece('F-7', 10000, 1500), [roomOf('R-X', sq(0, 0, 4000, 3000), 'L-OTHER')])).toBe(false);
+  });
+
+  it('scenePlacementIssues báo "nằm ngoài nhà" cho cả viền gợi ý; thang thì không', () => {
+    const graph: SpatialGraph = {
+      ...graphOf([], []),
+      rooms: [A, B],
+      furniture: [piece('F-out', 10000, 1500), piece('F-sug', 12000, 1500, [1000, 600], { suggested: true }), piece('F-in', 2000, 1500), piece('F-st', 14000, 1500, [1000, 600], { kind: 'stair' })],
+    };
+    const outside = scenePlacementIssues(graph).filter((i) => i.kind === 'outside');
+    expect(outside.map((i) => i.furnitureIds[0])).toEqual(['F-out', 'F-sug']);
+    expect(outside[0]?.message).toBe('Bàn nằm ngoài nhà');
   });
 });
