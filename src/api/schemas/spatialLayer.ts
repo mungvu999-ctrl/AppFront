@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { VersionedWriteSchema } from './common';
-import { AxisSchema, DimensionSchema, LevelSchema, SpatialLayerSchema } from './spatial';
+import { AxisSchema, DimensionSchema, ignoredSuggestionLayerShape, LevelSchema, SpatialLayerSchema } from './spatial';
 
 /**
  * `GET` và `PUT /api/projects/{project_id}/floors/{floor_id}/spatial/layer` —
@@ -127,6 +127,8 @@ export const FloorLayerDocumentSchema = z
     suggestedScaleMmPerPx: scaleMillimetresPerPixelSchema.optional(),
     /** DPI của ảnh máy đã xử lý khi biết (PDF dựng ở DPI nào); `null`/vắng = không biết. Có thì nhập thẳng 1:N (U01). */
     sourceDpi: z.number().positive().finite().nullish(),
+    /** Lớp đề xuất M2 — nhận rồi bỏ, `transform` dưới không chép (xem `ignoredSuggestionLayerShape`). */
+    ...ignoredSuggestionLayerShape,
   })
   .strict()
   .refine(

@@ -7,6 +7,7 @@ import {
   BuildingSchema,
   DimensionSchema,
   FurnitureSchema,
+  ignoredSuggestionLayerShape,
   LevelSchema,
   NoteSchema,
   OpeningSchema,
@@ -102,8 +103,11 @@ export const FloorRevisionSchema = z
   .object({
     floorId: floorIdSchema,
     revision: revisionSchema,
+    /** Lớp đề xuất M2 trên mỗi dòng (AppBack 10d82787) — nhận rồi bỏ. */
+    ...ignoredSuggestionLayerShape,
   })
-  .strict();
+  .strict()
+  .transform(({ floorId, revision }) => ({ floorId, revision }));
 
 export type FloorRevision = z.infer<typeof FloorRevisionSchema>;
 
