@@ -258,8 +258,8 @@ describe('repairScene', () => {
     const first = sessionRepairs(session, g);
     expect(first).toEqual(repairScene(g));
     expect(first.repairs.map((r) => r.furnitureId).sort()).toEqual(['F-bed', 'F-wc']);
-    // Đồ thị mới cùng nội dung (kho dựng lại mảng) → cùng đối tượng kết quả.
-    expect(sessionRepairs(session, { ...g, furniture: [...g.furniture] })).toBe(first);
+    // Đồ thị mới cùng nội dung (kho dựng lại mảng) → không tính lại (cùng danh sách sửa).
+    expect(sessionRepairs(session, { ...g, furniture: [...g.furniture] }).repairs).toBe(first.repairs);
 
     // Nới phòng ngủ sang trái 1 m (dời tường): giường không còn lòi → luật không dời nó nữa; bồn cầu vẫn sửa như cũ.
     const wider = room('R-BED', 'bedroom', box(-1000, 0, 4000, 3500), 'Phòng ngủ');
@@ -286,5 +286,23 @@ describe('repairScene', () => {
     // Chỉ đổi `roomId` (tách phòng) không phải "đụng".
     const relabelled = { ...g, furniture: g.furniture.map((f) => (f.id === 'F-wc' ? { ...f, roomId: 'R-BED' } as Furniture : f)) };
     expect(sessionRepairs(session, relabelled).repairs.map((r) => r.furnitureId)).toEqual(['F-wc']);
+  });
+
+  it('sessionRepairs: chỉ đổi tầng/mái/trục (chữ ký sửa cảnh không đổi) → đồ thị trả về theo dữ liệu mới, không phải lượt trước', () => {
+    const session = createRepairSession();
+    // Một lượt có sửa (bồn cầu trong phòng ngủ), một lượt không sửa gì (bàn giữa phòng).
+    for (const [furniture, repaired] of [
+      [[wc('F-wc', 1000, 1000)], 1],
+      [[item('F-table', 'table', [1200, 600], 2000, 1750)], 0],
+    ] as const) {
+      const g = graphOf([BED_ROOM, BATH], [...furniture]);
+      sessionRepairs(session, g);
+      const roof = { ...HUMAN, id: 'RF-1', levelId: 'L-1', outline: box(0, 0, 6000, 3500) };
+      const next = { ...g, levels: [{ ...g.levels[0]!, heightMm: 3300 }], roofs: [roof] } as unknown as SpatialGraph;
+      const result = sessionRepairs(session, next);
+      expect(result.repairs).toHaveLength(repaired);
+      expect(result.graph.levels[0]?.heightMm).toBe(3300);
+      expect((result.graph as unknown as { roofs?: unknown[] }).roofs).toEqual([roof]);
+    }
   });
 });

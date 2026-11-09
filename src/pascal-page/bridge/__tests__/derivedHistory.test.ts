@@ -13,7 +13,7 @@ import { REPAIR_FIELD } from '@/lib/pascal/sceneLayer';
 import { createRepairSession, sessionRepairs, type RepairSession } from '@/lib/pascal/sceneRepair';
 import { standardSceneOf } from '@/lib/pascal/sceneStandard';
 import type { PascalItemNode, PascalNode, PascalScene } from '@/lib/pascal/types';
-import { commitOfScenes, editedLooseNodeIds } from '@/screens/viewer/PascalViewer/usePascalEdits';
+import { commitOfScenes, editedLooseNodeIds, suggestionEditOf } from '@/screens/viewer/PascalViewer/usePascalEdits';
 
 import { createDerivedHistory, recordDerived, restoreDerived, touchedTargetFor, type DerivedHistory } from '../derivedHistory';
 
@@ -80,6 +80,7 @@ class Page {
   base!: PascalScene;
   loaded!: PascalScene;
   repairs: readonly { furnitureId: string; action: string }[] = [];
+  snapshots: Parameters<typeof suggestionEditOf>[4] = new Map();
 
   build(): PascalScene {
     const { graph, repairs } = this.enabled ? sessionRepairs(this.session, this.stored) : { graph: this.stored, repairs: [] };
@@ -101,25 +102,31 @@ class Page {
     const target = touchedTargetFor(this.session, () => this.stored, (g) => standardSceneOf(g, { repairs: new Map() }).scene);
     const { scene, restored } = restoreDerived(this.history, raw, target);
     const commit = commitOfScenes(this.base, scene) ?? { origin: 'local' as const, changedNodeIds: [] };
+    const graph = normalizeSpatial(this.stored);
+    // Tấm viền gợi ý: như `usePascalEdits` onSave, `suggestionEditOf` lo trước, phần còn lại qua lệnh thường.
+    const suggestion = suggestionEditOf(graph, this.base, scene, commit.changedNodeIds, this.snapshots, 'U-1');
+    const others = (ids: readonly string[]) => ids.filter((id) => !suggestion.handled.has(id));
     const result = createPascalEditCommand({
-      graph: normalizeSpatial(this.stored),
+      graph,
       scene,
-      commit,
+      commit: { ...commit, changedNodeIds: others(commit.changedNodeIds), removedNodeIds: others(commit.removedNodeIds ?? []) },
       adoptNodeIds: editedLooseNodeIds(this.loaded, scene),
       actorId: 'U-1',
     });
-    const changes = result.ok
-      ? result.data.changes.map((c) => ({ id: (c.after ?? c.before)?.id ?? '', after: c.after as Furniture, before: c.before as Furniture }))
-      : [];
+    const changes = [...(result.ok ? result.data.changes : []), ...suggestion.changes].map((c) => ({
+      id: (c.after ?? c.before)?.id ?? '',
+      after: (c.after ?? undefined) as Furniture | undefined,
+      before: (c.before ?? undefined) as Furniture | undefined,
+    }));
     if (!result.ok && result.error.code !== 'PASCAL_NO_CHANGE') throw new Error(result.error.reasons.join(' '));
     for (const c of changes) {
       if (c.before === undefined) throw new Error(`thêm thực thể (nhân đôi?): ${c.id}`);
       if (c.id.startsWith('R-')) {
-        // Chỉ chấp nhận `dressingOff` của món chưa từng có trong cảnh (zone khai `dressIds` cả món bị lọc — tồn tại từ trước).
+        // `dressingOff` chỉ thêm món thật sự vắng khỏi cảnh đang lưu (người dùng xoá), không phải món dẫn xuất của lượt khác.
         const { dressingOff = [], ...rest } = c.after as unknown as Room;
         const { dressingOff: was = [], ...restBefore } = c.before as unknown as Room;
         expect(rest).toMatchObject({ ...restBefore, reviewed: (rest as Room).reviewed });
-        for (const id of dressingOff.filter((d) => !was.includes(d))) expect(this.loaded.nodes[`item_${id}`]).toBeUndefined();
+        for (const id of dressingOff.filter((d) => !was.includes(d))) expect(scene.nodes[`item_${id}`]).toBeUndefined();
         this.stored = { ...this.stored, rooms: this.stored.rooms.map((r) => (r.id === c.id ? (c.after as unknown as Room) : r)) };
         continue;
       }
@@ -131,7 +138,7 @@ class Page {
     }
     this.base = scene;
     const stale = JSON.stringify(this.enabled ? sessionRepairs(this.session, this.stored).repairs : []) !== JSON.stringify(this.repairs);
-    const rebuilt = restored || stale;
+    const rebuilt = restored || stale || suggestion.accepted;
     if (rebuilt) this.load();
     return { changes: changes.filter((c) => c.id.startsWith('F-')), restored, rebuilt };
   }
@@ -146,6 +153,14 @@ const repairOf = (scene: PascalScene, id: string): unknown =>
 /** Vị trí/góc mọi món đã lưu (dấu duyệt của món người vừa sửa rồi hoàn tác không về lại — đúng luật C2). */
 const poses = (g: SpatialGraph) => g.furniture.map((f) => [f.id, f.centre, f.rotationDeg]);
 const generatedCount = (scene: PascalScene): number => Object.keys(scene.nodes).filter((id) => id.includes('DRESS-') || id.includes('LIGHT-')).length;
+const dropNode = (scene: PascalScene, id: string): PascalScene => {
+  const nodes = { ...scene.nodes } as Record<string, PascalNode>;
+  const parentId = nodes[id]?.parentId as string;
+  const parent = nodes[parentId] as PascalNode & { children: string[] };
+  nodes[parentId] = { ...parent, children: parent.children.filter((c) => c !== id) } as PascalNode;
+  delete nodes[id];
+  return { ...scene, nodes };
+};
 
 describe('sửa cảnh trong phiên (cầu nối)', () => {
   it('kéo món AI đã sửa: lưu đúng chỗ thả, chỉ món đó; lý do sửa biến mất; Ctrl+Z về dữ liệu gốc, không về vị trí sửa tự động', () => {
@@ -235,5 +250,56 @@ describe('sửa cảnh trong phiên (cầu nối)', () => {
     expect(Object.keys(again.scene.nodes).sort()).toEqual(Object.keys(first.scene.nodes).sort());
     expect(generatedCount(again.scene)).toBe(generatedCount(first.scene));
     expect(firstCount).toBeGreaterThan(0);
+  });
+
+  it('nhận gợi ý (kéo tấm viền) → dựng lại → Ctrl+Z: trả bản ghi gợi ý, không xoá món trên máy chủ', () => {
+    const SUGG = 'F-000000000SUGG';
+    const page = new Page();
+    page.stored = denormalizeSpatial(
+      normalizeSpatial({ ...stored0, furniture: [...stored0.furniture, piece(SUGG, 'chair', 450, 450, 2500, 1000, { suggested: true })] }),
+    );
+    const loaded = page.load();
+    const outlineId = `item_DRESS-suggested-${SUGG}`;
+    expect(loaded.nodes[outlineId]).toBeDefined();
+    expect(loaded.nodes[`item_${SUGG}`]).toBeUndefined();
+
+    const accept = page.save(moveNode(loaded, outlineId, 0.3, 0));
+    expect(accept.rebuilt).toBe(true);
+    expect(page.stored.furniture.find((f) => f.id === SUGG)?.suggested).not.toBe(true);
+    expect(page.base.nodes[`item_${SUGG}`]).toBeDefined();
+    expect(page.base.nodes[outlineId]).toBeUndefined();
+
+    // Ctrl+Z: ảnh chụp lúc nạp (có tấm viền, không có món thật) → về gợi ý như cũ, không có lệnh xoá.
+    const undo = page.save(loaded);
+    expect(undo.changes.filter((c) => c.after === undefined)).toEqual([]);
+    expect(undo.changes.map((c) => c.id)).toEqual([SUGG]);
+    expect(page.stored.furniture.find((f) => f.id === SUGG)).toMatchObject({ suggested: true, centre: { x: 2500, y: 1000 } });
+  });
+
+  it('xoá đồ sinh, lượt sửa khác làm dựng lại, Ctrl+Z lượt sau: món đã xoá không hiện lại; Ctrl+Z tiếp: món về', () => {
+    const page = new Page();
+    const loaded = page.load();
+    const dress = 'DRESS-plant-R-00000000ROOM-1';
+    expect(loaded.nodes[`item_${dress}`]).toBeDefined();
+    const s1 = dropNode(loaded, `item_${dress}`);
+    expect(page.save(s1).rebuilt).toBe(false);
+    expect(page.stored.rooms[0]?.dressingOff).toEqual([dress]);
+
+    // Ghế (người) dời vào chỗ giường AI đã được dời tới → sửa cảnh đổi → dựng lại.
+    const bed = s1.nodes[`item_${BED}`] as PascalItemNode;
+    const chair = s1.nodes[`item_${CHAIR}`] as PascalItemNode;
+    const s2 = moveNode(s1, `item_${CHAIR}`, bed.position[0] - chair.position[0], bed.position[2] - chair.position[2]);
+    expect(page.save(s2).rebuilt).toBe(true);
+
+    // Ctrl+Z chỉ lượt dời ghế: lượt xoá vẫn đứng.
+    const undoChair = page.save(s1);
+    expect(undoChair.restored).toBe(true);
+    expect(page.stored.rooms[0]?.dressingOff).toEqual([dress]);
+    expect(page.base.nodes[`item_${dress}`]).toBeUndefined();
+
+    // Ctrl+Z tiếp (ảnh chụp lúc nạp, còn món ấy) = hoàn tác chính lượt xoá: món về.
+    page.save(loaded);
+    expect(page.stored.rooms[0]?.dressingOff ?? []).toEqual([]);
+    expect(page.base.nodes[`item_${dress}`]).toBeDefined();
   });
 });

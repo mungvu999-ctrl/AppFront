@@ -492,8 +492,11 @@ export interface RepairSession {
   /** Món như lần đầu phiên thấy (trước mọi sửa của người dùng) — đích khi hoàn tác về một vị trí đã sửa cảnh. */
   readonly firstSeen: Map<FurnitureId, Furniture>;
   readonly touched: Set<FurnitureId>;
-  /** Kết quả theo chữ ký đầu vào; vài mục vì cầu nối và chip đọc hai đồ thị hơi khác (tầng chưa có tỷ lệ). */
-  readonly cache: Map<string, RepairResult>;
+  /**
+   * Phần sửa cảnh theo chữ ký đầu vào (đồ đã sửa, `null` = không sửa gì); vài mục vì cầu nối và chip đọc hai đồ thị hơi
+   * khác (tầng chưa có tỷ lệ). Chỉ nhớ phần sửa, đồ thị ráp từ `stored` mỗi lượt: chữ ký không gồm tầng/mái/trục…
+   */
+  readonly cache: Map<string, { readonly furniture: readonly Furniture[] | null; readonly repairs: readonly SceneRepair[] }>;
 }
 
 export interface RepairResult {
@@ -517,18 +520,17 @@ export const sessionRepairs = (session: RepairSession, stored: SpatialGraph): Re
   }
   const furniture = stored.furniture.map((f) => (session.touched.has(f.id) && classOf(f) === 'ai' ? { ...f, edited: true } : f));
   const key = JSON.stringify([stored.walls, stored.openings, stored.rooms, furniture]);
-  const hit = session.cache.get(key);
-  if (hit !== undefined) return hit;
-
-  const fixed = repairScene({ ...stored, furniture });
+  let hit = session.cache.get(key);
+  if (hit === undefined) {
+    const fixed = repairScene({ ...stored, furniture });
+    hit = { furniture: fixed.repairs.length === 0 ? null : fixed.graph.furniture, repairs: fixed.repairs };
+    // ponytail: bỏ mục cũ nhất khi đầy, không LRU thật — chỉ hai người đọc.
+    if (session.cache.size >= CACHE_MAX) session.cache.delete(session.cache.keys().next().value as string);
+    session.cache.set(key, hit);
+  }
+  if (hit.furniture === null) return { graph: stored, repairs: hit.repairs };
   // Món đã đụng chỉ mang `edited` tạm để luật bỏ qua: trao cho cảnh đúng bản đã lưu.
   const storedById = new Map(stored.furniture.map((f) => [f.id, f]));
-  const result: RepairResult = {
-    graph: fixed.repairs.length === 0 ? stored : { ...fixed.graph, furniture: fixed.graph.furniture.map((f) => (session.touched.has(f.id) ? (storedById.get(f.id) ?? f) : f)) },
-    repairs: fixed.repairs,
-  };
-  // ponytail: bỏ mục cũ nhất khi đầy, không LRU thật — chỉ hai người đọc.
-  if (session.cache.size >= CACHE_MAX) session.cache.delete(session.cache.keys().next().value as string);
-  session.cache.set(key, result);
-  return result;
+  const fixedFurniture = hit.furniture.map((f) => (session.touched.has(f.id) ? (storedById.get(f.id) ?? f) : f));
+  return { graph: { ...stored, furniture: fixedFurniture }, repairs: hit.repairs };
 };

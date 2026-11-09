@@ -14,10 +14,11 @@
  */
 
 import type { FurnitureId, SpatialGraph } from '@/domain/spatial/types';
-import { toPascalId } from '@/lib/pascal/ids';
-import { isGeneratedNodeId } from '@/lib/pascal/sceneDressing';
+import { bodyOfPascalId, toPascalId } from '@/lib/pascal/ids';
+import { dressNodeIdOf, isGeneratedNodeId } from '@/lib/pascal/sceneDressing';
 import { REPAIR_FIELD } from '@/lib/pascal/sceneLayer';
 import type { RepairSession } from '@/lib/pascal/sceneRepair';
+import { SUGGESTED_OUTLINE_PREFIX } from '@/lib/pascal/toPascal';
 import type { PascalNode, PascalNodeId, PascalScene } from '@/lib/pascal/types';
 
 /** Một lượt cầu nối trao cảnh cho editor: node dẫn xuất và món bị sửa cảnh ẩn (vắng khỏi cảnh). */
@@ -43,8 +44,12 @@ const MAX_OLDER = 50;
 
 const sameJson = (a: unknown, b: unknown): boolean => a === b || JSON.stringify(a) === JSON.stringify(b);
 
+/** Tấm viền gợi ý `item_DRESS-suggested-<F>`: có bản ghi đứng sau, `suggestionEditOf` lo cả Ctrl+Z về gợi ý. */
+const isSuggestedOutline = (id: PascalNodeId): boolean => bodyOfPascalId(id).startsWith(SUGGESTED_OUTLINE_PREFIX);
+
 /** Đồ sinh theo luật, hoặc món mang `SceneRepair` (vị trí trong cảnh không phải dữ liệu đã lưu). */
 export const isDerivedNode = (node: PascalNode): boolean => {
+  if (isSuggestedOutline(node.id)) return false;
   if (isGeneratedNodeId(node.id)) return true;
   const appfront = (node.metadata as { appfront?: { fields?: Record<string, unknown> } } | undefined)?.appfront;
   return node.type === 'item' && appfront?.fields?.[REPAIR_FIELD] !== undefined;
@@ -81,8 +86,8 @@ const matchesOlder = (history: DerivedHistory, nodes: Readonly<Record<PascalNode
   );
 };
 
-const dressIdsOf = (node: PascalNode | undefined): unknown =>
-  node?.type === 'zone' ? (node.metadata as { appfront?: { fields?: Record<string, unknown> } } | undefined)?.appfront?.fields?.['dressIds'] : undefined;
+const zoneFieldOf = (node: PascalNode | undefined, key: 'dressIds' | 'dressingOff'): unknown =>
+  node?.type === 'zone' ? (node.metadata as { appfront?: { fields?: Record<string, unknown> } } | undefined)?.appfront?.fields?.[key] : undefined;
 
 const childrenOf = (node: PascalNode | undefined): readonly PascalNodeId[] | null =>
   node !== undefined && 'children' in node ? node.children : null;
@@ -123,7 +128,9 @@ export const restoreDerived = (
     if (!isDerivedNode(node)) continue;
     const now = latest.nodes[id];
     if (now !== undefined && sameJson(now, node)) continue;
-    // Bản chưa từng trao cho editor = người dùng vừa sửa node ấy: để lượt lưu xử lý như thường.
+    // Bản chưa từng trao cho editor = người dùng vừa sửa node ấy: để lượt lưu xử lý như thường. Kể cả sửa không dời
+    // (sơn/đổi mẫu/kéo cỡ) món đang mang sửa cảnh: vị trí sửa tự động đi theo lượt lưu — CHỦ Ý (HOP-DONG-LOP-CANH §3):
+    // người dùng thao tác lên món ở chỗ đang thấy nên chỗ đó được chốt như xác nhận.
     if (!(history.versions.get(id) ?? []).some((v) => sameJson(v, node))) continue;
     restored = true;
     const target = touchedTarget(id) ?? now;
@@ -134,21 +141,29 @@ export const restoreDerived = (
      rồi xoá món duy nhất từng bị ẩn): chọn trả lại (lượt xoá bị nuốt) chứ không ghi xoá. Hết lẫn khi viết lại lịch sử
      zundo lúc dựng lại (main.tsx) thay cho so lúc lưu. */
   const wasHidden = new Set(history.older.flatMap((record) => [...record.hidden]));
-  const missing = Object.values(latest.nodes).filter((node) => nodes[node.id] === undefined && (isGeneratedNodeId(node.id) || wasHidden.has(node.id)));
+  const missing = Object.values(latest.nodes).filter((node) => nodes[node.id] === undefined && ((isGeneratedNodeId(node.id) && !isSuggestedOutline(node.id)) || wasHidden.has(node.id)));
   if (missing.length > 0 && (restored || matchesOlder(history, scene.nodes))) {
     missing.forEach((node) => link(nodes, node));
     restored = true;
   }
   if (restored) {
     // Danh sách đồ sinh của phòng (`dressIds`, H4) cũng là dẫn xuất: theo bản hiện hành, không thì món sinh vắng trong
-    // bản hiện hành bị ghi thành "đã xoá" (`dressingOff`).
+    // bản hiện hành bị ghi thành "đã xoá" (`dressingOff`). `dressingOff` đi cùng: `toSpatial` CỘNG trường này với món
+    // vắng trong `dressIds`, nên giữ bản cũ của ảnh chụp làm rơi món xoá ở lượt sau ảnh chụp. Lấy bản hiện hành, trừ món
+    // ảnh chụp còn node (`scene` gốc, trước khi gỡ) — tức hoàn tác chính lượt xoá ấy.
     for (const node of Object.values(nodes)) {
-      const dressIds = dressIdsOf(latest.nodes[node.id]);
-      if (node.type !== 'zone' || dressIds === undefined || sameJson(dressIdsOf(node), dressIds)) continue;
+      const latestZone = latest.nodes[node.id];
+      const dressIds = zoneFieldOf(latestZone, 'dressIds');
+      if (node.type !== 'zone' || dressIds === undefined) continue;
+      const latestOff = zoneFieldOf(latestZone, 'dressingOff');
+      const dressingOff = (Array.isArray(latestOff) ? latestOff : []).filter(
+        (id): id is string => typeof id === 'string' && scene.nodes[dressNodeIdOf(id)] === undefined,
+      );
+      if (sameJson(zoneFieldOf(node, 'dressIds'), dressIds) && sameJson(zoneFieldOf(node, 'dressingOff') ?? [], dressingOff)) continue;
       const metadata = node.metadata as { appfront: { fields: Record<string, unknown> } };
       nodes[node.id] = {
         ...node,
-        metadata: { ...metadata, appfront: { ...metadata.appfront, fields: { ...metadata.appfront.fields, dressIds } } },
+        metadata: { ...metadata, appfront: { ...metadata.appfront, fields: { ...metadata.appfront.fields, dressIds, dressingOff } } },
       } as PascalNode;
     }
   }
