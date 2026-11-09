@@ -23,9 +23,12 @@ const attrVersion = (a: unknown): number => {
 
 /** Stable number per object (attribute, texture…): a swapped one with an equal version still changes the signature. */
 const ids = new WeakMap<object, number>()
-let nextId = 1
+let nextId = 1e9 // apart from native ids in the same signature slot
 const idOf = (o: unknown): number => {
   if (!o || typeof o !== 'object') return -1
+  // BufferAttribute and Texture carry a unique numeric `id`; only interleaved attributes need the map.
+  const own = (o as { id?: unknown }).id
+  if (typeof own === 'number') return own
   let id = ids.get(o)
   if (id === undefined) ids.set(o, (id = nextId++))
   return id
