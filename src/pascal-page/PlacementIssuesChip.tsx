@@ -1,6 +1,7 @@
 /**
  * Chip "⚠ N lỗi đặt đồ" của thanh trên trang 3D (C7, trước nằm lẫn trong menu Chất lượng).
- * `scenePlacementIssues`: chồng nhau, chắn cửa, lấn tường — chỉ báo, không tự dời đồ. Bấm một dòng
+ * `scenePlacementIssues`: chồng nhau, chắn cửa, lấn tường; `sanitaryPlacementIssues`: thiết bị vệ sinh sai
+ * phòng, trùng, bồn cầu đối diện lavabo — chỉ báo, không tự dời đồ. Bấm một dòng
  * thì chọn món đồ đó trong trình dựng. Không có lỗi thì không hiện gì.
  */
 /* eslint-disable react-refresh/only-export-components -- hàm thuần đi kèm chip để test gọi thẳng. */
@@ -10,6 +11,7 @@ import { useMemo } from 'react';
 import { denormalizeSpatial } from '@/domain/spatial/normalize';
 import { toPascalId } from '@/lib/pascal/ids';
 import { scenePlacementIssues, type PlacementIssue } from '@/lib/pascal/placement';
+import { sanitaryPlacementIssues } from '@/lib/pascal/sanitaryRules';
 import { selectViewerSpatial } from '@/screens/viewer/ViewerShell/viewerShellGateway';
 import { useStore } from '@/store';
 
@@ -82,7 +84,11 @@ export function PlacementIssuesView({ issues, onPick }: PlacementIssuesViewProps
 
 export function PlacementIssuesChip({ useViewer }: { readonly useViewer?: PlacementSelectStore }) {
   const spatial = useStore(selectViewerSpatial);
-  const issues = useMemo(() => (spatial === null ? [] : scenePlacementIssues(denormalizeSpatial(spatial))), [spatial]);
+  const issues = useMemo(() => {
+    if (spatial === null) return [];
+    const graph = denormalizeSpatial(spatial);
+    return [...sanitaryPlacementIssues(graph), ...scenePlacementIssues(graph)];
+  }, [spatial]);
   // ponytail: chỉ chọn, không chuyển tầng — món ở tầng khác cần đổi tầng tay.
   const onPick =
     useViewer === undefined
