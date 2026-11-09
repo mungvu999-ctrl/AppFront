@@ -191,6 +191,8 @@ export function tuneFloorFinish<T extends Material | null>(ref: string | undefin
   if (m.userData[TUNED]) return mat;
   m.colorNode = finishColorNode(finish);
   if (!(matxOn('floor') && glossFloor(m, finish))) applySurfaceNoise(m);
+  // ponytail: vật liệu cache theo preset, dùng chung cho sàn lẫn mặt bàn/tường sơn cùng mã `library:flooring-*` → nhám áp
+  // cả mặt không phải sàn. Tách cần khoá cache riêng + cờ ở ~27 chỗ gọi vendor; làm khi có người sơn đá bóng lên bàn.
   if (matOn('floor-rough')) roughFloor(m, finish);
   m.userData[TUNED] = true;
   m.needsUpdate = true;

@@ -22,10 +22,15 @@ describe('M5-LC cờ ?mat=', () => {
     expect(parseMat('?mat=cap-top&disable=captop').size).toBe(0);
   });
 
-  it('cap-top chỉ cho thư mục dạng tủ (mẫu Pascal + thư viện máy chủ)', () => {
+  it('cap-top chỉ cho thư mục dạng tủ kín (mẫu Pascal + thư viện máy chủ)', () => {
     for (const f of ['wardrobe-sf', 'wardrobe-pro', 'storage-wardrobe-greywash', 'dresser-sf', 'kitchen-cabinet-gen', 'fridge-sf'])
       expect(CAP_TOP_FOLDER.test(f)).toBe(true);
     for (const f of ['curtain', 'plant-ph', 'indoor-plant', 'bed-sf', 'sofa']) expect(CAP_TOP_FOLDER.test(f)).toBe(false);
+  });
+
+  it('cap-top bỏ đồ mở: kệ sách, kệ, kệ tivi, console', () => {
+    for (const f of ['bookshelf', 'bookshelf-ph', 'kitchen-shelf', 'shelf', 'tv-stand', 'tv-unit', 'bookcase', 'console-table', 'storage-box'])
+      expect(CAP_TOP_FOLDER.test(f)).toBe(false);
   });
 });
 

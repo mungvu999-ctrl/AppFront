@@ -13,7 +13,7 @@ import { ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping } from 'three
 
 import { backendOf } from './backend';
 import { setGrade } from './grade';
-import { lookOverride } from './lookOverride';
+import { DEFAULT_LOOK, lookOverride } from './lookOverride';
 import { sceneTier } from './tiers';
 
 export type ToneVariant = 'aces' | 'agx' | 'agx-cal' | 'neutral';
@@ -21,7 +21,7 @@ export type ToneVariant = 'aces' | 'agx' | 'agx-cal' | 'neutral';
 export interface ToneSpec {
   toneMapping: number;
   exposureScale: number;
-  /** Bão hoà tuyệt đối của chấm màu; không có = giữ (`DEFAULT_LOOK` / `?look=`). */
+  /** Bão hoà tuyệt đối của chấm màu; không có = `DEFAULT_LOOK` (đổi biến thể giữa phiên, vd. mất thiết bị → ACES, trả về gốc). */
   saturation?: number;
 }
 
@@ -59,5 +59,6 @@ export function applyTone(gl: ToneTarget, variant = activeTone(gl)): void {
   const spec = TONE_VARIANTS[variant];
   gl.toneMapping = spec.toneMapping;
   gl.toneMappingExposure *= spec.exposureScale;
-  if (spec.saturation !== undefined && lookOverride().saturation === undefined) setGrade({ saturation: spec.saturation });
+  // `?look=saturation:` thắng mọi biến thể (đo dáng).
+  if (lookOverride().saturation === undefined) setGrade({ saturation: spec.saturation ?? DEFAULT_LOOK.saturation });
 }

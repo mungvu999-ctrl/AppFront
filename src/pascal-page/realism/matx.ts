@@ -43,8 +43,11 @@ export const matOn = (name: MatName): boolean => activeMat.has(name);
 
 /** `?mat=floor-rough`: nhám tối thiểu của sàn trong nhà. */
 export const FLOOR_ROUGH_MIN = 0.45;
-/** `?mat=cap-top`: thư mục mẫu dạng tủ/khối kín (mẫu Pascal + thư viện máy chủ `/items/<id>/`). */
-export const CAP_TOP_FOLDER = /wardrobe|closet|cabinet|dresser|sideboard|storage|shelf|bookcase|fridge|commode|chest|console|tv-(?:stand|unit)/;
+/**
+ * `?mat=cap-top`: chỉ thư mục mẫu dạng tủ KÍN (mẫu Pascal + thư viện máy chủ `/items/<id>/`). Đồ mở (kệ sách, kệ, kệ
+ * tivi, console) làm bằng tấm một lớp: mặt sau là mặt thật, bật DoubleSide sẽ tô màu nắp lên chỗ không bị cắt.
+ */
+export const CAP_TOP_FOLDER = /wardrobe|closet|dresser|sideboard|commode|fridge|cabinet|chest/;
 
 /** Kính: độ truyền theo kênh (r, g, b) nhân vào phản xạ — kính float ~ xanh lục nhạt. */
 export const GLASS_TINT = [0.86, 0.95, 0.93] as const;

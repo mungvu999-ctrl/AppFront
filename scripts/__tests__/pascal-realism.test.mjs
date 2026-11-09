@@ -177,6 +177,16 @@ describe('r9y-cut-cap: doi che do tuong khong dung lai vat lieu / luoi gop', () 
   });
 });
 
+describe('r12: anh chup nhanh dung cung cham mau voi viewport', () => {
+  it('snapshot-pipeline doc GRADE_U (bao hoa do applyTone dat), khong con hang GRADE_PARAMS', () => {
+    const id = path.join(PACKAGES, 'viewer/src/lib/snapshot-pipeline.ts');
+    const out = transformRealism(readFileSync(id, 'utf8'), id);
+    assert.match(out, /import \{ GRADE_U \} from '@pascal-realism\/grade'/);
+    assert.match(out, /pow\(vec3\(GRADE_U\.contrast\)\)\.mul\(0\.18\), GRADE_U\.saturation\)/);
+    assert.doesNotMatch(out, /GRADE_PARAMS/);
+  });
+});
+
 describe('r3t-tiers: doi muc khong doi khoa vat lieu canh (chi dung lai quad hau ky)', () => {
   const patched = (file) => {
     const id = path.join(PACKAGES, file);

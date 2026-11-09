@@ -2,6 +2,7 @@ import { ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping } from 'three
 import { describe, expect, it } from 'vitest';
 
 import { GRADE_U } from './grade';
+import { DEFAULT_LOOK } from './lookOverride';
 import { activeTone, applyTone, DEFAULT_TONE, parseTone, toneFlag, TONE_VARIANTS } from './tone';
 
 const webgpu = { backend: { isWebGPUBackend: true } };
@@ -51,5 +52,14 @@ describe('tone', () => {
     expect(c.toneMapping).toBe(AgXToneMapping);
     expect(c.toneMappingExposure).toBeCloseTo(0.8 * TONE_VARIANTS['agx-cal'].exposureScale);
     expect(GRADE_U.saturation.value).toBe(1.1);
+  });
+
+  it('agx-cal → aces giữa phiên (mất thiết bị, ?tone=aces): bão hoà về mặc định', () => {
+    applyTone(gl(), 'agx-cal');
+    expect(GRADE_U.saturation.value).toBe(1.1);
+    const g = gl();
+    applyTone(g, 'aces');
+    expect(g).toEqual(gl());
+    expect(GRADE_U.saturation.value).toBe(DEFAULT_LOOK.saturation);
   });
 });

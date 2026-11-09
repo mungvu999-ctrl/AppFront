@@ -7,7 +7,9 @@
  * - `sun`  : nắng thấp hơn (39° → 24°) để vệt nắng vào sâu qua cửa sổ + nền (ambient/hemi) thấp hơn → tương phản sáng/tối.
  * - `ao`   : AO của SSGI đậm thêm (ao^1,6 sau mũ TRAA 1,6 → tổng ~2,6) ở chân tường/khe đồ; chỗ nắng trực tiếp vẫn
  *            được `aoIndirect` bỏ AO như cũ.
- * - `tone` : tone map Khronos PBR Neutral thay AgX (màu vật liệu giữ đúng, ít xám) + phơi sáng −10 %.
+ * - `tone` : tone map Khronos PBR Neutral thay AgX (màu vật liệu giữ đúng, ít xám) + phơi sáng −10 %. LỖI THỜI từ M6:
+ *            `applyTone` (`?tone=`, mặc định `agx-cal`) chạy sau và đè tone map, phơi sáng bị nhân hai hệ số →
+ *            không ghép với `?tone=`; dùng `?tone=neutral`.
  */
 import { NeutralToneMapping, type Scene, type Texture, EquirectangularReflectionMapping, FileLoader, FloatType } from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
