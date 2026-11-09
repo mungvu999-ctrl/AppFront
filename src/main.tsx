@@ -1,15 +1,15 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import ReactDOM from 'react-dom/client';
 import { RouterProvider } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 
-import { NotificationHost } from './components/feedback/NotificationHost';
 import { MotionProvider } from './components/motion';
 import { ServerFeatureFlagSync } from './components/shell/ServerFeatureFlagSync';
 import { ThemeSync } from './hooks/useTheme';
 import { queryClient } from './lib/query/queryClient';
 import { installFeatureFlagDevPanel } from './lib/telemetry/flags';
 import { router } from './routes';
+import { NotificationHostLazy as NotificationHost } from './components/feedback/NotificationHost.lazy';
 import './styles/globals.css';
 
 // `__featureFlags.list()` in the browser console — see
@@ -56,6 +56,13 @@ if (import.meta.env.DEV) {
  *   route tree there was no place for a notification to appear at all. There is
  *   now, and it is one line.
  *
+ *   It is loaded lazily (09/11/2026): the host only draws what `notificationBus`
+ *   already holds, so a notification published before its chunk arrives is not
+ *   lost — it is shown on mount. This keeps `Toast`, `offlineNotice` and the
+ *   host out of the first-screen chunk, which had hit the 175 KiB budget
+ *   (`scripts/check-bundle-size.mjs`); the fallback is `null` because a toast
+ *   that is not yet mounted should draw nothing, not a placeholder.
+ *
  * The demo picker is not lost: it is the `/demo` route, and only in a
  * development build. `/` is the real dashboard route, `ProjectDashboardRoute`
  * (`src/screens/dashboard/ProjectDashboard/ProjectDashboard.container.tsx`).
@@ -67,7 +74,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <ServerFeatureFlagSync />
         <ThemeSync />
         <RouterProvider router={router} />
-        <NotificationHost />
+        <Suspense fallback={null}>
+          <NotificationHost />
+        </Suspense>
       </MotionProvider>
     </QueryClientProvider>
   </React.StrictMode>,
