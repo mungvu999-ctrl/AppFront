@@ -18,6 +18,7 @@ import type { Node, NodeMaterial } from 'three/webgpu';
 
 import { CUT_CAP_COLOR, CUT_HEIGHT_M, DEFAULT_STOREY_M, liftedCutY, lowCutActive, stepLift, wantsLift } from './cut';
 import { markDirty } from './idle';
+import { lightFlagOn } from './lightFlag';
 import { hasPendingTextures, whenTexturesReady } from './texturePreload';
 
 /** Hằng mặt phẳng khi không cắt: cao hơn mọi công trình → giữ hết. */
@@ -185,7 +186,8 @@ function clipLevel(level: Object3D & ClipGroupFields, storeyM: number, view: Cut
     level.clipIntersection = false;
     level.isClippingGroup = true;
     level.enabled = true;
-    level.clipShadows = true;
+    // `?light=cut-shadow`: phần bị cắt vẫn vẽ vào bản đồ bóng → nắng không lọt qua tường/trần đã cắt.
+    level.clipShadows = !lightFlagOn('cut-shadow');
   }
   if (!lowCut) {
     plane.constant = NO_CUT_CONSTANT;
