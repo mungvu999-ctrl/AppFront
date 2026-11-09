@@ -8,9 +8,11 @@
  */
 import { Color, LinearSRGBColorSpace, MeshPhysicalMaterial, MeshStandardMaterial, SRGBColorSpace } from 'three';
 import type { EventDispatcher, Material, Texture } from 'three';
-import { MeshPhysicalNodeMaterial } from 'three/webgpu';
+import { materialColor, mix, vec3 } from 'three/tsl';
+import { MeshPhysicalNodeMaterial, type Node } from 'three/webgpu';
 import { AUTO, autoPatch, folderOf, itemKindOf, KIND_LOOK, nameKind, tunedRoughness, type KindLook } from './itemLook';
 import { hasPendingTextures, whenTexturesReady } from './texturePreload';
+import { FABRIC, FABRIC_SHEEN_WHITE, fabricSheenColor, matxOn } from './matx';
 import { useRealism } from './store';
 import { tagUpholstery } from './upholstery';
 
@@ -53,7 +55,9 @@ function withSheen(m: TunableMaterial, look: KindLook): TunableMaterial {
   if (typeof src.sheen === 'number') {
     phys = src as unknown as MeshPhysicalMaterial;
   } else {
-    phys = src.isNodeMaterial
+    // M5-L3b `?matx=fabric`: WebGPU → luôn lớp node để sheen theo màu vải (cả sau khi `applyUpholstery` nhuộm).
+    const node = src.isNodeMaterial || (fabricX() && useRealism.getState().backend === 'webgpu');
+    phys = node
       ? (new MeshPhysicalNodeMaterial() as unknown as MeshPhysicalMaterial)
       : new MeshPhysicalMaterial();
     MeshStandardMaterial.prototype.copy.call(phys, src as unknown as MeshStandardMaterial);
@@ -63,7 +67,28 @@ function withSheen(m: TunableMaterial, look: KindLook): TunableMaterial {
   phys.sheen = look.sheen;
   if (look.sheenRoughness != null) phys.sheenRoughness = look.sheenRoughness;
   phys.sheenColor.setScalar(SHEEN_TINT);
+  if (fabricX()) fabricLook(phys);
   return phys as unknown as TunableMaterial;
+}
+
+const fabricX = (): boolean => matxOn('fabric');
+
+/**
+ * M5-L3b `?matx=fabric`: sheen trắng 0,5 làm nếp rèm/chăn sẫm có viền sáng như nhựa. Sheen theo màu vải pha trắng,
+ * mạnh + mềm hơn, nhám 1, specular thấp. Lớp node: màu sheen đọc màu vật liệu lúc vẽ (theo màu nhuộm phong cách).
+ */
+function fabricLook(phys: MeshPhysicalMaterial): void {
+  phys.sheen = FABRIC.sheen;
+  phys.sheenRoughness = FABRIC.sheenRoughness;
+  phys.specularIntensity = FABRIC.specularIntensity;
+  const n = phys as unknown as { isNodeMaterial?: boolean; sheenNode?: unknown };
+  if (n.isNodeMaterial) {
+    const base = (materialColor as unknown as Node<'vec4'>).rgb;
+    n.sheenNode = mix(base, vec3(1), FABRIC_SHEEN_WHITE).mul(FABRIC.sheen);
+  } else {
+    const c = fabricSheenColor([phys.color.r, phys.color.g, phys.color.b]);
+    phys.sheenColor.setRGB(c[0], c[1], c[2], LinearSRGBColorSpace);
+  }
 }
 
 function copyDonorMaps(target: TunableMaterial, donor: TunableMaterial): void {
@@ -172,6 +197,7 @@ export function tuneItemMaterial(mat: Material, ctx: TuneContext): Material {
     return next;
   }
   next.roughness = tunedRoughness(kind!, m.roughness);
+  if (look.sheen != null && fabricX()) next.roughness = FABRIC.roughness;
   // Vải bọc: `applyUpholstery` (sau vòng gán vật liệu của món) nhuộm theo phong cách.
   tagUpholstery(next, kind, ctx.ref, folderOf(ctx.src));
   if (look.metalness != null) next.metalness = look.metalness;
@@ -189,7 +215,7 @@ export function tuneItemMaterial(mat: Material, ctx: TuneContext): Material {
   // Color.set nhận hex sRGB, tự đổi sang tuyến tính. Khe có ref thư viện giữ màu người chọn.
   if (look.color && next.color && !ctx.ref) next.color.set(look.color);
   // KHR_materials_specular của mẫu gốc làm trắng bóng: đưa về mặc định.
-  if (typeof next.specularIntensity === 'number') next.specularIntensity = Math.min(next.specularIntensity, 0.5);
+  if (typeof next.specularIntensity === 'number') next.specularIntensity = Math.min(next.specularIntensity, look.sheen != null && fabricX() ? FABRIC.specularIntensity : 0.5);
   // Loại đoán theo tên không lấy normal donor: UV lạ → vải lấm tấm (giường review2).
   if (tableKind && look.donor && ctx.donor && (!next.normalMap || !next.roughnessMap)) {
     const donor = ctx.donor(look.donor) as TunableMaterial | null;

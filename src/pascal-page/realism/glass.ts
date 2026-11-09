@@ -10,11 +10,14 @@
  *              normal/diffuseColor/velocity vào MRT (SSGI/denoise/TRAA thấy mặt sau kính như khi không có kính).
  * - `transmission`: MeshPhysicalNodeMaterial transmission=1 (three tự chép khung đang vẽ làm ảnh khúc xạ).
  * Tier low / WebGL → luôn `alpha` (vật liệu cũ).
+ * M5-L3b `?matx=glass`: ép `sheet` + env riêng có hình (`matGlass.ts`), tint xanh nhẹ trên phản xạ.
  */
 import { type Color, CustomBlending, type Material, OneFactor, OneMinusSrcAlphaFactor, type Side } from 'three';
 import { float, mix, mrt, positionViewDirection, transformedNormalView, vec4 } from 'three/tsl';
 import { MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, type NodeBuilder } from 'three/webgpu';
 
+import { withGlassEnv } from './matGlass';
+import { matxOn } from './matx';
 import { type RealismBackend, type RealismTier, useRealism } from './store';
 import { sceneTier } from './tiers';
 
@@ -100,9 +103,11 @@ function transmission(src: Src): MeshPhysicalNodeMaterial {
 /** Biến thể thay cho kính `src` theo chế độ hiện tại; null = giữ vật liệu vendor. */
 export function glassVariant(src: Material): Material | null {
   if (!isGlassCandidate(src as GlassCandidate)) return null;
-  const mode = pickGlassMode(glassQuery(), sceneTier(), useRealism.getState().backend);
+  const matx = matxOn('glass');
+  const mode = pickGlassMode(matx ? 'sheet' : glassQuery(), sceneTier(), useRealism.getState().backend);
   if (mode === 'alpha') return null;
   const m = mode === 'sheet' ? sheet(src as Src) : transmission(src as Src);
+  if (matx) withGlassEnv(m);
   m.userData = { ...src.userData, realismGlass: mode };
   return m;
 }
