@@ -306,9 +306,41 @@ const SEAT_HOSTS: ReadonlySet<Furniture['kind']> = new Set(['table', 'kitchenCab
 export const tuckedSeat = (a: Pick<Furniture, 'kind'>, b: Pick<Furniture, 'kind'>): boolean =>
   (a.kind === 'chair' && SEAT_HOSTS.has(b.kind)) || (b.kind === 'chair' && SEAT_HOSTS.has(a.kind));
 
+/** Vai bám tường: tủ áo, tủ bếp, kệ, tủ thấp — lưng áp tường. */
+export const hugsWall = (f: Pick<Furniture, 'kind' | 'variant'>): boolean =>
+  f.kind === 'wardrobe' || f.kind === 'kitchenCabinet' || f.variant === 'shelves' || f.variant === 'cabinet';
+
+/** Dãy tủ: hai món cùng góc (sai ≤ 5°, tính theo bội 90°) giao nhau dọc cạnh dài không quá chừng này, mm. */
+const RUN_OVERLAP_MM = 150;
+const RUN_ALIGN_DEG = 5;
+/**
+ * Hai món bám tường xếp thành dãy (giao nhau dọc tường ≤ 150 mm): mép hộp dò chờm nhau, không phải chồng đồ. "Dọc
+ * tường" = trục riêng của `a` mà hai tâm lệch nhau nhiều hơn (hai tủ đứng cạnh nhau, không cần biết mặt trước).
+ */
+export const cabinetRun = (
+  a: Pick<Furniture, 'kind' | 'variant' | 'centre' | 'boundingBox' | 'rotationDeg'>,
+  b: Pick<Furniture, 'kind' | 'variant' | 'centre' | 'boundingBox' | 'rotationDeg'>,
+): boolean => {
+  if (!hugsWall(a) || !hugsWall(b)) return false;
+  const ra = rectOfFurniture(a);
+  const rb = rectOfFurniture(b);
+  const turn = (((rb.rotationDeg - ra.rotationDeg) % 90) + 90) % 90;
+  if (Math.min(turn, 90 - turn) > RUN_ALIGN_DEG) return false;
+  const [ex, ey] = axesOf(ra);
+  const between = { x: rb.cx - ra.cx, y: rb.cy - ra.cy };
+  const axis = Math.abs(dot(between, ex)) >= Math.abs(dot(between, ey)) ? ex : ey;
+  const span = (r: Rect): [number, number] => {
+    const t = rectCorners(r).map((p) => dot(p, axis));
+    return [Math.min(...t), Math.max(...t)];
+  };
+  const [a0, a1] = span(ra);
+  const [b0, b1] = span(rb);
+  return Math.min(a1, b1) - Math.max(a0, b0) <= RUN_OVERLAP_MM;
+};
+
 /**
  * C7 — lỗi đặt đồ của cả đồ thị (chỉ báo, không dời): nằm ngoài nhà, chồng nhau > 30 % diện tích món nhỏ, chắn
- * vùng mở cửa đi, xuyên tường. Ngoài nhà xét mọi món trừ thang (viền gợi ý, thảm vẫn hiện ngoài nhà); các lỗi còn
+ * vùng mở cửa đi, xuyên tường (dãy tủ chờm nhau ≤ 150 mm dọc tường không tính chồng). Ngoài nhà xét mọi món trừ thang (viền gợi ý, thảm vẫn hiện ngoài nhà); các lỗi còn
  * lại bỏ đồ gợi ý chưa nhận, thang, thảm và ghế kê dưới bàn/quầy.
  */
 export const scenePlacementIssues = (graph: SpatialGraph): PlacementIssue[] => {
@@ -325,7 +357,7 @@ export const scenePlacementIssues = (graph: SpatialGraph): PlacementIssue[] => {
     const walls = wallRects(graph, levelId);
     onLevel.forEach(({ f, r }, i) => {
       for (const { f: g, r: s } of onLevel.slice(i + 1)) {
-        if (!rectsOverlap(r, s) || tuckedSeat(f, g)) continue;
+        if (!rectsOverlap(r, s) || tuckedSeat(f, g) || cabinetRun(f, g)) continue;
         const smaller = Math.min(r.w * r.d, s.w * s.d);
         if (smaller > 0 && overlapAreaMm2(r, s) / smaller > OVERLAP_MAX_FRACTION)
           issues.push({ kind: 'overlap', furnitureIds: [f.id, g.id], message: `${capital(FURNITURE_KIND_LABELS[f.kind])} chồng lên ${FURNITURE_KIND_LABELS[g.kind]}` });

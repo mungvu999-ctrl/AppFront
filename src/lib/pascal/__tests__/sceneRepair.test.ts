@@ -342,4 +342,43 @@ describe('repairScene', () => {
     const bare = graphOf([], [item('F-t', 'table', [800, 500], 2000, 12000)]);
     expect(repairScene(bare).repairs).toEqual([]);
   });
+
+  describe('đồ bám tường chồng nhau: trượt dọc tường, không đẩy ra giữa phòng', () => {
+    // Tủ bếp sâu 600, lưng sát mặt trong tường dưới (y = 100), mặt quay vào phòng (góc 360 = 0, `orientDetected` không quay lại).
+    const cab = (id: string, x: number, w: number) => item(id, 'kitchenCabinet', [w, 600], x, 405, { rotationDeg: 360 } as Partial<Furniture>);
+    /** Bất biến: lưng món (đẩy lùi 150 mm) còn chạm thân tường. */
+    const onWall = (g: SpatialGraph, f: Furniture): boolean => {
+      const r = rectOfFurniture(f);
+      const t = (r.rotationDeg * Math.PI) / 180;
+      const back = { ...r, cx: r.cx + Math.sin(t) * 150, cy: r.cy - Math.cos(t) * 150 };
+      return wallRects(g, 'L-1').some((w) => rectsOverlap(back, w));
+    };
+
+    it('dãy 3 tủ chờm nhau 100 mm: là dãy tủ, không sửa, không lỗi chồng', () => {
+      const g = graphOf([BED_ROOM], [cab('F-a', 600, 300), cab('F-b', 800, 300), cab('F-c', 1000, 300)]);
+      expect(repairScene(g).repairs).toEqual([]);
+      expect(scenePlacementIssues(g).filter((i) => i.kind === 'overlap')).toEqual([]);
+    });
+
+    it('2 tủ chồng 600 mm, tường còn trống: món nhường trượt dọc tường, giữ khoảng cách tường', () => {
+      const g = graphOf([BED_ROOM], [cab('F-a', 1000, 1200), cab('F-b', 1600, 1200)]);
+      const { graph, repairs } = repairScene(g);
+      expect(repairs).toMatchObject([{ furnitureId: 'F-b', action: 'moved', rule: 'overlap' }]);
+      expect(repairs[0]?.reasonVi).toContain('trượt dọc tường');
+      const b = byId(graph, 'F-b') as Furniture;
+      expect(b.centre.y).toBe(405);
+      expect(b.centre.x).toBeGreaterThan(1600);
+      expect(onWall(graph, b)).toBe(true);
+      expect(scenePlacementIssues(graph).filter((i) => i.kind === 'overlap')).toEqual([]);
+    });
+
+    it('không có chỗ dọc tường: giữ nguyên, lỗi chồng còn trên chip (không đẩy ra giữa phòng)', () => {
+      const KITCHEN = room('R-K', 'kitchen', box(0, 0, 2300, 3000), 'Bếp');
+      const g = graphOf([KITCHEN], [cab('F-a', 700, 1200), cab('F-b', 1300, 1200)]);
+      const { graph, repairs } = repairScene(g);
+      expect(repairs).toEqual([]);
+      expect(byId(graph, 'F-b')).toBe(byId(g, 'F-b'));
+      expect(scenePlacementIssues(graph).some((i) => i.kind === 'overlap' && i.furnitureIds.includes('F-b'))).toBe(true);
+    });
+  });
 });

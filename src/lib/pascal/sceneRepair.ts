@@ -14,10 +14,13 @@
  *      (≤ 1,5 m), không được thì giữ nguyên (lỗi còn trên chip).
  *   4. `notAgainstWall` — tủ áo/kệ/tủ bếp lưng cách tường > 150 mm: dời áp lưng vào tường gần nhất còn chỗ (≤ 1,5 m).
  *   5. `overlap` — hai món chồng > 30 % món nhỏ: giữ món ưu tiên (người > AI; giường/sofa/tủ > đồ nhỏ; lớn hơn),
- *      món kia dịch; không được thì chỉ ẩn khi nó là món nhỏ/`other` chồng lên đồ chính, còn lại giữ nguyên.
+ *      món kia dịch; không được thì chỉ ẩn khi nó là món nhỏ/`other` chồng lên đồ chính, còn lại giữ nguyên. Món bám
+ *      tường (`hugsWall`) chỉ TRƯỢT DỌC TƯỜNG (trục x riêng, giữ khoảng cách tường), không có chỗ thì giữ nguyên;
+ *      dãy tủ chờm nhau ≤ 150 mm dọc tường (`cabinetRun`) không phải chồng.
  *   6. `facing` — bồn cầu đối diện lavabo: xoay 90° món AI nếu chỗ mới hợp lệ.
  * Vị trí mới phải hợp lệ như `sceneFurnish.ts`: trong outline lùi 100 mm, tâm không trong phòng khác, cách đồ khác
- * ≥ 50 mm, không lấn vùng mở cửa, không cắt tường. Luật chạy lặp tới điểm dừng (≤ MAX_ROUNDS vòng) nên
+ * ≥ 50 mm, không lấn vùng mở cửa, không cắt tường. Bất biến: món bám tường đang bám tường thì mọi lần dời đều giữ
+ * lưng cách tường ≤ 150 mm (`backOnWall`). Luật chạy lặp tới điểm dừng (≤ MAX_ROUNDS vòng) nên
  * `repairScene(repairScene(g).graph)` không sửa thêm gì.
  */
 
@@ -28,7 +31,9 @@ import { FURNITURE_KIND_LABELS, toPointMm } from '@/lib/commands/business/shared
 
 import { orientDetectedFurniture } from './orientDetected';
 import {
+  cabinetRun,
   doorSwingRects,
+  hugsWall,
   outsideAllRooms,
   furnitureFacingDeg,
   overlapAreaMm2,
@@ -117,8 +122,6 @@ const distToRoom = (room: Room, p: Point): number => {
     }),
   );
 };
-const hugsWall = (f: Furniture): boolean =>
-  f.kind === 'wardrobe' || f.kind === 'kitchenCabinet' || f.variant === 'shelves' || f.variant === 'cabinet';
 
 const labelOf = (f: Furniture): string => {
   const role = sanitaryRoleOf(f);
@@ -190,6 +193,8 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[]): Step[] => {
   const done = new Set<string>();
   const commit = (step: Step): void => {
     const before = work.get(step.id);
+    // Bất biến: món bám tường đang bám tường không bị dời ra xa tường (> BACK_GAP_MM).
+    if (before !== undefined && step.after !== null && hugsWall(before) && backOnWall(before) && dist(before.centre, step.after.centre) >= 1 && !backOnWall(step.after)) return;
     steps.push(step);
     done.add(step.id);
     if (step.after === null) work.delete(step.id);
@@ -213,6 +218,21 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[]): Step[] => {
   };
   const current = (): Furniture[] => [...work.values()];
   const graphNow = (): SpatialGraph => ({ ...graph, furniture: current() });
+
+  /** Mặt trước +y riêng → lưng ở −front; đẩy lùi BACK_GAP_MM mà chạm thân tường là đang bám tường. */
+  const backOnWall = (f: Furniture, r: Rect = rectOfFurniture(f)): boolean => {
+    const t = (r.rotationDeg * Math.PI) / 180;
+    const back = { ...r, cx: r.cx + Math.sin(t) * BACK_GAP_MM, cy: r.cy - Math.cos(t) * BACK_GAP_MM };
+    return levelOf(f.levelId).walls.some((w) => rectsOverlap(back, w));
+  };
+  /** Lệch trượt dọc tường (trục x riêng, gần trước, + trước −) tới `max`. */
+  const slideOffsets = (f: Furniture, max: number): Point[] => {
+    const t = (rectOfFurniture(f).rotationDeg * Math.PI) / 180;
+    const out: Point[] = [];
+    for (let k = 1; k * STEP_MM <= max; k += 1)
+      for (const s of [1, -1]) out.push({ x: Math.cos(t) * s * k * STEP_MM, y: Math.sin(t) * s * k * STEP_MM });
+    return out;
+  };
 
   const levelCache = new Map<string, { walls: Rect[]; swings: Rect[] }>();
   const levelOf = (levelId: Furniture['levelId']) => {
@@ -287,14 +307,22 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[]): Step[] => {
 
   /**
    * Chỗ hợp lệ gần nhất giữ nguyên góc, trong bán kính `max`: đủ khe với mọi đồ trước, rồi chỉ với món ưu tiên hơn,
-   * rồi ngưỡng nới (`valid` relaxed).
+   * rồi ngưỡng nới (`valid` relaxed). Món bám tường đang bám tường: chỗ mới cũng phải bám tường (bất biến).
    */
-  const nearestShift = (f: Furniture, room: Room, max: number, rotationDeg = rectOfFurniture(f).rotationDeg): Placed | null => {
+  const nearestShift = (
+    f: Furniture,
+    room: Room,
+    max: number,
+    rotationDeg = rectOfFurniture(f).rotationDeg,
+    offsets: readonly Point[] = offsetsWithin(max),
+  ): Placed | null => {
+    const keepWall = hugsWall(f) && backOnWall(f);
     for (const [strongerOnly, relaxed] of [[false, false], [true, false], [true, true]] as const) {
       const obstacles = obstaclesOf(f, strongerOnly);
-      for (const o of offsetsWithin(max)) {
+      for (const o of offsets) {
         const at = { centre: { x: f.centre.x + o.x, y: f.centre.y + o.y }, rotationDeg };
-        if (valid(rectAt(f, at), f, room, obstacles, relaxed)) return at;
+        const rect = rectAt(f, at);
+        if (valid(rect, f, room, obstacles, relaxed) && (!keepWall || backOnWall(f, rect))) return at;
       }
     }
     return null;
@@ -407,11 +435,7 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[]): Step[] => {
     if (live(f.id) === undefined || !hugsWall(f)) continue;
     const room = roomOf(f);
     if (room === undefined) continue;
-    const r = rectOfFurniture(f);
-    const t = (r.rotationDeg * Math.PI) / 180;
-    // Mặt trước +y riêng → lưng ở −front; đẩy lùi BACK_GAP_MM mà chạm thân tường là đang bám tường.
-    const back = { ...r, cx: r.cx + Math.sin(t) * BACK_GAP_MM, cy: r.cy - Math.cos(t) * BACK_GAP_MM };
-    if (levelOf(f.levelId).walls.some((w) => rectsOverlap(back, w))) continue;
+    if (backOnWall(f)) continue;
     const at = wallSpots(f, room, f.centre, MAX_SHIFT_MM);
     if (at === null) continue;
     const moved = dist(at.centre, f.centre) >= 1;
@@ -434,13 +458,20 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[]): Step[] => {
       const rb = rectOfFurniture(fb);
       const smaller = Math.min(ra.w * ra.d, rb.w * rb.d);
       if (!rectsOverlap(ra, rb) || !(smaller > 0) || overlapAreaMm2(ra, rb) / smaller <= OVERLAP_MAX_FRACTION) continue;
-      if (tucked(fa, fb)) continue;
+      if (tucked(fa, fb) || cabinetRun(fa, fb)) continue;
       const [keep, yield_] = outranks(fa, fb) ? [fa, fb] : [fb, fa];
       if (live(yield_.id) === undefined) continue;
       const room = roomOf(yield_);
       if (room === undefined) continue;
-      const at = nearestShift(yield_, room, MAX_SHIFT_MM);
       const what = `${capital(labelOf(yield_))} chồng lên ${labelOf(keep)}`;
+      // Món bám tường: chỉ trượt dọc tường đang bám, không đẩy ra giữa phòng; không có chỗ thì giữ nguyên (lỗi trên chip).
+      if (hugsWall(yield_)) {
+        const slid = backOnWall(yield_) ? nearestShift(yield_, room, MAX_SHIFT_MM, undefined, slideOffsets(yield_, MAX_SHIFT_MM)) : null;
+        if (slid !== null)
+          commit({ id: yield_.id, rule: 'overlap', reasonVi: `${what}: trượt dọc tường ${mm(dist(slid.centre, yield_.centre))} ra chỗ trống.`, after: movedTo(yield_, slid, room.id) });
+        continue;
+      }
+      const at = nearestShift(yield_, room, MAX_SHIFT_MM);
       // Chỉ món nhỏ/`other` chồng lên đồ chính mới được ẩn; còn lại không có chỗ thì giữ nguyên, lỗi còn trên chip.
       if (at === null && !(isMinor(yield_) && isMain(keep))) continue;
       commit(
