@@ -274,9 +274,14 @@ const capital = (text: string): string => text.charAt(0).toUpperCase() + text.sl
 /** Thảm/tấm mỏng hơn mức này (mm) nằm dưới đồ khác: không xét. */
 const FLAT_MAX_MM = 50;
 
+const SEAT_HOSTS: ReadonlySet<Furniture['kind']> = new Set(['table', 'kitchenCabinet']);
+/** Ghế kê dưới bàn/quầy: chồng hình hợp lệ (bàn ăn có ghế), không phải lỗi. */
+export const tuckedSeat = (a: Pick<Furniture, 'kind'>, b: Pick<Furniture, 'kind'>): boolean =>
+  (a.kind === 'chair' && SEAT_HOSTS.has(b.kind)) || (b.kind === 'chair' && SEAT_HOSTS.has(a.kind));
+
 /**
  * C7 — lỗi đặt đồ của cả đồ thị (chỉ báo, không dời): chồng nhau > 30 % diện tích món nhỏ, chắn vùng
- * mở cửa đi, xuyên tường. Bỏ đồ gợi ý chưa nhận, thang và thảm.
+ * mở cửa đi, xuyên tường. Bỏ đồ gợi ý chưa nhận, thang, thảm và ghế kê dưới bàn/quầy.
  */
 export const scenePlacementIssues = (graph: SpatialGraph): PlacementIssue[] => {
   const items = graph.furniture.filter(
@@ -290,7 +295,7 @@ export const scenePlacementIssues = (graph: SpatialGraph): PlacementIssue[] => {
     const walls = wallRects(graph, levelId);
     onLevel.forEach(({ f, r }, i) => {
       for (const { f: g, r: s } of onLevel.slice(i + 1)) {
-        if (!rectsOverlap(r, s)) continue;
+        if (!rectsOverlap(r, s) || tuckedSeat(f, g)) continue;
         const smaller = Math.min(r.w * r.d, s.w * s.d);
         if (smaller > 0 && overlapAreaMm2(r, s) / smaller > OVERLAP_MAX_FRACTION)
           issues.push({ kind: 'overlap', furnitureIds: [f.id, g.id], message: `${capital(FURNITURE_KIND_LABELS[f.kind])} chồng lên ${FURNITURE_KIND_LABELS[g.kind]}` });

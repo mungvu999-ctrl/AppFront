@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { denormalizeSpatial } from '@/domain/spatial/normalize';
-import type { SpatialGraph } from '@/domain/spatial/types';
+import type { FurnitureId, SpatialGraph } from '@/domain/spatial/types';
 import { useFloorLayerAutosave } from '@/hooks/useAutosave';
 import { useSession } from '@/hooks/useSession';
 import { can } from '@/lib/auth/permissions';
@@ -21,6 +21,7 @@ import type { DesignAddition, DesignConcept, DesignConceptState, DesignStyleId }
 import { sceneStyleFromConcept } from '@/lib/pascal/designStyles';
 import { readSceneStyle, SCENE_STYLES, type SceneStyle, type SceneStyleId } from '@/lib/pascal/sceneStyles';
 import { toPascalId } from '@/lib/pascal/ids';
+import { freezeRepairs, reapplyRepairs, repairScene, type FrozenRepair } from '@/lib/pascal/sceneRepair';
 import { toPascalScene } from '@/lib/pascal/toPascal';
 import type { PascalNode, PascalNodeId, PascalScene } from '@/lib/pascal/types';
 import { ROUTES } from '@/routes/paths';
@@ -30,6 +31,7 @@ import { selectViewerSpatial } from '@/screens/viewer/ViewerShell/viewerShellGat
 import { useStore } from '@/store';
 import type { ProjectRole } from '@/types/project';
 
+import { sceneRepairStore } from '../sceneRepairStore';
 import { scaleStatusOf } from '../useScaleStatus';
 import { resolveBackHref } from './backHref';
 import type { PascalBridge, PascalConfirm, PascalNotice, PascalSaveStatus, PascalSceneGraph } from './types';
@@ -446,11 +448,21 @@ export function usePascalProjectBridge(
      `toPascalScene` dùng chung nó, không thì giá trị sinh ra lệch nhau → "sửa ma". */
   /* Tầng chưa có tỷ lệ (cùng danh sách của dải cảnh báo): chốt ở `onLoad`, mọi lượt dựng lại dùng chung. */
   const missingFloors = useRef<ReadonlySet<string>>(new Set());
+  const frozenRepairs = useRef<ReadonlyMap<FurnitureId, FrozenRepair> | null>(null);
   const sceneFromStore = useCallback((): PascalScene | null => {
     const current = selectViewerSpatial(useStore.getState());
     if (current === null) return null;
 
-    const graph = withoutFloorContents(denormalizeSpatial(current), missingFloors.current);
+    const stored = withoutFloorContents(denormalizeSpatial(current), missingFloors.current);
+    /* Sửa cảnh cho đồ AI chưa xác nhận (`sceneRepair.ts`): chỉ trên đồ thị trao cho cảnh, kho giữ bản gốc nên tự lưu
+       ghi đúng dữ liệu gốc; lượt sửa sau chỉ ghi node người dùng đụng (chênh với mốc `loadedScene` = cảnh đã sửa).
+       Kết quả chốt ở lượt dựng đầu; lượt dựng lại giữa phiên áp lại đúng nó cho món AI chưa đụng (`reapplyRepairs`). */
+    if (frozenRepairs.current === null) frozenRepairs.current = freezeRepairs(stored, repairScene(stored));
+    const { graph, repairs } = sceneRepairStore.get().enabled
+      ? reapplyRepairs(stored, frozenRepairs.current)
+      : { graph: stored, repairs: [] };
+    sceneRepairStore.set({ repairs, frozen: frozenRepairs.current });
+    // ponytail: chưa ghi metadata `repair` lên node — chờ option `repairs` của `toPascalScene` (làn 1).
     // Đồ AI bổ sung (AID-01) và chế độ tự bày dự phòng đi cùng phong cách: chốt một lần mỗi lượt
     // mở trang, mọi lượt dựng dùng chung, không thì "sửa ma".
     const scene = toPascalScene(graph, {
@@ -493,6 +505,20 @@ export function usePascalProjectBridge(
     const restored = sceneFromStore();
     if (restored !== null) applyScene?.(restored);
   }, [applyScene, sceneFromStore]);
+
+  /* "Hiện dữ liệu gốc" (chip lỗi đặt đồ) bật/tắt sửa cảnh: dựng lại từ kho rồi lấy cảnh mới làm mốc, như lượt nhận
+     gợi ý — đổi hiển thị không phải lượt sửa, không được ghi vị trí nào về máy chủ. */
+  useEffect(() => {
+    let last = sceneRepairStore.get().enabled;
+    return sceneRepairStore.subscribe(() => {
+      const { enabled } = sceneRepairStore.get();
+      if (enabled === last) return;
+      last = enabled;
+      revertToStore();
+      const rebuilt = editorScene?.();
+      if (rebuilt !== undefined) rebaseOnRebuilt(rebuilt as PascalScene);
+    });
+  }, [editorScene, rebaseOnRebuilt, revertToStore]);
 
   const onSave = useCallback(
     async (scene: unknown): Promise<void> => {

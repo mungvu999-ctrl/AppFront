@@ -40,6 +40,8 @@ export interface PascalProbe {
   reflect(): unknown;
   /** Đổi nút vật liệu/phơi sáng lúc chạy (đo biến thể cùng một lần nạp): nhiễu bề mặt, kính, exposure. */
   setLook(v: { surf?: { rough?: number; albedo?: number; scale?: number }; exposure?: number; grade?: { contrast?: number; saturation?: number } }): void;
+  /** Các lần sửa cảnh (`SceneRepair`: món, hành động, luật, lý do, trước/sau) mà lượt dựng gần nhất đã áp. */
+  repairs(): readonly unknown[];
 }
 
 export interface ProbeItem {
@@ -137,9 +139,11 @@ export interface PascalProbeStores {
     exposure(v: number): void;
     grade(v: { contrast?: number; saturation?: number }): void;
   };
+  /** Danh sách sửa cảnh hiện hành (`sceneRepairStore`). */
+  readonly repairs?: () => readonly unknown[];
 }
 
-export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter, useInteractive, look }: PascalProbeStores): PascalProbe => {
+export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter, useInteractive, look, repairs }: PascalProbeStores): PascalProbe => {
   const nodes = () => useScene.getState().nodes as Record<string, LooseNode>;
   const entries = () => Object.entries(nodes());
   const entriesOf = (type: string) => entries().filter(([, n]) => n.type === type);
@@ -210,6 +214,7 @@ export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter,
       const { lampItems, setControlValue } = useInteractive.getState();
       for (const [id, indices] of Object.entries(lampItems)) for (const i of indices) setControlValue(id, i, on);
     },
+    repairs: () => [...(repairs?.() ?? [])],
     reflect: () => ({ ...((globalThis as { __realismReflect?: object }).__realismReflect ?? {}) }),
     itemMaterials: (match) => {
       const out: Record<string, unknown>[] = [];

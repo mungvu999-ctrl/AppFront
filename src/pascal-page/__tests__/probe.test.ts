@@ -119,4 +119,11 @@ describe('pascal probe', () => {
       ['L2', 1, false],
     ]);
   });
+
+  it('repairs() trả danh sách sửa cảnh (rỗng khi không nối nguồn)', () => {
+    const { stores } = fakeStores();
+    expect(install('?probe=1', stores)?.repairs()).toEqual([]);
+    const repair = { furnitureId: 'F-1', action: 'hidden', rule: 'roomMismatch', reasonVi: 'x', before: { centre: { x: 0, y: 0 }, rotationDeg: 0 } };
+    expect(install('?probe=1', { ...stores, repairs: () => [repair] })?.repairs()).toEqual([repair]);
+  });
 });
