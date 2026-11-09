@@ -233,7 +233,8 @@ export function captureChangedNodes() {
     const node = nodes[id]
     if (!node) continue
     if (BATCH_KINDS.has(node.type)) changedNodes.add(id as string)
-    else if (node.type === 'wall' && Array.isArray(node.children)) {
+    // (walls may be a batch kind themselves — their trims — and still carry openings)
+    if (node.type === 'wall' && Array.isArray(node.children)) {
       // The wall edit moved its openings in level space; their own marks may
       // never come.
       for (const childId of node.children) {
@@ -436,7 +437,8 @@ function processBatchFrame(
     // commit whose mark re-offers the node; dropping it here would strand it.
     if (
       ((sceneNodes[nodeId as AnyNodeId]?.type === 'slab' ||
-        sceneNodes[nodeId as AnyNodeId]?.type === 'ceiling') &&
+        sceneNodes[nodeId as AnyNodeId]?.type === 'ceiling' ||
+        sceneNodes[nodeId as AnyNodeId]?.type === 'wall') &&
         (wallsPending ||
           surfaceLevelReadyAt.has(sceneNodes[nodeId as AnyNodeId]!.parentId ?? ''))) ||
       tinted.has(nodeId) ||

@@ -413,7 +413,8 @@ describe('R3F 9.6.1 pointer-event differential', () => {
     expect(warn).toHaveBeenCalledTimes(2)
   })
 
-  test('camera move bursts dispatch only the first move, then resume at 100 ms or immediately after release', async () => {
+  test('?disable=hoverdrag: camera move bursts dispatch only the first move, then resume at 100 ms or immediately after release', async () => {
+    perfWindow('?disable=hoverdrag')
     let now = 0
     const clock = spyOn(performance, 'now').mockImplementation(() => now)
     cleanups.push(() => clock.mockRestore())
@@ -450,7 +451,8 @@ describe('R3F 9.6.1 pointer-event differential', () => {
     expect(cached.calls.get('b')).toBe(3)
   })
 
-  test('hover survives camera moves and leaves empty space exactly once after release, as stock', async () => {
+  test('?disable=hoverdrag: hover survives camera moves and leaves empty space exactly once after release, as stock', async () => {
+    perfWindow('?disable=hoverdrag')
     let now = 0
     const clock = spyOn(performance, 'now').mockImplementation(() => now)
     cleanups.push(() => clock.mockRestore())
@@ -478,6 +480,38 @@ describe('R3F 9.6.1 pointer-event differential', () => {
     })
   })
 
+  test('camera drag skips the move raycast but records the pointer for the drag-end refresh', async () => {
+    const f = await fixture(createPascalPointerEvents)
+    const delivered: string[] = []
+    f.mesh('a', [1], handlerNames, (name) => delivered.push(name))
+    useViewer.setState({ cameraDragging: true })
+    const computes = () => f.trace.filter((row) => Array.isArray(row) && row[0] === 'compute').length
+    const before = computes()
+    f.send('onPointerMove', 200)
+    f.send('onPointerMove', 50)
+    expect(delivered).toEqual([])
+    expect(computes()).toBe(before)
+    expect((f.state.internal.lastEvent.current as PointerEvent).offsetX).toBe(50)
+    useViewer.setState({ cameraDragging: false })
+    // What realism rule u45 calls on drag end: one raycast at the recorded position.
+    f.state.events.update?.()
+    expect(delivered).toEqual(['onPointerOver', 'onPointerEnter', 'onPointerMove'])
+  })
+
+  test('camera drag with a pointer capture still dispatches moves', async () => {
+    const f = await fixture(createPascalPointerEvents)
+    const delivered: string[] = []
+    f.mesh('a', [1], handlerNames, (name, event) => {
+      delivered.push(name)
+      if (name === 'onPointerDown') event.target.setPointerCapture(event.pointerId)
+    })
+    f.send('onPointerDown')
+    delivered.length = 0
+    useViewer.setState({ cameraDragging: true })
+    f.send('onPointerMove', 200)
+    expect(delivered).toContain('onPointerMove')
+  })
+
   test('camera drag preserves down/up, initial click targets, click, double click, context menu and wheel', async () => {
     await differential((f) => {
       useViewer.setState({ cameraDragging: true })
@@ -497,7 +531,8 @@ describe('R3F 9.6.1 pointer-event differential', () => {
     })
   })
 
-  test('camera drag preserves capture delivery, propagation and release on admitted moves', async () => {
+  test('?disable=hoverdrag: camera drag preserves capture delivery, propagation and release on admitted moves', async () => {
+    perfWindow('?disable=hoverdrag')
     let now = 0
     const clock = spyOn(performance, 'now').mockImplementation(() => now)
     cleanups.push(() => clock.mockRestore())
