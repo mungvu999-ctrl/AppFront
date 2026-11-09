@@ -577,7 +577,11 @@ export function usePascalProjectBridge(
           if (massDeleteRef.current?.reason !== rejection.current) revertToStore();
           throw new Error(rejection.current);
         }
-        if (!ok) return;
+        // Hoàn tác chỉ chạm node dẫn xuất (không có gì để ghi): vẫn dựng lại để cảnh hết node cũ.
+        if (!ok) {
+          if (restored) rebuildFromStore();
+          return;
+        }
         /* Dựng lại cảnh từ kho khi: vừa nhận món gợi ý (tấm viền thành mẫu thật; Ctrl+Z về cảnh còn tấm viền và
            `suggestionEditOf` trả bản ghi gợi ý), sửa cảnh của dữ liệu mới khác cảnh đang hiện (dời tường, dời món, …),
            hay vừa gỡ node dẫn xuất cũ do hoàn tác. */
