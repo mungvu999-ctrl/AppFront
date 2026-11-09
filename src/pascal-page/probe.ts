@@ -11,6 +11,7 @@ import { setGrade } from './realism/grade';
 import { markDirty } from './realism/idle';
 import { setSurfaceNoise } from './realism/surfaceNoise';
 import { DAY_THEME_ID, SUNSET_THEME_ID } from './renderLook';
+import { sceneRepairStore } from './sceneRepairStore';
 
 declare global {
   interface Window {
@@ -24,6 +25,7 @@ installPascalProbe(window.location.search, window, {
   sceneRegistry,
   emitter,
   useInteractive,
+  repairs: () => sceneRepairStore.get().repairs,
   look: {
     surf: (v) => { setSurfaceNoise(v); markDirty('probe:look', 1500); },
     grade: (v) => { setGrade(v); markDirty('probe:look', 1500); },

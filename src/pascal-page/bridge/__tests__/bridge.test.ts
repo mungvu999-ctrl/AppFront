@@ -6,10 +6,12 @@ import { normalizeSpatial } from '@/domain/spatial/normalize';
 import { UpdateProjectSettingsSchema } from '@/api/schemas/projectSettings';
 import { SCENE_STYLE_STORAGE_KEY, SCENE_STYLES, sceneStylePreviewKey } from '@/lib/pascal/sceneStyles';
 import { createPascalEditCommand } from '@/lib/pascal/fromPascal';
+import { repairScene } from '@/lib/pascal/sceneRepair';
 import { toPascalScene } from '@/lib/pascal/toPascal';
 import type { PascalScene } from '@/lib/pascal/types';
 import type * as ToPascal from '@/lib/pascal/toPascal';
 import type * as AuthSession from '@/lib/auth/session';
+import { sceneRepairStore } from '@/pascal-page/sceneRepairStore';
 import { useStore } from '@/store';
 import type { ProjectRole } from '@/types/project';
 
@@ -378,7 +380,7 @@ describe('usePascalProjectBridge', () => {
     await act(async () => {
       scene = await result.current.onLoad();
     });
-    expect(scene).toEqual(toPascalScene(createSampleBuilding(), { furnish: 'on' }).scene);
+    expect(scene).toEqual(toPascalScene(repairScene(createSampleBuilding()).graph, { furnish: 'on' }).scene);
   });
 
   it('vai người xem: chỉ đọc', async () => {
@@ -418,6 +420,10 @@ describe('usePascalProjectBridge', () => {
     const { result } = renderHook(() => usePascalProjectBridge('p1', (scene) => applied.push(scene as PascalScene)));
 
     await waitFor(() => expect(result.current.status).toBe('ready'));
+    let loaded: unknown;
+    await act(async () => {
+      loaded = await result.current.onLoad();
+    });
 
     await expect(result.current.onSave({ nodes: {}, rootNodeIds: [] })).resolves.toBeUndefined();
     commit.ok = false;
@@ -431,10 +437,14 @@ describe('usePascalProjectBridge', () => {
     const graph = useStore.getState().spatial;
     const restored = applied[0];
     if (graph === null || restored === undefined) throw new Error('thiếu kho hoặc cảnh dựng lại');
+    // Sửa cảnh chốt lúc nạp: cảnh dựng lại khớp đúng cảnh lúc nạp (không chênh "sửa ma"); ngoài các món đã sửa cảnh,
+    // mọi node đọc ngược khớp kho.
+    expect(restored).toEqual(loaded);
+    const repaired = new Set(sceneRepairStore.get().repairs.map((r) => `item_${r.furnitureId}`));
     const back = createPascalEditCommand({
       graph,
       scene: restored,
-      commit: { origin: 'load', changedNodeIds: Object.keys(restored.nodes) },
+      commit: { origin: 'load', changedNodeIds: Object.keys(restored.nodes).filter((id) => !repaired.has(id)) },
       actorId: 'u1',
     });
 
@@ -705,7 +715,7 @@ describe('usePascalProjectBridge', () => {
     });
     const sample = createSampleBuilding();
     const hidden = new Set([sampleLevelId(1)]);
-    expect(scene).toEqual(markNotBuilt(toPascalScene(withoutFloorContents(sample, hidden), { furnish: 'on' }).scene, hidden));
+    expect(scene).toEqual(markNotBuilt(toPascalScene(repairScene(withoutFloorContents(sample, hidden)).graph, { furnish: 'on' }).scene, hidden));
     // UX-R2 K36: danh sách tầng của editor đọc dấu này để ghi "Chưa dựng".
     const notBuilt = (levelId: string) =>
       (scene?.nodes[`level_${levelId}`] as { metadata?: Record<string, unknown> } | undefined)?.metadata?.[NOT_BUILT_KEY];
