@@ -92,6 +92,19 @@ describe('pascal probe', () => {
     ]);
   });
 
+  it('rooms() và openings() trả phòng (zone) và ô mở (m4-l5)', () => {
+    const { stores } = fakeStores();
+    const nodes = {
+      level_a: { type: 'level', level: 0 },
+      z1: { type: 'zone', name: 'PN', parentId: 'level_a', polygon: [[0, 0], [4, 0], [4, 3]], metadata: { appfront: { fields: { usage: 'bedroom' } } } },
+      d1: { type: 'door', wallId: 'w2', position: [1, 1, 0], width: 0.9 },
+      n1: { type: 'window', wallId: 'w2', position: [2, 1.5, 0], width: 1.2 },
+    };
+    const probe = install('?probe=1', { ...stores, useScene: { getState: () => ({ nodes, updateNode: vi.fn() }) } });
+    expect(probe?.rooms()).toEqual([{ id: 'z1', name: 'PN', usage: 'bedroom', polygon: [[0, 0], [4, 0], [4, 3]], levelId: 'level_a', levelIndex: 0 }]);
+    expect(probe?.openings().map((o) => [o.id, o.type, o.wallId])).toEqual([['d1', 'door', 'w2'], ['n1', 'window', 'w2']]);
+  });
+
   it('editNode() gọi useScene.updateNode (móc C13)', () => {
     const { stores, updateNode } = fakeStores();
     install('?probe=1', stores)?.editNode('w2', { thickness: 0.3 });
