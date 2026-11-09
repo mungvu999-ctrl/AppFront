@@ -2,10 +2,12 @@
  * Tường sơn phẳng tuyệt đối trông như ảnh dựng giả. Vendor `wall-materials.ts` bọc kết quả
  * `resolveMaterialRef` của khe tường bằng `tuneWallPaint` (luật scripts/realism/r10-surfaces.mjs).
  * Sơn trơn (không ảnh) → clone + normal thạch cao trắng (R5 `plaster-white`) rất nhẹ, UV theo mét.
+ * Thêm biến thiên độ nhám/màu tần số thấp (`surfaceNoise`, `?disable=surfnoise` tắt).
  * Vật liệu thư viện có ảnh, kính, kim loại, chế độ solid → giữ nguyên. Cờ `materials` tắt → y cũ.
  */
 import { type Material, RepeatWrapping, type Texture, TextureLoader, Vector2 } from 'three';
 import { useRealism } from './store';
+import { applySurfaceNoise } from './surfaceNoise';
 
 /** Ảnh normal thạch cao trắng (R5, Poly Haven CC0), cạnh thật 2,5 m. */
 export const PLASTER_NORMAL_URL = '/pascal/material/extra/plaster-white/plaster-white_normal_512.webp';
@@ -63,6 +65,7 @@ export function tuneWallPaint<T extends Material | null | undefined>(mat: T): T 
   const tex = plasterNormal();
   if (loaded) next.normalMap = tex;
   next.normalScale = new Vector2(WALL_NORMAL_SCALE, WALL_NORMAL_SCALE);
+  applySurfaceNoise(next, { albedo: true });
   cache.set(mat.uuid, next);
   return next as unknown as T;
 }

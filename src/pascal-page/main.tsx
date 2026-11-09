@@ -33,7 +33,7 @@ import { prefetchHdri } from './realism/lighting-hdri';
 import { realismFlagsFrom, useRealism } from './realism/store';
 import { preloadSceneTextures } from './realism/texturePreload';
 import { setDetailsEnabled } from './realism/details';
-import { applyDayLook, applyRenderLook, DAY_THEME_ID } from './renderLook';
+import { applyDayLook, applyLookExposure, applyRenderLook, DAY_THEME_ID, SUNSET_THEME_ID } from './renderLook';
 import { useSceneLoader } from './sceneLoader';
 import { SwapModelCard } from './SwapModelCard';
 import { PascalTour } from './tour/PascalTour';
@@ -61,6 +61,7 @@ const builtinsLoaded = loadPlugin(builtinPlugin).then(() => {
 applyRenderLook(getSceneTheme('night'), SSGI_PARAMS);
 // "Ban ngày" của thẻ Ánh sáng: đè chủ đề sáng `studio` cùng cách.
 applyDayLook(getSceneTheme(DAY_THEME_ID));
+applyLookExposure(getSceneTheme(SUNSET_THEME_ID));
 // editor-realism: cờ `viewer.realism-*` → store (đọc một lần lúc mở trang: mặc định + override dev).
 // eslint-disable-next-line local/no-direct-set -- store cờ realism riêng của trang Pascal (không phải store dự án), nạp một lần lúc mở trang.
 useRealism.setState({ flags: realismFlagsFrom(getFeatureFlagsSnapshot().values) });
@@ -80,6 +81,7 @@ useRealism.subscribe((state, prev) => {
   if (state.backend === prev.backend && state.tier === prev.tier) return;
   applyRenderLook(getSceneTheme('night'), SSGI_PARAMS);
   applyDayLook(getSceneTheme(DAY_THEME_ID));
+  applyLookExposure(getSceneTheme(SUNSET_THEME_ID));
 });
 // Áo trang theo sáng/tối của AppFront (`app-theme-mode`), trước lượt vẽ đầu.
 syncChromeTheme();

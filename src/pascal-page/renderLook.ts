@@ -12,6 +12,7 @@
  */
 import { RENDER_LOOK_PALETTE as C } from '@/lib/pascal/scenePalette';
 
+import { lookOverride, withLookOverride } from './realism/lookOverride';
 import { useRealism } from './realism/store';
 import { tierConfig } from './realism/tiers';
 
@@ -90,7 +91,7 @@ export function applyRenderLook(theme: RenderLookTheme, ssgi: RenderLookSsgi, we
       { position: [...KEY_POSITION], color: C.key, intensity: t.key, castShadow: true },
       { position: [...FILL_POSITION], color: C.fill, intensity: t.fill },
     ],
-    toneMappingExposure: t.exposure,
+    toneMappingExposure: withLookOverride({ exposure: t.exposure }).exposure,
     clayTints: {
       wall: C.clayWall,
       floor: C.clayFloor,
@@ -118,6 +119,12 @@ export const DAY_LOOK_TIERS = {
   low: { ambient: 0.3, hemi: 0.45, key: 2.6, fill: 0.35, exposure: 0.9 },
 } as const;
 
+/** Chủ đề không có bảng tier riêng (Nắng chiều `sunset`): chỉ nhận `?look=exposure:` khi có. */
+export function applyLookExposure(theme: RenderLookTheme): void {
+  const e = lookOverride().exposure;
+  if (e !== undefined) theme.toneMappingExposure = e;
+}
+
 /** Đè chủ đề ban ngày (`DAY_THEME_ID`) tại chỗ; giữ phông/đất/màu đất sét của `studio`. */
 export function applyDayLook(theme: RenderLookTheme, webgpu = ssgiRuns()): void {
   const t = DAY_LOOK_TIERS[webgpu ? 'high' : 'low'];
@@ -128,6 +135,6 @@ export function applyDayLook(theme: RenderLookTheme, webgpu = ssgiRuns()): void 
       { position: [...SUN_POSITION], color: C.key, intensity: t.key, castShadow: true },
       { position: [...SKY_FILL_POSITION], color: C.hemiSky, intensity: t.fill },
     ],
-    toneMappingExposure: t.exposure,
+    toneMappingExposure: withLookOverride({ exposure: t.exposure }).exposure,
   } satisfies Partial<RenderLookTheme>);
 }
