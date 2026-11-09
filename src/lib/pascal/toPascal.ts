@@ -41,6 +41,7 @@ import type {
 import { degrees, degreesToRadians, millimetres, millimetresToMetres } from '@/domain/units/types';
 import { isGlassWall } from '@/domain/walls/glass';
 import { FURNITURE_KIND_LABELS, WALL_KIND_LABELS } from '@/lib/commands/business/shared';
+import { applyBuildx } from '@/pascal-page/realism/buildx';
 import { EXTERIOR_SKIRTING, isDetailsEnabled } from '@/pascal-page/realism/details';
 
 import { designAdditionsOf } from './designStyles';
@@ -1648,6 +1649,8 @@ export const toPascalScene = (
   const materials = Object.fromEntries([...SCENE_MATERIALS, ...SCENE_STYLE_MATERIALS].map((material) => [material.id, material]));
   /* Báo cáo 2.8.2: tầng căn được theo lưới trục chung thì xoay + dời khi HIỂN THỊ; lượt về gỡ ra. */
   applyFloorTransforms(nodes, floorDisplayTransformsOf(graph), (levelId) => toPascalId('level', levelId));
+  /* M5 làn 3c — thử nghiệm `?buildx=trim|win` (mặc định không đổi gì). */
+  applyBuildx(nodes);
 
   const generatedByRule: Record<string, number> = {};
   let repaired = 0;
