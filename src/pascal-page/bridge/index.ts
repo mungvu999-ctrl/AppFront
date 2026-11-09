@@ -22,7 +22,7 @@ import { sceneStyleFromConcept } from '@/lib/pascal/designStyles';
 import { readSceneStyle, SCENE_STYLES, type SceneStyle, type SceneStyleId } from '@/lib/pascal/sceneStyles';
 import { toPascalId } from '@/lib/pascal/ids';
 import { freezeRepairs, reapplyRepairs, repairScene, type FrozenRepair } from '@/lib/pascal/sceneRepair';
-import { toPascalScene } from '@/lib/pascal/toPascal';
+import { standardSceneOf } from '@/lib/pascal/sceneStandard';
 import type { PascalNode, PascalNodeId, PascalScene } from '@/lib/pascal/types';
 import { ROUTES } from '@/routes/paths';
 import { startAppSession } from '@/routes/sessionSetup';
@@ -461,15 +461,16 @@ export function usePascalProjectBridge(
     const { graph, repairs } = sceneRepairStore.get().enabled
       ? reapplyRepairs(stored, frozenRepairs.current)
       : { graph: stored, repairs: [] };
-    sceneRepairStore.set({ repairs, frozen: frozenRepairs.current });
-    // ponytail: chưa ghi metadata `repair` lên node — chờ option `repairs` của `toPascalScene` (làn 1).
+    // Hợp đồng lớp cảnh dẫn xuất v1 (`sceneLayer.ts`): mọi đường vào dùng `standardSceneOf`; sửa cảnh ghi lên node (`fields.repair`).
     // Đồ AI bổ sung (AID-01) và chế độ tự bày dự phòng đi cùng phong cách: chốt một lần mỗi lượt
     // mở trang, mọi lượt dựng dùng chung, không thì "sửa ma".
-    const scene = toPascalScene(graph, {
+    const { scene, layer } = standardSceneOf(graph, {
       style: style ?? readSceneStyle(() => localStorage),
-      ...(furnish === 'on' ? { furnish } : {}),
+      ...(furnish === undefined ? {} : { furnish }),
       ...(additions === undefined || additions.length === 0 ? {} : { additions }),
-    }).scene;
+      repairs: new Map(repairs.map((r) => [r.furnitureId, r])),
+    });
+    sceneRepairStore.set({ repairs, frozen: frozenRepairs.current, layer });
 
     return markNotBuilt(scene, missingFloors.current);
   }, [style, additions, furnish]);

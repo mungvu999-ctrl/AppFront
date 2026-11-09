@@ -1120,8 +1120,6 @@ export const toPascalScene = (
    */
   /* H4 — món tự bày / đèn người dùng đã xoá hoặc đã thành đồ thật: không sinh lại ở bất kỳ đường nào dưới đây. */
   const offIds = new Set(graph.rooms.flatMap((room) => room.dressingOff ?? []));
-  /** Mọi id luật sinh ra ở lượt này, TRƯỚC khi lọc `offIds` — để `dressingOff` tự dọn id không còn sinh. */
-  const candidates = new Set<string>();
   /** Chỗ đèn trần tự chọn của từng phòng (m), để lượt về biết đèn đã dời chưa. */
   const roomsWithLight = new Set<string>();
 
@@ -1195,7 +1193,6 @@ export const toPascalScene = (
   const orphanWalls = orphanWallIds(graph);
   const addRailing = (span: Parameters<typeof railingNodeOf>[0], levelNodeId: PascalNodeId, levelHeightMm: number, hostId: string): void => {
     const rail = railingNodeOf(span, levelNodeId, levelHeightMm, style);
-    candidates.add(bodyOfPascalId(rail.id));
     if (offIds.has(bodyOfPascalId(rail.id))) return;
     nodes[rail.id] = withFields(rail, { [PROV_FIELD]: provenanceOf('railing', hostId) });
     adopt(levelNodeId, rail.id);
@@ -1315,7 +1312,6 @@ export const toPascalScene = (
     if (generated !== undefined) {
       const [ceiling, light] = generated;
       const lightOn = !offIds.has(lightOffIdOf(room.id));
-      candidates.add(lightOffIdOf(room.id));
 
       nodes[ceiling.id] = lightOn ? ceiling : { ...ceiling, children: [] };
       adopt(levelNodeId, ceiling.id);
@@ -1339,7 +1335,6 @@ export const toPascalScene = (
   /* Đồ AI chưa duyệt còn góc 0 quay theo bàn/tường (`orientDetected`); quầy bếp cỡ khối đặc tách thành dãy tủ
      sát tường (`kitchenRuns`) — cả hai chỉ ở cảnh, không ghi về BE khi chưa sửa. */
   const expanded = expandKitchenRuns(orientDetectedFurniture(graph.furniture, graph.walls), builtWalls);
-  for (const f of expanded) if (f.id.startsWith(GENERATED_DRESS_PREFIX)) candidates.add(f.id);
   const furnitureToBuild = expanded.filter((f) => !offIds.has(f.id));
   const graphFurnitureIds = graph.furniture.map((f) => f.id as string);
 
@@ -1438,7 +1433,6 @@ export const toPascalScene = (
     adopt(levelNodeId, node.id);
 
     /* V1 — nhánh thứ hai của dãy tủ chữ L: đồ sinh ra (`isGeneratedNodeId`). */
-    if (arms !== null) candidates.add(arms.leg.id);
     if (arms !== null && !offIds.has(arms.leg.id)) {
       const leg = itemNodeOf(arms.leg, levelNodeId, levelHeightMm, style, usage);
 
@@ -1472,7 +1466,6 @@ export const toPascalScene = (
     [...builtFurniture, ...furnished],
   );
   const aiAdded = aiAll.filter(notOff);
-  for (const f of [...furnishedAll, ...dressedAll, ...aiAll]) candidates.add(f.id);
   /* Provenance: bày phòng trống = vai + phòng; đồ AI = phòng; trang trí = vai + món/ô mở/phòng chủ (id dài nhất khớp). */
   const furnishedIds = new Set<string>(furnishedAll.map((f) => f.id));
   const aiIds = new Set<string>(aiAll.map((f) => f.id));
@@ -1532,11 +1525,21 @@ export const toPascalScene = (
 
   /* H4 — zone mang danh sách món tự bày của phòng (`dressIds`, kể cả đèn trần) và danh sách đã bỏ (`dressingOff`):
      lượt về thấy món nào trong `dressIds` vắng khỏi cảnh thì thêm vào `dressingOff` (`toSpatial`).
-     `dressingOff` tự dọn: id mà luật của nó CÓ chạy lượt này nhưng không còn sinh (phần tử gốc mất, phòng đã nhận)
-     thì bỏ khi ghi về — giữ dưới trần lược đồ. Họ luật không chạy lượt này (tự bày tắt vì có concept, không có đồ AI)
-     thì giữ nguyên: vắng mặt không có nghĩa là gốc đã mất. */
+     `dressingOff` tự dọn theo SỰ TỒN TẠI của đầu vào luật, không theo kết quả bố trí lượt này: id bị bỏ khi họ luật
+     của nó có chạy mà không còn phần tử gốc nào (phòng, ô mở, tường, đồ) nằm trong id. Món chủ đã tắt (thảm theo giường
+     đã tắt) hay món bị đồ khác chặn tạm vẫn giữ trạng thái tắt. Họ luật không chạy lượt này (tự bày tắt vì có concept,
+     không có đồ AI) thì giữ nguyên: vắng mặt không có nghĩa là gốc đã mất. */
   const ranFor = (id: string): boolean =>
     id.startsWith(AI_ID_PREFIX) ? additions.length > 0 : furnish === 'on' || ALWAYS_RUN_PREFIXES.some((prefix) => id.startsWith(prefix));
+  const sourceIds = new Set<string>([...graph.rooms, ...graph.openings, ...graph.walls, ...graph.furniture].map((e) => e.id));
+  /** Có phần tử gốc nào trong đồ thị nằm trong id (khớp trọn đoạn giữa các dấu `-`, nên `R-1` không khớp `R-10`). */
+  const hasSource = (id: string): boolean => {
+    const parts = id.split('-');
+    for (let from = 0; from < parts.length; from += 1) {
+      for (let to = from + 1; to <= parts.length; to += 1) if (sourceIds.has(parts.slice(from, to).join('-'))) return true;
+    }
+    return false;
+  };
   for (const room of builtRooms) {
     const zoneId = toPascalId('zone', room.id);
     const zone = nodes[zoneId];
@@ -1552,7 +1555,7 @@ export const toPascalScene = (
           fields: {
             ...origin.fields,
             dressIds: [...(dressIdsOf.get(room.id) ?? []), ...(roomsWithLight.has(room.id) ? [lightOffIdOf(room.id)] : [])],
-            dressingOff: (room.dressingOff ?? []).filter((id) => !ranFor(id) || candidates.has(id)),
+            dressingOff: (room.dressingOff ?? []).filter((id) => !ranFor(id) || hasSource(id)),
           },
         },
       },
@@ -1661,13 +1664,3 @@ export const toPascalScene = (
     layer: { version: SCENE_LAYER_VERSION, generatedByRule, repairs: repaired },
   };
 };
-
-/**
- * Cảnh chuẩn cho đường vào không nạp concept AI (di động `/m/du-an/:id`, so phiên bản trực quan): cùng luật bày với
- * editor3d khi dự án chưa có concept (`furnishModeOf(undefined) === 'on'` ở bridge) — một bộ luật cho mọi đường vào.
- */
-export const standardSceneOf = (
-  graph: SpatialGraph,
-  options: Parameters<typeof toPascalScene>[1] = {},
-): ReturnType<typeof toPascalScene> =>
-  toPascalScene(graph, { furnish: 'on', ...options });

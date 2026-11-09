@@ -14,7 +14,9 @@ import { createPascalEditCommand } from '../fromPascal';
 import { bodyOfPascalId, toPascalId } from '../ids';
 import { dressNodeIdOf, lightOffIdOf } from '../sceneDressing';
 import { DRESSING_OFF_MAX, PROV_FIELD, REPAIR_FIELD, SCENE_LAYER_VERSION, type SceneProvenance, type SceneRepair } from '../sceneLayer';
-import { standardSceneOf, toPascalScene } from '../toPascal';
+import { repairScene, repairsById } from '../sceneRepair';
+import { standardSceneOf } from '../sceneStandard';
+import { toPascalScene } from '../toPascal';
 import { adoptableRoomOf, toSpatialGraph } from '../toSpatial';
 import type { PascalItemNode, PascalNode, PascalScene } from '../types';
 
@@ -103,8 +105,39 @@ describe('lớp cảnh v1 — provenance + tóm tắt', () => {
     expect(layer.repairs).toBe(1);
   });
 
-  it('standardSceneOf = cùng luật với editor3d khi chưa có concept (tự bày bật)', () => {
-    expect(generatedIds(standardSceneOf(graph).scene)).toEqual(generatedIds(scene));
+  it('standardSceneOf = cùng luật với editor3d khi chưa có concept (tự bày bật + sửa cảnh)', () => {
+    const fixed = repairScene(graph);
+    const editor = toPascalScene(fixed.graph, { furnish: 'on', repairs: repairsById(fixed.repairs) }).scene;
+    expect(generatedIds(standardSceneOf(graph).scene)).toEqual(generatedIds(editor));
+  });
+
+  it('bồn cầu AI trong phòng ngủ: đường editor và standardSceneOf cho cùng tập node đồ, không còn trong phòng ngủ', () => {
+    const outline = graph.rooms.find((room) => room.id === bedroomId)?.outline ?? [];
+    const c = { x: outline.reduce((sum, p) => sum + p.x, 0) / outline.length, y: outline.reduce((sum, p) => sum + p.y, 0) / outline.length };
+    const wc = {
+      ...(graph.furniture[0] as Furniture),
+      id: 'F-wc-bed',
+      roomId: bedroomId,
+      kind: 'sanitaryFixture',
+      variant: 'wc',
+      source: 'ai',
+      reviewed: false,
+      centre: c,
+      rotationDeg: 0,
+      boundingBox: { min: { x: c.x - 200, y: c.y - 350 }, max: { x: c.x + 200, y: c.y + 350 } },
+    } as Furniture;
+    const g: SpatialGraph = { ...graph, furniture: [...graph.furniture, wc] };
+    const fixed = repairScene(g);
+    const editor = toPascalScene(fixed.graph, { furnish: 'on', repairs: repairsById(fixed.repairs) }).scene;
+    const std = standardSceneOf(g);
+    const itemIds = (of: PascalScene): string[] => items(of).map((node) => node.id).sort();
+    const wcInBedroom = (of: PascalScene): boolean => inRoom(of, bedroomId).some((node) => bodyOfPascalId(node.id) === wc.id);
+
+    expect(fixed.repairs.map((r) => r.furnitureId)).toContain(wc.id);
+    expect(std.repairs).toEqual(fixed.repairs);
+    expect(itemIds(std.scene)).toEqual(itemIds(editor));
+    expect(wcInBedroom(toPascalScene(g, { furnish: 'on' }).scene)).toBe(true);
+    expect(wcInBedroom(std.scene)).toBe(false);
   });
 });
 
@@ -124,6 +157,34 @@ describe('lớp cảnh v1 — dressingOff tự dọn', () => {
 
     expect(zoneOff(s)).toEqual([live]);
     expect(savedOff(s)).toEqual([live]);
+  });
+
+  it('món chủ đã tắt (thảm theo giường đã tắt): giữ cả hai trong dressingOff', () => {
+    const rug = generatedIds(scene).find((id) => id === `DRESS-rug-${live}`);
+    if (rug === undefined) throw new Error(`F2 phải có thảm theo giường ${live}`);
+
+    expect(zoneOff(toPascalScene(withOff([live, rug]), { furnish: 'on' }).scene)).toEqual([live, rug]);
+  });
+
+  it('món tắt bị đồ khác chặn tạm (không sinh lượt này): vẫn giữ trong dressingOff', () => {
+    const bed = items(scene).find((node) => bodyOfPascalId(node.id) === live) as PascalItemNode;
+    const [x, , y] = bed.position.map((v) => v * 1000) as [number, number, number];
+    const blocker = {
+      ...(graph.furniture[0] as Furniture),
+      id: 'F-blocker',
+      roomId: bedroomId,
+      kind: 'table',
+      source: 'human',
+      reviewed: true,
+      centre: { x, y },
+      rotationDeg: 0,
+      boundingBox: { min: { x: x - 800, y: y - 800 }, max: { x: x + 800, y: y + 800 } },
+    } as Furniture;
+    const blocked: SpatialGraph = { ...withOff([live]), furniture: [...graph.furniture, blocker] };
+    const s = toPascalScene(blocked, { furnish: 'on' }).scene;
+
+    expect(generatedIds(s)).not.toContain(live);
+    expect(zoneOff(s)).toEqual([live]);
   });
 
   it('họ luật không chạy lượt này (tự bày tắt vì có concept) thì giữ; họ luôn chạy (đèn trần) vẫn dọn', () => {

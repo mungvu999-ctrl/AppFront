@@ -14,7 +14,7 @@
 
 import { denormalizeSpatial, normalizeSpatial, type NormalizedSpatial } from '@/domain/spatial/normalize';
 import { formatNumber } from '@/lib/format/number';
-import { standardSceneOf } from '@/lib/pascal/toPascal';
+import { standardSceneOf } from '@/lib/pascal/sceneStandard';
 import type { PascalScene } from '@/lib/pascal/types';
 import type { VersionDiff } from '@/lib/versioning/diff';
 

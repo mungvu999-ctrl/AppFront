@@ -42,6 +42,8 @@ export interface PascalProbe {
   setLook(v: { surf?: { rough?: number; albedo?: number; scale?: number }; exposure?: number; grade?: { contrast?: number; saturation?: number } }): void;
   /** Các lần sửa cảnh (`SceneRepair`: món, hành động, luật, lý do, trước/sau) mà lượt dựng gần nhất đã áp. */
   repairs(): readonly unknown[];
+  /** Tóm tắt lớp dẫn xuất (`SceneLayerSummary`) của lượt dựng gần nhất; `null` khi chưa dựng. */
+  layer(): unknown;
 }
 
 export interface ProbeItem {
@@ -141,9 +143,10 @@ export interface PascalProbeStores {
   };
   /** Danh sách sửa cảnh hiện hành (`sceneRepairStore`). */
   readonly repairs?: () => readonly unknown[];
+  readonly layer?: () => unknown;
 }
 
-export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter, useInteractive, look, repairs }: PascalProbeStores): PascalProbe => {
+export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter, useInteractive, look, repairs, layer }: PascalProbeStores): PascalProbe => {
   const nodes = () => useScene.getState().nodes as Record<string, LooseNode>;
   const entries = () => Object.entries(nodes());
   const entriesOf = (type: string) => entries().filter(([, n]) => n.type === type);
@@ -215,6 +218,7 @@ export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter,
       for (const [id, indices] of Object.entries(lampItems)) for (const i of indices) setControlValue(id, i, on);
     },
     repairs: () => [...(repairs?.() ?? [])],
+    layer: () => layer?.() ?? null,
     reflect: () => ({ ...((globalThis as { __realismReflect?: object }).__realismReflect ?? {}) }),
     itemMaterials: (match) => {
       const out: Record<string, unknown>[] = [];

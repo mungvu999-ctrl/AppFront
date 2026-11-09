@@ -6,7 +6,7 @@
 import { useSyncExternalStore } from 'react';
 
 import type { FurnitureId } from '@/domain/spatial/types';
-import type { SceneRepair } from '@/lib/pascal/sceneLayer';
+import type { SceneLayerSummary, SceneRepair } from '@/lib/pascal/sceneLayer';
 import type { FrozenRepair } from '@/lib/pascal/sceneRepair';
 
 export interface SceneRepairState {
@@ -15,9 +15,11 @@ export interface SceneRepairState {
   readonly repairs: readonly SceneRepair[];
   /** Kết quả sửa cảnh đã chốt lúc nạp (`freezeRepairs`); chip tính lỗi trên đúng cảnh đó. */
   readonly frozen: ReadonlyMap<FurnitureId, FrozenRepair> | null;
+  /** Tóm tắt lớp dẫn xuất của lượt dựng gần nhất (`toPascalScene().layer`): số món sinh theo luật, số sửa cảnh. */
+  readonly layer: SceneLayerSummary | null;
 }
 
-let state: SceneRepairState = { enabled: true, repairs: [], frozen: null };
+let state: SceneRepairState = { enabled: true, repairs: [], frozen: null, layer: null };
 const listeners = new Set<() => void>();
 
 export const sceneRepairStore = {

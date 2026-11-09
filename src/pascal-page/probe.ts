@@ -26,6 +26,7 @@ installPascalProbe(window.location.search, window, {
   emitter,
   useInteractive,
   repairs: () => sceneRepairStore.get().repairs,
+  layer: () => sceneRepairStore.get().layer,
   look: {
     surf: (v) => { setSurfaceNoise(v); markDirty('probe:look', 1500); },
     grade: (v) => { setGrade(v); markDirty('probe:look', 1500); },

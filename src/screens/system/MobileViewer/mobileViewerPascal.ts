@@ -29,7 +29,7 @@ export function mountMobileViewerPascal(
   let disposed = false;
   let handle: { readonly dispose: () => void } | null = null;
 
-  Promise.all([defaultLoadMount(), import('@/lib/pascal/toPascal')])
+  Promise.all([defaultLoadMount(), import('@/lib/pascal/sceneStandard')])
     .then(([module, { standardSceneOf }]) => {
       if (disposed) {
         return;
