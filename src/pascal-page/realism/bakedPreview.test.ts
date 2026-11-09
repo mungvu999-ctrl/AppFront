@@ -25,11 +25,13 @@ vi.mock('three', async (importOriginal) => {
 
 describe('xem thử ánh sáng nướng', () => {
   it('chỉ nhận thư mục cùng origin; bỏ gạch chéo cuối', () => {
-    expect(bakedDirFrom('?baked=/__baked/f1/')).toBe('/__baked/f1');
+    expect(bakedDirFrom('?probe=1&baked=/__baked/f1/')).toBe('/__baked/f1');
+    // Công cụ dev: thiếu ?probe=1 thì bỏ qua (production không mở cảnh nướng qua URL).
+    expect(bakedDirFrom('?baked=/__baked/f1/')).toBeNull();
     expect(bakedDirFrom('?project=P-1')).toBeNull();
-    expect(bakedDirFrom('?baked=https://x.test/a')).toBeNull();
-    expect(bakedDirFrom('?baked=//x.test/a')).toBeNull();
-    expect(bakedDirFrom('?baked=/a/../b')).toBeNull();
+    expect(bakedDirFrom('?probe=1&baked=https://x.test/a')).toBeNull();
+    expect(bakedDirFrom('?probe=1&baked=//x.test/a')).toBeNull();
+    expect(bakedDirFrom('?probe=1&baked=/a/../b')).toBeNull();
   });
 
   it('vật liệu nướng giữ màu, ảnh, mặt; gắn lightmap với cường độ của manifest', () => {

@@ -162,6 +162,7 @@ export {
   resolveSurfaceColor,
   WHITE_PALETTE,
 } from './lib/materials'
+export { queueLazyBvh } from './lib/lazy-bvh-raycast'
 export { mergedOutline } from './lib/merged-outline-node'
 export * from './lib/perf-actions'
 export { type PerfBatchStats, publishPerfBatchStats } from './lib/perf-panel-store'

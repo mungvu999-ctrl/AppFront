@@ -5,12 +5,13 @@
 //
 // Each drawn frame, build a signature of everything the shadow pass reads —
 // shadow lights (pose, target, shadow camera, map size), casters (id, geometry
-// + versions, draw range, layers, matrixWorld, materials, instance/batch
+// + attribute identity/versions, draw range, layers, matrixWorld, materials
+// with texture identity/version/UV transform, instance/batch
 // state), and clipping groups (`clipShadows`: cut planes slide with the camera,
 // cutSync.ts) — and only flag `shadow.needsUpdate` when it changed. A forced
 // refresh every REFRESH_FRAMES drawn frames bounds any change the signature
 // misses. Skinned/morphed casters push NaN, so they update every frame as before.
-import type { Light, Material, Mesh, Object3D, Plane } from 'three'
+import type { Light, Material, Mesh, Object3D, Plane, Texture } from 'three'
 
 type VersionedAttr = { version?: number; isInterleavedBufferAttribute?: boolean; data?: { version: number } }
 /** InterleavedBufferAttribute keeps its version on `.data`; a plain attribute on itself. */
@@ -18,6 +19,16 @@ const attrVersion = (a: unknown): number => {
   const v = a as VersionedAttr | null | undefined
   if (!v) return -1
   return (v.isInterleavedBufferAttribute ? v.data?.version : v.version) ?? -1
+}
+
+/** Stable number per object (attribute, texture…): a swapped one with an equal version still changes the signature. */
+const ids = new WeakMap<object, number>()
+let nextId = 1
+const idOf = (o: unknown): number => {
+  if (!o || typeof o !== 'object') return -1
+  let id = ids.get(o)
+  if (id === undefined) ids.set(o, (id = nextId++))
+  return id
 }
 
 export const SHADOW_REFRESH_FRAMES = 30
@@ -60,18 +71,24 @@ export class ShadowCache {
     for (let i = 0; i < 16; i++) this.push(e[i]!)
   }
 
+  private pushTexture(t: Texture | null | undefined) {
+    if (!t) return this.push(-1)
+    this.push(idOf(t))
+    this.push(t.version)
+    this.push(t.offset.x), this.push(t.offset.y), this.push(t.repeat.x), this.push(t.repeat.y), this.push(t.rotation)
+  }
+
   private pushMaterial(m: Material | undefined) {
     if (!m) return this.push(-1)
-    const r = m as Material & Record<string, { id?: number; version?: number } | undefined>
+    const r = m as Material & { map?: Texture | null; alphaMap?: Texture | null }
     this.push((m as unknown as { id: number }).id)
     this.push(m.version)
     this.push(m.visible ? 1 : 0)
     this.push(m.alphaTest)
-    // Texture identity + version: a swapped map with an equal version must still re-render alpha-tested shadows.
-    this.push(r.map?.id ?? -1)
-    this.push(r.map?.version ?? -1)
-    this.push(r.alphaMap?.id ?? -1)
-    this.push(r.alphaMap?.version ?? -1)
+    // Texture identity + version + UV transform: a swapped map with an equal version, or a moved alpha map,
+    // must still re-render alpha-tested shadows.
+    this.pushTexture(r.map)
+    this.pushTexture(r.alphaMap)
     for (const p of m.clippingPlanes ?? []) {
       this.push(p.normal.x), this.push(p.normal.y), this.push(p.normal.z), this.push(p.constant)
     }
@@ -108,7 +125,9 @@ export class ShadowCache {
       if (mesh.isSkinnedMesh || g.morphAttributes.position) return this.push(Number.NaN)
       this.push(mesh.id)
       this.push(g.id)
+      this.push(idOf(g.attributes.position))
       this.push(attrVersion(g.attributes.position))
+      this.push(idOf(g.index))
       this.push(attrVersion(g.index))
       this.push(g.drawRange.start)
       this.push(g.drawRange.count)

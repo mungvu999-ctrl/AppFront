@@ -28,6 +28,7 @@ import {
   ErrorBoundary,
   glassMaterial,
   NodeRenderer,
+  queueLazyBvh,
   type RenderShading,
   resolveCdnUrl,
   resolveMaterialRef,
@@ -607,6 +608,8 @@ const LoadedModelRenderer = ({
     // keep such items out of static batches (shared/node-batch/candidates).
     const group = sceneRegistry.nodes.get(node.id)
     if (group) group.userData.itemHasAnimations = animations.length > 0
+    // AppFront: raycast trees for big GLB meshes build in idle slots from now on, not on the first hover.
+    if (ref.current) queueLazyBvh(ref.current)
     markSettled()
   }, [markSettled, node.id, animations])
   const shading = useViewer((s) => s.shading)
