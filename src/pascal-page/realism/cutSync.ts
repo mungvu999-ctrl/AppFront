@@ -12,12 +12,13 @@
  * - Theo camera (`wantsLift`): mắt thấp hơn trần của tầng thì mặt cắt tầng ấy trượt lên trần trong 0,3 s rồi thành
  *   1e6 (không cắt); lên cao lại (quá trần + 0,6 m) thì trượt về sàn + 1,0 m. Vẫn chỉ dời `constant`.
  */
-import { BackSide, DoubleSide, FrontSide, type Material, type Object3D, Plane, type Side, Vector3 } from 'three';
+import { BackSide, Box3, DoubleSide, type EventDispatcher, FrontSide, type Material, type Mesh, type Object3D, Plane, Vector3 } from 'three';
 import { color, frontFacing, materialColor, materialEmissive, normalWorld, select, uniform, vec3, vec4 } from 'three/tsl';
 import type { Node, NodeMaterial } from 'three/webgpu';
 
-import { CUT_CAP_COLOR, DEFAULT_STOREY_M, liftedCutY, lowCutActive, stepLift, wantsLift } from './cut';
+import { CUT_CAP_COLOR, CUT_HEIGHT_M, DEFAULT_STOREY_M, liftedCutY, lowCutActive, stepLift, wantsLift } from './cut';
 import { markDirty } from './idle';
+import { hasPendingTextures, whenTexturesReady } from './texturePreload';
 
 /** Hằng mặt phẳng khi không cắt: cao hơn mọi công trình → giữ hết. */
 export const NO_CUT_CONSTANT = 1e6;
@@ -87,24 +88,50 @@ export function capCutMaterial<T extends Material>(material: T): T {
   return material;
 }
 
-const itemCapped = new WeakSet<Material>();
+/** Vật liệu gốc → biến thể có nắp (clone riêng; gốc không bao giờ bị vá). */
+const itemCapVariants = new WeakMap<Material, Material>();
+const itemBox = new Box3();
+const levelPos = new Vector3();
+
+type TextureKeyed = Material & Record<string, unknown>;
+
+/** Biến thể theo ảnh của gốc: map gán muộn (vật liệu thư viện, `tuneItemMaterial` chờ ảnh) chép sang khi gốc báo xong. */
+function followSourceTextures(variant: Material, source: Material): void {
+  delete variant.userData.texPending;
+  if (!hasPendingTextures(source)) return;
+  variant.userData.texPending = 1;
+  void whenTexturesReady(source).then(() => {
+    const from = source as TextureKeyed;
+    const to = variant as TextureKeyed;
+    for (const key of Object.keys(from)) {
+      const t = from[key] as { isTexture?: boolean } | null;
+      if (t?.isTexture && to[key] !== t) to[key] = t;
+    }
+    delete variant.userData.texPending;
+    variant.needsUpdate = true;
+    (variant as unknown as EventDispatcher<{ texturesready: object }>).dispatchEvent({ type: 'texturesready' });
+  });
+}
 
 /**
- * Biến thể của `capCutMaterial` cho vật liệu ĐỒ (luật `r7-item-materials.mjs`, chỉ đồ cao quá mặt cắt): khi `cutOn` = 1
- * chỉ MẶT SAU (ruột lộ qua mặt cắt) tô phẳng màu nắp; mặt hướng lên (mặt bàn, mặt giường) giữ vật liệu. Giữ alpha của
- * màu (lá cây alphaTest). Vật liệu GLB thường (không NodeMaterial) cũng vá được: WebGPURenderer đổi sang NodeMaterial lúc
- * dựng bằng cách chép mọi khoá (`NodeLibrary.fromMaterial`), kể cả colorNode/emissiveNode. Bỏ qua vật liệu trong suốt và
- * vật liệu vốn hai mặt / mặt sau (mặt sau là mặt thật: rèm, lá). `userData.cutCapSide` giữ phía gốc: bản clone chép
- * userData + side đã đổi nhưng (vật liệu thường) không chép colorNode → vẫn nhận ra để vá lại.
+ * Biến thể nắp cắt của một vật liệu ĐỒ (chỉ gắn cho mesh cao quá mặt cắt, `capItemMeshesForCut`): bản CLONE, cache
+ * theo vật liệu gốc (uuid|capped), nên instance thấp dùng chung vật liệu gốc giữ nguyên một mặt. Khi `cutOn` = 1 chỉ
+ * MẶT SAU (ruột lộ qua mặt cắt) tô phẳng màu nắp; mặt hướng lên (mặt bàn, mặt giường) giữ vật liệu. Giữ alpha của màu
+ * (lá cây alphaTest). Vật liệu GLB thường (không NodeMaterial) vẫn được: WebGPURenderer đổi sang NodeMaterial lúc
+ * dựng bằng cách chép mọi khoá (`NodeLibrary.fromMaterial`), kể cả colorNode/emissiveNode. Trả nguyên gốc cho vật liệu
+ * trong suốt và vật liệu vốn hai mặt / mặt sau (mặt sau là mặt thật: rèm, lá). `color` dùng CHUNG đối tượng với gốc:
+ * nhuộm vải (`applyUpholstery`, có thể trễ khi chờ ảnh) đổi gốc thì biến thể đổi theo.
  */
-export function capCutItemMaterial<T extends Material>(material: T): T {
-  if (itemCapped.has(material) || material.transparent) return material;
-  const ud = material.userData;
-  const side = (ud.cutCapSide as Side | undefined) ?? material.side;
-  if (side !== FrontSide) return material;
-  itemCapped.add(material);
-  ud.cutCapSide = side;
-  const m = material as unknown as ColorMaterial;
+export function cutCapVariant<T extends Material>(material: T): T {
+  if (material.transparent || material.side !== FrontSide) return material;
+  const hit = itemCapVariants.get(material);
+  if (hit) return hit as T;
+  const variant = material.clone() as T;
+  const colored = material as unknown as { color?: unknown };
+  if (colored.color) (variant as unknown as { color?: unknown }).color = colored.color;
+  followSourceTextures(variant, material);
+  variant.name = `${material.name}|capped`;
+  const m = variant as unknown as ColorMaterial;
   const cap = cutOn.greaterThan(0.5).and(frontFacing.not());
   const base = vec4((m.colorNode ?? materialColor) as Node<'vec4'>);
   m.colorNode = select(cap, vec4(0, 0, 0, base.a), base);
@@ -113,10 +140,39 @@ export function capCutItemMaterial<T extends Material>(material: T): T {
     vec3(color(CUT_CAP_COLOR) as unknown as Node<'vec3'>),
     vec3((m.emissiveNode ?? materialEmissive) as Node<'vec3'>),
   );
-  material.shadowSide ??= BackSide;
-  material.side = DoubleSide;
-  material.needsUpdate = true;
-  return material;
+  variant.shadowSide ??= BackSide;
+  variant.side = DoubleSide;
+  variant.needsUpdate = true;
+  itemCapVariants.set(material, variant);
+  return variant;
+}
+
+/** Đỉnh hộp bao THẾ GIỚI của mesh (đã áp xoay/scale, kể cả scale âm), tính từ sàn tầng chứa nó (nhóm tầng cắt). */
+export function meshTopAboveLevel(mesh: Mesh): number {
+  mesh.updateWorldMatrix(true, false);
+  const g = mesh.geometry;
+  if (!g.boundingBox) g.computeBoundingBox();
+  itemBox.copy(g.boundingBox!).applyMatrix4(mesh.matrixWorld);
+  let levelY = 0;
+  for (let o = mesh.parent; o; o = o.parent) {
+    if ((o as ClipGroupFields).isClippingGroup) {
+      levelY = o.getWorldPosition(levelPos).y;
+      break;
+    }
+  }
+  return itemBox.max.y - levelY;
+}
+
+/**
+ * Gọi từ item renderer (luật `r7-item-materials.mjs`) NGAY SAU khi vendor gán lại vật liệu gốc cho mọi mesh của món —
+ * lúc dựng và mỗi lần vị trí/xoay/scale của node đổi. Quyết định theo TỪNG MESH và trạng thái thật: mesh vượt mặt cắt
+ * thấp (đỉnh > sàn + 1,0 m) đổi sang biến thể có nắp; mesh thấp giữ vật liệu gốc (một mặt, không nhánh shader).
+ */
+export function capItemMeshesForCut(meshes: readonly Mesh[]): void {
+  for (const mesh of meshes) {
+    if (meshTopAboveLevel(mesh) <= CUT_HEIGHT_M) continue;
+    mesh.material = Array.isArray(mesh.material) ? mesh.material.map(cutCapVariant) : cutCapVariant(mesh.material);
+  }
 }
 
 /** Trả `true` khi tầng còn bị cắt (chưa nâng hết). */

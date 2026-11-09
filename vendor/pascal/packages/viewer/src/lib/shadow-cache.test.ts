@@ -86,3 +86,37 @@ test('swapped alpha texture (same version) and material clip-plane normal re-ren
   mat.clippingPlanes[0]!.normal.set(1, 0, 0) // constant unchanged
   expect(cache.sync(scene)).toBe(true)
 })
+
+test('signature invalidation: geometry, material, texture, cut plane and light changes each re-render once', () => {
+  const { scene, light, level, box, cache } = setup()
+  const mat = box.material as THREE.MeshStandardMaterial
+  mat.map = new THREE.Texture()
+  mat.alphaMap = new THREE.Texture()
+  cache.sync(scene)
+  light.shadow.needsUpdate = false
+  const changes: Array<[string, () => void]> = [
+    ['position attribute edited (version)', () => { box.geometry.attributes.position!.needsUpdate = true }],
+    ['position attribute swapped (same version)', () => { box.geometry.setAttribute('position', new THREE.BoxGeometry().attributes.position!) }],
+    ['index swapped', () => { box.geometry.setIndex(new THREE.BoxGeometry().index) }],
+    ['geometry swapped', () => { box.geometry = new THREE.BoxGeometry() }],
+    ['material needsUpdate', () => { mat.needsUpdate = true }],
+    ['alpha map UV transform', () => { mat.alphaMap!.offset.x = 0.5 }],
+    ['material swapped', () => { box.material = new THREE.MeshStandardMaterial() }],
+    ['map swapped', () => { (box.material as THREE.MeshStandardMaterial).map = new THREE.Texture() }],
+    ['map re-uploaded', () => { (box.material as THREE.MeshStandardMaterial).map!.needsUpdate = true }],
+    ['cut plane constant', () => { level.clippingPlanes[0]!.constant = 1.4 }],
+    ['cut plane normal', () => { level.clippingPlanes[0]!.normal.set(0, -1, 0.1).normalize() }],
+    ['light moved', () => { light.position.x = 3; scene.updateMatrixWorld() }],
+    ['light target moved', () => { light.target.position.z = 2; scene.updateMatrixWorld() }],
+    ['shadow map size', () => { light.shadow.mapSize.set(1024, 1024) }],
+    ['shadow camera', () => { (light.shadow.camera as THREE.OrthographicCamera).left = -20; light.shadow.camera.updateProjectionMatrix() }],
+  ]
+  for (const [name, change] of changes) {
+    change()
+    expect([name, cache.sync(scene)]).toEqual([name, true])
+    light.shadow.needsUpdate = false
+    expect([name, cache.sync(scene)]).toEqual([name, false]) // settled: next frame reuses the map
+  }
+  light.removeFromParent()
+  expect(cache.sync(scene)).toBe(true)
+})
