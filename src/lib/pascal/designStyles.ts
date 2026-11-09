@@ -20,7 +20,7 @@ const isRug = (f: Furniture): boolean => {
 };
 
 /**
- * Đồ AI bổ sung → `Furniture` sinh ra (id `DRESS-ai-<roomId>-<n>`, `isGeneratedNodeId` giữ chúng ngoài lượt
+ * Đồ AI bổ sung → `Furniture` sinh ra (id `DRESS-ai-<roomId>-<loại>-<x>_<y>` theo dm, `isGeneratedNodeId` giữ chúng ngoài lượt
  * lưu). Món đè lên đồ đã có hoặc món AI trước nó (cùng tầng) bị bỏ im lặng; thảm nằm dưới đồ nên không
  * chặn và không bị chặn. `modelId` có trong danh mục → mẫu ấy, không thì mẫu theo vai trò như đồ tự bày.
  */
@@ -29,15 +29,19 @@ export const designAdditionsOf = (
   existing: readonly Furniture[],
 ): Furniture[] => {
   const out: Furniture[] = [];
-  const perRoom = new Map<string, number>();
+  const used = new Set<string>();
   for (const addition of additions) {
-    const n = (perRoom.get(addition.roomId) ?? 0) + 1;
-    perRoom.set(addition.roomId, n);
     const { x, y } = addition.centre;
+    // Id theo NỘI DUNG (phòng + loại + tâm làm tròn 100 mm), không theo thứ tự: concept đổi/thêm món khác thì
+    // `dressingOff` vẫn trỏ đúng món đã xoá. Trùng (hai món cùng loại cách < 100 mm) thì thêm hậu tố.
+    const key = `${GENERATED_DRESS_PREFIX}ai-${addition.roomId}-${addition.variant ?? addition.kind}-${Math.round(x / 100)}_${Math.round(y / 100)}`;
+    let id = key;
+    for (let n = 2; used.has(id); n += 1) id = `${key}-${n}`;
+    used.add(id);
     const mm = (dx: number, dy: number) => ({ x: millimetres(x + dx), y: millimetres(y + dy) });
     const [hw, hd] = [addition.widthMm / 2, addition.depthMm / 2];
     const item: Furniture = {
-      id: `${GENERATED_DRESS_PREFIX}ai-${addition.roomId}-${String(n)}` as FurnitureId,
+      id: id as FurnitureId,
       levelId: addition.levelId as LevelId,
       roomId: addition.roomId as RoomId,
       kind: addition.kind,

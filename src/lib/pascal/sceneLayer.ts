@@ -53,3 +53,22 @@ export interface SceneRepair {
 
 export const PROV_FIELD = 'prov';
 export const REPAIR_FIELD = 'repair';
+
+/** Trần của `Room.dressingOff` — bằng `.max()` của lược đồ (`api/schemas/spatial.ts`); vượt thì PUT bị từ chối. */
+export const DRESSING_OFF_MAX = 200;
+
+export const provenanceOf = (rule: string, hostId?: string): SceneProvenance => ({
+  cls: 'generated',
+  rule,
+  version: SCENE_LAYER_VERSION,
+  ...(hostId === undefined ? {} : { hostId }),
+});
+
+/** Tóm tắt lớp dẫn xuất của một lượt `toPascalScene` (probe/QA đọc). */
+export interface SceneLayerSummary {
+  readonly version: typeof SCENE_LAYER_VERSION;
+  /** Số node dẫn xuất trong cảnh theo `SceneProvenance.rule`. */
+  readonly generatedByRule: Readonly<Record<string, number>>;
+  /** Số node đồ mang `SceneRepair` (`metadata.appfront.fields.repair`). */
+  readonly repairs: number;
+}

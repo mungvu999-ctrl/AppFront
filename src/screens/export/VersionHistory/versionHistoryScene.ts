@@ -14,7 +14,7 @@
 
 import { denormalizeSpatial, normalizeSpatial, type NormalizedSpatial } from '@/domain/spatial/normalize';
 import { formatNumber } from '@/lib/format/number';
-import { toPascalScene } from '@/lib/pascal/toPascal';
+import { standardSceneOf } from '@/lib/pascal/toPascal';
 import type { PascalScene } from '@/lib/pascal/types';
 import type { VersionDiff } from '@/lib/versioning/diff';
 
@@ -54,7 +54,7 @@ export interface SceneConversion {
 export const NO_SCENE: SceneConversion = Object.freeze({ scene: null, failed: false });
 
 /**
- * Đồ thị không gian thành cảnh Pascal — cùng bộ đổi `toPascalScene` mà màn 3D chính dùng.
+ * Đồ thị không gian thành cảnh Pascal — cảnh chuẩn `standardSceneOf` (cùng luật bày với màn 3D chính).
  *
  * `toPascalScene` NÉM khi đồ thị mang số đo không hữu hạn: đó là một mô hình không dựng
  * được, không phải sự cố kỹ thuật để hiện mã lỗi — nó thành một câu giải thích trên tab.
@@ -65,7 +65,7 @@ export function convertScene(graph: NormalizedSpatial | null): SceneConversion {
   }
 
   try {
-    const { scene } = toPascalScene(denormalizeSpatial(graph));
+    const { scene } = standardSceneOf(denormalizeSpatial(graph));
 
     return scene.rootNodeIds.length === 0 ? { scene: null, failed: true } : { scene, failed: false };
   } catch {

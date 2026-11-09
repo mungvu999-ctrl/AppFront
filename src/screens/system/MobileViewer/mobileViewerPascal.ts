@@ -30,13 +30,13 @@ export function mountMobileViewerPascal(
   let handle: { readonly dispose: () => void } | null = null;
 
   Promise.all([defaultLoadMount(), import('@/lib/pascal/toPascal')])
-    .then(([module, { toPascalScene }]) => {
+    .then(([module, { standardSceneOf }]) => {
       if (disposed) {
         return;
       }
 
       handle = (module.mount as ViewMount)(element, {
-        scene: toPascalScene(options.graph).scene,
+        scene: standardSceneOf(options.graph).scene,
         mode: 'view',
         readOnly: true,
         cameraControls: true,

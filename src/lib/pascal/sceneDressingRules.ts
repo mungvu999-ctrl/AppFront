@@ -322,6 +322,12 @@ export const dressingOf = (graph: SpatialGraph, style: SceneStyle): readonly Fur
       const lampD = lamp === undefined ? LAMP_FALLBACK_MM : lamp[2] * 1000;
       for (const { f, rect } of inRoom.filter((item) => item.role === 'nightstand')) {
         const top = rectAt(rect, 0, 0, Math.min(lampW, rect.w), Math.min(lampD, rect.d));
+        // Vai đã có đồ thật phủ (đèn đã nhận khi người dùng sửa cả phòng — V4 — giờ đứng trên tủ `F-…` mới):
+        // không sinh thêm. Không kiểm thì `DRESS-tableLamp-<id tủ mới>` mọc cạnh đèn đã nhận (id cũ nhúng host cũ).
+        const covered = graph.furniture.some(
+          (g) => g.id !== f.id && g.levelId === room.levelId && (g.variant === 'tableLamp' || (g.liftMm ?? 0) > 0) && rectsOverlap(top, rectOfFurniture(g)),
+        );
+        if (covered) continue;
         put(`DRESS-tableLamp-${f.id}`, top, 'tableLamp', { liftMm: f.heightMm ?? NIGHTSTAND_HEIGHT_MM });
       }
     }

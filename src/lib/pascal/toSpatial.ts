@@ -72,6 +72,7 @@ import { appFrontIdOf, BUILDING_NODE_ID, toPascalId } from './ids';
 import { LIBRARY_MATERIAL_IDS } from './libraryMaterialIds';
 import { worldBoxOf } from './orientDetected';
 import { roofOf } from './roofs';
+import { DRESSING_OFF_MAX } from './sceneLayer';
 import {
   CEILING_DEFAULT,
   dressNodeIdOf,
@@ -384,7 +385,8 @@ const dressingOffOf = (scene: PascalScene, fields: Fields, roomId: string, adopt
 
     return !isGeneratedLightId(nodeId) || scene.nodes[toPascalId('ceiling', roomId)] !== undefined;
   });
-  const off = [...new Set([...readStrings(fields, 'dressingOff'), ...removed])];
+  // Trần lược đồ: tràn thì giữ những món bỏ mới nhất (món cũ nhất có thể hiện lại) thay vì cả lượt lưu bị từ chối.
+  const off = [...new Set([...readStrings(fields, 'dressingOff'), ...removed])].slice(-DRESSING_OFF_MAX);
 
   return off.length === 0 ? {} : { dressingOff: off };
 };
