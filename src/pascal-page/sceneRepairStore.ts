@@ -5,21 +5,20 @@
  */
 import { useSyncExternalStore } from 'react';
 
-import type { FurnitureId } from '@/domain/spatial/types';
 import type { SceneLayerSummary, SceneRepair } from '@/lib/pascal/sceneLayer';
-import type { FrozenRepair } from '@/lib/pascal/sceneRepair';
+import type { RepairSession } from '@/lib/pascal/sceneRepair';
 
 export interface SceneRepairState {
   /** `false` = người dùng chọn xem dữ liệu gốc (không sửa cảnh) trong phiên này. */
   readonly enabled: boolean;
   readonly repairs: readonly SceneRepair[];
-  /** Kết quả sửa cảnh đã chốt lúc nạp (`freezeRepairs`); chip tính lỗi trên đúng cảnh đó. */
-  readonly frozen: ReadonlyMap<FurnitureId, FrozenRepair> | null;
+  /** Phiên sửa cảnh của cầu nối (`sessionRepairs`): chip tính lỗi trên đúng cảnh cầu nối dựng, cùng món đã đụng. */
+  readonly session: RepairSession | null;
   /** Tóm tắt lớp dẫn xuất của lượt dựng gần nhất (`toPascalScene().layer`): số món sinh theo luật, số sửa cảnh. */
   readonly layer: SceneLayerSummary | null;
 }
 
-let state: SceneRepairState = { enabled: true, repairs: [], frozen: null, layer: null };
+let state: SceneRepairState = { enabled: true, repairs: [], session: null, layer: null };
 const listeners = new Set<() => void>();
 
 export const sceneRepairStore = {

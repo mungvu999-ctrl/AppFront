@@ -6,7 +6,7 @@ import type { Furniture, Point, Room, RoomUsage, SpatialGraph, Wall } from '@/do
 
 import { rectInsidePolygon, rectOfFurniture, rectsOverlap, scenePlacementIssues, wallRects } from '../placement';
 import { sanitaryPlacementIssues } from '../sanitaryRules';
-import { freezeRepairs, reapplyRepairs, repairScene } from '../sceneRepair';
+import { createRepairSession, repairScene, sessionRepairs } from '../sceneRepair';
 
 const HUMAN = { source: 'human', reviewed: true, confidence: 1 } as const;
 const AI = { source: 'ai', reviewed: false, confidence: 0.8 } as const;
@@ -252,16 +252,39 @@ describe('repairScene', () => {
     expect(repairScene(g)).toEqual(first);
   });
 
-  it('reapplyRepairs: áp lại đúng lần sửa đã chốt; món người dùng vừa sửa/duyệt theo dữ liệu thật', () => {
+  it('sessionRepairs: cùng đầu vào → đúng kết quả cũ (không tính lại); dời tường làm món hợp lệ → hết sửa, không tải lại', () => {
     const g = graphOf([BED_ROOM, BATH], [wc('F-wc', 1000, 1000), item('F-bed', 'bed', [1600, 2000], 300, 1500)]);
-    const first = repairScene(g);
-    const frozen = freezeRepairs(g, first);
-    expect(reapplyRepairs(g, frozen)).toEqual(first);
-    // Người dùng dời giường (thành món đã sửa): lần sửa của giường không áp nữa, bồn cầu vẫn như lúc nạp.
-    const edited = { ...g, furniture: g.furniture.map((f) => (f.id === 'F-bed' ? { ...f, centre: { x: 2000, y: 1500 }, edited: true } : f)) };
-    const again = reapplyRepairs(edited, frozen);
+    const session = createRepairSession();
+    const first = sessionRepairs(session, g);
+    expect(first).toEqual(repairScene(g));
+    expect(first.repairs.map((r) => r.furnitureId).sort()).toEqual(['F-bed', 'F-wc']);
+    // Đồ thị mới cùng nội dung (kho dựng lại mảng) → cùng đối tượng kết quả.
+    expect(sessionRepairs(session, { ...g, furniture: [...g.furniture] })).toBe(first);
+
+    // Nới phòng ngủ sang trái 1 m (dời tường): giường không còn lòi → luật không dời nó nữa; bồn cầu vẫn sửa như cũ.
+    const wider = room('R-BED', 'bedroom', box(-1000, 0, 4000, 3500), 'Phòng ngủ');
+    const moved = graphOf([wider, BATH], [...g.furniture]);
+    const again = sessionRepairs(session, moved);
     expect(again.repairs.map((r) => r.furnitureId)).toEqual(['F-wc']);
-    expect(byId(again.graph, 'F-bed')?.centre).toEqual({ x: 2000, y: 1500 });
+    expect(byId(again.graph, 'F-bed')).toBe(byId(moved, 'F-bed'));
     expect(byId(again.graph, 'F-wc')).toEqual(byId(first.graph, 'F-wc'));
+  });
+
+  it('sessionRepairs: món người dùng đã đụng trong phiên không bị sửa lại (kể cả khi kéo về chỗ cũ); món AI chưa đụng sửa theo dữ liệu mới', () => {
+    const g = graphOf([BED_ROOM, BATH], [wc('F-wc', 1000, 1000), item('F-bed', 'bed', [1600, 2000], 300, 1500)]);
+    const session = createRepairSession();
+    sessionRepairs(session, g);
+    // Người dùng kéo giường tới chỗ vẫn lòi tường (lượt PUT chưa về nên chưa có `edited`): luật không kéo nó đi.
+    const dragged = { ...g, furniture: g.furniture.map((f) => (f.id === 'F-bed' ? { ...f, centre: { x: 200, y: 1600 }, boundingBox: { min: { x: -600, y: 600 }, max: { x: 1000, y: 2600 } } } : f)) };
+    const after = sessionRepairs(session, dragged);
+    expect(after.repairs.map((r) => r.furnitureId)).toEqual(['F-wc']);
+    expect(byId(after.graph, 'F-bed')).toBe(byId(dragged, 'F-bed'));
+    expect(byId(after.graph, 'F-bed')?.edited).toBeUndefined();
+    // Hoàn tác về đúng dữ liệu gốc: vẫn là món đã đụng trong phiên (như cờ `edited` máy chủ đặt).
+    expect(sessionRepairs(session, g).repairs.map((r) => r.furnitureId)).toEqual(['F-wc']);
+    expect(session.firstSeen.get('F-bed' as never)).toBe(byId(g, 'F-bed'));
+    // Chỉ đổi `roomId` (tách phòng) không phải "đụng".
+    const relabelled = { ...g, furniture: g.furniture.map((f) => (f.id === 'F-wc' ? { ...f, roomId: 'R-BED' } as Furniture : f)) };
+    expect(sessionRepairs(session, relabelled).repairs.map((r) => r.furnitureId)).toEqual(['F-wc']);
   });
 });

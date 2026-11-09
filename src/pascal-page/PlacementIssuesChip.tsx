@@ -14,7 +14,7 @@ import { toPascalId } from '@/lib/pascal/ids';
 import { scenePlacementIssues, type PlacementIssue } from '@/lib/pascal/placement';
 import { sanitaryPlacementIssues } from '@/lib/pascal/sanitaryRules';
 import type { SceneRepair, SceneRepairAction } from '@/lib/pascal/sceneLayer';
-import { reapplyRepairs, repairScene } from '@/lib/pascal/sceneRepair';
+import { repairScene, sessionRepairs } from '@/lib/pascal/sceneRepair';
 import { selectViewerSpatial } from '@/screens/viewer/ViewerShell/viewerShellGateway';
 import { useStore } from '@/store';
 
@@ -117,18 +117,18 @@ export function PlacementIssuesView({ issues, repairs = [], repairsEnabled = tru
 
 export function PlacementIssuesChip({ useViewer }: { readonly useViewer?: PlacementSelectStore }) {
   const spatial = useStore(selectViewerSpatial);
-  const { enabled, frozen } = useSceneRepairState();
+  const { enabled, session } = useSceneRepairState();
   const { issues, repairs } = useMemo(() => {
     if (spatial === null) return { issues: [], repairs: [] };
     const stored = denormalizeSpatial(spatial);
-    // Cùng kết quả cầu nối đã chốt lúc nạp (món người dùng vừa sửa thì theo dữ liệu thật); chưa nạp thì tính tại chỗ.
+    // Cùng phiên sửa cảnh của cầu nối (món người dùng đã đụng thì theo dữ liệu thật); chưa nạp thì tính tại chỗ.
     const { graph, repairs } = !enabled
       ? { graph: stored, repairs: [] }
-      : frozen === null
+      : session === null
         ? repairScene(stored)
-        : reapplyRepairs(stored, frozen);
+        : sessionRepairs(session, stored);
     return { issues: [...sanitaryPlacementIssues(graph), ...scenePlacementIssues(graph)], repairs };
-  }, [spatial, enabled, frozen]);
+  }, [spatial, enabled, session]);
   // ponytail: chỉ chọn, không chuyển tầng — món ở tầng khác cần đổi tầng tay.
   const onPick =
     useViewer === undefined
