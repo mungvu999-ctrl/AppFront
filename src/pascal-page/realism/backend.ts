@@ -16,8 +16,12 @@ export function backendOf(renderer: unknown): RealismBackend {
 /** Cho post-processing vendor: chỉ dựng chuỗi TSL khi backend THẬT là WebGPU. */
 export const isWebGpuBackend = (renderer: unknown): boolean => backendOf(renderer) === 'webgpu';
 
+/** Renderer hiện hành (đầu dò `setLook` cần đặt `toneMappingExposure` thẳng — vendor chỉ áp khi đổi chủ đề). */
+export let currentRenderer: unknown;
+
 /** Ghi backend vào store sau khi renderer init; gửi `viewer.backend` một lần mỗi lần đổi. */
 export function reportBackend(renderer: unknown): RealismBackend {
+  currentRenderer = renderer;
   const backend = backendOf(renderer);
   if (backend === 'unknown' || useRealism.getState().backend === backend) return backend;
   useRealism.setState({ backend });

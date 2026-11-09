@@ -9,6 +9,9 @@
  * pointerdown/up/click nen su kien R3F cua canh khong chon tuong phia sau. Cong cu khac bat: pointer-events none.
  * U45: bay camera can bam dup (ban phim Enter van bay, detail = 0). Nhan nam giua san phong, bam don de chon gi do
  * ma camera phong toi la bat ngo.
+ * U70 (09/11): nhan chi ve khi tang cua vung dang hien (`isLevelShown`, chung luat voi u70-hidden-level-no-shadow).
+ * <Html> cua drei la DOM ngoai do thi three: `visible`/layer cua tang khong an duoc no, nen "Tang: tung tang" tung hien
+ * ca nhan cua tang an (lo lung tren khong).
  */
 const FILE = 'nodes/src/zone/renderer.tsx';
 
@@ -17,13 +20,16 @@ export const RULES = {
     [
       "import { useNodeEvents, useViewer, ZONE_LAYER } from '@pascal-app/viewer'\n",
       "import { useNodeEvents, useViewer, ZONE_LAYER } from '@pascal-app/viewer'\n" +
-        "import { useEditor, useFloorplanAnnotationVisibility } from '@pascal-app/editor'\n",
+        "import { useEditor, useFloorplanAnnotationVisibility } from '@pascal-app/editor'\n" +
+        "import { isLevelShown } from '@/pascal-page/upstream/lib/level-shown'\n",
     ],
     [
       '  const showZones = useViewer((s) => s.showZones)\n',
       '  const showZones = useViewer((s) => s.showZones)\n' +
         '  const showRoomLabelsU40 = useFloorplanAnnotationVisibility((s) => s.visibility.roomLabels)\n' +
-        "  const labelClickU40 = useEditor((s) => s.isPreviewMode || s.mode === 'select')\n",
+        "  const labelClickU40 = useEditor((s) => s.isPreviewMode || s.mode === 'select')\n" +
+        '  const levelShownU70 = useViewer((s) => isLevelShown({ levelMode: s.levelMode, hasSelectedLevel: Boolean(s.selection.levelId), isSelected: s.selection.levelId === node.parentId }))\n' +
+        '  const levelVisibleU70 = useScene((s) => (node.parentId ? s.nodes[node.parentId]?.visible : undefined) !== false)\n',
     ],
     [
       '  // Create materials\n',
@@ -41,7 +47,7 @@ export const RULES = {
     ],
     [
       '      {showZones && (\n        <>\n          <Html\n            name="label"\n',
-      '      {showRoomLabelsU40 && node.name && (\n' +
+      '      {showRoomLabelsU40 && levelShownU70 && levelVisibleU70 && node.visible !== false && node.name && (\n' +
         '        <Html position={[centroid[0], 0.05, centroid[1]]} style={{ pointerEvents: \'none\' }} zIndexRange={[5, 0]}>\n' +
         '          <button\n' +
         "            aria-label={`Xem gần ${node.name}`}\n" +

@@ -6,7 +6,7 @@ import type { LayerPassIndex } from './layer-pass'
 export class PostProcessingResources {
   layerIndex: LayerPassIndex | null = null
   readonly passes: PassNode[] = []
-  outline: { dispose(): void } | null = null
+  outline: { dispose(): void; suppressSecondary?: boolean } | null = null
   pipeline: RenderPipeline | null = null
 
   dispose() {
