@@ -12,7 +12,7 @@ export const RULES = {
   [PP]: [
     [
       'export const GRADE_PARAMS = {\n  contrast: 1.12,\n  saturation: 1.08,\n}\n',
-      `${IMPORT}\n${IMPORT_GRADE}\nconst LOOK = withLookOverride(DEFAULT_LOOK)\nexport const GRADE_PARAMS = {\n  contrast: LOOK.contrast,\n  saturation: LOOK.saturation,\n}\n`,
+      `${IMPORT}\n${IMPORT_GRADE}\n// Tone mapper thật do realism/tone.ts đặt: AgX hiệu chỉnh mặc định (WebGPU trung/cao), ACES ở low/WebGL2 hoặc ?tone=aces.\nconst LOOK = withLookOverride(DEFAULT_LOOK)\nexport const GRADE_PARAMS = {\n  contrast: LOOK.contrast,\n  saturation: LOOK.saturation,\n}\n`,
     ],
     [
       'rgb.div(0.18).pow(vec3(GRADE_PARAMS.contrast)).mul(0.18),\n          GRADE_PARAMS.saturation,',

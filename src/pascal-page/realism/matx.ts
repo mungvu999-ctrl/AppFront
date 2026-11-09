@@ -22,14 +22,22 @@ const active = parseMatx(search);
 export const matxOn = (name: MatxName): boolean => active.has(name);
 
 /**
- * M5-LC: cờ `?mat=cap-top,floor-rough` (hoặc `all`), độc lập với `?matx=`. Không cờ = y hiện tại.
+ * M5-LC: cờ `?mat=cap-top,floor-rough` (hoặc `all`), độc lập với `?matx=`. Vòng 5 (chấm mù 5/0/7, không thua): KHÔNG cờ
+ * = bật cả hai. Rollback `?mat=none` (= baseline cũ); tắt từng cái `?disable=captop` / `?disable=floorrough`.
+ * Có `?mat=` thì chỉ bật đúng tên liệt kê.
  * - cap-top    : đồ dạng tủ có vật liệu HAI MẶT (GLB thư viện/Sketchfab xuất doubleSided) bị mặt cắt 1,0 m của
  *                "Tường: cắt" cắt ngang cũng được tô nắp phẳng như tường (trước đây bỏ qua → lòng tủ đen tuyền).
  * - floor-rough: sàn trong nhà (gỗ/gạch/đá) nhám tối thiểu `FLOOR_ROUGH_MIN`, clearcoat 0 — bớt vệt cháy gần đèn.
  */
 export const MAT_NAMES = ['cap-top', 'floor-rough'] as const;
 export type MatName = (typeof MAT_NAMES)[number];
-export const parseMat = (search: string): ReadonlySet<MatName> => parseList(search, 'mat', MAT_NAMES);
+const MAT_DISABLE: Record<MatName, string> = { 'cap-top': 'captop', 'floor-rough': 'floorrough' };
+export function parseMat(search: string): ReadonlySet<MatName> {
+  const q = new URLSearchParams(search);
+  const on = q.has('mat') ? parseList(search, 'mat', MAT_NAMES) : new Set(MAT_NAMES);
+  const off = (q.get('disable') ?? '').split(',');
+  return new Set([...on].filter((n) => !off.includes(MAT_DISABLE[n])));
+}
 const activeMat = parseMat(search);
 export const matOn = (name: MatName): boolean => activeMat.has(name);
 

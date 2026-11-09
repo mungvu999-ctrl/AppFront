@@ -1,7 +1,8 @@
 /**
- * M6 làn A: chọn tone mapper bằng `?tone=aces|agx|agx-cal|neutral`. Không cờ → không đụng gì (baseline thật = ACES:
- * R3F `configure()` đặt `gl.toneMapping = ACESFilmicToneMapping` khi `gl` là hàm, đè AgX mà `pascal-render` gán lúc tạo
- * renderer). Vendor gọi `applyTone(gl)` sau khi `ToneMappingExposure` đặt phơi sáng theo chủ đề đang chạy (luật
+ * M6 làn A: chọn tone mapper bằng `?tone=aces|agx|agx-cal|neutral`. Không cờ → `agx-cal` (vòng 5, chọn bằng chấm mù:
+ * thắng ACES 10/1/1). `?tone=aces` = baseline cũ (ACES, phơi sáng/chấm màu gốc) để so và rollback. R3F `configure()`
+ * đặt `gl.toneMapping = ACESFilmicToneMapping` khi `gl` là hàm, đè AgX mà `pascal-render` gán lúc tạo renderer → tone thật
+ * chỉ do hàm này đặt. Vendor gọi `applyTone(gl)` sau khi `ToneMappingExposure` đặt phơi sáng theo chủ đề đang chạy (luật
  * `scripts/realism/m6-tone.mjs`), nên áp cho đúng chủ đề hiện hành (mặc định dáng ấm đè `night`).
  *
  * Mức `low` hoặc backend WebGL2 → ACES với phơi sáng/chấm màu gốc (= baseline).
@@ -36,12 +37,15 @@ export function parseTone(search: string): ToneVariant | null {
   return raw !== null && Object.hasOwn(TONE_VARIANTS, raw) ? (raw as ToneVariant) : null;
 }
 
-let memo: ToneVariant | null | undefined;
-export const toneFlag = (): ToneVariant | null => (memo ??= parseTone(typeof location === 'undefined' ? '' : location.search));
+/** Mặc định khi không có `?tone=` (rollback: `?tone=aces`). */
+export const DEFAULT_TONE: ToneVariant = 'agx-cal';
 
-/** Biến thể thật sự áp: `null` = không cờ; mức `low`/WebGL2 → `aces`. */
-export function activeTone(gl: unknown, flag = toneFlag(), tier = sceneTier()): ToneVariant | null {
-  if (!flag) return null;
+let memo: ToneVariant | undefined;
+export const toneFlag = (): ToneVariant =>
+  (memo ??= parseTone(typeof location === 'undefined' ? '' : location.search) ?? DEFAULT_TONE);
+
+/** Biến thể thật sự áp: mức `low`/WebGL2 → `aces` (= baseline cũ). */
+export function activeTone(gl: unknown, flag = toneFlag(), tier = sceneTier()): ToneVariant {
   return tier === 'low' || backendOf(gl) !== 'webgpu' ? 'aces' : flag;
 }
 
@@ -52,7 +56,6 @@ interface ToneTarget {
 
 /** Gọi NGAY SAU khi vendor đặt phơi sáng theo chủ đề (phơi sáng nhân một lần mỗi lần đặt lại → không cộng dồn). */
 export function applyTone(gl: ToneTarget, variant = activeTone(gl)): void {
-  if (!variant) return;
   const spec = TONE_VARIANTS[variant];
   gl.toneMapping = spec.toneMapping;
   gl.toneMappingExposure *= spec.exposureScale;

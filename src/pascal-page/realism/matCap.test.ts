@@ -10,8 +10,16 @@ describe('M5-LC cờ ?mat=', () => {
   it('parseMat đọc cap-top/floor-rough/all, độc lập với ?matx=', () => {
     expect([...parseMat('?mat=cap-top')]).toEqual(['cap-top']);
     expect([...parseMat('?mat=all')]).toEqual(['cap-top', 'floor-rough']);
-    expect(parseMat('?matx=floor').size).toBe(0);
     expect(parseMatx('?mat=floor-rough').size).toBe(0);
+  });
+
+  it('không cờ = bật cả hai (vòng 5); ?mat=none = baseline cũ; ?disable= tắt từng cái', () => {
+    expect([...parseMat('')]).toEqual(['cap-top', 'floor-rough']);
+    expect([...parseMat('?matx=floor')]).toEqual(['cap-top', 'floor-rough']);
+    expect(parseMat('?mat=none').size).toBe(0);
+    expect([...parseMat('?disable=captop')]).toEqual(['floor-rough']);
+    expect([...parseMat('?disable=ao,floorrough')]).toEqual(['cap-top']);
+    expect(parseMat('?mat=cap-top&disable=captop').size).toBe(0);
   });
 
   it('cap-top chỉ cho thư mục dạng tủ (mẫu Pascal + thư viện máy chủ)', () => {

@@ -2,7 +2,7 @@ import { ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping } from 'three
 import { describe, expect, it } from 'vitest';
 
 import { GRADE_U } from './grade';
-import { activeTone, applyTone, parseTone, TONE_VARIANTS } from './tone';
+import { activeTone, applyTone, DEFAULT_TONE, parseTone, toneFlag, TONE_VARIANTS } from './tone';
 
 const webgpu = { backend: { isWebGPUBackend: true } };
 const webgl = { backend: { isWebGPUBackend: false } };
@@ -17,16 +17,22 @@ describe('tone', () => {
     expect(parseTone('')).toBeNull();
   });
 
-  it('không cờ → không đụng renderer (baseline y hệt)', () => {
-    expect(activeTone(webgpu, null, 'high')).toBeNull();
+  it('không cờ → agx-cal (vòng 5); ?tone=aces = baseline cũ y hệt', () => {
+    expect(DEFAULT_TONE).toBe('agx-cal');
+    expect(toneFlag()).toBe('agx-cal');
+    expect(activeTone(webgpu, undefined, 'high')).toBe('agx-cal');
+    expect(activeTone(webgpu, undefined, 'medium')).toBe('agx-cal');
+    expect(activeTone(webgpu, 'aces', 'high')).toBe('aces');
     const g = gl();
-    applyTone(g, null);
+    applyTone(g, 'aces');
     expect(g).toEqual(gl());
   });
 
   it('mức low hoặc WebGL2 → ACES phơi sáng gốc', () => {
     expect(activeTone(webgpu, 'agx', 'low')).toBe('aces');
     expect(activeTone(webgl, 'agx-cal', 'high')).toBe('aces');
+    expect(activeTone(webgpu, undefined, 'low')).toBe('aces');
+    expect(activeTone(webgl, undefined, 'high')).toBe('aces');
     expect(activeTone(webgpu, 'agx', 'medium')).toBe('agx');
     const g = gl();
     applyTone(g, 'aces');

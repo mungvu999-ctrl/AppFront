@@ -149,5 +149,10 @@ describe('pascal probe', () => {
       backend: 'webgpu',
       tone: null,
     });
+    const agx = { toneMapping: 6, toneMappingExposure: 0.736, outputColorSpace: 'srgb' };
+    expect(install('?probe=1', { ...stores, renderer: () => ({ gl: agx, backend: 'webgpu', tone: 'agx-cal' }) })?.renderer()).toMatchObject({
+      toneMappingName: 'AgX',
+      tone: 'agx-cal',
+    });
   });
 });
