@@ -15,35 +15,36 @@
 // soon as their GLB mounts (`queueLazyBvh`, item renderer). Building on the first
 // hover cost 355 ms for a 978 k-triangle model right under the pointer (review
 // 2026-11-09). A ray that reaches a geometry whose tree is not ready yet moves it
-// to the front of the queue and answers with its bounding box (one hit where the
-// ray enters the box, face normal = that box side) — cheap and close enough for
-// hover/click until the tree lands a few frames later.
+// to the front of the queue and answers EXACTLY, never with a stand-in:
+//  - up to LAZY_BVH_SYNC_TRIANGLES: three's stock per-triangle raycast for the
+//    few rays before the tree lands (next idle slot). Slow-ish, but correct.
+//  - above it: build the tree right there (one longtask, once per geometry) —
+//    brute-forcing that many triangles per ray was the old p95 bottleneck, and a
+//    tree costs about three brute-force rays (978 k tris, bun 2026-11-09: build
+//    292 ms, one brute-force ray 89 ms, one tree ray 0.4 ms).
+// An earlier version answered with the bounding box (fake hit, faceIndex 0): a
+// click through the hole of a torus/chair back selected the item, or the box
+// hid whatever sat behind it (Codex review 2026-11-09). Answering "no hit" until
+// the tree lands was rejected too: the first hover/click would silently miss.
 import {
-  Box3,
   type BufferGeometry,
   type Intersection,
-  Matrix4,
   Mesh,
   type Object3D,
-  Ray,
   type Raycaster,
   Sphere,
-  Vector3,
 } from 'three'
 import { acceleratedRaycast, MeshBVH } from 'three-mesh-bvh'
 
 export const LAZY_BVH_MIN_TRIANGLES = 2000
+/** Above this a pending geometry builds its tree on the ray (~30 ms at 100 k) instead of brute-forcing ~9 ms per ray until the idle build. */
+export const LAZY_BVH_SYNC_TRIANGLES = 100_000
 
 type BvhGeometry = BufferGeometry & { boundsTree?: MeshBVH }
 
 type BuiltKey = { position: unknown; index: unknown; sig: string }
 const builtAt = new WeakMap<BufferGeometry, BuiltKey>()
 const sphere = new Sphere()
-const inverse = new Matrix4()
-const localRay = new Ray()
-const localHit = new Vector3()
-const center = new Vector3()
-const size = new Vector3()
 
 type VersionedAttribute = { count: number; version: number; isInterleavedBufferAttribute?: boolean; data?: { version: number } }
 const versionOf = (a: VersionedAttribute | null | undefined) =>
@@ -58,6 +59,8 @@ function buildSig(g: BufferGeometry): string {
   for (const group of g.groups) sig += `|${group.start},${group.count},${group.materialIndex}`
   return sig
 }
+
+const triangleCount = (g: BufferGeometry) => (g.index ? g.index.count : g.attributes.position!.count) / 3
 
 export function wantsLazyBvh(mesh: Mesh): boolean {
   const g = mesh.geometry
@@ -147,34 +150,6 @@ export const pendingLazyBvh = (): number => pending.size
 // ---- raycast ---------------------------------------------------------------
 const stockRaycast = Mesh.prototype.raycast
 
-/** Stand-in hit while the tree is queued: where the ray enters the local bounding box. */
-function boxRaycast(mesh: Mesh, g: BufferGeometry, raycaster: Raycaster, intersects: Intersection[]) {
-  if (g.boundingBox === null) g.computeBoundingBox()
-  const bb = g.boundingBox!
-  inverse.copy(mesh.matrixWorld).invert()
-  localRay.copy(raycaster.ray).applyMatrix4(inverse)
-  if (!localRay.intersectBox(bb, localHit)) return
-  // Box side the ray entered through → outward normal (local space, like three's face normals).
-  bb.getCenter(center)
-  bb.getSize(size)
-  const rx = (localHit.x - center.x) / (size.x || 1)
-  const ry = (localHit.y - center.y) / (size.y || 1)
-  const rz = (localHit.z - center.z) / (size.z || 1)
-  const ax = Math.abs(rx)
-  const ay = Math.abs(ry)
-  const az = Math.abs(rz)
-  const normal =
-    ax >= ay && ax >= az
-      ? new Vector3(Math.sign(rx), 0, 0)
-      : ay >= az
-        ? new Vector3(0, Math.sign(ry), 0)
-        : new Vector3(0, 0, Math.sign(rz))
-  const point = localHit.clone().applyMatrix4(mesh.matrixWorld)
-  const distance = raycaster.ray.origin.distanceTo(point)
-  if (distance < raycaster.near || distance > raycaster.far) return
-  intersects.push({ distance, point, object: mesh, face: { a: 0, b: 0, c: 0, normal, materialIndex: 0 }, faceIndex: 0 })
-}
-
 function lazyBvhRaycast(this: Mesh, raycaster: Raycaster, intersects: Intersection[]) {
   const g = this.geometry as BvhGeometry
   // Checked on every cast: a draw range narrowed after the build (or skinning/morphs) means the tree no
@@ -188,13 +163,14 @@ function lazyBvhRaycast(this: Mesh, raycaster: Raycaster, intersects: Intersecti
     sphere.copy(g.boundingSphere!).applyMatrix4(this.matrixWorld)
     // Same early-out three's raycast takes; only geometries a ray reaches jump the queue.
     if (!raycaster.ray.intersectsSphere(sphere)) return
-    if (syncBuild) {
+    if (syncBuild || triangleCount(g) > LAZY_BVH_SYNC_TRIANGLES) {
+      pending.delete(g)
       build(g)
       acceleratedRaycast.call(this, raycaster, intersects)
       return
     }
     enqueue(g, true)
-    boxRaycast(this, g, raycaster, intersects)
+    stockRaycast.call(this, raycaster, intersects)
     return
   }
   acceleratedRaycast.call(this, raycaster, intersects)
