@@ -22,8 +22,8 @@ import { type RealismBackend, type RealismTier, useRealism } from './store';
 import { sceneTier } from './tiers';
 
 export type GlassMode = 'alpha' | 'sheet' | 'transmission';
-/** Chế độ khi không có `?glass=`. */
-export const GLASS_DEFAULT: GlassMode = 'alpha';
+/** Chế độ khi không có `?glass=`: `sheet` từ vòng 4 (đề xuất làn 3b: hết vạch "sữa" chân trời 3/3 ca); `?glass=alpha` = kính vendor cũ. */
+export const GLASS_DEFAULT: GlassMode = 'sheet';
 
 /** Chế độ kính: cờ URL (A/B), rồi hạ về `alpha` ở tier low hoặc WebGL. */
 export function pickGlassMode(query: string | null, tier: RealismTier, backend: RealismBackend): GlassMode {

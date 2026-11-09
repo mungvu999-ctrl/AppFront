@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 
 import { GLASS_DEFAULT, glassVariant, isGlassCandidate, pickGlassMode } from './glass';
+import { useRealism } from './store';
 
 describe('glass (R10D)', () => {
   it('pickGlassMode: cờ URL A/B, tier low / WebGL luôn về vật liệu cũ', () => {
@@ -22,8 +23,19 @@ describe('glass (R10D)', () => {
     expect(isGlassCandidate({ transparent: true, opacity: 0.25, roughness: 0.02 })).toBe(false);
   });
 
-  it('glassVariant: không cờ → null (giữ kính vendor)', () => {
+  it('glassVariant: không cờ → `sheet` mặc định; tier low / WebGL → null (giữ kính vendor)', () => {
     const glass = new MeshStandardNodeMaterial({ transparent: true, opacity: 0.25, roughness: 0.02 });
-    expect(glassVariant(glass)).toBeNull();
+    const prev = useRealism.getState();
+    try {
+      useRealism.setState({ tier: 'high', backend: 'webgpu' });
+      expect(GLASS_DEFAULT).toBe('sheet');
+      expect(glassVariant(glass)?.userData.realismGlass).toBe('sheet');
+      useRealism.setState({ tier: 'high', backend: 'webgl' });
+      expect(glassVariant(glass)).toBeNull();
+      useRealism.setState({ tier: 'low', backend: 'webgpu' });
+      expect(glassVariant(glass)).toBeNull();
+    } finally {
+      useRealism.setState({ tier: prev.tier, backend: prev.backend });
+    }
   });
 });
