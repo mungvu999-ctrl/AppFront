@@ -49,6 +49,7 @@ const DETAIL_MAX = 3;
 /** Tránh chia 0 khi điểm ảnh đen tuyệt đối. */
 const LUM_EPSILON = 1e-4;
 
+// M4-L2: tile79 đếm trên ảnh 512 px = 4 × 4 viên → 2,4 m (viên 0,6 m). Gỗ/gạch khác đếm lại cùng cách, khớp sẵn.
 // ponytail: sizeM và scanLum ước lượng (ảnh xem trước 128 px, `pbr.py`), chưa đo trên ảnh ktx2 gốc —
 // chỉnh mắt trên trình duyệt; gạch có ron sẵn trong ảnh (tile79/20, tiles4, lightceramic24) không
 // vẽ ron shader vì chưa biết số viên/ảnh (vẽ lệch = ron đôi).
@@ -60,7 +61,7 @@ export const FLOOR_FINISHES: Readonly<Record<string, FloorFinish>> = {
   'wood-woodplank48': { sizeM: 2, target: SCENE_PALETTE.bark, scanLum: 0.42, ...WOOD },
   'wood-woodplank19': { sizeM: 2, target: null, scanLum: 0.49, ...WOOD },
   'wood-woodenparquet11': { sizeM: 2, target: SCENE_PALETTE.walnut, scanLum: 0.244, ...WOOD },
-  'flooring-tile79': { sizeM: 2, target: SCENE_PALETTE.tile, scanLum: 0.815, ...TILE },
+  'flooring-tile79': { sizeM: 2.4, target: SCENE_PALETTE.tile, scanLum: 0.815, ...TILE },
   'flooring-tile20': { sizeM: 1.2, target: SCENE_PALETTE.tile, scanLum: 0.799, ...TILE },
   'flooring-lightceramic24': { sizeM: 1.2, target: SCENE_PALETTE.tile, scanLum: 0.608, ...TILE },
   'flooring-tiles4': { sizeM: 1, target: SCENE_PALETTE.mosaic, scanLum: 0.511, ...TILE },
