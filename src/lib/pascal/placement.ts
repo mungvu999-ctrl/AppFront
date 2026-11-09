@@ -260,7 +260,8 @@ export const overlapAreaMm2 = (a: Rect, b: Rect): number => {
 };
 
 export interface PlacementIssue {
-  readonly kind: 'overlap' | 'doorSwing' | 'wall';
+  /** `roomMismatch` / `duplicateFixture` / `facing`: luật thiết bị vệ sinh (`sanitaryRules.ts`). */
+  readonly kind: 'overlap' | 'doorSwing' | 'wall' | 'roomMismatch' | 'duplicateFixture' | 'facing';
   readonly furnitureIds: readonly string[];
   readonly message: string;
 }
