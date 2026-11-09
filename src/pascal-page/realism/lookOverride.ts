@@ -6,7 +6,8 @@
  *
  * Nơi dùng: `renderLook.ts` (phơi sáng), `scripts/realism/r12-look-override.mjs` (chấm màu
  * `GRADE_PARAMS`, bloom đèn ở `post-processing.tsx`; `ENV_INTENSITY`/`ENV_INTENSITY_DARK` ở
- * `scene-environment.tsx`). Đọc URL một lần: đổi `?look=` phải tải lại trang.
+ * `scene-environment.tsx`). Đọc URL một lần: đổi `?look=` phải tải lại trang — trừ tương phản/bão hoà/phơi sáng,
+ * đổi được lúc chạy qua `__pascalProbe.setLook({ grade, exposure })` (`realism/grade.ts`).
  */
 export interface Look {
   /** Phơi sáng tone map; không đặt = số theo bậc trong `renderLook.ts` (`DAY_LOOK_TIERS`/`RENDER_LOOK_TIERS`). */

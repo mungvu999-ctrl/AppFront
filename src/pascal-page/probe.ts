@@ -7,6 +7,7 @@ import { getSceneTheme, useViewer } from '@pascal-app/viewer';
 
 import { installPascalProbe, type PascalProbe } from './createProbe';
 import { currentRenderer } from './realism/backend';
+import { setGrade } from './realism/grade';
 import { markDirty } from './realism/idle';
 import { setSurfaceNoise } from './realism/surfaceNoise';
 import { DAY_THEME_ID, SUNSET_THEME_ID } from './renderLook';
@@ -25,6 +26,7 @@ installPascalProbe(window.location.search, window, {
   useInteractive,
   look: {
     surf: (v) => { setSurfaceNoise(v); markDirty('probe:look', 1500); },
+    grade: (v) => { setGrade(v); markDirty('probe:look', 1500); },
     // Exposure được `ToneMappingExposure` đọc lại từ chủ đề mỗi khung → sửa cả ba chủ đề là đủ.
     exposure: (v) => {
       for (const id of ['night', DAY_THEME_ID, SUNSET_THEME_ID] as const) getSceneTheme(id).toneMappingExposure = v;

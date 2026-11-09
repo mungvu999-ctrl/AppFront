@@ -35,7 +35,7 @@ export interface PascalProbe {
   /** Số đo reflection probe (`realism/reflect.ts`): số lần chụp, ms CPU, số vật liệu bóng. */
   reflect(): unknown;
   /** Đổi nút vật liệu/phơi sáng lúc chạy (đo biến thể cùng một lần nạp): nhiễu bề mặt, kính, exposure. */
-  setLook(v: { surf?: { rough?: number; albedo?: number; scale?: number }; exposure?: number }): void;
+  setLook(v: { surf?: { rough?: number; albedo?: number; scale?: number }; exposure?: number; grade?: { contrast?: number; saturation?: number } }): void;
 }
 
 export interface ProbeItem {
@@ -106,6 +106,7 @@ export interface PascalProbeStores {
   readonly look?: {
     surf(v: { rough?: number; albedo?: number; scale?: number }): void;
     exposure(v: number): void;
+    grade(v: { contrast?: number; saturation?: number }): void;
   };
 }
 
@@ -135,6 +136,7 @@ export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter,
     setLook: (v) => {
       if (v.surf) look?.surf(v.surf);
       if (v.exposure !== undefined) look?.exposure(v.exposure);
+      if (v.grade) look?.grade(v.grade);
     },
     setCamera: (position, target, fov) =>
       emitter.emit(
