@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { denormalizeSpatial, normalizeSpatial } from '@/domain/spatial/normalize';
 import type { Furniture, Point, Room, SpatialGraph, Wall } from '@/domain/spatial/types';
 import { createPascalEditCommand } from '@/lib/pascal/fromPascal';
-import { REPAIR_FIELD } from '@/lib/pascal/sceneLayer';
+import { REPAIR_FIELD, type SceneRepair } from '@/lib/pascal/sceneLayer';
 import { createRepairSession, sessionRepairs, type RepairSession } from '@/lib/pascal/sceneRepair';
 import { standardSceneOf } from '@/lib/pascal/sceneStandard';
 import type { PascalItemNode, PascalNode, PascalScene } from '@/lib/pascal/types';
@@ -79,7 +79,7 @@ class Page {
   enabled = true;
   base!: PascalScene;
   loaded!: PascalScene;
-  repairs: readonly { furnitureId: string; action: string }[] = [];
+  repairs: readonly SceneRepair[] = [];
   snapshots: Parameters<typeof suggestionEditOf>[4] = new Map();
 
   build(): PascalScene {

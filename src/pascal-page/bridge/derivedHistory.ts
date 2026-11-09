@@ -164,7 +164,7 @@ export const restoreDerived = (
       nodes[node.id] = {
         ...node,
         metadata: { ...metadata, appfront: { ...metadata.appfront, fields: { ...metadata.appfront.fields, dressIds, dressingOff } } },
-      } as PascalNode;
+      } as unknown as PascalNode;
     }
   }
   return restored ? { scene: { ...scene, nodes }, restored } : { scene, restored };
