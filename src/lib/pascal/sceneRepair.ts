@@ -8,10 +8,10 @@
  *      còn chỗ (bồn cầu/bồn tắm chỉ sang phòng chưa có món cùng loại), không có thì ẩn.
  *   2. `duplicateFixture` — phòng có ≥ 2 bồn cầu/bồn tắm: giữ một (người xác nhận > lớn hơn), ẩn món AI thừa.
  *   3. `outsideRoom` / `wallOverlap` — lòi khỏi outline phòng hoặc lấn tường > 50 mm: dịch vào chỗ hợp lệ gần nhất
- *      (≤ 1,5 m), không được thì ẩn.
+ *      (≤ 1,5 m), không được thì giữ nguyên (lỗi còn trên chip).
  *   4. `notAgainstWall` — tủ áo/kệ/tủ bếp lưng cách tường > 150 mm: dời áp lưng vào tường gần nhất còn chỗ (≤ 1,5 m).
  *   5. `overlap` — hai món chồng > 30 % món nhỏ: giữ món ưu tiên (người > AI; giường/sofa/tủ > đồ nhỏ; lớn hơn),
- *      món kia dịch, không được thì ẩn.
+ *      món kia dịch; không được thì chỉ ẩn khi nó là món nhỏ/`other` chồng lên đồ chính, còn lại giữ nguyên.
  *   6. `facing` — bồn cầu đối diện lavabo: xoay 90° món AI nếu chỗ mới hợp lệ.
  * Vị trí mới phải hợp lệ như `sceneFurnish.ts`: trong outline lùi 100 mm, tâm không trong phòng khác, cách đồ khác
  * ≥ 50 mm, không lấn vùng mở cửa, không cắt tường. Luật chạy lặp tới điểm dừng (≤ MAX_ROUNDS vòng) nên
@@ -61,6 +61,21 @@ const FLAT_MAX_MM = 50;
 const FACING_SHIFT_MM = 300;
 const MAX_ROUNDS = 6;
 
+/**
+ * Chính sách ẩn (cần chủ dự án xác nhận): đồ chính (giường, sofa/ghế dài, bàn lớn, tủ áo, tủ bếp, thang) KHÔNG bao giờ
+ * bị ẩn — không có chỗ hợp lệ thì giữ chỗ gốc và để lỗi trên chip. `hidden` chỉ dành cho thiết bị vệ sinh sai phòng
+ * không còn chỗ ở WC, bồn cầu/bồn tắm thứ hai, và món nhỏ/`other` chồng lên đồ chính.
+ */
+const MAIN_KINDS: ReadonlySet<Furniture['kind']> = new Set(['bed', 'wardrobe', 'kitchenCabinet', 'stair']);
+/** Bàn có cạnh dài từ mức này (mm) là bàn lớn (bàn ăn); món có cạnh dài dưới MINOR_LONG_MM là món nhỏ. */
+const BIG_TABLE_LONG_MM = 1200;
+const MINOR_LONG_MM = 900;
+const longSideOf = (f: Furniture): number => Math.max(f.boundingBox.max.x - f.boundingBox.min.x, f.boundingBox.max.y - f.boundingBox.min.y);
+const isMain = (f: Furniture): boolean =>
+  MAIN_KINDS.has(f.kind) ||
+  ['sofa', 'bench'].includes(roleOf(f)) ||
+  (f.kind === 'table' && longSideOf(f) >= BIG_TABLE_LONG_MM);
+const isMinor = (f: Furniture): boolean => !isMain(f) && (f.kind === 'other' || longSideOf(f) < MINOR_LONG_MM);
 const MAJOR_ROLES: ReadonlySet<string> = new Set(['singleBed', 'doubleBed', 'sofa', 'closet']);
 const BATH_NAME = /\b(wc|toilet|bath)|vệ sinh|tắm/iu;
 
@@ -335,7 +350,8 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[]): Step[] => {
       placed = { id: f.id, rule, reasonVi: `${capital(labelOf(f))} ${what}: ${where} ${mm(dist(at.centre, f.centre))}.`, after: movedTo(f, at, target.id) };
       break;
     }
-    commit(placed ?? { id: f.id, rule, reasonVi: `${capital(labelOf(f))} ${what}, không có chỗ hợp lệ trong vòng 1,5 m: ẩn trong cảnh.`, after: null });
+    // Không có chỗ: giữ nguyên chỗ gốc, lỗi còn trên chip (chính sách: luật này không ẩn món nào).
+    if (placed !== null) commit(placed);
   }
 
   // 4. notAgainstWall
@@ -377,6 +393,8 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[]): Step[] => {
       if (room === undefined) continue;
       const at = nearestShift(yield_, room, MAX_SHIFT_MM);
       const what = `${capital(labelOf(yield_))} chồng lên ${labelOf(keep)}`;
+      // Chỉ món nhỏ/`other` chồng lên đồ chính mới được ẩn; còn lại không có chỗ thì giữ nguyên, lỗi còn trên chip.
+      if (at === null && !(isMinor(yield_) && isMain(keep))) continue;
       commit(
         at === null
           ? { id: yield_.id, rule: 'overlap', reasonVi: `${what}, không có chỗ trống trong vòng 1,5 m: ẩn trong cảnh.`, after: null }
