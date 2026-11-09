@@ -6,10 +6,11 @@ import { emitter, sceneRegistry, useInteractive, useScene } from '@pascal-app/co
 import { getSceneTheme, useViewer } from '@pascal-app/viewer';
 
 import { installPascalProbe, type PascalProbe } from './createProbe';
-import { currentRenderer } from './realism/backend';
+import { backendOf, currentRenderer } from './realism/backend';
 import { setGrade } from './realism/grade';
 import { markDirty } from './realism/idle';
 import { setSurfaceNoise } from './realism/surfaceNoise';
+import { activeTone } from './realism/tone';
 import { DAY_THEME_ID, SUNSET_THEME_ID } from './renderLook';
 import { sceneRepairStore } from './sceneRepairStore';
 
@@ -27,6 +28,7 @@ installPascalProbe(window.location.search, window, {
   useInteractive,
   repairs: () => sceneRepairStore.get().repairs,
   layer: () => sceneRepairStore.get().layer,
+  renderer: () => (currentRenderer ? { gl: currentRenderer, backend: backendOf(currentRenderer), tone: activeTone(currentRenderer) } : undefined),
   look: {
     surf: (v) => { setSurfaceNoise(v); markDirty('probe:look', 1500); },
     grade: (v) => { setGrade(v); markDirty('probe:look', 1500); },

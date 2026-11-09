@@ -136,4 +136,18 @@ describe('pascal probe', () => {
     const repair = { furnitureId: 'F-1', action: 'hidden', rule: 'roomMismatch', reasonVi: 'x', before: { centre: { x: 0, y: 0 }, rotationDeg: 0 } };
     expect(install('?probe=1', { ...stores, repairs: () => [repair] })?.repairs()).toEqual([repair]);
   });
+
+  it('renderer() đọc tone mapper thật của renderer (null khi chưa có renderer)', () => {
+    const { stores } = fakeStores();
+    expect(install('?probe=1', stores)?.renderer()).toBeNull();
+    const gl = { toneMapping: 4, toneMappingExposure: 0.8, outputColorSpace: 'srgb' };
+    expect(install('?probe=1', { ...stores, renderer: () => ({ gl, backend: 'webgpu', tone: null }) })?.renderer()).toEqual({
+      toneMapping: 4,
+      toneMappingName: 'ACESFilmic',
+      toneMappingExposure: 0.8,
+      outputColorSpace: 'srgb',
+      backend: 'webgpu',
+      tone: null,
+    });
+  });
 });

@@ -38,6 +38,8 @@ export interface PascalProbe {
   setLights(on: boolean): void;
   /** Chẩn đoán vật liệu lúc chạy của các item có `src` chứa `match` (tên, loại, trong suốt, màu, kim loại, nhám, map). */
   itemMaterials(match: string): Record<string, unknown>[];
+  /** Tone mapper THẬT của renderer lúc chạy (M6 làn A): số + tên three, phơi sáng, không gian màu ra, backend, cờ `?tone=`. */
+  renderer(): ProbeRenderer | null;
   /** Số đo reflection probe (`realism/reflect.ts`): số lần chụp, ms CPU, số vật liệu bóng. */
   reflect(): unknown;
   /** Đổi nút vật liệu/phơi sáng lúc chạy (đo biến thể cùng một lần nạp): nhiễu bề mặt, kính, exposure. */
@@ -106,6 +108,18 @@ interface LooseNode {
   readonly asset?: { readonly src?: string; readonly scale?: Vec3; readonly dimensions?: Vec3 };
 }
 
+export interface ProbeRenderer {
+  toneMapping: number;
+  toneMappingName: string;
+  toneMappingExposure: number;
+  outputColorSpace: string;
+  backend: string;
+  tone: string | null;
+}
+
+/** Hằng tone mapping của three (constants.js). */
+const TONE_NAMES = ['None', 'Linear', 'Reinhard', 'Cineon', 'ACESFilmic', 'Custom', 'AgX', 'Neutral'];
+
 interface ProbeObject {
   name: string;
   material?: ProbeMaterial | ProbeMaterial[];
@@ -146,9 +160,11 @@ export interface PascalProbeStores {
   /** Danh sách sửa cảnh hiện hành (`sceneRepairStore`). */
   readonly repairs?: () => readonly unknown[];
   readonly layer?: () => unknown;
+  /** Renderer hiện hành (`realism/backend` `currentRenderer`) + biến thể tone đang áp. */
+  readonly renderer?: () => { gl: unknown; backend: string; tone: string | null } | undefined;
 }
 
-export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter, useInteractive, look, repairs, layer }: PascalProbeStores): PascalProbe => {
+export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter, useInteractive, look, repairs, layer, renderer }: PascalProbeStores): PascalProbe => {
   const nodes = () => useScene.getState().nodes as Record<string, LooseNode>;
   const entries = () => Object.entries(nodes());
   const entriesOf = (type: string) => entries().filter(([, n]) => n.type === type);
@@ -225,6 +241,19 @@ export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter,
     },
     repairs: () => [...(repairs?.() ?? [])],
     layer: () => layer?.() ?? null,
+    renderer: () => {
+      const r = renderer?.();
+      const gl = r?.gl as { toneMapping?: number; toneMappingExposure?: number; outputColorSpace?: string } | undefined;
+      if (!r || !gl || gl.toneMapping === undefined) return null;
+      return {
+        toneMapping: gl.toneMapping,
+        toneMappingName: TONE_NAMES[gl.toneMapping] ?? String(gl.toneMapping),
+        toneMappingExposure: gl.toneMappingExposure ?? Number.NaN,
+        outputColorSpace: gl.outputColorSpace ?? '',
+        backend: r.backend,
+        tone: r.tone,
+      };
+    },
     reflect: () => ({ ...((globalThis as { __realismReflect?: object }).__realismReflect ?? {}) }),
     itemMaterials: (match) => {
       const out: Record<string, unknown>[] = [];
