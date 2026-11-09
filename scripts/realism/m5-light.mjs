@@ -28,7 +28,8 @@ export const RULES = {
     ['renderer.toneMapping = THREE.AgXToneMapping', 'renderer.toneMapping = lightxToneMapping(THREE.AgXToneMapping)'],
     [
       '    gl.toneMappingExposure = getSceneTheme(sceneTheme).toneMappingExposure\n',
-      '    gl.toneMappingExposure = lightxExposure(getSceneTheme(sceneTheme).toneMappingExposure)\n',
+      // R3F đặt lại gl.toneMapping = ACES sau createRenderer (đo 09/11: renderer.toneMapping = 4) → đặt lại ở đây.
+      '    gl.toneMapping = lightxToneMapping(gl.toneMapping)\n    gl.toneMappingExposure = lightxExposure(getSceneTheme(sceneTheme).toneMappingExposure)\n',
     ],
   ],
 };

@@ -21,14 +21,14 @@ describe('lightx', () => {
     expect(lightxToneMapping(AgXToneMapping, false)).toBe(AgXToneMapping);
     expect(lightxExposure(0.85, false)).toBe(0.85);
   });
-  it('sun: hạ nắng, nền thấp, chỉ một lần, bỏ chủ đề tối', () => {
+  it('sun: hạ nắng, nền thấp, chỉ một lần, cả chủ đề tối', () => {
     const t = lightxTheme(theme(), true);
     expect(t.lights[0]!.position).toEqual(LIGHTX_SUN_POSITION);
     expect(t.ambient.intensity).toBe(LIGHTX_AMBIENT);
     t.lights[0]!.intensity = 9;
     expect(lightxTheme(t, true).lights[0]!.intensity).toBe(9);
     const dark = { ...theme(), appearance: 'dark' };
-    expect(lightxTheme(dark, true).lights[0]!.position).toEqual([14, 14, 10]);
+    expect(lightxTheme(dark, true).lights[0]!.position).toEqual(LIGHTX_SUN_POSITION);
   });
   it('tone: Neutral + phơi sáng thấp hơn', () => {
     expect(lightxToneMapping(AgXToneMapping, true)).toBe(NeutralToneMapping);

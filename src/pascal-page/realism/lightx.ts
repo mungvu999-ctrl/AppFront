@@ -46,9 +46,12 @@ interface ThemeLike {
 }
 const tuned = new WeakSet<object>();
 
-/** Chỉ chủ đề sáng có nắng đổ bóng; đè tại chỗ một lần cho mỗi mảng `lights` (applyDayLook thay mảng mới). */
+/**
+ * Đèn chính có bóng của chủ đề đang dùng (mặc định là dáng ấm đè `night`, appearance 'dark'); đè tại chỗ một lần cho
+ * mỗi mảng `lights` (applyDayLook/applyRenderLook thay mảng mới).
+ */
 export function lightxTheme<T extends ThemeLike>(theme: T, on = lightxOn('sun')): T {
-  if (!on || theme.appearance === 'dark' || tuned.has(theme.lights)) return theme;
+  if (!on || tuned.has(theme.lights)) return theme;
   const key = theme.lights[0];
   if (!key?.castShadow) return theme;
   tuned.add(theme.lights);
@@ -85,14 +88,16 @@ const ENV_WAIT_MS = 15_000;
  * HDRI trong nhà (cùng nút → không dựng lại vật liệu). Tự chuẩn hoá về độ sáng trung bình trời gradient như HDRI cũ.
  */
 export function installLightxEnv(scene: Scene, appearance: string, on = lightxOn('env')): () => void {
-  if (!on || appearance === 'dark') return () => {};
+  if (!on) return () => {};
+  // Chủ đề tối (mặc định) dùng RoomEnvironment, không có HDRI ngoài trời → thay ngay khi có nút môi trường.
+  const dark = appearance === 'dark';
   let done = false;
   let tex: Texture | null = null;
   const t0 = Date.now();
   const swap = () => {
     if (done || !tex) return;
     const node = scene.environmentNode as unknown as { value?: Texture } | null;
-    if (node && node.value && node.value !== scene.environment) {
+    if (node && node.value && (dark || node.value !== scene.environment)) {
       node.value = tex;
       return;
     }
