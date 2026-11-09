@@ -34,6 +34,8 @@ export interface PascalProbe {
   itemMaterials(match: string): Record<string, unknown>[];
   /** Số đo reflection probe (`realism/reflect.ts`): số lần chụp, ms CPU, số vật liệu bóng. */
   reflect(): unknown;
+  /** Đổi nút vật liệu/phơi sáng lúc chạy (đo biến thể cùng một lần nạp): nhiễu bề mặt, kính, exposure. */
+  setLook(v: { surf?: { rough?: number; albedo?: number; scale?: number }; exposure?: number }): void;
 }
 
 export interface ProbeItem {
@@ -100,9 +102,14 @@ export interface PascalProbeStores {
   readonly useInteractive: {
     getState(): { lampItems: Record<string, number[]>; setControlValue(id: string, index: number, value: boolean): void };
   };
+  /** Nút đổi lúc chạy (main.tsx nối vào realism): nhiễu bề mặt, kính, exposure mọi chủ đề. */
+  readonly look?: {
+    surf(v: { rough?: number; albedo?: number; scale?: number }): void;
+    exposure(v: number): void;
+  };
 }
 
-export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter, useInteractive }: PascalProbeStores): PascalProbe => {
+export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter, useInteractive, look }: PascalProbeStores): PascalProbe => {
   const entries = () => Object.entries(useScene.getState().nodes as Record<string, LooseNode>);
   const entriesOf = (type: string) => entries().filter(([, n]) => n.type === type);
 
@@ -125,6 +132,10 @@ export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter,
       ),
     }),
     shading: () => useViewer.getState().shading,
+    setLook: (v) => {
+      if (v.surf) look?.surf(v.surf);
+      if (v.exposure !== undefined) look?.exposure(v.exposure);
+    },
     setCamera: (position, target, fov) =>
       emitter.emit(
         'camera-controls:apply-pose',

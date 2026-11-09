@@ -5,6 +5,7 @@
  * - `floorFinishPreset`: repeat = 1 / sizeM, normalScale theo bảng (bản sao preset, cache vendor theo JSON).
  * - `tuneFloorFinish`: colorNode TSL = màu đích × (1 + (lum / lumTB − 1) · contrast) — giữ vân ảnh,
  *   đổi tông về bảng màu; đá/gạch có `groutM` thêm ron mảnh tính bằng fract(UV) + fwidth (sắc ở mọi tầm).
+ * - Độ nhám biến thiên tần số thấp (`surfaceNoise`, `?disable=surfnoise` tắt); màu giữ nguyên vân ảnh.
  * Cờ `materials` tắt → y cũ.
  */
 import type { Material } from 'three';
@@ -14,6 +15,7 @@ import type { Node } from 'three/webgpu';
 import { SCENE_PALETTE } from '@/lib/pascal/scenePalette';
 
 import { useRealism } from './store';
+import { applySurfaceNoise } from './surfaceNoise';
 
 export interface FloorFinish {
   /** Cạnh thật mà một ảnh phủ (m). */
@@ -155,6 +157,7 @@ export function tuneFloorFinish<T extends Material | null>(ref: string | undefin
   if (!m || !finish || !enabled() || !m.isNodeMaterial || typeof m.roughness !== 'number') return mat;
   if (m.userData[TUNED]) return mat;
   m.colorNode = finishColorNode(finish);
+  applySurfaceNoise(m);
   m.userData[TUNED] = true;
   m.needsUpdate = true;
   return mat;
