@@ -427,6 +427,36 @@ describe('repairScene', () => {
       expect(scenePlacementIssues(graph)).toEqual([]);
     });
 
+    describe('từ chối đề xuất làm TỆ HƠN (lỗi đã có từ trước nhưng nặng thêm)', () => {
+      // Luật khác dời món ra chỗ sạch rồi fit hợp lệ ở vòng sau là đúng; cái bị cấm là fit đi TRƯỚC khi lỗi còn đó.
+      const fitted = (g: SpatialGraph) => repairScene(g).repairs.filter((r) => r.rule.startsWith('fit'));
+      const doorGraph = (furniture: Furniture[]): SpatialGraph => ({
+        ...graphOf([BED_ROOM], furniture),
+        openings: [
+          { ...HUMAN, id: 'D-1', levelId: 'L-1', wallId: 'W-R-BED-0', kind: 'door', offsetMm: 1500, widthMm: 900, heightMm: 2100, sillHeightMm: 0, swing: 'left' } as unknown as SpatialGraph['openings'][number],
+        ],
+      });
+
+      it('ghế đã lấn tường 70 mm: kẹp sâu sẽ lấn 109 mm → từ chối', () => {
+        expect(fitted(graphOf([BED_ROOM], [chair('F-w', 480, 300, 1000, 180)]))).toEqual([]);
+      });
+
+      it('ghế đã chắn vùng mở cửa 100 mm: kẹp sâu sẽ chắn nhiều hơn → từ chối', () => {
+        expect(fitted(doorGraph([chair('F-d', 480, 300, 1950, 1050)]))).toEqual([]);
+      });
+
+      it('ghế đã chồng đồ bên cạnh: kẹp sâu sẽ chồng nhiều hơn → từ chối', () => {
+        const next = item('F-n', 'other', [600, 300], 1000, 1850, { ...HUMAN, roomId: 'R-BED' } as Partial<Furniture>);
+        expect(fitted(graphOf([BED_ROOM], [chair('F-o', 480, 300, 1000, 1750), next]))).toEqual([]);
+      });
+
+      it('fit hợp lệ giữa phòng trống vẫn được áp, idempotent', () => {
+        const g = graphOf([BED_ROOM], [chair('F-ok', 480, 300, 2000, 1750)]);
+        expect(fitted(g)).toHaveLength(1);
+        expect(repairScene(repairScene(g).graph).repairs).toEqual([]);
+      });
+    });
+
     it('tủ áo bám tường sâu 0,30 m: kẹp sâu, lưng vẫn áp tường (tâm dịch theo mặt trước)', () => {
       const closet = item('F-closet', 'wardrobe', [1000, 300], 2000, 251, { roomId: 'R-BED', rotationDeg: 0.01 } as Partial<Furniture>);
       const { graph, repairs } = repairScene(graphOf([BED_ROOM], [closet]));
