@@ -56,12 +56,12 @@ export type SceneRepairAction = 'moved' | 'rotated' | 'hidden' | 'rescaled';
 export interface SceneRepair {
   readonly furnitureId: FurnitureId;
   readonly action: SceneRepairAction;
-  /** Mã luật (`outside`, `roomMismatch`, `outsideRoom`, `wallOverlap`, `overlap`, `notAgainstWall`, `duplicateFixture`, `facing`). */
+  /** Mã luật (`outside`, `fit`, `roomMismatch`, `outsideRoom`, `wallOverlap`, `doorSwing`, `overlap`, `notAgainstWall`, `duplicateFixture`, `facing`). */
   readonly rule: string;
   readonly reasonVi: string;
-  /** Trạng thái gốc để hoàn/đối chiếu. */
-  readonly before: Pick<Furniture, 'centre' | 'rotationDeg' | 'roomId'>;
-  readonly after?: Pick<Furniture, 'centre' | 'rotationDeg' | 'roomId'>;
+  /** Trạng thái gốc để hoàn/đối chiếu; `boundingBox` chỉ có khi luật `fit` đổi cỡ/trục hộp. */
+  readonly before: Pick<Furniture, 'centre' | 'rotationDeg' | 'roomId'> & Partial<Pick<Furniture, 'boundingBox'>>;
+  readonly after?: Pick<Furniture, 'centre' | 'rotationDeg' | 'roomId'> & Partial<Pick<Furniture, 'boundingBox'>>;
 }
 
 export const PROV_FIELD = 'prov';
