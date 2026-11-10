@@ -3,9 +3,11 @@
  * - `lamp-cal`  : đèn phòng buổi tối giữ tổng quang thông nhưng chia thành nhiều đèn để đỉnh rọi sàn
  *                 ≤ `LAMP_CAL_PEAK_E` (`roomLights.ts` `calibrateRoomLights`).
  * - `cut-shadow`: tường/trần bị cắt (chế độ Cắt) vẫn đổ bóng — `clipShadows = false` (`cutSync.ts`).
+ * - `room-clip` : (vòng 6) đèn điểm/spot trong nhà chỉ chiếu trong hộp phòng chứa nó (`lightingRoomClip.ts`).
+ * - `window-spot`: (vòng 6) đèn cửa sổ Ban ngày là spot sát kính hướng vào phòng thay đèn điểm lùi 0,7 m (`windowLight.ts`).
  */
-export type LightFlag = 'lamp-cal' | 'cut-shadow';
-const FLAGS = new Set<string>(['lamp-cal', 'cut-shadow']);
+export type LightFlag = 'lamp-cal' | 'cut-shadow' | 'room-clip' | 'window-spot';
+const FLAGS = new Set<string>(['lamp-cal', 'cut-shadow', 'room-clip', 'window-spot']);
 
 export function parseLightFlags(search: string): Set<LightFlag> {
   const raw = new URLSearchParams(search).get('light') ?? '';

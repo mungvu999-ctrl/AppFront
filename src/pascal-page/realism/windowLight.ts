@@ -7,9 +7,10 @@
  * Pool = số cửa sổ (≤ max), chỉ tăng; đèn thừa cường độ 0 → số đèn không đổi theo khung, không biên dịch lại shader.
  * Vendor gọi qua luật `scripts/realism/r9w-window-light.mjs`. Mức Thấp, chủ đề khác: không gì cả.
  */
-import { Box3, type HemisphereLight, type Object3D, PointLight, type Scene, Vector3 } from 'three';
+import { Box3, type HemisphereLight, type Object3D, PointLight, type Scene, SpotLight, Vector3 } from 'three';
 
 import { DAY_THEME_ID } from '../renderLook';
+import { lightFlagOn } from './lightFlag';
 import { sceneTier } from './tiers';
 
 export const WINDOW_LIGHT_MAX = 8;
@@ -19,6 +20,16 @@ export const WINDOW_LIGHT_RANGE_M = 7;
 export const WINDOW_AMBIENT_SCALE = 0.6;
 /** Lùi đèn vào trong phòng theo pháp tuyến ô cửa → rèm/khung sát cửa không bị đốm cháy. */
 export const WINDOW_LIGHT_INSET_M = 0.7;
+/**
+ * `?light=window-spot` (vòng 6): ô cửa là nguồn DIỆN TÍCH chỉ phát vào trong phòng. Đèn điểm cách kính 0,7 m phát
+ * cả nửa sau → hắt ngược lên chính mảng tường quanh cửa (quầng cháy cạnh khung, 58c3b934) và qua tường sang phòng
+ * bên. Spot sát mặt kính, trục hướng vào phòng chếch xuống, nửa góc ~75° mép mềm ≈ phân bố cos của ô cửa.
+ */
+export const WINDOW_SPOT_INSET_M = 0.12;
+export const WINDOW_SPOT_ANGLE = (75 * Math.PI) / 180;
+/** Trục spot: điểm đích cách ô `WINDOW_SPOT_AIM_M` vào trong, thấp hơn tâm ô `WINDOW_SPOT_DROP_M` (ánh trời rọi xuống sàn). */
+export const WINDOW_SPOT_AIM_M = 2.5;
+export const WINDOW_SPOT_DROP_M = 1.2;
 
 export function windowLightsOn(themeId: string, appearance: string, tier: string): boolean {
   // Núm đo trước/sau trong cùng một lượt chụp (`window.__realismWindowLight = false`).
@@ -92,8 +103,13 @@ function paneOf(o: Object3D): WindowPane {
   return pane;
 }
 
-let pool: PointLight[] = [];
+let pool: (PointLight | SpotLight)[] = [];
 const camPos = new Vector3();
+const spotOn = () => lightFlagOn('window-spot');
+function makeLight(): PointLight | SpotLight {
+  if (!spotOn()) return new PointLight(0xffffff, 0, WINDOW_LIGHT_RANGE_M, 2);
+  return new SpotLight(0xffffff, 0, WINDOW_LIGHT_RANGE_M, WINDOW_SPOT_ANGLE, 1, 2);
+}
 
 /** Gọi mỗi khung từ `Lights` (vendor). */
 export function syncWindowLights(
@@ -107,7 +123,10 @@ export function syncWindowLights(
   const on = windowLightsOn(themeId, appearance, sceneTier());
   if (!on) {
     if (pool.length) {
-      for (const l of pool) l.removeFromParent();
+      for (const l of pool) {
+        l.removeFromParent();
+        if ((l as SpotLight).isSpotLight) (l as SpotLight).target.removeFromParent();
+      }
       pool = [];
     }
     return;
@@ -116,12 +135,15 @@ export function syncWindowLights(
   // Số đèn = số cửa sổ (≤ max), chỉ tăng: TSL sinh mã cho mọi đèn kể cả cường độ 0, và đổi số đèn là dựng
   // lại mọi shader có ánh sáng — nên không bớt khi cửa ít đi, và nhà ít cửa không mang 8 đèn thừa.
   for (let n = windowPoolSize(pool.length, objs.length); pool.length < n; ) {
-    const l = new PointLight(0xffffff, 0, WINDOW_LIGHT_RANGE_M, 2);
+    const l = makeLight();
     l.castShadow = false;
     l.name = 'realism-window-light';
     pool.push(l);
   }
-  for (const l of pool) if (l.parent !== scene) scene.add(l);
+  for (const l of pool) {
+    if (l.parent !== scene) scene.add(l);
+    if ((l as SpotLight).isSpotLight && (l as SpotLight).target.parent !== scene) scene.add((l as SpotLight).target);
+  }
   const panes = objs.map(paneOf);
   camera.getWorldPosition(camPos);
   const picked = pickWindows(panes, camPos, pool.length);
@@ -135,8 +157,17 @@ export function syncWindowLights(
       l.intensity = 0;
       return;
     }
-    const q = insetPoint(p, inside);
-    l.position.set(q.x, q.y, q.z);
+    if ((l as SpotLight).isSpotLight) {
+      const spot = l as SpotLight;
+      const q = insetPoint(p, inside, WINDOW_SPOT_INSET_M);
+      const aim = insetPoint(p, inside, WINDOW_SPOT_AIM_M);
+      spot.position.set(q.x, q.y, q.z);
+      spot.target.position.set(aim.x, aim.y - WINDOW_SPOT_DROP_M, aim.z);
+      spot.target.updateMatrixWorld();
+    } else {
+      const q = insetPoint(p, inside);
+      l.position.set(q.x, q.y, q.z);
+    }
     l.intensity = windowIntensity(p.area);
     if (hemi) l.color.copy(hemi.color);
   });
