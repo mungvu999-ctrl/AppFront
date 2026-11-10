@@ -13,9 +13,9 @@ const STYLE = {
   borderRadius: 9999,
   fontSize: 12,
   lineHeight: '16px',
-  color: 'var(--foreground, #e5e5e5)',
-  background: 'var(--background, rgba(23,23,23,0.9))',
-  border: '1px solid var(--border, rgba(255,255,255,0.12))',
+  color: 'var(--foreground)',
+  background: 'var(--background)',
+  border: '1px solid var(--border)',
   width: 'fit-content',
 } as const;
 
