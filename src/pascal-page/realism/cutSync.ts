@@ -157,6 +157,8 @@ export function cutCapVariant<T extends Material>(material: T, capDoubleSided = 
 
 /** Đáy món cách sàn tầng không quá mức này = món ĐỨNG SÀN (tủ, kệ, tủ lạnh, đèn cây); cao hơn là treo tường/trần. */
 export const FLOOR_REST_M = 0.15;
+/** Đồ gắn với cửa sổ/tường bị cắt (rèm, mành): đứng sàn nhưng cao tới trần, để nguyên sẽ lơ lửng trên tường đã hạ → vẫn cắt. */
+export const CUT_WITH_WALL_FOLDER = /curtain|blind|drape/;
 const itemWholeVariants = new WeakMap<Material, Material>();
 const noClipping = (): null => null;
 const noHardwareClipping = (builder: { hardwareClipping: boolean }): void => {
@@ -213,7 +215,7 @@ export function meshTopAboveLevel(mesh: Mesh): number {
 export function capItemMeshesForCut(meshes: readonly Mesh[], src?: string | null): void {
   const ds = matOn('cap-top') && CAP_TOP_FOLDER.test(folderOf(src) ?? '');
   // Món đứng sàn (đáy thấp nhất của mọi mesh sát sàn) giữ nguyên khối; món treo tường/trần vẫn cắt + nắp như trước.
-  const whole = !WHOLE_OFF && meshes.length > 0 && Math.min(...meshes.map(meshBottomAboveLevel)) <= FLOOR_REST_M;
+  const whole = !WHOLE_OFF && meshes.length > 0 && !CUT_WITH_WALL_FOLDER.test(folderOf(src) ?? '') && Math.min(...meshes.map(meshBottomAboveLevel)) <= FLOOR_REST_M;
   const cap = (m: Material): Material => (whole ? cutWholeVariant(m) : cutCapVariant(m, ds));
   for (const mesh of meshes) {
     if (meshTopAboveLevel(mesh) <= CUT_HEIGHT_M) continue;
