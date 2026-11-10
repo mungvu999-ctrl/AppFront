@@ -7,15 +7,16 @@
  * (node-batch) của tầng ẩn không bao giờ vẽ nên sau 5 s vật gốc vẫn bị ẩn (`AWAIT_DRAW_MAX_MS`) → bấm tầng thì
  * sàn/đồ gộp vắng tới khi W2 (`warm.ts`) dựng xong từng khoá.
  *
- * Cách làm: một lượt `requestIdleCallback` (còn ≥ `IDLE_MIN_MS`) sau khi lần nạp đầu xong và cảnh đang xem đã dựng
- * hết thì CHỌN một tầng ẩn (gần tầng đang xem trước). Từ đó MỌI khung sống liên tiếp bật tạm tầng ấy trong lúc vẽ
+ * Cách làm: `requestIdleCallback` chỉ để LÊN LỊCH (trang tự vẽ 50 fps nên `timeRemaining()` luôn < 8 ms — đo vòng 8,
+ * 769/769 lượt bị chặn; không xét nó). Khi lần nạp đầu xong, W2 rảnh và người dùng không thao tác thì CHỌN một tầng ẩn (gần tầng đang xem trước). Từ đó MỌI khung sống liên tiếp bật tạm tầng ấy trong lúc vẽ
  * và chặn `backend.draw` cho vật của nó — three đi đúng đường vẽ thật (đúng pass/MRT, cả bóng): W2 dựng shader,
  * bindings tải texture/buffer, W1 tạo pipeline bất đồng bộ — nhưng không vẽ gì ra màn hình. Phải LIÊN TIẾP: W2
  * xếp hạng vật đục ở khung N rồi chỉ khởi động ở khung N+1 nếu gặp lại (`rankFrame` xoá `chosen` mỗi khung) — bản
  * đầu (1b2b796a) chỉ ấm một khung mỗi lượt rảnh nên vật đục không bao giờ được dựng.
  *
  * Ngân sách mỗi khung ấm: `LONG_TASK_MS` (ngưỡng tác vụ dài của trình duyệt) trừ phần vẽ thường của khung ấm trước
- * — khung ấm không tự biến thành tác vụ dài. Vật vượt ngân sách để khung sau. Đèn trong tầng ấm bị tắt trong khung
+ * — khung ấm không tự biến thành tác vụ dài. Người dùng thao tác (camera/chuột/phím/chọn/hover — bộ đếm lý do của
+ * `idle.ts` tăng) thì khung ấy không ấm; hết thao tác `HOLD_MS` thì ấm tiếp. Vật vượt ngân sách để khung sau. Đèn trong tầng ấm bị tắt trong khung
  * ấm (giữ bộ đèn → khoá shader không đổi). Tầng xong khi một khung ấm thấy mọi vật của nó sẵn sàng, W2/W1 hết việc
  * và không còn đồ GLB chưa nạp.
  *
@@ -25,7 +26,7 @@
  */
 import { sceneRegistry, useScene } from '@pascal-app/core';
 
-import { markDirty } from './idle';
+import { HOLD_MS, idleStats, markDirty } from './idle';
 import type { RealismTier } from './store';
 import { currentTier } from './tiers';
 import { isFirstLoad, warmStats } from './warm';
@@ -33,8 +34,6 @@ import { isFirstLoad, warmStats } from './warm';
 const DISABLED = typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('disable') ?? '').split(',') : [];
 const URL_OFF = DISABLED.includes('levelwarm');
 
-/** Thời gian rảnh tối thiểu trong lượt rảnh để bắt đầu làm ấm một tầng (ms). */
-export const IDLE_MIN_MS = 8;
 /** Ngưỡng tác vụ dài (Long Tasks API): cả khung ấm giữ dưới mức này. */
 export const LONG_TASK_MS = 50;
 /** Sàn ngân sách khung ấm: khung thường đã ≥ 50 ms thì vẫn tiến tối thiểu (một vật/khung). */
@@ -48,18 +47,19 @@ export interface LevelInfo {
   userHidden: boolean;
 }
 
-export type RejectReason = 'flagOff' | 'w2Off' | 'tierLow' | 'firstLoad' | 'w2Busy' | 'noHiddenLevel' | 'idleShort';
+export type RejectReason = 'flagOff' | 'w2Off' | 'tierLow' | 'firstLoad' | 'w2Busy' | 'noHiddenLevel' | 'interacting';
 
 /** Thuần: tầng ẩn kế tiếp cần làm ấm (gần tầng đang hiện nhất, hoà thì tầng thấp trước), hoặc lý do từ chối. */
 export function nextWarmLevel(
   levels: readonly LevelInfo[],
   warmed: ReadonlySet<string>,
-  opts: { tier: RealismTier; off: boolean; firstLoad: boolean; busy: boolean },
+  opts: { tier: RealismTier; off: boolean; firstLoad: boolean; busy: boolean; interacting: boolean },
 ): { id: string } | { reason: RejectReason } {
   if (opts.off) return { reason: 'flagOff' };
   if (opts.tier === 'low') return { reason: 'tierLow' };
   if (opts.firstLoad) return { reason: 'firstLoad' };
   if (opts.busy) return { reason: 'w2Busy' };
+  if (opts.interacting) return { reason: 'interacting' };
   const shown = levels.filter((l) => l.shown).map((l) => l.index);
   const ref = shown.length ? Math.min(...shown) : 0;
   const cand = levels.filter((l) => !l.shown && !l.userHidden && !warmed.has(l.id));
@@ -69,6 +69,22 @@ export function nextWarmLevel(
 
 /** Thuần: ngân sách khung ấm kế tiếp từ phần vẽ thường (không tính việc ấm) của khung ấm trước. */
 export const warmBudgetMs = (baseFrameMs: number): number => Math.max(MIN_WARM_MS, LONG_TASK_MS - baseFrameMs);
+
+/** Lý do bẩn của `idle.ts` do người dùng gây ra. */
+export const INTERACTION_REASONS = ['camera', 'input', 'hover', 'selection', 'resize'] as const;
+/** Thuần: tổng số lần bẩn do thao tác — tăng giữa hai lần đọc = đang thao tác. */
+export const interactionCount = (reasons: Readonly<Record<string, number>>): number =>
+  INTERACTION_REASONS.reduce((n, r) => n + (reasons[r] ?? 0), 0);
+
+/**
+ * Thuần: tầng sẵn sàng khi không còn đồ GLB chờ và: đã làm ấm xong, HOẶC đang hiện, được chạm ở khung vẽ gần nhất
+ * với 0 vật chờ shader/pipeline và W2/W1 hết việc. Tầng ẩn chưa ấm (chưa từng vẽ) luôn chưa sẵn sàng.
+ */
+export function isLevelReady(l: { pendingAssets: number; warmed: boolean; shown: boolean; touchedLastFrame: boolean; pendingDraws: number | null; w2Busy: boolean }): boolean {
+  if (l.pendingAssets > 0) return false;
+  if (l.warmed) return true;
+  return l.shown && l.touchedLastFrame && l.pendingDraws === 0 && !l.w2Busy;
+}
 
 export interface WarmState {
   sceneKey: string;
@@ -103,7 +119,7 @@ const stats = {
   installReject: '' as '' | RejectReason | 'noRendererParts' | 'noIdleCallback',
   frameCalls: 0,
   idleCalls: 0,
-  reject: { flagOff: 0, w2Off: 0, tierLow: 0, firstLoad: 0, w2Busy: 0, noHiddenLevel: 0, idleShort: 0 } as Record<RejectReason, number>,
+  reject: { flagOff: 0, w2Off: 0, tierLow: 0, firstLoad: 0, w2Busy: 0, noHiddenLevel: 0, interacting: 0 } as Record<RejectReason, number>,
   levelsStarted: 0,
   warmFrames: 0,
   warmObjects: 0,
@@ -114,16 +130,21 @@ const stats = {
   lastWarmMs: 0,
   maxWarmFrameMs: 0,
   cancelled: 0,
+  pausedFrames: 0,
 };
 /** Khoá shader chưa dựng gặp trong khung ấm, theo tầng (≈ số bản dựng tầng ấy cần). */
 const keysNeeded = new Map<string, Set<string>>();
 let frameScene: unknown = null;
 let warmRoot: Obj | null = null;
 let rootIds = new Map<Obj, string>();
-const rootOf = new WeakMap<object, Obj | null>();
+let rootOf = new WeakMap<object, Obj | null>();
 /** Vật chưa sẵn sàng theo tầng trong khung sống hiện tại / khung gần nhất chạm tầng ấy. */
 const framePending = new Map<string, number>();
 const lastPending = new Map<string, number>();
+/** `frameCalls` của khung vẽ gần nhất chạm tầng. */
+const lastTouch = new Map<string, number>();
+let lastInteractions = -1;
+let lastInteractAt = -Infinity;
 let budgetMs = LONG_TASK_MS;
 let warmSpent = 0;
 let shadowsPending = true;
@@ -148,6 +169,8 @@ function refreshRoots(scene: unknown): void {
   const key = `${(scene as { uuid?: string })?.uuid ?? ''}|${ids.join(',')}|${[...next.keys()].map((o) => o.uuid).join(',')}`;
   if (syncScene(state, key)) {
     lastPending.clear();
+    lastTouch.clear();
+    rootOf = new WeakMap();
     keysNeeded.clear();
   }
   rootIds = next;
@@ -176,12 +199,27 @@ const w2Busy = (): boolean => {
   return w.pending > 0 || w.buildsPending > 0 || w.texWaiting > 0;
 };
 
-function onIdle(deadline: { timeRemaining(): number }): void {
+/** Đang thao tác: bộ đếm lý do thao tác của `idle.ts` vừa tăng, hoặc tăng trong `HOLD_MS` vừa qua. */
+function interacting(nowMs = performance.now()): boolean {
+  const n = interactionCount(idleStats().reasons);
+  if (n !== lastInteractions) {
+    lastInteractions = n;
+    lastInteractAt = nowMs;
+  }
+  return nowMs - lastInteractAt < HOLD_MS;
+}
+
+function onIdle(): void {
   requestIdleCallback(onIdle);
   stats.idleCalls++;
   if (state.current !== null) return;
-  if (deadline.timeRemaining() < IDLE_MIN_MS) return void stats.reject.idleShort++;
-  const pick = nextWarmLevel(levelInfos(), state.warmed, { tier: currentTier(), off: URL_OFF, firstLoad: isFirstLoad(), busy: w2Busy() });
+  const pick = nextWarmLevel(levelInfos(), state.warmed, {
+    tier: currentTier(),
+    off: URL_OFF,
+    firstLoad: isFirstLoad(),
+    busy: w2Busy(),
+    interacting: interacting(),
+  });
   if ('reason' in pick) return void stats.reject[pick.reason]++;
   state.current = pick.id;
   stats.levelsStarted++;
@@ -203,7 +241,9 @@ export function levelWarmFrame(scene: unknown, draw: () => void): void {
   }
   const culled: Obj[] = [];
   const lights: Obj[] = [];
-  if (root && state.current) {
+  const paused = root !== null && state.current !== null && interacting();
+  if (paused) stats.pausedFrames++; // tầng vẫn là `current`; khung sau hết thao tác ấm tiếp
+  if (root && state.current && !paused) {
     warmRoot = root;
     root.visible = true;
     root.traverse?.((o) => {
@@ -224,7 +264,10 @@ export function levelWarmFrame(scene: unknown, draw: () => void): void {
     draw();
   } finally {
     frameScene = null;
-    for (const [id, n] of framePending) lastPending.set(id, n);
+    for (const [id, n] of framePending) {
+      lastPending.set(id, n);
+      lastTouch.set(id, stats.frameCalls);
+    }
     if (warmRoot) {
       warmRoot.visible = false;
       for (const o of culled) o.frustumCulled = true;
@@ -323,11 +366,14 @@ export interface LevelReadiness {
 /** Cho đầu dò/E2E: tầng nào còn đang nạp. */
 export function levelReadiness(): LevelReadiness[] {
   const items = unsettledItems();
+  const busy = w2Busy();
   return [...rootIds].map(([o, levelId]) => {
     const pendingAssets = items.get(levelId) ?? 0;
     const pendingDraws = lastPending.get(levelId) ?? null;
     const warmed = state.warmed.has(levelId);
-    return { levelId, shown: o.visible, pendingAssets, pendingDraws, warmed, ready: pendingAssets === 0 && (pendingDraws === 0 || (pendingDraws === null && warmed)) };
+    const touchedLastFrame = lastTouch.get(levelId) === stats.frameCalls;
+    const ready = isLevelReady({ pendingAssets, warmed, shown: o.visible, touchedLastFrame, pendingDraws, w2Busy: busy });
+    return { levelId, shown: o.visible, pendingAssets, pendingDraws, warmed, ready };
   });
 }
 
