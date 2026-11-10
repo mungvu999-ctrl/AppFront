@@ -1,4 +1,7 @@
 import type { LibraryApi } from '@/api/client';
+import type { DesignAddition, DesignResult } from '@/api/schemas/designConcept';
+
+import { CATALOG_MODELS } from './furnitureCatalog';
 
 import {
   BUNDLED_LIBRARY_VERSION,
@@ -7,6 +10,7 @@ import {
   loadServerLibrary,
   type LibraryLoad,
 } from './serverLibrary';
+import type { PascalScene } from './types';
 
 /**
  * Điểm vào CHUNG của thư viện mẫu/vật liệu cho mọi viewer (editor `/3d/pascal`, lịch sử phiên bản, viewer di động).
@@ -62,3 +66,41 @@ export const resetSceneLibraryForTests = (): void => {
   shared = null;
   settled = null;
 };
+
+/** Một `modelId` không có trong danh mục (đóng gói + thư viện máy chủ đã gộp) và thứ dựng thay nó. */
+export interface UnresolvedModel {
+  readonly modelId: string;
+  /** Node món (`item_…`), `concept:<vai trò>` hoặc `addition:<chỉ số>`. */
+  readonly where: string;
+  /**
+   * `role`: mẫu theo vai trò như đồ tự bày (concept/đồ AI bổ sung — `designStyles.ts` lọc trước khi dựng).
+   * `saved-src`: món lưu `model` lạ — cảnh giữ nguyên đường lưu, không khớp hộp bao (`toPascal.ts` `itemNodeOf`).
+   */
+  readonly substitute: 'role' | 'saved-src';
+}
+
+const SAVED_MODEL_SRC = /^\/items\/([a-z0-9_-]+)\/model\.glb$/;
+const known = (id: string): boolean => Object.prototype.hasOwnProperty.call(CATALOG_MODELS, id);
+
+/**
+ * `modelId` thiếu trong thư viện ĐANG nạp (chẩn đoán, đầu dò): đọc cảnh đã dựng + concept, không ném, không đổi dữ liệu.
+ * Cùng cảnh + cùng thư viện + cùng concept → cùng danh sách ở mọi viewer (thứ tự theo `where`).
+ */
+export function unresolvedModelIds(
+  scene: PascalScene,
+  concept?: { readonly models?: DesignResult['models']; readonly additions?: readonly DesignAddition[] },
+): UnresolvedModel[] {
+  const out: UnresolvedModel[] = [];
+  for (const node of Object.values(scene.nodes)) {
+    const src = (node as { type?: string; asset?: { src?: string } }).type === 'item' ? (node as { asset?: { src?: string } }).asset?.src : undefined;
+    const folder = src === undefined ? undefined : SAVED_MODEL_SRC.exec(src)?.[1];
+    if (folder !== undefined && !known(folder)) out.push({ modelId: folder, where: node.id, substitute: 'saved-src' });
+  }
+  for (const [role, id] of Object.entries(concept?.models ?? {})) {
+    if (!known(id)) out.push({ modelId: id, where: `concept:${role}`, substitute: 'role' });
+  }
+  (concept?.additions ?? []).forEach((addition, i) => {
+    if (addition.modelId != null && !known(addition.modelId)) out.push({ modelId: addition.modelId, where: `addition:${i}`, substitute: 'role' });
+  });
+  return out.sort((a, b) => (a.where < b.where ? -1 : a.where > b.where ? 1 : 0));
+}

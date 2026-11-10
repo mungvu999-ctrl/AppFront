@@ -29,19 +29,27 @@ export function mountMobileViewerPascal(
   let disposed = false;
   let handle: { readonly dispose: () => void } | null = null;
 
-  // Thư viện máy chủ chốt TRƯỚC khi dựng cảnh — cùng điểm vào với editor (`ensureSceneLibrary`).
+  /* Thư viện máy chủ + concept AI chốt TRƯỚC khi dựng cảnh — cùng điểm vào với editor (`ensureSceneLibrary`,
+     `loadSceneConcept`); `disposed` bỏ kết quả của dự án/lượt dựng cũ. */
+  const { projectId } = options;
   Promise.all([
     defaultLoadMount(),
     import('@/lib/pascal/sceneStandard'),
     import('@/lib/pascal/sceneLibrary').then(({ ensureSceneLibrary }) => ensureSceneLibrary()),
+    import('@/lib/pascal/sceneConcept').then(async ({ conceptSceneOptions, loadSceneConcept }) => {
+      if (projectId === undefined) return { sceneOptions: {}, notice: null };
+      const concept = await loadSceneConcept(projectId);
+      return { sceneOptions: conceptSceneOptions(concept), notice: concept.notice };
+    }),
   ])
-    .then(([module, { standardSceneOf }]) => {
+    .then(([module, { standardSceneOf }, library, concept]) => {
       if (disposed) {
         return;
       }
 
+      options.onLibraryNotice?.([library.notice, concept.notice].filter(Boolean).join(' ') || null);
       handle = (module.mount as ViewMount)(element, {
-        scene: standardSceneOf(options.graph).scene,
+        scene: standardSceneOf(options.graph, concept.sceneOptions).scene,
         mode: 'view',
         readOnly: true,
         cameraControls: true,

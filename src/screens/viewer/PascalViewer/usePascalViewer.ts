@@ -385,16 +385,17 @@ export function usePascalViewer({
     echoPending.current = false;
 
     // `diff` nạp cùng lượt: nhập tĩnh thì nó vào chunk của màn bản xem/di động.
-    Promise.all([import('@/lib/pascal/toPascal'), import('@/lib/pascal/diff'), import('@/lib/pascal/sceneLibrary')])
+    // Cảnh chuẩn `standardSceneOf` (orient/fit/door/tone + sửa cảnh) như editor, lịch sử phiên bản, di động.
+    Promise.all([import('@/lib/pascal/sceneStandard'), import('@/lib/pascal/diff'), import('@/lib/pascal/sceneLibrary')])
       .catch((error: unknown) => {
         converterChunkFailed.current = true;
         throw error;
       })
       // Thư viện máy chủ chốt TRƯỚC khi dựng (cùng điểm vào với editor); `cancelled` bỏ kết quả của bản vẽ cũ.
       .then(async ([pascal, diffs, { ensureSceneLibrary }]) => [pascal, diffs, await ensureSceneLibrary()] as const)
-      .then(([{ toPascalScene }, { diffScenes, isEmptyDiff }]) => {
+      .then(([{ standardSceneOf }, { diffScenes, isEmptyDiff }]) => {
         if (cancelled) return;
-        const converted = toPascalScene(graph);
+        const converted = standardSceneOf(graph);
         const previous = resultRef.current;
         /* 23-C-001 — sau PUT 200 `replaceFloorLayer` thay kho bằng đúng lớp vừa
            gửi: bản vẽ mới, nội dung y hệt, lúc cờ echo đã tắt. Cảnh không đổi

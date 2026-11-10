@@ -54,18 +54,22 @@ export interface SceneConversion {
 export const NO_SCENE: SceneConversion = Object.freeze({ scene: null, failed: false });
 
 /**
- * Đồ thị không gian thành cảnh Pascal — cảnh chuẩn `standardSceneOf` (cùng luật bày với màn 3D chính).
+ * Đồ thị không gian thành cảnh Pascal — cảnh chuẩn `standardSceneOf` (cùng luật bày với màn 3D chính); `options` mang
+ * concept AI của dự án (`conceptSceneOptions`) như editor.
  *
  * `toPascalScene` NÉM khi đồ thị mang số đo không hữu hạn: đó là một mô hình không dựng
  * được, không phải sự cố kỹ thuật để hiện mã lỗi — nó thành một câu giải thích trên tab.
  */
-export function convertScene(graph: NormalizedSpatial | null): SceneConversion {
+export function convertScene(
+  graph: NormalizedSpatial | null,
+  options: Parameters<typeof standardSceneOf>[1] = {},
+): SceneConversion {
   if (graph === null) {
     return NO_SCENE;
   }
 
   try {
-    const { scene } = standardSceneOf(denormalizeSpatial(graph));
+    const { scene } = standardSceneOf(denormalizeSpatial(graph), options);
 
     return scene.rootNodeIds.length === 0 ? { scene: null, failed: true } : { scene, failed: false };
   } catch {

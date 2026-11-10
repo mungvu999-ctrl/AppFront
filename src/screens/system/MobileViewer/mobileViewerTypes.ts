@@ -222,6 +222,13 @@ export interface MobileViewerSceneOptions {
   readonly onReady: () => void;
   /** Máy không dựng được cảnh — hook đổi sang trạng thái `error`. */
   readonly onFailure: (reason: 'webglUnavailable' | 'deviceTooWeak') => void;
+  /** Dự án của cảnh: nạp concept AI (N47) như editor. Vắng = không áp concept. */
+  readonly projectId?: string;
+  /**
+   * Câu báo dự phòng (thư viện mẫu `LIBRARY_FALLBACK_NOTICE`, concept AI `CONCEPT_FALLBACK_NOTICE`), `null` khi không có
+   * gì để báo. Gọi một lần, trước khi dựng cảnh.
+   */
+  readonly onLibraryNotice?: (notice: string | null) => void;
 }
 
 /** Tay cầm cảnh đã lắp. */
@@ -289,6 +296,9 @@ export interface MobileViewerProps {
 
   /** Liên kết sang bản 2D — lối thoát của trạng thái `error` (máy yếu). */
   readonly fallback2dHref: string;
+
+  /** Câu báo dự phòng thư viện/concept (`role="status"`); vắng hoặc `null` khi không có gì để báo. */
+  readonly sceneNotice?: string | null;
 }
 
 /* -------------------------------------------------------------------------- */

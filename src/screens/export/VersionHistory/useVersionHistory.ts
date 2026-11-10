@@ -25,6 +25,7 @@
 import { useInfiniteQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { conceptSceneOptions, loadSceneConcept, type SceneConcept } from '@/lib/pascal/sceneConcept';
 import { ensureSceneLibrary, sceneLibraryNow, type SceneLibrary } from '@/lib/pascal/sceneLibrary';
 import type { FloorVersionSummary } from '@/api/schemas/versions';
 import { flushAutosaves, useFloorLayerAutosave } from '@/hooks/useAutosave';
@@ -375,7 +376,22 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
       live = false;
     };
   }, [library]);
-  const scene = useMemo(() => (library === null ? NO_SCENE : convertScene(sceneGraph)), [sceneGraph, library]);
+  /* Concept AI (N47) của dự án — cùng quy tắc với editor (`loadSceneConcept`): chờ kết quả, 403/404 im lặng, lỗi có
+     câu báo. N47 chỉ có concept HIỆN HÀNH (không có lịch sử concept), nên bản cũ cũng dựng với concept hiện hành; đồ AI bổ
+     sung chỉ vào phòng có trong bản ấy (`toPascalScene` lọc theo phòng đã dựng). Kết quả của dự án cũ bị bỏ (`live`). */
+  const [concept, setConcept] = useState<{ readonly projectId: string; readonly value: SceneConcept } | null>(null);
+  useEffect(() => {
+    let live = true;
+    void loadSceneConcept(projectId).then((value) => live && setConcept({ projectId, value }));
+    return () => {
+      live = false;
+    };
+  }, [projectId]);
+  const sceneConcept = concept?.projectId === projectId ? concept.value : null;
+  const scene = useMemo(
+    () => (library === null || sceneConcept === null ? NO_SCENE : convertScene(sceneGraph, conceptSceneOptions(sceneConcept))),
+    [sceneGraph, library, sceneConcept],
+  );
   const plan = useMemo(
     () =>
       diff === null || leftSource === undefined || rightSource === undefined
@@ -403,8 +419,9 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
           null,
         hoveredEntityId,
         isFetchingDiff: pairFetching,
-        libraryPending: library === null,
-        libraryNotice: library?.notice ?? null,
+        // Chờ cả thư viện lẫn concept: không dựng bằng mẫu đóng gói/phong cách mặc định rồi đổi sau.
+        libraryPending: library === null || sceneConcept === null,
+        libraryNotice: [library?.notice, sceneConcept?.notice].filter(Boolean).join(' ') || null,
       }),
     [
       gateway.capabilities,
@@ -412,6 +429,7 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
       sceneGraph,
       scene,
       library,
+      sceneConcept,
       diff,
       builds,
       leftVersionId,
