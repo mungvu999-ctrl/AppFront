@@ -31,6 +31,7 @@
  */
 
 import type { SpatialGraph } from '@/domain/spatial/types';
+import type { SceneConcept } from '@/lib/pascal/sceneConcept';
 
 /* -------------------------------------------------------------------------- */
 /* 1. Kích thước bố cục — đặc tả S-45.                                         */
@@ -224,6 +225,11 @@ export interface MobileViewerSceneOptions {
   readonly onFailure: (reason: 'webglUnavailable' | 'deviceTooWeak') => void;
   /** Dự án của cảnh: nạp concept AI (N47) như editor. Vắng = không áp concept. */
   readonly projectId?: string;
+  /**
+   * Concept AI của dự án, nhớ theo `projectId` ở hook: bật/tắt đo dựng lại cảnh nhưng không gọi lại N47. Vắng = cảnh tự
+   * đọc (`loadSceneConcept`).
+   */
+  readonly loadConcept?: () => Promise<SceneConcept>;
   /**
    * Câu báo dự phòng (thư viện mẫu `LIBRARY_FALLBACK_NOTICE`, concept AI `CONCEPT_FALLBACK_NOTICE`), `null` khi không có
    * gì để báo. Gọi một lần, trước khi dựng cảnh.

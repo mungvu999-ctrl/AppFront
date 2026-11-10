@@ -37,6 +37,12 @@ import { ROUTES } from '@/routes/paths';
 import type { MobileViewerModel, MobileViewerSceneOptions } from './mobileViewerTypes';
 import { useMobileViewer, type UseMobileViewerOptions } from './useMobileViewer';
 
+// Concept AI giả: đếm số lượt đọc N47 (không mạng, không phiên).
+const { loadSceneConcept } = vi.hoisted(() => ({
+  loadSceneConcept: vi.fn(async () => ({ style: undefined, additions: [], furnish: 'on', source: 'none', notice: null })),
+}));
+vi.mock('@/lib/pascal/sceneConcept', () => ({ loadSceneConcept }));
+
 /* -------------------------------------------------------------------------- */
 /* Bộ dựng.                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -408,6 +414,29 @@ describe('tầng và công cụ', () => {
     });
 
     expect(harness.model().selection).toBeNull();
+  });
+
+  it('bật/tắt đo dựng lại cảnh nhưng KHÔNG gọi lại concept AI (nhớ theo dự án)', async () => {
+    const spy = sceneSpy();
+    const harness = render({ mountScene: spy.mount });
+
+    await waitFor(() => {
+      expect(spy.options()).not.toBeNull();
+    });
+    const first = spy.options()?.loadConcept;
+    await first?.();
+
+    act(() => {
+      harness.model().onSelectTool('measure');
+    });
+    await waitFor(() => {
+      expect(spy.options()?.measure).toBe(true);
+    });
+    await spy.options()?.loadConcept?.();
+
+    expect(spy.disposals()).toBeGreaterThan(0);
+    expect(spy.options()?.loadConcept).toBe(first);
+    expect(loadSceneConcept).toHaveBeenCalledTimes(1);
   });
 
   it('công cụ đo mở thì cảnh dựng với `measure`, và một phép đo hiện theo A15', async () => {

@@ -14,6 +14,7 @@
 
 import { denormalizeSpatial, normalizeSpatial, type NormalizedSpatial } from '@/domain/spatial/normalize';
 import { formatNumber } from '@/lib/format/number';
+import { conceptSceneOptions, type SceneConcept } from '@/lib/pascal/sceneConcept';
 import { standardSceneOf } from '@/lib/pascal/sceneStandard';
 import type { PascalScene } from '@/lib/pascal/types';
 import type { VersionDiff } from '@/lib/versioning/diff';
@@ -52,6 +53,28 @@ export interface SceneConversion {
 
 /** Chưa có gì để dựng, và cũng chưa có gì hỏng. */
 export const NO_SCENE: SceneConversion = Object.freeze({ scene: null, failed: false });
+
+/** Chú thích khi bản cũ không khớp phòng của concept AI (concept chỉ có bản hiện hành, dựng cho phòng hiện tại). */
+export const OLD_VERSION_FURNISH_NOTE =
+  'Bản cũ có phòng khác mô hình hiện tại: nội thất được tự bày theo phong cách gợi ý hiện hành, không phải đồ AI đã chọn.';
+
+/**
+ * Tuỳ chọn dựng cảnh của một bản: concept AI hiện hành như editor; riêng bản CŨ có phòng không có trong mô hình hiện tại
+ * (id phòng khác → concept không bày, đồ AI không vào) thì tự bày như khi không có concept, giữ phong cách gợi ý, kèm
+ * chú thích — thay vì phòng trống dễ hiểu nhầm.
+ */
+export function versionSceneOptions(
+  concept: SceneConcept,
+  version: NormalizedSpatial | null,
+  current: NormalizedSpatial | null,
+): { readonly options: ReturnType<typeof conceptSceneOptions>; readonly note: string | null } {
+  const options = conceptSceneOptions(concept);
+  if (version === null || version === current || options.furnish === 'on') return { options, note: null };
+  const currentRooms = new Set<string>(current?.byKind.room ?? []);
+  const mismatch = (version.byKind.room ?? []).some((id) => !currentRooms.has(id));
+  if (!mismatch) return { options, note: null };
+  return { options: { ...(options.style === undefined ? {} : { style: options.style }), furnish: 'on' }, note: OLD_VERSION_FURNISH_NOTE };
+}
 
 /**
  * Đồ thị không gian thành cảnh Pascal — cảnh chuẩn `standardSceneOf` (cùng luật bày với màn 3D chính); `options` mang

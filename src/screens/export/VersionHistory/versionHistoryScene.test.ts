@@ -4,7 +4,7 @@ import { createSampleBuilding } from '@/domain/spatial/__fixtures__/sampleBuildi
 import { normalizeSpatial } from '@/domain/spatial/normalize';
 import type { VersionDiff } from '@/lib/versioning/diff';
 
-import { buildVisualModel, convertScene, graphOfVersion, isEmptySource } from './versionHistoryScene';
+import { buildVisualModel, convertScene, graphOfVersion, isEmptySource, OLD_VERSION_FURNISH_NOTE, versionSceneOptions } from './versionHistoryScene';
 
 const current = normalizeSpatial(createSampleBuilding());
 const wall = current.byKind.wall[0] as string;
@@ -117,5 +117,33 @@ describe('thư viện mẫu chung (ensureSceneLibrary)', () => {
     const model = buildVisualModel({ ...base, scene: convertScene(current), libraryNotice: 'báo' });
     expect(model.libraryNotice).toBe('báo');
     expect(buildVisualModel({ ...base, scene: convertScene(current) }).libraryNotice).toBeNull();
+  });
+});
+
+describe('bản cũ với concept AI hiện hành (versionSceneOptions)', () => {
+  const addition = { levelId: 'L', roomId: 'R-x', kind: 'chair', centre: { x: 0, y: 0 }, widthMm: 450, depthMm: 450, rotationDeg: 0 } as never;
+  const done = { style: undefined, additions: [addition], furnish: 'off', source: 'done', notice: null } as const;
+  const withRooms = (rooms: readonly string[]) => ({ ...current, byKind: { ...current.byKind, room: rooms } }) as typeof current;
+
+  it('bản hiện tại: concept như editor (không tự bày, có đồ AI), không chú thích', () => {
+    expect(versionSceneOptions(done, current, current)).toEqual({ options: { furnish: 'off', additions: [addition] }, note: null });
+  });
+
+  it('bản cũ cùng phòng với mô hình hiện tại: vẫn theo concept', () => {
+    const old = withRooms(current.byKind.room.slice(0, 1));
+    expect(versionSceneOptions(done, old, current).note).toBeNull();
+    expect(versionSceneOptions(done, old, current).options.furnish).toBe('off');
+  });
+
+  it('bản cũ có phòng khác id: tự bày như khi không có concept, bỏ đồ AI, có chú thích tiếng Việt', () => {
+    const old = withRooms([...current.byKind.room, 'R-cu-khac-id']);
+    const result = versionSceneOptions(done, old, current);
+    expect(result.options).toEqual({ furnish: 'on' });
+    expect(result.note).toBe(OLD_VERSION_FURNISH_NOTE);
+  });
+
+  it('không có concept: tự bày sẵn, không chú thích', () => {
+    const none = { ...done, additions: [], furnish: 'on', source: 'none' } as const;
+    expect(versionSceneOptions(none, withRooms(['R-khac']), current)).toEqual({ options: { furnish: 'on' }, note: null });
   });
 });

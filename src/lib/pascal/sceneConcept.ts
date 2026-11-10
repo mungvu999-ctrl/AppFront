@@ -1,5 +1,6 @@
 import type { DesignConceptApi } from '@/api/client';
 import type { DesignAddition, DesignConcept, DesignConceptState } from '@/api/schemas/designConcept';
+import { getSessionSnapshot } from '@/lib/auth/state';
 
 import { sceneStyleFromConcept } from './designStyles';
 import { absenceOf } from './serverLibrary';
@@ -81,7 +82,9 @@ const defaultApi: ConceptApiSource = async () => {
     import('@/api/appClient'),
     import('@/routes/sessionSetup'),
   ]);
-  return (await startAppSession()) ? createAppApiClient().designConcept : null;
+  // `startAppSession` nhớ cả `false` của lượt chưa đăng nhập: đọc trạng thái phiên thật (đăng nhập sau, cùng thẻ).
+  await startAppSession().catch(() => false);
+  return getSessionSnapshot().status === 'authenticated' ? createAppApiClient().designConcept : null;
 };
 
 /**

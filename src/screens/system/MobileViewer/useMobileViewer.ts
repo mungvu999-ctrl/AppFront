@@ -48,6 +48,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { denormalizeSpatial, type NormalizedSpatial } from '@/domain/spatial/normalize';
 import { readKindFromId } from '@/domain/spatial/ids';
 import { bodyOfPascalId } from '@/lib/pascal/ids';
+import type { SceneConcept } from '@/lib/pascal/sceneConcept';
 import { can } from '@/lib/auth/permissions';
 import {
   createShareLink,
@@ -335,6 +336,13 @@ export function useMobileViewer(options: UseMobileViewerOptions): MobileViewerMo
     sceneCallbacksRef.current = { onPick: handleScenePick, onMeasure: handleMeasure };
   }, [handleScenePick, handleMeasure]);
 
+  // Concept AI nhớ theo dự án: bật/tắt đo dựng lại cảnh (Pascal đọc `measure` lúc dựng) nhưng không gọi lại N47.
+  const loadConcept = useMemo(() => {
+    let pending: Promise<SceneConcept> | undefined;
+    return (): Promise<SceneConcept> =>
+      (pending ??= import('@/lib/pascal/sceneConcept').then(({ loadSceneConcept }) => loadSceneConcept(projectId)));
+  }, [projectId]);
+
   useEffect(() => {
     if (canvas === null || graph === null || !hasGeometry) {
       return undefined;
@@ -342,6 +350,7 @@ export function useMobileViewer(options: UseMobileViewerOptions): MobileViewerMo
 
     const mount = mountScene(canvas, {
       graph,
+      loadConcept,
       // Pascal đọc `measure` lúc dựng, nên bật/tắt công cụ đo dựng lại cảnh.
       measure: isMeasuring,
       onPick: (nodeId) => sceneCallbacksRef.current.onPick(nodeId),
@@ -364,7 +373,7 @@ export function useMobileViewer(options: UseMobileViewerOptions): MobileViewerMo
       mount.handle.dispose();
       setIsSceneMounted(false);
     };
-  }, [canvas, graph, hasGeometry, isMeasuring, mountScene, projectId]);
+  }, [canvas, graph, hasGeometry, isMeasuring, loadConcept, mountScene, projectId]);
 
   /* ---- Chia sẻ — X-04, và toast hoàn tác của A8 -------------------------- */
 

@@ -637,7 +637,10 @@ export interface ServerLibraryModel {
 }
 
 /** Thư viện máy chủ (`GET /api/library`) đã nạp: thư mục → URL tệp. Rỗng = chỉ danh mục đóng gói. */
-const SERVER_FILES = new Map<string, { readonly model: string; readonly preview?: string; readonly item: ServerLibraryModel }>();
+const SERVER_FILES = new Map<
+  string,
+  { readonly model: string; readonly preview?: string; readonly item: ServerLibraryModel; readonly prior: CatalogModel | undefined }
+>();
 
 /**
  * Gộp thư viện máy chủ vào `CATALOG_MODELS` (thư mục = `id` mục): mục máy chủ thắng mục đóng gói
@@ -650,6 +653,8 @@ export const registerServerLibrary = (items: readonly ServerLibraryModel[]): num
     const own = Object.getOwnPropertyDescriptor(target, item.id);
     if (own !== undefined && own.writable !== true) continue;
     const base = target[item.id];
+    // Mục đóng gói bị che (nếu có) — `clearServerLibrary` trả lại khi đổi phiên. Đăng ký lại giữ mục gốc đầu tiên.
+    const prior = SERVER_FILES.has(item.id) ? SERVER_FILES.get(item.id)?.prior : base;
     target[item.id] = {
       offset: base?.offset ?? [0, 0, 0],
       rotation: base?.rotation ?? [0, 0, 0],
@@ -657,10 +662,23 @@ export const registerServerLibrary = (items: readonly ServerLibraryModel[]): num
       folder: item.id,
       dimensions: [item.widthMm / 1000, item.heightMm / 1000, item.depthMm / 1000],
     };
-    SERVER_FILES.set(item.id, { model: item.modelUrl, ...(item.previewUrl === undefined ? {} : { preview: item.previewUrl }), item });
+    SERVER_FILES.set(item.id, { model: item.modelUrl, ...(item.previewUrl === undefined ? {} : { preview: item.previewUrl }), item, prior });
     count += 1;
   }
   return count;
+};
+
+/**
+ * Gỡ mọi mẫu máy chủ đã gộp (đổi/xoá phiên): thư viện máy chủ có cả mẫu riêng + URL ký của người dùng, người sau
+ * không được thấy. Mục đóng gói bị che được trả lại; mục chỉ có trên máy chủ bị xoá khỏi `CATALOG_MODELS`.
+ */
+export const clearServerLibrary = (): void => {
+  const target = CATALOG_MODELS as Record<string, CatalogModel>;
+  for (const [id, { prior }] of SERVER_FILES) {
+    if (prior === undefined) delete target[id];
+    else target[id] = prior;
+  }
+  SERVER_FILES.clear();
 };
 
 /** true khi thư mục đến từ thư viện máy chủ. */

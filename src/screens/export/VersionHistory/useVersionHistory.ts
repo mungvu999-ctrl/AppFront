@@ -25,7 +25,7 @@
 import { useInfiniteQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { conceptSceneOptions, loadSceneConcept, type SceneConcept } from '@/lib/pascal/sceneConcept';
+import { loadSceneConcept, type SceneConcept } from '@/lib/pascal/sceneConcept';
 import { ensureSceneLibrary, sceneLibraryNow, type SceneLibrary } from '@/lib/pascal/sceneLibrary';
 import type { FloorVersionSummary } from '@/api/schemas/versions';
 import { flushAutosaves, useFloorLayerAutosave } from '@/hooks/useAutosave';
@@ -87,7 +87,7 @@ import {
   unsavedEditsNotice,
 } from './versionHistoryModel';
 import { buildPlanDiffModel, entityCountsOf, togglePinned } from './versionHistoryPlan';
-import { buildVisualModel, convertScene, graphOfVersion, isEmptySource, NO_SCENE } from './versionHistoryScene';
+import { buildVisualModel, convertScene, graphOfVersion, isEmptySource, NO_SCENE, versionSceneOptions } from './versionHistoryScene';
 
 /** Lượt N18 cùng lúc. */
 export const SNAPSHOT_CONCURRENCY = 2;
@@ -388,9 +388,14 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
     };
   }, [projectId]);
   const sceneConcept = concept?.projectId === projectId ? concept.value : null;
+  // Bản cũ có phòng khác concept → tự bày + chú thích (`versionSceneOptions`).
+  const versionScene = useMemo(
+    () => (sceneConcept === null ? null : versionSceneOptions(sceneConcept, sceneGraph, graph)),
+    [sceneConcept, sceneGraph, graph],
+  );
   const scene = useMemo(
-    () => (library === null || sceneConcept === null ? NO_SCENE : convertScene(sceneGraph, conceptSceneOptions(sceneConcept))),
-    [sceneGraph, library, sceneConcept],
+    () => (library === null || versionScene === null ? NO_SCENE : convertScene(sceneGraph, versionScene.options)),
+    [sceneGraph, library, versionScene],
   );
   const plan = useMemo(
     () =>
@@ -421,7 +426,7 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
         isFetchingDiff: pairFetching,
         // Chờ cả thư viện lẫn concept: không dựng bằng mẫu đóng gói/phong cách mặc định rồi đổi sau.
         libraryPending: library === null || sceneConcept === null,
-        libraryNotice: [library?.notice, sceneConcept?.notice].filter(Boolean).join(' ') || null,
+        libraryNotice: [library?.notice, sceneConcept?.notice, versionScene?.note].filter(Boolean).join(' ') || null,
       }),
     [
       gateway.capabilities,
@@ -430,6 +435,7 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
       scene,
       library,
       sceneConcept,
+      versionScene,
       diff,
       builds,
       leftVersionId,

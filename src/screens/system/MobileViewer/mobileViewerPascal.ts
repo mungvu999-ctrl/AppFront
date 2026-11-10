@@ -38,7 +38,7 @@ export function mountMobileViewerPascal(
     import('@/lib/pascal/sceneLibrary').then(({ ensureSceneLibrary }) => ensureSceneLibrary()),
     import('@/lib/pascal/sceneConcept').then(async ({ conceptSceneOptions, loadSceneConcept }) => {
       if (projectId === undefined) return { sceneOptions: {}, notice: null };
-      const concept = await loadSceneConcept(projectId);
+      const concept = await (options.loadConcept?.() ?? loadSceneConcept(projectId));
       return { sceneOptions: conceptSceneOptions(concept), notice: concept.notice };
     }),
   ])

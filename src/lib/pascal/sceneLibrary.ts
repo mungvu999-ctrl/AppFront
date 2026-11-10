@@ -1,7 +1,9 @@
 import type { LibraryApi } from '@/api/client';
 import type { DesignAddition, DesignResult } from '@/api/schemas/designConcept';
 
-import { CATALOG_MODELS } from './furnitureCatalog';
+import { getSessionSnapshot } from '@/lib/auth/state';
+
+import { CATALOG_MODELS, clearServerLibrary } from './furnitureCatalog';
 
 import {
   BUNDLED_LIBRARY_VERSION,
@@ -30,8 +32,10 @@ const defaultApi: LibraryApiSource = async () => {
     import('@/api/appClient'),
     import('@/routes/sessionSetup'),
   ]);
-  // Token chỉ ở bộ nhớ: gọi trước khi mở phiên là 401 (e2e fullstack bước 11). `startAppSession` nhớ lượt đang chạy.
-  return (await startAppSession()) ? createAppApiClient().library : null;
+  // Token chỉ ở bộ nhớ: gọi trước khi mở phiên là 401 (e2e fullstack bước 11). `startAppSession` nhớ lượt khởi động —
+  // kể cả `false` của lượt chưa đăng nhập — nên đăng nhập sau đó trong cùng thẻ chỉ thấy được qua trạng thái phiên thật.
+  await startAppSession().catch(() => false);
+  return getSessionSnapshot().status === 'authenticated' ? createAppApiClient().library : null;
 };
 
 const withNotice = (load: LibraryLoad): SceneLibrary => ({
@@ -41,21 +45,48 @@ const withNotice = (load: LibraryLoad): SceneLibrary => ({
 
 let shared: Promise<SceneLibrary> | null = null;
 let settled: SceneLibrary | null = null;
+/** Người dùng của lượt đọc đã chốt (`null` = chưa có phiên). */
+let settledOwner: string | null = null;
+
+const currentOwner = (): string | null => getSessionSnapshot().user?.id ?? null;
+
+/** Quên lượt đọc + gỡ mẫu máy chủ đã gộp (mẫu riêng, URL ký của người trước). */
+const forget = (): void => {
+  shared = null;
+  settled = null;
+  clearServerLibrary();
+};
 
 /**
- * Nạp thư viện máy chủ một lần cho cả phiên trang; lượt gọi sau (viewer khác, đổi dự án) nhận lại đúng promise ấy.
- * Không bao giờ ném. Hỏng thì giữ dự phòng tới khi tải lại trang — khớp câu báo "Tải lại trang để thử lại".
+ * Nạp thư viện máy chủ một lần cho mỗi người dùng trong phiên trang; lượt gọi sau (viewer khác, đổi dự án) nhận lại
+ * đúng promise ấy. Không bao giờ ném.
+ * - Chưa có phiên (`fallback:no-session`) không được nhớ: đăng nhập trong cùng thẻ thì lượt sau đọc lại.
+ * - Đổi người dùng (đăng xuất → người khác, phiên đã rõ) → quên kết quả cũ, gỡ mẫu máy chủ của người trước, đọc lại.
+ * - Lỗi đọc (5xx/mạng/hết giờ) giữ dự phòng tới khi tải lại trang hoặc đổi người — mọi viewer trong thẻ cùng trạng thái
+ *   ấy, khớp câu báo "Tải lại trang để thử lại" (editor là trang riêng nên tự đọc lượt của nó).
  */
 export function ensureSceneLibrary(getApi: LibraryApiSource = defaultApi): Promise<SceneLibrary> {
-  shared ??= getApi()
+  const session = getSessionSnapshot();
+  if (settled !== null && session.status !== 'unknown' && currentOwner() !== settledOwner) forget();
+  if (shared !== null) return shared;
+  const mine = getApi()
     .then((api) =>
       api === null
         ? { count: 0, source: 'fallback:no-session' as const, version: BUNDLED_LIBRARY_VERSION }
         : loadServerLibrary(api),
     )
     .catch((): LibraryLoad => ({ count: 0, source: 'fallback:threw', version: BUNDLED_LIBRARY_VERSION }))
-    .then((load) => (settled = withNotice(load)));
-  return shared;
+    .then((load) => {
+      const result = withNotice(load);
+      if (shared === mine) {
+        settled = result;
+        settledOwner = currentOwner();
+        if (load.source === 'fallback:no-session') shared = null;
+      }
+      return result;
+    });
+  shared = mine;
+  return mine;
 }
 
 /** Thư viện đã chốt của phiên (đầu dò, chẩn đoán); `null` khi lượt đọc chưa xong. */
@@ -63,8 +94,8 @@ export const sceneLibraryNow = (): SceneLibrary | null => settled;
 
 /** Chỉ cho test: quên lượt đọc của phiên. */
 export const resetSceneLibraryForTests = (): void => {
-  shared = null;
-  settled = null;
+  forget();
+  settledOwner = null;
 };
 
 /** Một `modelId` không có trong danh mục (đóng gói + thư viện máy chủ đã gộp) và thứ dựng thay nó. */

@@ -10,6 +10,7 @@ import type { DesignResult } from '@/api/schemas/designConcept';
 import { SpatialGraphDocumentSchema } from '@/api/schemas/spatialGraph';
 import { normalizeSpatial } from '@/domain/spatial/normalize';
 import type { SpatialGraph } from '@/domain/spatial/types';
+import { setAuthenticatedSession } from '@/lib/auth/state';
 
 import { fixtureF1 } from '../__fixtures__';
 import LIBRARY from '../libraryRoles.json' with { type: 'json' };
@@ -89,6 +90,8 @@ const conceptState = {
 };
 
 beforeEach(() => {
+  // Viewer đọc trạng thái phiên thật (không tin `startAppSession` đã nhớ): phiên đã đăng nhập.
+  setAuthenticatedSession({ accessToken: 't', expiresAt: Date.now() + 3_600_000, roles: [], user: { id: 'u' } } as never);
   mounted.length = 0;
   resetSceneLibraryForTests();
   conceptReply = async () => ({ ok: false, error: { kind: 'notFound' } });
