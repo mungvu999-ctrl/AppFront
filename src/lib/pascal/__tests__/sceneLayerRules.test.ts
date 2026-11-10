@@ -9,7 +9,7 @@ import type { Furniture } from '@/domain/spatial/types';
 import { registerServerLibrary } from '../furnitureCatalog';
 import { sceneRulesOffOf } from '../sceneLayer';
 import { sceneStyleOf } from '../sceneStyles';
-import { modelFolderOf, orientedGenerated, type LayerStyle } from '../sceneVariety';
+import { modelFolderOf, orientedGenerated, woodToneOf, type LayerStyle } from '../sceneVariety';
 
 const style: LayerStyle = { ...sceneStyleOf(undefined), rulesOff: new Set() };
 const off = (name: string): LayerStyle => ({ ...style, rulesOff: new Set([name]) });
@@ -76,5 +76,31 @@ describe('luật orient (B)', () => {
   it('cờ URL: `?disable=orient,fit` tách đúng tên luật', () => {
     expect([...sceneRulesOffOf('?disable=orient,fit&x=1')]).toEqual(['orient', 'fit']);
     expect(sceneRulesOffOf('').size).toBe(0);
+  });
+});
+
+describe('luật tone (C): một tông gỗ cho đồ SINH, đồ AI/người dùng không đổi mẫu', () => {
+  registerServerLibrary([model('shelf-industrial-metal', 800, 350, 1800), model('shelf-iron-wood-geometric-b', 800, 350, 1800)]);
+  const industrial: LayerStyle = { ...style, libraryStyles: ['industrial'] };
+  const shelf = (id: string) => piece(id, 'other', 800, 350, { variant: 'shelves', heightMm: 1800 } as Partial<Furniture>);
+
+  const dark: LayerStyle = { ...industrial, woodTone: 'd' };
+  const darkOff: LayerStyle = { ...dark, rulesOff: new Set(['tone']) };
+
+  it('món sinh theo tông của căn; món AI giữ mẫu cũ; tắt `tone` thì như cũ', () => {
+    const dress = shelf('DRESS-shelf-R-1');
+    const ai = shelf('F-SHELF0000001');
+    expect(modelFolderOf(dress, industrial, 'livingRoom')).toBe('shelf-iron-wood-geometric-b');
+    expect(modelFolderOf(dress, dark, 'livingRoom')).toBe('shelf-industrial-metal');
+    expect(modelFolderOf(dress, darkOff, 'livingRoom')).toBe('shelf-iron-wood-geometric-b');
+    expect(modelFolderOf(ai, dark, 'livingRoom')).toBe('shelf-iron-wood-geometric-b');
+  });
+
+  it('tông của căn: đa số đồ có sẵn (bỏ đồ sinh), không có thì theo mã phong cách đầu', () => {
+    const saved = (id: string, folder: string) => ({ f: { ...shelf(id), model: { id: 'x', src: `/items/${folder}/model.glb` } } as Furniture });
+    expect(woodToneOf([saved('F-1', 'shelf-industrial-metal'), saved('F-2', 'shelf-industrial-metal'), saved('F-3', 'shelf-iron-wood-geometric-b')], style)).toBe('d');
+    expect(woodToneOf([saved('DRESS-a', 'shelf-industrial-metal')], { ...style, libraryStyles: ['scandinavian'] })).toBe('l');
+    expect(woodToneOf([], { ...style, libraryStyles: ['modern-lux'] })).toBe('d');
+    expect(woodToneOf([], { ...style, libraryStyles: [] })).toBeUndefined();
   });
 });

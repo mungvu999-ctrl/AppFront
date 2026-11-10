@@ -9,7 +9,8 @@ import type { SpatialGraph } from '@/domain/spatial/types';
 import { ALL_SCENE_RULES_OFF, SCENE_RULES_OFF, type SceneRepair } from './sceneLayer';
 import { repairScene, repairsById } from './sceneRepair';
 import { sceneStyleOf } from './sceneStyles';
-import type { LayerStyle } from './sceneVariety';
+import { woodToneOf, type LayerStyle } from './sceneVariety';
+import { furnishingUsageOf } from './structureFixes';
 import { toPascalScene } from './toPascal';
 
 /**
@@ -24,7 +25,22 @@ export const standardSceneOf = (
   const { raw = false, ...sceneOptions } = options;
   const fixed =
     sceneOptions.repairs !== undefined ? { graph, repairs: [...sceneOptions.repairs.values()] } : raw ? { graph, repairs: [] } : repairScene(graph);
-  const style: LayerStyle = { ...(sceneOptions.style ?? sceneStyleOf(undefined)), rulesOff: raw ? ALL_SCENE_RULES_OFF : SCENE_RULES_OFF };
+  const base = sceneOptions.style ?? sceneStyleOf(undefined);
+  const rulesOff = raw ? ALL_SCENE_RULES_OFF : SCENE_RULES_OFF;
+  // Luật `tone` (C): tông gỗ của căn tính MỘT lần từ đồ có sẵn (đã sửa cảnh), chỉ áp cho đồ sinh.
+  const usageOf = new Map(fixed.graph.rooms.map((r) => [r.id as string, furnishingUsageOf(r)]));
+  const woodTone = rulesOff.has('tone')
+    ? undefined
+    : woodToneOf(
+        fixed.graph.furniture
+          .filter((f) => f.suggested !== true)
+          .map((f) => {
+            const usage = f.roomId === undefined ? undefined : usageOf.get(f.roomId);
+            return usage === undefined ? { f } : { f, usage };
+          }),
+        base,
+      );
+  const style: LayerStyle = { ...base, rulesOff, ...(woodTone === undefined ? {} : { woodTone }) };
 
   return { ...toPascalScene(fixed.graph, { furnish: 'on', ...sceneOptions, style, repairs: repairsById(fixed.repairs) }), repairs: fixed.repairs };
 };

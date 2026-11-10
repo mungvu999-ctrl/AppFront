@@ -235,8 +235,33 @@ const LIBRARY = LIBRARY_ROLES_JSON as {
   readonly models: Readonly<Record<string, { readonly s: readonly string[]; readonly c: number; readonly t?: string; readonly h?: string }>>;
 };
 
-/** Phong cách + phần lớp cảnh tính một lần cho cả căn (`standardSceneOf`): luật đã tắt. */
-export type LayerStyle = SceneStyle & { readonly rulesOff?: ReadonlySet<string> };
+/** Phong cách + phần lớp cảnh tính một lần cho cả căn (`standardSceneOf`): luật đã tắt, tông gỗ của căn (`woodToneOf`). */
+export type LayerStyle = SceneStyle & { readonly rulesOff?: ReadonlySet<string>; readonly woodTone?: 'l' | 'd' };
+
+const SAVED_FOLDER = /\/items\/([^/]+)\//;
+/**
+ * Luật `tone` (C): tông gỗ của căn = đa số tông (sáng/tối) của mẫu đang dựng cho đồ CÓ SẴN (người dùng xác nhận + AI);
+ * hoà hoặc không món gỗ nào → đa số tông các mẫu thư viện của mã phong cách đầu (`libraryStyles[0]`), hoà → sáng.
+ * `undefined` khi phong cách không có mã thư viện. Đồ sinh (`DRESS-`) không tính.
+ */
+export const woodToneOf = (
+  items: readonly { readonly f: Shaped & Pick<Furniture, 'id' | 'roomId'> & Partial<Pick<Furniture, 'model'>>; readonly usage?: RoomUsage }[],
+  style: SceneStyle,
+): 'l' | 'd' | undefined => {
+  const count = { l: 0, d: 0 };
+  for (const { f, usage } of items) {
+    if (isGenerated(f) || f.kind === 'stair') continue;
+    const folder = f.model === undefined ? modelFolderOf(f, style, usage) : (SAVED_FOLDER.exec(f.model.src)?.[1] ?? null);
+    const t = folder === null ? undefined : LIBRARY.models[folder]?.t;
+    if (t === 'l' || t === 'd') count[t] += 1;
+  }
+  if (count.l !== count.d) return count.d > count.l ? 'd' : 'l';
+  const first = style.libraryStyles?.[0];
+  if (first === undefined) return undefined;
+  const byStyle = { l: 0, d: 0 };
+  for (const m of Object.values(LIBRARY.models)) if (m.s.includes(first) && (m.t === 'l' || m.t === 'd')) byStyle[m.t] += 1;
+  return byStyle.d > byStyle.l ? 'd' : 'l';
+};
 const rulesOffOf = (style: SceneStyle): ReadonlySet<string> => (style as LayerStyle).rulesOff ?? SCENE_RULES_OFF;
 const isGenerated = (f: Pick<Furniture, 'id'>): boolean => f.id.startsWith(GENERATED_DRESS_PREFIX);
 
@@ -289,11 +314,19 @@ const libraryModelOf = (
   if (library.length === 0) return null;
   const best = Math.min(...library.map((folder) => sizeCostOf(f, folder)));
   const wanted = style.libraryStyles ?? [];
+  // Luật `tone` (C): CHỈ món sinh — mẫu lệch tông gỗ của căn xếp sau, trong cùng giới hạn cỡ (đồ AI/người dùng không đổi).
+  const tone = isGenerated(f) && !rulesOffOf(style).has('tone') ? (style as LayerStyle).woodTone : undefined;
+  const toneMiss = (folder: string): number => {
+    const t = LIBRARY.models[folder]?.t;
+    return tone !== undefined && t !== undefined && t !== tone ? 1 : 0;
+  };
   const ranked = library
     .filter((folder) => sizeCostOf(f, folder) <= best + LIBRARY_SIZE_SLACK)
-    .map((folder) => ({ folder, tier: styleTierOf(folder, wanted), chroma: LIBRARY.models[folder]?.c ?? 0 }))
-    .sort((a, b) => a.tier - b.tier || a.chroma - b.chroma || a.folder.localeCompare(b.folder));
-  const top = ranked.filter((r) => r.tier === ranked[0]?.tier).slice(0, PER_ITEM_ROLES.has(role) ? 4 : 1);
+    .map((folder) => ({ folder, miss: toneMiss(folder), tier: styleTierOf(folder, wanted), chroma: LIBRARY.models[folder]?.c ?? 0 }))
+    .sort((a, b) => a.miss - b.miss || a.tier - b.tier || a.chroma - b.chroma || a.folder.localeCompare(b.folder));
+  const top = ranked
+    .filter((r) => r.tier === ranked[0]?.tier && r.miss === ranked[0]?.miss)
+    .slice(0, PER_ITEM_ROLES.has(role) ? 4 : 1);
   const pick = top[fnv1a(f.id) % top.length]?.folder ?? null;
   /* Luật `orient` (B), món sinh có mặt trước (giường, tủ…): mẫu nằm ngang hộp → mẫu khác CÙNG HỌ MÀU vừa hướng hơn;
      không có thì giữ mẫu cũ (không đổi tông chỉ để khớp hướng). Vai đối xứng thì xoay món (`orientedGenerated`). */
@@ -302,8 +335,8 @@ const libraryModelOf = (
   const own = orientedCostOf(f, pick);
   const better = library
     .filter((folder) => family !== undefined && LIBRARY.models[folder]?.h === family && orientedCostOf(f, folder) + ORIENT_MARGIN < own)
-    .map((folder) => ({ folder, tier: styleTierOf(folder, wanted), chroma: LIBRARY.models[folder]?.c ?? 0 }))
-    .sort((a, b) => a.tier - b.tier || a.chroma - b.chroma || a.folder.localeCompare(b.folder));
+    .map((folder) => ({ folder, miss: toneMiss(folder), tier: styleTierOf(folder, wanted), chroma: LIBRARY.models[folder]?.c ?? 0 }))
+    .sort((a, b) => a.miss - b.miss || a.tier - b.tier || a.chroma - b.chroma || a.folder.localeCompare(b.folder));
   return better[0]?.folder ?? pick;
 };
 
