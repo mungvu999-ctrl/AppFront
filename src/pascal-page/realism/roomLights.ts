@@ -176,6 +176,28 @@ export function calibrateRoomLights(
   });
 }
 
+/**
+ * `?light=lamp-ceil` (vòng 6). Gốc "đốm sáng không nguồn" (đo lúc chạy ch-10, `F:/runs/m6/lA/BAO-CAO.md`): mỗi phòng có
+ * HAI nguồn cùng toạ độ ngang — đèn này (≤ 15 cd, treo 2,3 m, không vỏ) và đèn âm trần sinh (`LIGHT-<phòng>`, 2,4 cd sát
+ * trần, vỏ thu 0,1 %); vũng sáng là khuếch tán (roughness=1 không đổi số đo). Cờ dời đèn phòng lên sát trần của phòng
+ * (cùng độ cao đèn âm trần): giữ nguyên cường độ ⇒ giữ quang thông Φ = 4πI, đỉnh rọi sàn I/h² giảm (15 cd: 2,84 → ~1,5 ở
+ * trần 3,2 m), không thêm đèn. Không tìm thấy trần chứa tâm phòng → giữ 2,3 m.
+ */
+export const LAMP_CEIL_GAP_M = 0.05;
+
+export interface CeilingInput {
+  polygon: Polygon;
+  /** Cao độ mặt trần so với sàn tầng (m). */
+  height: number;
+}
+
+/** Độ cao đèn phòng (m trên sàn tầng) cho tâm (x, z): trần thấp nhất chứa điểm − khe; không có trần → `fallback`. */
+export function ceilingLightHeight(x: number, z: number, ceilings: readonly CeilingInput[], fallback = ROOM_LIGHT_HEIGHT_M): number {
+  let h = Infinity;
+  for (const c of ceilings) if (c.height > fallback && c.height < h && pointInPolygon(x, z, c.polygon)) h = c.height;
+  return Number.isFinite(h) ? h - LAMP_CEIL_GAP_M : fallback;
+}
+
 interface RegistryLike {
   nodes: Map<string, Object3D>;
   byType: Record<string, Set<string> | undefined>;
@@ -189,6 +211,17 @@ const shown = (o: Object3D | null): boolean => {
 
 let pool: PointLight[] = [];
 const pos = new Vector3();
+
+/** Trần (node `ceiling`): đa giác (toạ độ tầng) + cao độ thế giới. Trần tầng khác bị loại theo độ cao (`ceilingLightHeight`). */
+function ceilingsOf(registry: RegistryLike, nodes: Record<string, unknown>): { polygon: Polygon; y: number }[] {
+  const out: { polygon: Polygon; y: number }[] = [];
+  for (const id of registry.byType.ceiling ?? []) {
+    const obj = registry.nodes.get(id);
+    const poly = (nodes[id] as ZoneNodeLike)?.polygon;
+    if (obj && poly && poly.length >= 3) out.push({ polygon: poly, y: obj.matrixWorld.elements[13]! });
+  }
+  return out;
+}
 
 /** Gọi mỗi khung từ `Lights` (vendor). `nodes` = `useScene.getState().nodes`. */
 export function syncRoomLights(
@@ -224,14 +257,24 @@ export function syncRoomLights(
     if (obj && node?.polygon && shown(obj)) zones.push({ obj, room: { polygon: node.polygon, name: node.name } });
   }
   const rooms = zones.map((z) => z.room);
-  const plan = lightFlagOn('lamp-cal') ? calibrateRoomLights(planRoomLights(rooms), rooms) : planRoomLights(rooms);
+  const ceil = lightFlagOn('lamp-ceil');
+  const ceilings = ceil ? ceilingsOf(registry, nodes) : [];
+  const heightAt = (p: RoomLightPlan): number => {
+    if (!ceil) return ROOM_LIGHT_HEIGHT_M;
+    const obj = zones[p.index]!.obj;
+    const floorY = obj.localToWorld(pos.set(0, 0, 0)).y;
+    return ceilingLightHeight(p.x, p.z, ceilings.map((c) => ({ polygon: c.polygon, height: c.y - floorY })));
+  };
+  let plan = planRoomLights(rooms);
+  if (ceil) plan = plan.map((p) => ({ ...p, range: roomLightRange(rooms[p.index]!.polygon, p, heightAt(p)) }));
+  if (lightFlagOn('lamp-cal')) plan = calibrateRoomLights(plan, rooms, ROOM_LIGHT_MAX, ceil ? Math.min(...plan.map(heightAt)) : ROOM_LIGHT_HEIGHT_M);
   pool.forEach((l, i) => {
     const p = plan[i];
     if (!p) {
       l.intensity = 0;
       return;
     }
-    zones[p.index]!.obj.localToWorld(pos.set(p.x, ROOM_LIGHT_HEIGHT_M, p.z));
+    zones[p.index]!.obj.localToWorld(pos.set(p.x, heightAt(p), p.z));
     l.position.copy(pos);
     l.intensity = p.intensity;
     l.distance = p.range;
