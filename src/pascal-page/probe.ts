@@ -5,6 +5,9 @@
 import { emitter, sceneRegistry, useInteractive, useScene } from '@pascal-app/core';
 import { getSceneTheme, useViewer } from '@pascal-app/viewer';
 
+import libraryQc from '@/lib/pascal/libraryQc.json';
+import { libraryQcSwaps } from '@/lib/pascal/sceneVariety';
+
 import { installPascalProbe, type PascalProbe } from './createProbe';
 import { backendOf, currentRenderer } from './realism/backend';
 import { setGrade } from './realism/grade';
@@ -45,3 +48,10 @@ installPascalProbe(window.location.search, window, {
     },
   },
 });
+
+// Công bố mẫu bị loại khỏi lựa chọn tự động và các lượt thay trong phiên (id món → {from, to, role}).
+if (window.__pascalProbe) {
+  Object.assign(window.__pascalProbe, {
+    libraryQc: () => ({ rev: libraryQc.rev, excluded: Object.keys(libraryQc.excluded), swaps: Object.fromEntries(libraryQcSwaps()) }),
+  });
+}
