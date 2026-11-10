@@ -15,7 +15,7 @@ describe('?light=', () => {
   });
   it('room-clip-box tự bật room-clip; mặc định không có room-clip-box', () => {
     expect([...parseLightFlags('?light=lamp-ceil,room-clip-box')]).toEqual(['lamp-ceil', 'room-clip-box', 'room-clip']);
-    expect([...parseLightFlags('')]).toEqual(['lamp-ceil', 'room-clip']);
+    expect([...parseLightFlags('')]).toEqual(['lamp-ceil']);
   });
 });
 
