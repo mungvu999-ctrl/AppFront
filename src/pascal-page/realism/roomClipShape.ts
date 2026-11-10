@@ -50,25 +50,43 @@ export interface ClipShape {
   verts: [number, number][];
   /** true = phòng quá nhiều đỉnh, đang dùng hình chữ nhật AABB (như vòng 6). */
   fallback: boolean;
+  /**
+   * Số cạnh shader cần cho đèn ở phòng này (chọn lúc DỰNG node, không phải nhánh trong shader):
+   * 0 = đường hộp (chữ nhật thẳng trục — hộp đã đúng; > MAX đỉnh; ép hộp; hình mở); 3..MAX = đa giác đúng n cạnh.
+   */
+  edges: number;
 }
 
 const pad = (v: [number, number][]): [number, number][] =>
   Array.from({ length: ROOM_CLIP_MAX_VERTS }, (_, i) => v[Math.min(i, v.length - 1)]!);
 
-/** Dữ liệu mặt nạ cho một phòng: đa giác rút gọn, hoặc AABB khi > ROOM_CLIP_MAX_VERTS đỉnh. */
-export function clipShapeOf(poly: Polygon): ClipShape {
+/** 4 đỉnh, mọi cạnh song song trục X/Z ⇒ chữ nhật thẳng trục: hộp AABB cắt đúng như đa giác. */
+function isAxisRect(s: readonly P2[]): boolean {
+  return s.length === 4 && s.every((a, i) => {
+    const b = s[(i + 1) % 4]!;
+    return Math.abs(b[0] - a[0]) < SIMPLIFY_TOL_M || Math.abs(b[1] - a[1]) < SIMPLIFY_TOL_M;
+  });
+}
+
+/**
+ * Dữ liệu mặt nạ cho một phòng: đa giác rút gọn (edges = n), hoặc chữ nhật AABB với edges = 0 (đường hộp) khi phòng là
+ * chữ nhật thẳng trục, > ROOM_CLIP_MAX_VERTS đỉnh, hay `forceBox` (`?light=room-clip-box`, hành vi vòng 6).
+ * `verts` luôn hợp lệ cho mọi biến thể shader (AABB khi đường hộp) ⇒ shader cũ chưa kịp dựng lại vẫn cắt an toàn.
+ */
+export function clipShapeOf(poly: Polygon, forceBox = false): ClipShape {
   const s = simplifyPolygon(poly);
+  const many = s.length > ROOM_CLIP_MAX_VERTS;
   // ponytail: > 8 đỉnh lùi AABB; nếu đo thấy nhiều phòng rơi vào đây thì tách lõm thành ≤ 2 đa giác hoặc tăng MAX.
-  if (s.length <= ROOM_CLIP_MAX_VERTS) return { verts: pad(s), fallback: false };
+  if (!forceBox && !many && !isAxisRect(s)) return { verts: pad(s), fallback: false, edges: s.length };
   const xs = s.map((p) => p[0]);
   const zs = s.map((p) => p[1]);
   const [x0, x1, z0, z1] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
-  return { verts: pad([[x0, z0], [x1, z0], [x1, z1], [x0, z1]]), fallback: true };
+  return { verts: pad([[x0, z0], [x1, z0], [x1, z1], [x0, z1]]), fallback: many, edges: 0 };
 }
 
 /** Hình "không cắt" (đèn ngoài mọi phòng): hình vuông rất lớn → mặt nạ = 1 khắp nơi. */
 export function openShape(size: number): ClipShape {
-  return { verts: pad([[-size, -size], [size, -size], [size, size], [-size, size]]), fallback: false };
+  return { verts: pad([[-size, -size], [size, -size], [size, size], [-size, size]]), fallback: false, edges: 0 };
 }
 
 /**

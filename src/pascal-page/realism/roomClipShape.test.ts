@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { bandBox, type ClipRoom, lightMask, OPEN_BOX, ROOM_CLIP_EDGE_M, ROOM_CLIP_MARGIN_M, roomClipBox, roomClipFactor } from './lightingRoomClip';
+import { bandBox, type ClipRoom, lightMask, OPEN_BOX, ROOM_CLIP_EDGE_M, ROOM_CLIP_MARGIN_M, roomClipBox, roomClipFactor, roomMaskInputs } from './lightingRoomClip';
 import { clipShapeOf, openShape, polygonClipFactor, ROOM_CLIP_MAX_VERTS, simplifyPolygon } from './roomClipShape';
 
 const M = ROOM_CLIP_MARGIN_M;
@@ -66,5 +66,50 @@ describe('room-clip theo đa giác phòng', () => {
 
   it('đèn ngoài phòng: hình mở → 1 khắp nơi', () => {
     expect(polygonClipFactor(123, -45, openShape(OPEN_BOX).verts, M, E)).toBe(1);
+    expect(openShape(OPEN_BOX).edges).toBe(0);
+  });
+});
+
+describe('chọn biến thể shader theo phòng (R2)', () => {
+  const L: [number, number][] = [[0, 0], [6, 0], [6, 2], [2, 2], [2, 5], [0, 5]];
+  const c = Math.cos(Math.PI / 6);
+  const s = Math.sin(Math.PI / 6);
+  const rot = rect(-2, -1.5, 4, 3).map(([x, z]) => [x * c - z * s, x * s + z * c] as [number, number]);
+
+  it('chữ nhật thẳng trục (kể cả có đỉnh thẳng hàng) → hộp; xoay → đa giác 4; chữ L → 6; > 8 → hộp AABB', () => {
+    expect(clipShapeOf(rect(1, 2, 5, 4)).edges).toBe(0);
+    expect(clipShapeOf([...rect(0, 0, 5, 4), [0, 3], [0, 2]]).edges).toBe(0);
+    expect(clipShapeOf(rot).edges).toBe(4);
+    expect(clipShapeOf(L).edges).toBe(6);
+    const comb: [number, number][] = [[0, 0], [10, 0], [10, 4]];
+    for (let i = 0; i < 4; i++) comb.push([9 - 2 * i, 4], [9 - 2 * i, 2], [8 - 2 * i, 2], [8 - 2 * i, 4]);
+    comb.push([0, 4]);
+    expect(clipShapeOf(comb)).toMatchObject({ edges: 0, fallback: true });
+  });
+
+  it('?light=room-clip-box: mọi phòng → hộp, đỉnh = AABB', () => {
+    expect(clipShapeOf(L, true).edges).toBe(0);
+    expect(clipShapeOf(rot, true).edges).toBe(0);
+    expect(clipShapeOf(L, true).verts.slice(0, 4)).toEqual([[0, 0], [6, 0], [6, 5], [0, 5]]);
+  });
+
+  it('dữ liệu gửi shader: chữ nhật = hộp vòng 6; chữ L cắt khuyết; ngoài AABB luôn bị hộp chặn', () => {
+    const room = (polygon: [number, number][]): ClipRoom => ({ polygon, floorY: 0, topY: 3 });
+    const shaderMask = (r: ClipRoom, p: [number, number, number], forceBox = false) => {
+      const { box, verts } = roomMaskInputs(r, clipShapeOf(r.polygon, forceBox));
+      return lightMask(p, [0, 0, 0], box, [], verts);
+    };
+    const A = room(rect(0, 0, 5, 4));
+    expect(roomMaskInputs(A, clipShapeOf(A.polygon)).verts).toBeUndefined();
+    for (const p of [[2.5, 1, 2], [5.3, 0, 2], [2, 1, 4 + M + E / 2]] as [number, number, number][]) {
+      expect(shaderMask(A, p)).toBeCloseTo(roomClipFactor(p, roomClipBox(A)), 6);
+    }
+    const LR = room(L);
+    expect(roomMaskInputs(LR, clipShapeOf(L)).verts).toHaveLength(6);
+    expect(shaderMask(LR, [4, 1, 4])).toBe(0);
+    expect(shaderMask(LR, [4, 1, 2])).toBe(1);
+    expect(shaderMask(LR, [1, 1, 4])).toBe(1);
+    expect(shaderMask(LR, [4, 1, 4], true)).toBe(1); // ép hộp = vòng 6
+    expect(shaderMask(LR, [9, 1, 1])).toBe(0);
   });
 });
