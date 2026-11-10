@@ -41,7 +41,26 @@ export interface MatFacts {
   metalnessMap: boolean;
   roughnessMap: boolean;
   transparent: boolean;
+  /** Tên vật liệu GLB — luật phi kim theo tên (`dielectricName`); thiếu = bỏ qua luật đó. */
+  name?: string;
 }
+
+/**
+ * M7 làn B: vật liệu tên rõ là phi kim (vải/gỗ/da/đá/lá…) mà GLB vẫn đặt kim loại > 0 — vd `Lenestol_fabric`
+ * metallicFactor 0,68 không ảnh, `Wood_12` ảnh metallicRoughness kênh B ≈ 1 khắp ảnh. Kim loại pha nhân phần khuếch tán
+ * với (1 − m) và đổi sang phản xạ màu; env trong nhà yếu nên vải/gỗ tối bệt. Tên có cả từ kim loại → không đoán.
+ * Tắt: `?disable=dielectric`.
+ */
+export function dielectricName(name: string): boolean {
+  const n = name.toLowerCase();
+  if (/metal|brass|steel|chrome|copper|alumin|iron|gold|silver|inox|handle/.test(n)) return false;
+  const k = refKind(n);
+  return k != null && k !== 'metal';
+}
+
+export const flagOff = (search: string, name: string): boolean =>
+  (new URLSearchParams(search).get('disable') ?? '').split(',').includes(name);
+const DIELECTRIC_ON = !flagOff(typeof location === 'undefined' ? '' : location.search, 'dielectric');
 
 export interface MatPatch {
   metalness?: number;
@@ -49,9 +68,9 @@ export interface MatPatch {
 }
 
 /** Thuộc tính vật liệu → phần cần đổi (rỗng = giữ nguyên). Kính trong suốt: chỉ kẹp kim loại. */
-export function autoPatch(f: MatFacts): MatPatch {
+export function autoPatch(f: MatFacts, dielectric = DIELECTRIC_ON): MatPatch {
   const p: MatPatch = {};
-  const cap = f.metalnessMap ? AUTO.metalMaxMapped : AUTO.metalMax;
+  const cap = dielectric && f.name && dielectricName(f.name) ? 0 : f.metalnessMap ? AUTO.metalMaxMapped : AUTO.metalMax;
   if (f.metalness > cap) p.metalness = cap;
   if (!f.roughnessMap && !f.transparent) {
     const min = (p.metalness ?? f.metalness) >= 0.5 ? AUTO.metalRoughMin : AUTO.roughMin;
