@@ -12,8 +12,9 @@
  *   1. `roomMismatch`  — thiết bị vệ sinh trong phòng ngủ/khách/bếp: dời sát tường phòng tắm/WC cùng tầng gần nhất
  *      còn chỗ (bồn cầu/bồn tắm chỉ sang phòng chưa có món cùng loại), không có thì ẩn.
  *   2. `duplicateFixture` — phòng có ≥ 2 bồn cầu/bồn tắm: giữ một (người xác nhận > lớn hơn), ẩn món AI thừa.
- *   3. `outsideRoom` / `wallOverlap` — lòi khỏi outline phòng hoặc lấn tường > 50 mm: dịch vào chỗ hợp lệ gần nhất
- *      (≤ 1,5 m), không được thì giữ nguyên (lỗi còn trên chip).
+ *   3. `outsideRoom` / `wallOverlap` / `doorSwing` — lòi khỏi outline phòng, lấn tường hoặc chắn vùng mở cửa > 50 mm
+ *      (`doorSwing`: vòng 6, `?disable=door`): dịch vào chỗ hợp lệ gần nhất (≤ 1,5 m), không được thì giữ nguyên (lỗi
+ *      còn trên chip với lý do "chắn lối mở cửa").
  *   4. `notAgainstWall` — tủ áo/kệ/tủ bếp lưng cách tường > 150 mm: dời áp lưng vào tường gần nhất còn chỗ (≤ 1,5 m).
  *   5. `overlap` — hai món chồng > 30 % món nhỏ: giữ món ưu tiên (người > AI; giường/sofa/tủ > đồ nhỏ; lớn hơn),
  *      món kia dịch; không được thì chỉ ẩn khi nó là món nhỏ/`other` chồng lên đồ chính, còn lại giữ nguyên. Món bám
@@ -546,9 +547,12 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[], off: Readonl
       ? 'outsideRoom'
       : levelOf(f.levelId).walls.some((w) => rectsOverlap(rect, w, -SLACK_MM))
         ? 'wallOverlap'
-        : null;
+        : !off.has('door') && levelOf(f.levelId).swings.some((s) => rectsOverlap(rect, s, -SLACK_MM))
+          ? 'doorSwing'
+          : null;
     if (rule === null) continue;
-    const what = rule === 'outsideRoom' ? `lòi ra ngoài ${roomName(room)}` : `lấn vào tường ${roomName(room)}`;
+    const what =
+      rule === 'outsideRoom' ? `lòi ra ngoài ${roomName(room)}` : rule === 'wallOverlap' ? `lấn vào tường ${roomName(room)}` : 'chắn lối mở cửa';
     // Phòng chứa tâm trước, rồi các phòng chứa phần lớn thân món (tâm rơi vào dải phòng hẹp cạnh phòng thật).
     let placed: Step | null = null;
     for (const target of roomsUnder(f, room)) {

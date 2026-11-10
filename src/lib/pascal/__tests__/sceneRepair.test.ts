@@ -436,4 +436,37 @@ describe('repairScene', () => {
       expect(Math.abs(after.centre.y - 381 / 2 - (251 - 150))).toBeLessThanOrEqual(1);
     });
   });
+
+  describe('doorSwing (vòng 6, luật E): đồ AI chắn lối mở cửa', () => {
+    const doorOn = (r: Room, offsetMm: number) =>
+      ({ ...HUMAN, id: 'D-1', levelId: 'L-1', wallId: `W-${r.id}-0`, kind: 'door', offsetMm, widthMm: 900, heightMm: 2100, sillHeightMm: 0, swing: 'left' }) as unknown as SpatialGraph['openings'][number];
+    const withDoor = (r: Room, furniture: Furniture[], offsetMm = 1500): SpatialGraph => ({ ...graphOf([r], furniture), openings: [doorOn(r, offsetMm)] });
+    const chair = (id: string, x: number, y: number, extra: Partial<Furniture> = {}) =>
+      item(id, 'chair', [480, 480], x, y, { roomId: r0.id, rotationDeg: 0.01, ...extra } as Partial<Furniture>);
+    const r0 = BED_ROOM;
+    const blocks = (g: SpatialGraph, id: string) => scenePlacementIssues(g).some((i) => i.kind === 'doorSwing' && i.furnitureIds.includes(id));
+
+    it('ghế AI trong vùng mở cửa: dời ra chỗ hợp lệ gần nhất, lý do trên chip; ghế người dùng giữ nguyên', () => {
+      const g = withDoor(r0, [chair('F-ai', 1950, 500)]);
+      expect(blocks(g, 'F-ai')).toBe(true);
+      const { graph, repairs } = repairScene(g);
+      expect(repairs).toMatchObject([{ furnitureId: 'F-ai', action: 'moved', rule: 'doorSwing' }]);
+      expect(repairs[0]?.reasonVi).toContain('chắn lối mở cửa');
+      expect(blocks(graph, 'F-ai')).toBe(false);
+      expect(repairScene(graph).repairs).toEqual([]);
+
+      const mine = withDoor(r0, [chair('F-me', 1950, 500, HUMAN)]);
+      expect(repairScene(mine).repairs).toEqual([]);
+      expect(repairScene(g, new Set(['door'])).repairs).toEqual([]);
+    });
+
+    it('không có chỗ hợp lệ (phòng nhỏ hơn vùng mở cửa): giữ nguyên, không ẩn, lỗi còn trên chip', () => {
+      const tiny = room('R-T', 'other', box(0, 0, 1000, 1100), 'Kho');
+      const g = withDoor(tiny, [item('F-ai', 'chair', [480, 480], 500, 500, { roomId: 'R-T', rotationDeg: 0.01 } as Partial<Furniture>)], 50);
+      const { graph, repairs } = repairScene(g);
+      expect(repairs).toEqual([]);
+      expect(byId(graph, 'F-ai')).toBe(byId(g, 'F-ai'));
+      expect(blocks(graph, 'F-ai')).toBe(true);
+    });
+  });
 });
