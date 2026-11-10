@@ -12,6 +12,7 @@ import type { Furniture, RoomUsage } from '@/domain/spatial/types';
 import { degrees, millimetres, millimetresToMetres } from '@/domain/units/types';
 
 import { CATALOG_MODELS, isServerModel, VARIANT_MODEL } from './furnitureCatalog';
+import LIBRARY_QC_JSON from './libraryQc.json' with { type: 'json' };
 import LIBRARY_ROLES_JSON from './libraryRoles.json' with { type: 'json' };
 import { rectOfFurniture, rectsOverlap } from './placement';
 import { GENERATED_DRESS_PREFIX } from './sceneDressing';
@@ -305,12 +306,40 @@ const styleTierOf = (folder: string, wanted: readonly string[]): number => {
  * các món hợp nhau, cuối cùng vừa cỡ. Cùng vai trò ra cùng mẫu khắp căn (bộ đồng bộ); cây/thảm thì đổi
  * theo từng món trong nhóm hợp nhất. null = thư viện chưa nạp mẫu nào của vai trò.
  */
-const libraryModelOf = (
+const libraryModelOf = (f: Shaped & Pick<Furniture, 'id'>, role: FurnitureRole, style: SceneStyle): string | null => {
+  const all = libraryFoldersOf(role, f.variant).filter(isServerModel);
+  const pick = rankedLibraryPickOf(f, role, style, all);
+  if (pick === null || !QC_EXCLUDED.has(pick)) return pick;
+  // Mẫu bị loại (libraryQc.json): xếp hạng lại trên phần còn lại; cả vai hết mẫu hợp lệ thì giữ hành vi cũ.
+  const ok = all.filter((folder) => !QC_EXCLUDED.has(folder));
+  if (ok.length === 0) return pick;
+  const replacement = rankedLibraryPickOf(f, role, style, ok);
+  if (replacement !== null) QC_SWAPS.set(f.id, { from: pick, to: replacement, role });
+  return replacement ?? pick;
+};
+
+interface QcSwap {
+  readonly from: string;
+  readonly to: string;
+  readonly role: FurnitureRole;
+}
+/**
+ * Kiểm chất lượng thư viện (`libraryQc.json`, sinh từ audit.mjs + duyệt mắt): mẫu lỗi thật nhìn thấy được không
+ * được CHỌN TỰ ĐỘNG (luật thư viện, mẫu AI chọn). Món người dùng đã chỉ định (`model`) không đi qua `modelFolderOf`
+ * nên giữ nguyên. Tắt: đặt `excluded` rỗng.
+ */
+const QC_EXCLUDED: ReadonlySet<string> = new Set(Object.keys((LIBRARY_QC_JSON as { readonly excluded: object }).excluded));
+/** Lần thay mẫu gần nhất theo id món — chỉ để công bố "mẫu bị loại → mẫu thay", không ảnh hưởng kết quả. */
+const QC_SWAPS = new Map<string, QcSwap>();
+/** Món → { mẫu bị loại, mẫu thay, vai } của các lần chọn tự động đã phải thay mẫu. */
+export const libraryQcSwaps = (): ReadonlyMap<string, QcSwap> => QC_SWAPS;
+
+const rankedLibraryPickOf = (
   f: Shaped & Pick<Furniture, 'id'>,
   role: FurnitureRole,
   style: SceneStyle,
+  library: readonly string[],
 ): string | null => {
-  const library = libraryFoldersOf(role, f.variant).filter(isServerModel);
   if (library.length === 0) return null;
   const best = Math.min(...library.map((folder) => sizeCostOf(f, folder)));
   const wanted = style.libraryStyles ?? [];
@@ -382,6 +411,15 @@ export const modelFolderOf = (
   const preferred = (style.prefer[role] ?? []).filter((folder) =>
     catalogue.includes(folder) ? isNearBest(folder) : isServerModel(folder),
   );
+  // Mẫu AI chọn bị loại (libraryQc.json) → luật thư viện chọn mẫu hợp lệ cùng vai; ghi nhận để công bố.
+  const rejected = preferred.find((folder) => QC_EXCLUDED.has(folder));
+  if (rejected !== undefined && !catalogue.includes(rejected)) {
+    const replacement = libraryModelOf(f, role, style);
+    if (replacement !== null && !QC_EXCLUDED.has(replacement)) {
+      QC_SWAPS.set(f.id, { from: rejected, to: replacement, role });
+      return replacement;
+    }
+  }
   const key = PER_ITEM_ROLES.has(role) ? f.id : `${f.roomId ?? 'none'}|${role}`;
   const pickHashed = (folders: readonly string[]): string => folders[fnv1a(key) % folders.length] as string;
 

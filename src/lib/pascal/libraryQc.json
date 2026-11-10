@@ -1,0 +1,10 @@
+{
+  "rev": 1,
+  "generatedFrom": "audit.mjs + duyệt mắt 10/11/2026",
+  "excluded": {
+    "table-nightstand-walnut": {
+      "reasons": ["uvDegenerate", "openCase"],
+      "evidence": "36,7 % diện tích mặt lộ có UV < 0,5 texel (1 vật liệu, 859 px/m); ảnh xem trước: nóc một màu không vân trong khi mặt bên có vân; backCov 0,001 (không mặt lưng)"
+    }
+  }
+}
