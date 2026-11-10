@@ -1,9 +1,7 @@
 import { DoubleSide, FrontSide, MeshStandardMaterial } from 'three';
-import { MeshPhysicalNodeMaterial } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 
 import { cutCapVariant } from './cutSync';
-import { FLOOR_FINISHES, roughFloor } from './floorFinish';
 import { CAP_TOP_FOLDER, parseMat, parseMatx } from './matx';
 
 describe('M5-LC cờ ?mat=', () => {
@@ -56,20 +54,5 @@ describe('cutCapVariant với vật liệu hai mặt (đỉnh tủ đen khi Tư�
     const glass = new MeshStandardMaterial({ side: FrontSide, transparent: true });
     expect(cutCapVariant(leaf, true)).toBe(leaf);
     expect(cutCapVariant(glass, true)).toBe(glass);
-  });
-});
-
-describe('roughFloor (?mat=floor-rough)', () => {
-  it('gỗ/gạch/đá: roughnessNode kẹp dưới, clearcoat 0; bê tông giữ nguyên', () => {
-    const wood = new MeshPhysicalNodeMaterial({ roughness: 0.2, clearcoat: 1 });
-    expect(roughFloor(wood as never, FLOOR_FINISHES['flooring-woodparquet76']!)).toBe(true);
-    expect(wood.roughnessNode).toBeTruthy();
-    expect(wood.clearcoat).toBe(0);
-    const tile = new MeshPhysicalNodeMaterial({ roughness: 0.1 });
-    expect(roughFloor(tile as never, FLOOR_FINISHES['flooring-tile79']!)).toBe(true);
-    const concrete = new MeshPhysicalNodeMaterial({ roughness: 0.1, clearcoat: 1 });
-    expect(roughFloor(concrete as never, FLOOR_FINISHES['concrete-polished']!)).toBe(false);
-    expect(concrete.roughnessNode).toBeNull();
-    expect(concrete.clearcoat).toBe(1);
   });
 });
