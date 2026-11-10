@@ -21,8 +21,10 @@
  * 10. ánh sáng môi trường (dải trời) của chủ đề sáng 0.6 → 0.8: phòng trong bóng vẫn sáng như ban ngày.
  *
  * Dáng A (docs/blender-vs-editor/BAO-CAO.md):
- * 11. tone mapping ACES Filmic → AgX: bộ chấm màu (8.) vốn viết cho AgX; ACES đẩy tường sáng vào vai phẳng
- *     và nhuộm gỗ cam gắt. Phơi sáng chỉnh lại ở `renderLook.ts`;
+ * 11. tone mapping ACES Filmic → AgX lúc tạo renderer. KHÔNG có hiệu lực: R3F `configure()` (gl là hàm) đặt lại
+ *     ACES ngay sau đó. Tone thật do `src/pascal-page/realism/tone.ts` đặt, gọi sau `ToneMappingExposure`
+ *     (luật `scripts/realism/m6-tone.mjs`): mặc định AgX hiệu chỉnh trên WebGPU mức trung/cao, ACES ở low/WebGL2,
+ *     `?tone=aces` = baseline cũ. Phơi sáng theo chủ đề ở `renderLook.ts`;
  * 12. vignette 16 % → 7 %: góc khung không còn tối bẩn quanh nhà.
  * (Lọc dị hướng 8 cho texture vật liệu đã có ở `scripts/realism/r8-pack1.mjs`.)
  *

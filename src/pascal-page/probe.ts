@@ -6,10 +6,11 @@ import { emitter, sceneRegistry, useInteractive, useScene } from '@pascal-app/co
 import { getSceneTheme, useViewer } from '@pascal-app/viewer';
 
 import { installPascalProbe, type PascalProbe } from './createProbe';
-import { currentRenderer } from './realism/backend';
+import { backendOf, currentRenderer } from './realism/backend';
 import { setGrade } from './realism/grade';
 import { markDirty } from './realism/idle';
 import { setSurfaceNoise } from './realism/surfaceNoise';
+import { activeTone, applyTone } from './realism/tone';
 import { DAY_THEME_ID, SUNSET_THEME_ID } from './renderLook';
 import { sceneRepairStore } from './sceneRepairStore';
 
@@ -27,14 +28,19 @@ installPascalProbe(window.location.search, window, {
   useInteractive,
   repairs: () => sceneRepairStore.get().repairs,
   layer: () => sceneRepairStore.get().layer,
+  renderer: () => (currentRenderer ? { gl: currentRenderer, backend: backendOf(currentRenderer), tone: activeTone(currentRenderer) } : undefined),
   look: {
     surf: (v) => { setSurfaceNoise(v); markDirty('probe:look', 1500); },
     grade: (v) => { setGrade(v); markDirty('probe:look', 1500); },
-    // Exposure được `ToneMappingExposure` đọc lại từ chủ đề mỗi khung → sửa cả ba chủ đề là đủ.
+    // `v` là phơi sáng của CHỦ ĐỀ (như `?look=exposure:`): `ToneMappingExposure` đọc lại từ chủ đề rồi `applyTone` nhân hệ
+    // số tone (agx-cal ×0,92). Đặt renderer cũng qua `applyTone` để cùng một `v` ra cùng số trước và sau khi đổi chủ đề.
     exposure: (v) => {
       for (const id of ['night', DAY_THEME_ID, SUNSET_THEME_ID] as const) getSceneTheme(id).toneMappingExposure = v;
-      const r = currentRenderer as { toneMappingExposure?: number } | undefined;
-      if (r) r.toneMappingExposure = v;
+      const r = currentRenderer as { toneMapping: number; toneMappingExposure: number } | undefined;
+      if (r) {
+        r.toneMappingExposure = v;
+        applyTone(r);
+      }
       markDirty('probe:look', 1500);
     },
   },

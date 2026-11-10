@@ -40,7 +40,7 @@ export const RULES = {
     ['\n    const materialOptions = {', '\n    const materialOptions = {\n      src: node.asset.src,', 1],
     [
       DEPS,
-      '\n    capItemMeshesForCut(meshEntries.map((entry) => entry.mesh))' +
+      '\n    capItemMeshesForCut(meshEntries.map((entry) => entry.mesh), node.asset.src)' +
         '\n  }, [shading, textures, colorPreset, node.slots, sceneMaterials, node.position, node.rotation, node.scale])',
       1,
     ],
