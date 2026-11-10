@@ -180,9 +180,10 @@ export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter,
   const entriesOf = (type: string) => entries().filter(([, n]) => n.type === type);
 
   return {
-    // Có node và mọi item đã ổn (tải xong hoặc hỏng hẳn). Cảnh mặc định của editor trước khi
+    // Thư viện + concept đã chốt (không lượt đọc nào còn treo có thể đổi nội dung), có node và mọi item đã ổn (tải xong hoặc hỏng hẳn). Cảnh mặc định của editor trước khi
     // `onLoad` về cũng "sẵn sàng" — bài kiểm ghép thêm `counts()` với số mong đợi.
     ready: () =>
+      trace.settled() &&
       entries().length > 0 &&
       entriesOf('item').every(([id]) => sceneRegistry.nodes.get(id)?.userData.itemModelSettled === true),
     counts: () => {
@@ -368,11 +369,21 @@ const MAX_BUILDS = 50;
 export const createSceneTrace = (enabled: boolean, now: () => number = () => performance.now()) => {
   let generation = 0;
   const builds: SceneBuild[] = [];
+  const sources: { library?: string; concept?: string } = {};
+  const settled = (): boolean => sources.library !== undefined && sources.concept !== undefined;
   const lastBuilt = (): SceneBuild | undefined => [...builds].reverse().find((b) => b.applied === 'built');
   return {
     enabled,
     /** Đếm mẫu thư viện máy chủ đã đăng ký (cầu nối gắn; createProbe không nhập danh mục). */
     countServerModels: undefined as (() => number) | undefined,
+    /**
+     * Nguồn dữ liệu cuối của cảnh (S2 vòng 8): `library` = `server` | `fallback:<lý do>`, `concept` = `done` | `none` |
+     * `fallback:<lý do>`. Ghi cả khi tắt (hai chuỗi): `ready` cần biết không còn lượt đọc nào treo.
+     */
+    source(key: 'library' | 'concept', value: string): void {
+      sources[key] = value;
+    },
+    settled,
     /** Ghi một lượt dựng; trả `gen` (0 khi tắt). */
     built(entry: Omit<SceneBuild, 'gen' | 'at' | 'applied'>): number {
       if (!enabled) return 0;
@@ -397,10 +408,10 @@ export const createSceneTrace = (enabled: boolean, now: () => number = () => per
       });
       if (builds.length > MAX_BUILDS) builds.shift();
     },
-    /** `ready`: dòng cuối là lượt áp `full` của lượt dựng mới nhất. */
-    state(): { generation: number; builds: SceneBuild[]; ready: boolean } {
+    /** `ready`: nguồn đã chốt và dòng cuối là lượt áp `full` của lượt dựng mới nhất. */
+    state(): { generation: number; builds: SceneBuild[]; ready: boolean; library?: string; concept?: string } {
       const last = builds[builds.length - 1];
-      return { generation, builds: [...builds], ready: last?.applied === 'full' };
+      return { generation, builds: [...builds], ...sources, ready: settled() && last?.applied === 'full' };
     },
   };
 };

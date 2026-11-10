@@ -47,9 +47,10 @@ describe('pascal probe', () => {
     expect(install('?project=p1&probe=0', stores)).toBeUndefined();
   });
 
-  it('counts() gom node theo loại; ready() chờ mọi item đã ổn; materials() đọc slot', () => {
+  it('counts() gom node theo loại; ready() chờ thư viện + concept chốt và mọi item đã ổn; materials() đọc slot', () => {
     const { stores, registry } = fakeStores();
-    const probe = install('?project=p1&probe=1', stores);
+    const trace = createSceneTrace(false);
+    const probe = install('?project=p1&probe=1', { ...stores, trace });
 
     expect(probe?.counts()).toEqual({ wall: 2, slab: 2, item: 1 });
     expect(probe?.materials().slabs).toEqual({ s1: 'scene:wood', s2: 'tile' });
@@ -63,6 +64,10 @@ describe('pascal probe', () => {
 
     expect(probe?.ready()).toBe(false);
     registry.set('i1', { userData: { itemModelSettled: true } });
+    expect(probe?.ready()).toBe(false); // thư viện/concept còn treo: nội dung còn có thể đổi
+    trace.source('library', 'fallback:timeout');
+    expect(probe?.ready()).toBe(false);
+    trace.source('concept', 'none'); // ghi cả khi nhật ký tắt
     expect(probe?.ready()).toBe(true);
   });
 
@@ -178,8 +183,12 @@ describe('pascal probe', () => {
     ]);
     expect(state?.ready).toBe(false);
     trace.held('editor-holds', builtNodes);
+    expect(probe?.sceneState().ready).toBe(false); // áp đủ nhưng nguồn chưa chốt
+    trace.source('library', 'server');
+    trace.source('concept', 'fallback:network');
     state = probe?.sceneState();
     expect(state?.ready).toBe(true);
+    expect(state).toMatchObject({ library: 'server', concept: 'fallback:network' });
     expect(state?.builds[2]).toMatchObject({ applied: 'full', nItemsScene: 2, nGenerated: 1 });
     // `now`: kho editor lúc gọi (bản giả có 1 item, 2 sàn) + thư viện máy chủ hiện tại.
     expect(state?.now).toMatchObject({ nItemsScene: 1, nGenerated: 0, slabMaterials: { 'scene:wood': 1, tile: 1 }, serverModelsNow: 7, itemLoadFailures: 1 });

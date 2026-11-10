@@ -10,6 +10,8 @@ import { standardSceneOf } from '@/lib/pascal/sceneStandard';
 import type { PascalScene } from '@/lib/pascal/types';
 import type * as SceneStandard from '@/lib/pascal/sceneStandard';
 import type * as AuthSession from '@/lib/auth/session';
+import { LIBRARY_FALLBACK_NOTICE } from '@/lib/pascal/serverLibrary';
+import { sceneTrace } from '@/pascal-page/createProbe';
 import { sceneRepairStore } from '@/pascal-page/sceneRepairStore';
 import { useStore } from '@/store';
 import type { ProjectRole } from '@/types/project';
@@ -20,6 +22,7 @@ import {
   BRIDGE_SAVE_BLOCKED,
   BRIDGE_SAVE_FAILED,
   BRIDGE_SESSION_ERROR,
+  CONCEPT_FALLBACK_NOTICE,
   currentProjectSceneStyle,
   drawnFloorIds,
   isSeparateUnits,
@@ -45,8 +48,12 @@ const settingsApi = vi.hoisted(() => ({
   read: { ok: true, data: {} } as { ok: boolean; data?: unknown; error?: unknown },
   puts: [] as unknown[],
 }));
-/** N47 giả (AID-01): kết quả đọc concept; mặc định hỏng = không có concept → tự bày dự phòng. */
-const conceptApi = vi.hoisted(() => ({ read: { ok: false, error: new Error('off') } as { ok: boolean; data?: unknown; error?: unknown } }));
+/** N47 giả (AID-01): kết quả đọc concept; mặc định Design Director tắt = không có concept → tự bày dự phòng.
+ *  `delayMs` > 0: lượt đọc về sau chừng ấy ms (S2 vòng 8 — không còn đua 3 s). */
+const conceptApi = vi.hoisted(() => ({
+  read: { ok: true, data: { enabled: false } } as { ok: boolean; data?: unknown; error?: unknown },
+  delayMs: 0,
+}));
 const detail = vi.hoisted(() => ({ fail: false, levels: 1, walls: 1, role: 'engineer' as ProjectRole }));
 /** Kết quả `onSceneCommit` giả: `reason` khác `null` = có lời từ chối qua `onRejected`. */
 const commit = vi.hoisted(() => ({
@@ -92,7 +99,12 @@ vi.mock('@/api/appClient', async (importOriginal) => ({
         });
       },
     },
-    designConcept: { read: () => Promise.resolve(conceptApi.read) },
+    designConcept: {
+      read: () =>
+        conceptApi.delayMs > 0
+          ? new Promise((resolve) => setTimeout(() => resolve(conceptApi.read), conceptApi.delayMs))
+          : Promise.resolve(conceptApi.read),
+    },
     projectSettings: {
       read: () => Promise.resolve(settingsApi.read),
       replace: (input: unknown) => (settingsApi.puts.push(input), Promise.resolve({ ok: true, data: {} })),
@@ -198,7 +210,8 @@ describe('usePascalProjectBridge', () => {
     scaleApi.sources = {};
     settingsApi.read = { ok: true, data: {} };
     settingsApi.puts = [];
-    conceptApi.read = { ok: false, error: new Error('off') };
+    conceptApi.read = { ok: true, data: { enabled: false } };
+    conceptApi.delayMs = 0;
     detail.fail = false;
     detail.levels = 1;
     detail.walls = 1;
@@ -296,6 +309,67 @@ describe('usePascalProjectBridge', () => {
     await act(() => running.result.current.onLoad());
     expect(vi.mocked(standardSceneOf).mock.calls[0]?.[1]).toMatchObject({ furnish: 'on' });
     expect(vi.mocked(standardSceneOf).mock.calls[0]?.[1]?.additions).toBeUndefined();
+  });
+
+  const doneConcept = () => {
+    const T = '2026-11-02T01:00:00.000Z';
+    const result = {
+      nameVi: 'Japandi',
+      summaryVi: 'Gỗ sáng.',
+      baseStyle: 'toi-gian',
+      wall: {},
+      floor: {},
+      models: {},
+      additions: [
+        { levelId: 'L-1', roomId: 'R-1', kind: 'other', variant: 'plant', centre: { x: 100, y: 200 }, widthMm: 300, depthMm: 300, rotationDeg: 90 },
+      ],
+    };
+    return { ok: true, data: { enabled: true, active: { id: 'dcn_01', suggested: true, status: 'done', createdAt: T, startedAt: T, endedAt: T, result } } };
+  };
+
+  it('S2 vòng 8 — concept về sau 5 s: cầu vẫn chờ (không đua 3 s), áp phong cách + đồ AI, không báo dự phòng', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      conceptApi.read = doneConcept();
+      conceptApi.delayMs = 5000;
+      const { result } = renderHook(() => usePascalProjectBridge('p1'));
+      await act(() => vi.advanceTimersByTimeAsync(3500));
+      expect(result.current.status).toBe('loading');
+      await act(() => vi.advanceTimersByTimeAsync(2000));
+      await waitFor(() => expect(result.current.status).toBe('ready'));
+      vi.mocked(standardSceneOf).mockClear();
+      await act(() => result.current.onLoad());
+      const [, options] = vi.mocked(standardSceneOf).mock.calls[0] ?? [];
+      expect(options?.furnish).toBe('off');
+      expect(options?.additions).toHaveLength(1);
+      expect(sceneTrace.state().concept).toBe('done');
+      expect(textsOf(result.current)).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('S2 vòng 8 — đọc concept lỗi: dự phòng NGAY, có lý do, người dùng thấy thông báo', async () => {
+    conceptApi.read = { ok: false, error: { kind: 'network' } };
+    const { result } = renderHook(() => usePascalProjectBridge('p1'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(sceneTrace.state().concept).toBe('fallback:network');
+    expect(textsOf(result.current)).toEqual([CONCEPT_FALLBACK_NOTICE]);
+    vi.mocked(standardSceneOf).mockClear();
+    await act(() => result.current.onLoad());
+    expect(vi.mocked(standardSceneOf).mock.calls[0]?.[1]).toMatchObject({ furnish: 'on' });
+  });
+
+  it('S2 vòng 8 — thư viện máy chủ đọc lỗi: thông báo dự phòng; thư viện máy chủ / trống: không báo', async () => {
+    const timedOut = Promise.resolve('fallback:timeout' as const);
+    const failed = renderHook(() => usePascalProjectBridge('p1', undefined, undefined, timedOut));
+    await waitFor(() => expect(textsOf(failed.result.current)).toEqual([LIBRARY_FALLBACK_NOTICE]));
+    for (const source of ['server', 'fallback:empty'] as const) {
+      const loaded = Promise.resolve(source);
+      const fine = renderHook(() => usePascalProjectBridge('p1', undefined, undefined, loaded));
+      await waitFor(() => expect(fine.result.current.status).toBe('ready'));
+      expect(textsOf(fine.result.current)).toEqual([]);
+    }
   });
 
   it('UX-R2: separateUnits của N5 đọc lúc nạp; vắng hay N5 hỏng thì tắt', async () => {
