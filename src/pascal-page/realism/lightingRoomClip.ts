@@ -20,7 +20,9 @@ import { type Light, type Object3D, Vector3, Vector4 } from 'three';
 import { abs, clamp, dot, max, positionWorld, uniform } from 'three/tsl';
 import { PointLightNode, SpotLightNode } from 'three/webgpu';
 
+import { backendOf, currentRenderer } from './backend';
 import { lightFlagOn } from './lightFlag';
+import { sceneTier } from './tiers';
 
 /** Nới hộp ra ngoài đa giác phòng (m): đa giác phòng nằm ở mép trong/tim tường → mặt trong tường vẫn trong hộp. */
 export const ROOM_CLIP_MARGIN_M = 0.06;
@@ -206,7 +208,8 @@ export function installRoomClip(): void {
     const orig = proto.setupDirect;
     proto.setupDirect = function (this: { light: Light | null }, builder: never) {
       const out = orig.call(this, builder) as { lightColor: { mul(k: unknown): unknown } } | undefined;
-      if (!out || !this.light) return out;
+      // Tier low / WebGL2: mỗi đèn thêm 12 uniform → dễ vượt trần uniform fragment (224 bảo đảm) ⇒ không cắt (review vòng 6).
+      if (!out || !this.light || sceneTier() === 'low' || backendOf(currentRenderer) !== 'webgpu') return out;
       const u = uniformsOf(this.light);
       const P = positionWorld;
       const b = clamp(P.sub(u.min).div(ROOM_CLIP_EDGE_M).add(0.5), 0, 1).mul(clamp(u.max.sub(P).div(ROOM_CLIP_EDGE_M).add(0.5), 0, 1));

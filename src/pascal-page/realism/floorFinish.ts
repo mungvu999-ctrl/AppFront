@@ -110,7 +110,7 @@ export function floorKindOf(ref: string | undefined): FloorBandKind | null {
     case 'carpet':
       return item.category;
     case 'stone':
-      return !item.preset.maps.roughnessMap && item.preset.mapProperties.roughness <= POLISHED_STONE_MAX ? 'stone' : null;
+      return !item.preset.maps?.roughnessMap && (item.preset.mapProperties?.roughness ?? 1) <= POLISHED_STONE_MAX ? 'stone' : null;
     default:
       return null;
   }

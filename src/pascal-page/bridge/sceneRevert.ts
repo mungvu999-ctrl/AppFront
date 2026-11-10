@@ -36,7 +36,10 @@ export function nodeChangesTo(
   const added = new Set<string>();
   /* Sàn/trần vendor tự sinh theo tường (`autoFromWalls`) không có trong cảnh dựng từ kho: xoá chúng
      (và gỡ khỏi `children` của tầng) là mất sàn/trần — đổi cả ánh sáng — mà không hệ nào dựng lại. */
-  const kept = (id: string): boolean => target[id] === undefined && isAutoSurface(current[id] as PascalNode | undefined);
+  /* Vạch đo là node cục bộ của phiên (người "Chỉ xem" cũng đo được) — dựng lại hiển thị không được xoá chúng. */
+  const kept = (id: string): boolean =>
+    target[id] === undefined &&
+    (isAutoSurface(current[id] as PascalNode | undefined) || (current[id] as { type?: unknown } | undefined)?.type === 'measurement');
   const visit = (id: string) => {
     if (added.has(id) || current[id] !== undefined) return;
     const node = target[id] as LooseNode | undefined;

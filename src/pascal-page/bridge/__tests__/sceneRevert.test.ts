@@ -21,6 +21,17 @@ describe('nodeChangesTo — đặt lại cảnh bằng phần chênh, không set
     expect(changes.delete).toEqual([]);
   });
 
+  it('vạch đo cục bộ (không có trong cảnh dựng từ kho) được giữ, vẫn nằm trong children của tầng', () => {
+    const measure = { id: 'measurement_1', type: 'measurement', parentId: 'level_1' };
+    const changes = nodeChangesTo(
+      { level_1: { ...level, children: ['wall_1', 'door_1', 'measurement_1'] }, wall_1: wall, door_1: door, measurement_1: measure },
+      { level_1: level, wall_1: wall, door_1: door },
+    );
+
+    expect(changes.delete).toEqual([]);
+    expect(isEmptyChange(changes)).toBe(true);
+  });
+
   it('node sửa ma được trả về; node lạ bị xoá, chỉ gốc của cành (vendor xoá kéo theo con)', () => {
     const extraParent = { id: 'slab_x', type: 'slab', parentId: 'level_1', children: ['item_y'] };
     const extraChild = { id: 'item_y', type: 'item', parentId: 'slab_x' };

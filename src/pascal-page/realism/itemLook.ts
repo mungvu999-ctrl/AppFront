@@ -53,7 +53,7 @@ export interface MatFacts {
  */
 export function dielectricName(name: string): boolean {
   const n = name.toLowerCase();
-  if (/metal|brass|steel|chrome|copper|alumin|iron|gold|silver|inox|handle/.test(n)) return false;
+  if (/metal|brass|steel|chrome|copper|alumin|iron|gold|silver|inox|bronze|nickel|zinc|titan|pewter|stainless|handle/.test(n)) return false;
   const k = refKind(n);
   return k != null && k !== 'metal';
 }

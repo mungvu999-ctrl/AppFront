@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseLightFlags } from './lightFlag';
+import { DEFAULT_LIGHT_FLAGS, parseLightFlags } from './lightFlag';
 import { calibrateRoomLights, ceilingLightHeight, LAMP_CAL_PEAK_E, LAMP_CEIL_GAP_M, planRoomLights, ROOM_LIGHT_HEIGHT_M, type Polygon } from './roomLights';
 
 const rect = (w: number, d: number): Polygon => [[0, 0], [w, 0], [w, d], [0, d]];
@@ -9,7 +9,9 @@ const peak = (cd: number) => cd / ROOM_LIGHT_HEIGHT_M ** 2;
 describe('?light=', () => {
   it('chỉ nhận khoá hợp lệ, không đụng ?tone/?mat', () => {
     expect([...parseLightFlags('?light=lamp-cal,cut-shadow,x&tone=agx&mat=y')]).toEqual(['lamp-cal', 'cut-shadow']);
-    expect(parseLightFlags('?tone=agx').size).toBe(0);
+    expect([...parseLightFlags('?tone=agx')]).toEqual([...DEFAULT_LIGHT_FLAGS]);
+    expect(parseLightFlags('?light=none').size).toBe(0);
+    expect([...parseLightFlags('?light=lamp-cal')]).toEqual(['lamp-cal']);
   });
 });
 
