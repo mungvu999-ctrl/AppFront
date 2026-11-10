@@ -131,13 +131,16 @@ const stats = {
   maxWarmFrameMs: 0,
   cancelled: 0,
   pausedFrames: 0,
+  /** Lời gọi vẽ (đã chặn) dài nhất của một vật tầng ấm — ngân sách chỉ kiểm GIỮA các vật. */
+  maxObjectMs: 0,
 };
 /** Khoá shader chưa dựng gặp trong khung ấm, theo tầng (≈ số bản dựng tầng ấy cần). */
 const keysNeeded = new Map<string, Set<string>>();
 let frameScene: unknown = null;
 let warmRoot: Obj | null = null;
 let rootIds = new Map<Obj, string>();
-let rootOf = new WeakMap<object, Obj | null>();
+/** Gốc tầng đã tra theo vật, kèm cha trực tiếp lúc tra (đổi cha → tra lại). Không cache `null`. */
+let rootOf = new WeakMap<object, { root: Obj; parent: Obj | null | undefined }>();
 /** Vật chưa sẵn sàng theo tầng trong khung sống hiện tại / khung gần nhất chạm tầng ấy. */
 const framePending = new Map<string, number>();
 const lastPending = new Map<string, number>();
@@ -148,15 +151,20 @@ let lastInteractAt = -Infinity;
 let budgetMs = LONG_TASK_MS;
 let warmSpent = 0;
 let shadowsPending = true;
+/** `levelReadiness()` vừa được hỏi → khung kế tiếp đếm vật chờ của mọi tầng (ngoài ra chỉ đếm trong khung ấm). */
+let wantSample = false;
+let sampling = false;
+let lastSampleFrame = -1;
 
+// ponytail: chỉ kiểm cha trực tiếp; một tổ tiên xa đổi cha thì cache sai tới lúc cảnh dựng lại.
 function levelRootOf(o: Obj): Obj | null {
   const hit = rootOf.get(o);
-  if (hit !== undefined) return hit;
+  if (hit && hit.parent === o.parent && rootIds.has(hit.root)) return hit.root;
   let p: Obj | null | undefined = o;
   for (let i = 0; p && i < 24; i++, p = p.parent) if (rootIds.has(p)) break;
-  const root = p && rootIds.has(p) ? p : null;
-  rootOf.set(o, root);
-  return root;
+  if (!p || !rootIds.has(p)) return null; // không cache: vật vừa gắn vào tầng phải tra ra ngay khung sau
+  rootOf.set(o, { root: p, parent: o.parent });
+  return p;
 }
 
 function refreshRoots(scene: unknown): void {
@@ -203,8 +211,8 @@ const w2Busy = (): boolean => {
 function interacting(nowMs = performance.now()): boolean {
   const n = interactionCount(idleStats().reasons);
   if (n !== lastInteractions) {
+    if (lastInteractions !== -1) lastInteractAt = nowMs; // lần đọc đầu chỉ lấy mốc, không phải thao tác
     lastInteractions = n;
-    lastInteractAt = nowMs;
   }
   return nowMs - lastInteractAt < HOLD_MS;
 }
@@ -227,67 +235,75 @@ function onIdle(): void {
   markDirty('level-warm');
 }
 
-/** Bọc lệnh vẽ trong `liveFrame` (vendor `post-processing.tsx`). */
+/** Bọc lệnh vẽ trong `liveFrame` (vendor `post-processing.tsx`). Mọi thay đổi tạm lên cảnh nằm trong try/finally. */
 export function levelWarmFrame(scene: unknown, draw: () => void): void {
   stats.frameCalls++;
   refreshRoots(scene);
-  frameScene = scene;
-  framePending.clear();
   const root = state.current ? ([...rootIds].find(([, id]) => id === state.current)?.[0] ?? null) : null;
   if (state.current && (!root || root.visible)) {
     // Tầng mất (cảnh đổi) hoặc người dùng vừa chọn nó: W2 lo phần còn lại.
     state.current = null;
     stats.cancelled++;
   }
-  const culled: Obj[] = [];
-  const lights: Obj[] = [];
   const paused = root !== null && state.current !== null && interacting();
   if (paused) stats.pausedFrames++; // tầng vẫn là `current`; khung sau hết thao tác ấm tiếp
-  if (root && state.current && !paused) {
-    warmRoot = root;
-    root.visible = true;
-    root.traverse?.((o) => {
-      if (o.isLight && o.visible) (o.visible = false), lights.push(o);
-      else if (o.frustumCulled) (o.frustumCulled = false), culled.push(o);
-    });
-    // Bóng có cache (shadow-cache.ts): khi tầng ấm còn vật chưa sẵn sàng, ép vẽ lại map để lượt bóng cũng dựng.
-    if (shadowsPending) {
-      (scene as Obj).traverse?.((o) => {
-        if (o.isLight && o.castShadow && o.shadow) o.shadow.needsUpdate = true;
-      });
-    }
-    stats.lastBudgetMs = budgetMs;
-  }
-  warmSpent = 0;
-  const t0 = performance.now();
+  const warm = root && state.current && !paused ? root : null;
+  sampling = wantSample || warm !== null;
+  wantSample = false;
+  framePending.clear();
+  const culled: Obj[] = [];
+  const lights: Obj[] = [];
+  let t0 = 0;
   try {
+    if (warm) {
+      warmRoot = warm;
+      warm.visible = true;
+      warm.traverse?.((o) => {
+        if (o.isLight && o.visible) (o.visible = false), lights.push(o);
+        else if (o.frustumCulled) (o.frustumCulled = false), culled.push(o);
+      });
+      // Bóng có cache (shadow-cache.ts): khi tầng ấm còn vật chưa sẵn sàng, ép vẽ lại map để lượt bóng cũng dựng.
+      if (shadowsPending) {
+        (scene as Obj).traverse?.((o) => {
+          if (o.isLight && o.castShadow && o.shadow) o.shadow.needsUpdate = true;
+        });
+      }
+      stats.lastBudgetMs = budgetMs;
+    }
+    warmSpent = 0;
+    frameScene = scene;
+    t0 = performance.now();
     draw();
   } finally {
     frameScene = null;
+    warmRoot = null;
+    if (warm) warm.visible = false;
+    for (const o of culled) o.frustumCulled = true;
+    for (const o of lights) o.visible = true;
+  }
+  // Chỉ tới đây khi `draw` không ném: mới ghi số đo/`warmed`.
+  if (sampling) {
+    lastSampleFrame = stats.frameCalls;
     for (const [id, n] of framePending) {
       lastPending.set(id, n);
       lastTouch.set(id, stats.frameCalls);
     }
-    if (warmRoot) {
-      warmRoot.visible = false;
-      for (const o of culled) o.frustumCulled = true;
-      for (const o of lights) o.visible = true;
-      const total = performance.now() - t0;
-      stats.warmFrames++;
-      stats.lastWarmMs = Math.round(warmSpent);
-      stats.lastBaseMs = Math.round(total - warmSpent);
-      stats.maxWarmFrameMs = Math.max(stats.maxWarmFrameMs, Math.round(total));
-      budgetMs = warmBudgetMs(total - warmSpent);
-      const id = state.current!;
-      const pending = framePending.get(id) ?? 0;
-      shadowsPending = pending > 0;
-      if (pending === 0 && !w2Busy() && !unsettledItems().get(id)) {
-        state.warmed.add(id);
-        state.current = null;
-      } else markDirty('level-warm'); // khung ấm kế tiếp phải liền ngay (bắt tay xếp hạng→dựng của W2)
-      warmRoot = null;
-    }
   }
+  sampling = false;
+  if (!warm) return;
+  const total = performance.now() - t0;
+  stats.warmFrames++;
+  stats.lastWarmMs = Math.round(warmSpent);
+  stats.lastBaseMs = Math.round(total - warmSpent);
+  stats.maxWarmFrameMs = Math.max(stats.maxWarmFrameMs, Math.round(total));
+  budgetMs = warmBudgetMs(total - warmSpent);
+  const id = state.current!;
+  const pending = framePending.get(id) ?? 0;
+  shadowsPending = pending > 0;
+  if (pending === 0 && !w2Busy() && !unsettledItems().get(id)) {
+    state.warmed.add(id);
+    state.current = null;
+  } else markDirty('level-warm'); // khung ấm kế tiếp phải liền ngay (bắt tay xếp hạng→dựng của W2)
 }
 
 interface RendererLike {
@@ -323,7 +339,7 @@ export function installLevelWarm(renderer: unknown, off = URL_OFF): void {
   const inner = r._renderObjectDirect;
   r._renderObjectDirect = function (this: RendererLike, ...args: unknown[]) {
     const [object, material, scene, camera, lightsNode, , clippingContext, passId] = args;
-    if (frameScene === null || scene !== frameScene) return inner.apply(this, args);
+    if (!sampling || frameScene === null || scene !== frameScene) return inner.apply(this, args);
     const root = levelRootOf(object as Obj);
     const id = root ? rootIds.get(root) : undefined;
     if (id === undefined) return inner.apply(this, args);
@@ -347,7 +363,9 @@ export function installLevelWarm(renderer: unknown, off = URL_OFF): void {
       inner.apply(this, args);
     } finally {
       backend.draw = draw;
-      warmSpent += performance.now() - t;
+      const spent = performance.now() - t;
+      warmSpent += spent;
+      if (spent > stats.maxObjectMs) stats.maxObjectMs = Math.round(spent);
     }
   };
 }
@@ -357,7 +375,7 @@ export interface LevelReadiness {
   shown: boolean;
   /** Đồ GLB của tầng chưa nạp xong. */
   pendingAssets: number;
-  /** Vật chưa có shader/pipeline ở khung gần nhất chạm tầng; `null` = tầng chưa từng vào khung nào. */
+  /** Vật chưa có shader/pipeline ở khung lấy mẫu gần nhất chạm tầng; `null` = chưa từng lấy mẫu tầng này. */
   pendingDraws: number | null;
   warmed: boolean;
   ready: boolean;
@@ -365,13 +383,18 @@ export interface LevelReadiness {
 
 /** Cho đầu dò/E2E: tầng nào còn đang nạp. */
 export function levelReadiness(): LevelReadiness[] {
+  // Số đếm vật chờ lấy ở khung có lấy mẫu gần nhất; hỏi lần này thì khung kế lấy mẫu (bài kiểm hỏi lặp).
+  if (!wantSample) {
+    wantSample = true;
+    markDirty('level-readiness');
+  }
   const items = unsettledItems();
   const busy = w2Busy();
   return [...rootIds].map(([o, levelId]) => {
     const pendingAssets = items.get(levelId) ?? 0;
     const pendingDraws = lastPending.get(levelId) ?? null;
     const warmed = state.warmed.has(levelId);
-    const touchedLastFrame = lastTouch.get(levelId) === stats.frameCalls;
+    const touchedLastFrame = lastTouch.get(levelId) === lastSampleFrame;
     const ready = isLevelReady({ pendingAssets, warmed, shown: o.visible, touchedLastFrame, pendingDraws, w2Busy: busy });
     return { levelId, shown: o.visible, pendingAssets, pendingDraws, warmed, ready };
   });
