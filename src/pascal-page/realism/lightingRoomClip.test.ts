@@ -3,6 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { parseLightFlags } from './lightFlag';
 import {
   type ClipRoom,
+  lightMask,
+  type OpeningWorld,
+  PORTAL_FADE_M,
+  portalsOf,
   ROOM_CLIP_EDGE_M,
   ROOM_CLIP_HEIGHT_M,
   ROOM_CLIP_MARGIN_M,
@@ -53,5 +57,42 @@ describe('?light=room-clip', () => {
     const nook: ClipRoom = { polygon: rect(1, 1, 1, 1), floorY: 0, topY: 3.3 };
     expect(roomOfLight({ x: 1.5, y: 2, z: 1.5 }, [A, nook])).toBe(nook);
     expect(roomOfLight({ x: 20, y: 2, z: 2 }, rooms)).toBeUndefined();
+  });
+});
+
+describe('room-clip qua cửa đi / ô trống', () => {
+  // Cửa 0,9 × 2,1 m trên tường chung x = 5, tâm z = 2; đèn A ở (2,5; 2,3; 2).
+  const door: OpeningWorld = { c: [5, 1.05, 2], dir: [0, 1], width: 0.9, height: 2.1 };
+  const L = [2.5, 2.3, 2] as const;
+  const ports = portalsOf(A, [door], { x: L[0], z: L[2] });
+  const box = roomClipBox(A);
+  const m = (x: number, z: number, y = 0) => lightMask([x, y, z], L, box, ports);
+
+  it('cổng thuộc phòng A, pháp tuyến quay ra phía B; cửa không nằm trên biên thì bỏ', () => {
+    expect(ports).toHaveLength(1);
+    expect(ports[0]!.n.map((v) => v + 0)).toEqual([1, 0, 0]);
+    expect(portalsOf(A, [{ ...door, c: [2.5, 1.05, 2] }], { x: 2, z: 2 })).toHaveLength(0);
+  });
+
+  it('phòng nguồn không đổi; sau tường đặc = 0', () => {
+    expect(m(2.5, 2)).toBe(1);
+    expect(m(4.9, 0.5)).toBe(1);
+    // sau tường đặc (ngoài chùm tia qua cửa): sàn B sát góc z = 0,3
+    expect(m(5.5, 0.3)).toBe(0);
+    expect(m(7, 3.9)).toBe(0);
+  });
+
+  it('ngay sau ngưỡng cửa > 0 (không vệt cắt thẳng), giảm dần theo khoảng cách', () => {
+    // tia từ đèn (y 2,3) qua cửa (cao tới 2,1) xuống sàn B ở z = 2
+    const a = m(5.15, 2, 0.5);
+    const b = m(6, 2);
+    const c = m(7.5, 2);
+    expect(a).toBeGreaterThan(0.85);
+    expect(b).toBeGreaterThan(0);
+    expect(b).toBeLessThan(a);
+    expect(c).toBeLessThan(b);
+    expect(m(5 + PORTAL_FADE_M + 0.1, 2)).toBe(0);
+    // hai phía ngưỡng nối liền: trong hộp ~1, ngay sau mép hộp vẫn ~1
+    expect(Math.abs(m(5.05, 2, 0.5) - m(5.15, 2, 0.5))).toBeLessThan(0.15);
   });
 });

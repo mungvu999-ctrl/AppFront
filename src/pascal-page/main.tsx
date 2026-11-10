@@ -165,7 +165,7 @@ const applyRejectedRevert = (scene: unknown) => {
   /* Người "Chỉ xem": kho khoá sửa (`readOnly`) nên `applyNodeChanges` bỏ qua → bật/tắt "Hiện dữ liệu gốc" đổi chip
      mà cảnh 3D đứng yên (M7 làn 1). Dựng lại từ kho là đổi HIỂN THỊ, không phải lượt sửa: mở khoá đúng trong lượt này. */
   const locked = store.readOnly;
-  if (locked) useScene.setState({ readOnly: false });
+  if (locked) store.setReadOnly(false);
   pauseSceneHistory(useScene);
   try {
     let changes: NodeChanges | null = null;
@@ -181,7 +181,7 @@ const applyRejectedRevert = (scene: unknown) => {
     }
   } finally {
     resumeSceneHistory(useScene);
-    if (locked) useScene.setState({ readOnly: true });
+    if (locked) store.setReadOnly(true);
   }
 };
 
