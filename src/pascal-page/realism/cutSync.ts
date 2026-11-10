@@ -94,6 +94,8 @@ export function capCutMaterial<T extends Material>(material: T): T {
 /** Vật liệu gốc → biến thể có nắp (clone riêng; gốc không bao giờ bị vá). */
 const itemCapVariants = new WeakMap<Material, Material>();
 const itemBox = new Box3();
+/** `?disable=itemwhole`: quay về cắt mọi món ở 1,0 m. */
+const WHOLE_OFF = typeof location !== 'undefined' && (new URLSearchParams(location.search).get('disable') ?? '').split(',').includes('itemwhole');
 const levelPos = new Vector3();
 
 type TextureKeyed = Material & Record<string, unknown>;
@@ -153,20 +155,54 @@ export function cutCapVariant<T extends Material>(material: T, capDoubleSided = 
   return variant;
 }
 
+/** Đáy món cách sàn tầng không quá mức này = món ĐỨNG SÀN (tủ, kệ, tủ lạnh, đèn cây); cao hơn là treo tường/trần. */
+export const FLOOR_REST_M = 0.15;
+const itemWholeVariants = new WeakMap<Material, Material>();
+const noClipping = (): null => null;
+const noHardwareClipping = (builder: { hardwareClipping: boolean }): void => {
+  builder.hardwareClipping = false;
+};
+
+/**
+ * Biến thể KHÔNG CẮT của vật liệu đồ đứng sàn cao quá mặt cắt: tủ bị xẻ ở 1,0 m lộ lòng tủ — ảnh màu của nhiều mẫu
+ * (ABO) nướng sẵn bóng đen trong lòng → người xem thấy "nóc tủ đen"/đồ rỗng. Giữ nguyên món như các trình dựng nội
+ * thất khác: tường hạ, đồ đứng sàn nguyên khối. Không thêm shader: chỉ bỏ bước cắt của NodeMaterial cho bản clone
+ * (`NodeLibrary.fromMaterial` chép mọi khoá, kể cả hai hàm ghi đè). Bóng đổ vẫn theo `clipShadows` của nhóm tầng.
+ */
+export function cutWholeVariant<T extends Material>(material: T): T {
+  const hit = itemWholeVariants.get(material);
+  if (hit) return hit as T;
+  const variant = material.clone() as T;
+  const colored = material as unknown as { color?: unknown };
+  if (colored.color) (variant as unknown as { color?: unknown }).color = colored.color;
+  followSourceTextures(variant, material);
+  variant.name = `${material.name}|whole`;
+  Object.assign(variant, { setupClipping: noClipping, setupHardwareClipping: noHardwareClipping });
+  itemWholeVariants.set(material, variant);
+  return variant;
+}
+
+const levelYOf = (mesh: Mesh): number => {
+  for (let o = mesh.parent; o; o = o.parent) if ((o as ClipGroupFields).isClippingGroup) return o.getWorldPosition(levelPos).y;
+  return 0;
+};
+
+/** Đáy hộp bao THẾ GIỚI của mesh, tính từ sàn tầng chứa nó. */
+export function meshBottomAboveLevel(mesh: Mesh): number {
+  mesh.updateWorldMatrix(true, false);
+  const g = mesh.geometry;
+  if (!g.boundingBox) g.computeBoundingBox();
+  itemBox.copy(g.boundingBox!).applyMatrix4(mesh.matrixWorld);
+  return itemBox.min.y - levelYOf(mesh);
+}
+
 /** Đỉnh hộp bao THẾ GIỚI của mesh (đã áp xoay/scale, kể cả scale âm), tính từ sàn tầng chứa nó (nhóm tầng cắt). */
 export function meshTopAboveLevel(mesh: Mesh): number {
   mesh.updateWorldMatrix(true, false);
   const g = mesh.geometry;
   if (!g.boundingBox) g.computeBoundingBox();
   itemBox.copy(g.boundingBox!).applyMatrix4(mesh.matrixWorld);
-  let levelY = 0;
-  for (let o = mesh.parent; o; o = o.parent) {
-    if ((o as ClipGroupFields).isClippingGroup) {
-      levelY = o.getWorldPosition(levelPos).y;
-      break;
-    }
-  }
-  return itemBox.max.y - levelY;
+  return itemBox.max.y - levelYOf(mesh);
 }
 
 /**
@@ -176,7 +212,9 @@ export function meshTopAboveLevel(mesh: Mesh): number {
  */
 export function capItemMeshesForCut(meshes: readonly Mesh[], src?: string | null): void {
   const ds = matOn('cap-top') && CAP_TOP_FOLDER.test(folderOf(src) ?? '');
-  const cap = (m: Material): Material => cutCapVariant(m, ds);
+  // Món đứng sàn (đáy thấp nhất của mọi mesh sát sàn) giữ nguyên khối; món treo tường/trần vẫn cắt + nắp như trước.
+  const whole = !WHOLE_OFF && meshes.length > 0 && Math.min(...meshes.map(meshBottomAboveLevel)) <= FLOOR_REST_M;
+  const cap = (m: Material): Material => (whole ? cutWholeVariant(m) : cutCapVariant(m, ds));
   for (const mesh of meshes) {
     if (meshTopAboveLevel(mesh) <= CUT_HEIGHT_M) continue;
     mesh.material = Array.isArray(mesh.material) ? mesh.material.map(cap) : cap(mesh.material);
