@@ -1,0 +1,44 @@
+import { describe, expect, it } from 'vitest';
+import { MeshStandardNodeMaterial } from 'three/webgpu';
+
+import { GLASS_DEFAULT, glassVariant, isGlassCandidate, pickGlassMode } from './glass';
+import { useRealism } from './store';
+
+describe('glass (R10D)', () => {
+  it('pickGlassMode: cờ URL A/B, tier low / WebGL / backend chưa biết luôn về vật liệu cũ', () => {
+    expect(pickGlassMode(null, 'medium', 'webgpu')).toBe(GLASS_DEFAULT);
+    expect(pickGlassMode('rác', 'high', 'webgpu')).toBe(GLASS_DEFAULT);
+    expect(pickGlassMode('sheet', 'medium', 'webgpu')).toBe('sheet');
+    expect(pickGlassMode('transmission', 'high', 'webgpu')).toBe('transmission');
+    expect(pickGlassMode(null, 'high', 'unknown')).toBe('alpha');
+    expect(pickGlassMode('sheet', 'low', 'webgpu')).toBe('alpha');
+    expect(pickGlassMode('transmission', 'medium', 'webgl')).toBe('alpha');
+  });
+
+  it('isGlassCandidate: chỉ Standard trong suốt mờ < 0,6 và bóng (không phải viền đồ chưa xác nhận)', () => {
+    const base = { isMeshStandardNodeMaterial: true, transparent: true };
+    expect(isGlassCandidate({ ...base, opacity: 0.25, roughness: 0.02 })).toBe(true);
+    expect(isGlassCandidate({ ...base, opacity: 0.35, roughness: 0.8 })).toBe(false);
+    expect(isGlassCandidate({ ...base, opacity: 0.8, roughness: 0.02 })).toBe(false);
+    expect(isGlassCandidate({ ...base, transparent: false, opacity: 0.25, roughness: 0.02 })).toBe(false);
+    expect(isGlassCandidate({ transparent: true, opacity: 0.25, roughness: 0.02 })).toBe(false);
+  });
+
+  it('glassVariant: không cờ → `sheet` mặc định; tier low / WebGL → null (giữ kính vendor)', () => {
+    const glass = new MeshStandardNodeMaterial({ transparent: true, opacity: 0.25, roughness: 0.02 });
+    const prev = useRealism.getState();
+    try {
+      useRealism.setState({ tier: 'high', backend: 'webgpu' });
+      expect(GLASS_DEFAULT).toBe('sheet');
+      expect(glassVariant(glass)?.userData.realismGlass).toBe('sheet');
+      useRealism.setState({ tier: 'high', backend: 'webgl' });
+      expect(glassVariant(glass)).toBeNull();
+      useRealism.setState({ tier: 'low', backend: 'webgpu' });
+      expect(glassVariant(glass)).toBeNull();
+      useRealism.setState({ tier: 'high', backend: 'unknown' });
+      expect(glassVariant(glass)).toBeNull();
+    } finally {
+      useRealism.setState({ tier: prev.tier, backend: prev.backend });
+    }
+  });
+});

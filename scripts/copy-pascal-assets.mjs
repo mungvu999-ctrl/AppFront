@@ -294,6 +294,8 @@ mkdirSync(join('public', 'pascal', 'hdri'), { recursive: true });
 copyFileSync(join('vendor', 'pascal', 'assets', 'hdri', 'venice_sunset_1k.hdr'), join('public', 'pascal', 'hdri', 'venice-sunset-v1-1k.hdr'));
 // Gói 2B: HDRI trời sáng có mây cho Ban ngày (Poly Haven CC0, `assets/hdri/LICENSE.md`; lighting.ts DAY_HDRI_URL).
 copyFileSync(join('assets', 'hdri', 'kloofendal_48d_partly_cloudy_puresky_1k.hdr'), join('public', 'pascal', 'hdri', 'kloofendal-puresky-v1-1k.hdr'));
+// M5-L3b `?lightx=env`: HDRI phòng trong nhà (Poly Haven `lebombo`, CC0; `lightx.ts` LIGHTX_ENV_URL).
+copyFileSync(join('assets', 'hdri', 'lebombo_1k.hdr'), join('public', 'pascal', 'hdri', 'lebombo-v1-1k.hdr'));
 
 mkdirSync(BASIS_TARGET, { recursive: true });
 const basisCopied = readdirSync(BASIS_SOURCE).filter((name) => BASIS_WANTED.test(name));

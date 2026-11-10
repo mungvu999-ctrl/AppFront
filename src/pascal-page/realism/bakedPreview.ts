@@ -29,9 +29,13 @@ const NO_IDS: ReadonlySet<string> = new Set();
 /**
  * Thư mục nướng từ URL. Chỉ nhận đường cùng origin (`/…`, không `//`, không `..`): gói Pascal dựng ở chế độ
  * production nên không dựa được vào `import.meta.env.DEV`; chặn URL lạ thay vì chặn theo bản dựng.
+ * Đường URL là công cụ dev (so ảnh Cycles): chỉ nhận khi có `?probe=1` (cùng cổng với đầu dò e2e), để bản production
+ * không có lối tắt tới cảnh nướng ngoài thẻ "Nướng ánh sáng" (N44).
  */
 export function bakedDirFrom(search: string): string | null {
-  const dir = new URLSearchParams(search).get(PARAM);
+  const params = new URLSearchParams(search);
+  if (params.get('probe') !== '1') return null;
+  const dir = params.get(PARAM);
   if (!dir?.startsWith('/') || dir.startsWith('//') || dir.includes('..')) return null;
   return dir.replace(/\/+$/, '');
 }

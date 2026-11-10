@@ -9,13 +9,14 @@
  * Cờ `materials` tắt → y cũ.
  */
 import type { Material } from 'three';
-import { clamp, color, float, fract, fwidth, luminance, materialColor, max, min, mix, smoothstep, uv, vec3, vec4 } from 'three/tsl';
+import { clamp, color, float, fract, fwidth, luminance, materialColor, materialRoughness, max, min, mix, smoothstep, uv, vec3, vec4 } from 'three/tsl';
 import type { Node } from 'three/webgpu';
 
 import { SCENE_PALETTE } from '@/lib/pascal/scenePalette';
 
+import { FLOOR_GLOSS, type FloorKind, matxOn } from './matx';
 import { useRealism } from './store';
-import { applySurfaceNoise } from './surfaceNoise';
+import { applySurfaceNoise, surfaceNoiseNode } from './surfaceNoise';
 
 export interface FloorFinish {
   /** Cạnh thật mà một ảnh phủ (m). */
@@ -29,12 +30,14 @@ export interface FloorFinish {
   readonly scanLum: number;
   /** Cạnh viên gạch/đá cho ron vẽ bằng shader (m); thiếu = không vẽ ron. */
   readonly groutM?: number;
+  /** Họ vật liệu (M5-L3b `?matx=floor` chọn độ bóng theo họ). */
+  readonly kind?: FloorKind;
 }
 
-const WOOD = { contrast: 0.9, normalScale: 0.6 } as const;
-const TILE = { contrast: 0.6, normalScale: 0.3 } as const;
-const MARBLE = { contrast: 0.12, normalScale: 0.15 } as const;
-const CONCRETE = { contrast: 0.5, normalScale: 0.25 } as const;
+const WOOD = { contrast: 0.9, normalScale: 0.6, kind: 'wood' } as const;
+const TILE = { contrast: 0.6, normalScale: 0.3, kind: 'tile' } as const;
+const MARBLE = { contrast: 0.12, normalScale: 0.15, kind: 'stone' } as const;
+const CONCRETE = { contrast: 0.5, normalScale: 0.25, kind: 'concrete' } as const;
 
 /** Ron 2,5 mm như cảnh Blender; ron sẫm hơn mặt đá một bậc. */
 export const GROUT_WIDTH_M = 0.0025;
@@ -49,6 +52,7 @@ const DETAIL_MAX = 3;
 /** Tránh chia 0 khi điểm ảnh đen tuyệt đối. */
 const LUM_EPSILON = 1e-4;
 
+// M4-L2: tile79 đếm trên ảnh 512 px = 4 × 4 viên → 2,4 m (viên 0,6 m). Gỗ/gạch khác đếm lại cùng cách, khớp sẵn.
 // ponytail: sizeM và scanLum ước lượng (ảnh xem trước 128 px, `pbr.py`), chưa đo trên ảnh ktx2 gốc —
 // chỉnh mắt trên trình duyệt; gạch có ron sẵn trong ảnh (tile79/20, tiles4, lightceramic24) không
 // vẽ ron shader vì chưa biết số viên/ảnh (vẽ lệch = ron đôi).
@@ -60,7 +64,7 @@ export const FLOOR_FINISHES: Readonly<Record<string, FloorFinish>> = {
   'wood-woodplank48': { sizeM: 2, target: SCENE_PALETTE.bark, scanLum: 0.42, ...WOOD },
   'wood-woodplank19': { sizeM: 2, target: null, scanLum: 0.49, ...WOOD },
   'wood-woodenparquet11': { sizeM: 2, target: SCENE_PALETTE.walnut, scanLum: 0.244, ...WOOD },
-  'flooring-tile79': { sizeM: 2, target: SCENE_PALETTE.tile, scanLum: 0.815, ...TILE },
+  'flooring-tile79': { sizeM: 2.4, target: SCENE_PALETTE.tile, scanLum: 0.815, ...TILE },
   'flooring-tile20': { sizeM: 1.2, target: SCENE_PALETTE.tile, scanLum: 0.799, ...TILE },
   'flooring-lightceramic24': { sizeM: 1.2, target: SCENE_PALETTE.tile, scanLum: 0.608, ...TILE },
   'flooring-tiles4': { sizeM: 1, target: SCENE_PALETTE.mosaic, scanLum: 0.511, ...TILE },
@@ -125,7 +129,7 @@ export function floorFinishPreset<T extends PresetLike>(ref: string | undefined,
   } as T;
 }
 
-type NodeLike = Material & { isNodeMaterial?: boolean; roughness?: number; colorNode?: unknown };
+type NodeLike = Material & { isNodeMaterial?: boolean; roughness?: number; colorNode?: unknown; roughnessNode?: unknown; roughnessMap?: unknown };
 
 const TUNED = '__realismFloor';
 
@@ -150,6 +154,24 @@ function finishColorNode(finish: FloorFinish) {
   return vec4(mix(base, base.mul(GROUT_SHADE), mask), scan.a);
 }
 
+/**
+ * M5-L3b `?matx=floor`: gạch/đá men bóng (nhám cố định, bỏ ảnh nhám), gỗ phủ lacquer (nhám ảnh × hệ số).
+ * Nhiễu nhám tần số thấp biên độ riêng (nhỏ hơn mức chung — mặt bóng loang rõ hơn). false = họ không đổi.
+ */
+function glossFloor(m: NodeLike, finish: FloorFinish): boolean {
+  const g = finish.kind ? FLOOR_GLOSS[finish.kind] : null;
+  if (!g) return false;
+  const noise = surfaceNoiseNode().mul(g.noise);
+  if (g.roughness != null) {
+    m.roughnessMap = null;
+    m.roughness = g.roughness;
+    m.roughnessNode = clamp(float(g.roughness).add(noise), 0.02, 1);
+  } else {
+    m.roughnessNode = clamp((materialRoughness as unknown as Node<'float'>).mul(g.scale ?? 1).add(noise), 0.02, 1);
+  }
+  return true;
+}
+
 /** Đổi màu + ron cho vật liệu node PBR của sàn trong bảng; mọi thứ khác trả nguyên. */
 export function tuneFloorFinish<T extends Material | null>(ref: string | undefined, mat: T): T {
   const finish = floorFinishOf(ref);
@@ -157,7 +179,7 @@ export function tuneFloorFinish<T extends Material | null>(ref: string | undefin
   if (!m || !finish || !enabled() || !m.isNodeMaterial || typeof m.roughness !== 'number') return mat;
   if (m.userData[TUNED]) return mat;
   m.colorNode = finishColorNode(finish);
-  applySurfaceNoise(m);
+  if (!(matxOn('floor') && glossFloor(m, finish))) applySurfaceNoise(m);
   m.userData[TUNED] = true;
   m.needsUpdate = true;
   return mat;

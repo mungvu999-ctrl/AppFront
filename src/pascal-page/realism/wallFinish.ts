@@ -6,6 +6,7 @@
  * Vật liệu thư viện có ảnh, kính, kim loại, chế độ solid → giữ nguyên. Cờ `materials` tắt → y cũ.
  */
 import { type Material, RepeatWrapping, type Texture, TextureLoader, Vector2 } from 'three';
+import { matxOn, PAINT } from './matx';
 import { useRealism } from './store';
 import { applySurfaceNoise } from './surfaceNoise';
 
@@ -64,7 +65,11 @@ export function tuneWallPaint<T extends Material | null | undefined>(mat: T): T 
   next.name = `${mat.name}|plaster`;
   const tex = plasterNormal();
   if (loaded) next.normalMap = tex;
-  next.normalScale = new Vector2(WALL_NORMAL_SCALE, WALL_NORMAL_SCALE);
+  // M5-L3b `?matx=paint`: sơn mờ hơn + vệt lăn rõ hơn.
+  const paint = matxOn('paint');
+  if (paint) next.roughness = PAINT.roughness;
+  const ns = paint ? PAINT.normalScale : WALL_NORMAL_SCALE;
+  next.normalScale = new Vector2(ns, ns);
   applySurfaceNoise(next, { albedo: true });
   cache.set(mat.uuid, next);
   return next as unknown as T;

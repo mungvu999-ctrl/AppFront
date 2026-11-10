@@ -16,9 +16,10 @@ import type {
   Roof,
   Room,
   Segment,
+  StairVariant,
   Wall,
 } from '@/domain/spatial/types';
-import { FURNITURE_VARIANTS } from '@/domain/spatial/types';
+import { FURNITURE_VARIANTS, isFurnitureVariant, STAIR_VARIANTS } from '@/domain/spatial/types';
 import { millimetresPerPixel } from '@/domain/units/scale';
 
 import { isoInstantSchema } from './common';
@@ -234,6 +235,18 @@ const DRESSING_OFF_MAX = 200;
 const humanOnlyReview = (entity: ReviewMetadata): boolean =>
   !(entity.source === 'ai' && entity.reviewed);
 
+/**
+ * Ba khoá lớp đề xuất M2 (AppBack `feature/m2-ql-suggestions`, đang vá nóng trên stack f14) mà N16 và mỗi dòng
+ * `floorRevisions` của N15 trả thêm khi tầng có gợi ý. Nhánh này chưa dùng lớp đề xuất: NHẬN RỒI BỎ đúng ba khoá
+ * này (không kiểm nội dung, không đưa vào đầu ra) để tầng có gợi ý vẫn mở được; khoá lạ khác vẫn bị `.strict()` chặn.
+ * Gỡ khi nhận lớp đề xuất thật (schema đầy đủ ở nhánh M2-QL `suggestionWire.ts`).
+ */
+export const ignoredSuggestionLayerShape = {
+  suggestions: z.unknown().optional(),
+  suggestionsMeta: z.unknown().optional(),
+  suggestionsEnabled: z.unknown().optional(),
+} as const;
+
 /* -------------------------------------------------------------------------- */
 /* Bốn thực thể của lớp không gian.                                            */
 /* -------------------------------------------------------------------------- */
@@ -341,6 +354,16 @@ export const RoomSchema: z.ZodType<Room, z.ZodTypeDef, unknown> = z
  * không gán được vào `Furniture`. Đó là lý do mọi schema trong thư mục này dựng
  * lại đối tượng trong `.transform()` thay vì trả thẳng kết quả phân tích.
  */
+/**
+ * Kiểu cầu thang trên dây (`kind: 'stair'`): BE nhận `straight`/`curved`/`spiral` (M1-01) và stack f14 đã có dữ liệu
+ * mang chúng. Nhánh này luôn dựng thang thẳng, nhưng GIỮ kiểu thang từ lượt đọc tới lượt ghi (`toPascal` cất vào
+ * `metadata.appfront.fields.variant`, `toSpatial` ghi lại): `PUT` thay cả lớp nên bỏ kiểu ở đây là xoá nó trên máy
+ * chủ. Ngoài `kind: 'stair'` vẫn là lỗi.
+ */
+export const WIRE_STAIR_VARIANTS = STAIR_VARIANTS;
+
+const isStairVariant = (value: string): value is StairVariant => (STAIR_VARIANTS as readonly string[]).includes(value);
+
 export const FurnitureSchema: z.ZodType<Furniture, z.ZodTypeDef, unknown> = z
   .object({
     ...reviewMetadataShape,
@@ -362,7 +385,7 @@ export const FurnitureSchema: z.ZodType<Furniture, z.ZodTypeDef, unknown> = z
     levelId: levelIdSchema,
     roomId: roomIdSchema.optional(),
     rotationDeg: degreesSchema,
-    variant: z.enum(FURNITURE_VARIANTS).optional(),
+    variant: z.union([z.enum(FURNITURE_VARIANTS), z.enum(WIRE_STAIR_VARIANTS)]).optional(),
     heightMm: positiveMillimetresSchema.optional(),
     liftMm: nonNegativeMillimetresSchema.optional(),
     model: furnitureModelSchema.optional(),
@@ -371,6 +394,11 @@ export const FurnitureSchema: z.ZodType<Furniture, z.ZodTypeDef, unknown> = z
   })
   .strict()
   .refine(humanOnlyReview)
+  .refine(
+    (wireFurniture) =>
+      wireFurniture.variant === undefined || wireFurniture.kind === 'stair' || isFurnitureVariant(wireFurniture.variant),
+    { path: ['variant'] },
+  )
   /* Liệt kê tường minh: trường nào quên chép ở đây sẽ bị bỏ rơi mà không báo. */
   .transform((wireFurniture) => ({
     boundingBox: wireFurniture.boundingBox,
@@ -384,7 +412,10 @@ export const FurnitureSchema: z.ZodType<Furniture, z.ZodTypeDef, unknown> = z
     ...(wireFurniture.roomId !== undefined ? { roomId: wireFurniture.roomId } : {}),
     rotationDeg: wireFurniture.rotationDeg,
     source: wireFurniture.source,
-    ...(wireFurniture.variant !== undefined ? { variant: wireFurniture.variant } : {}),
+    ...(wireFurniture.variant !== undefined &&
+    (isFurnitureVariant(wireFurniture.variant) || (wireFurniture.kind === 'stair' && isStairVariant(wireFurniture.variant)))
+      ? { variant: wireFurniture.variant }
+      : {}),
     ...(wireFurniture.heightMm !== undefined ? { heightMm: wireFurniture.heightMm } : {}),
     ...(wireFurniture.liftMm !== undefined ? { liftMm: wireFurniture.liftMm } : {}),
     ...(wireFurniture.model !== undefined ? { model: wireFurniture.model } : {}),

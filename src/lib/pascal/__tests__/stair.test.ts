@@ -151,6 +151,12 @@ describe('thang Pascal thật', () => {
     expect(back && core(back)).toEqual(core(stair));
   });
 
+  it.each(['straight', 'curved', 'spiral'] as const)('kiểu thang %s đi về nguyên vẹn (PUT không xoá kiểu)', (variant) => {
+    const { graph, stair } = sampleWithStair({ variant });
+    const back = toSpatialGraph(toPascalScene(graph).scene).graph.furniture.find((f) => f.id === stair.id);
+    expect(back?.variant).toBe(variant);
+  });
+
   it('F2: thang đi về ra đúng món đồ, đoạn thang không thành đối tượng riêng', () => {
     const graph = graphOf(fixtureF2().doc);
     const stairs = graph.furniture.filter((f) => f.kind === 'stair');

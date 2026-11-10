@@ -6,10 +6,11 @@ import { normalizeSpatial } from '@/domain/spatial/normalize';
 import { UpdateProjectSettingsSchema } from '@/api/schemas/projectSettings';
 import { SCENE_STYLE_STORAGE_KEY, SCENE_STYLES, sceneStylePreviewKey } from '@/lib/pascal/sceneStyles';
 import { createPascalEditCommand } from '@/lib/pascal/fromPascal';
-import { toPascalScene } from '@/lib/pascal/toPascal';
+import { standardSceneOf } from '@/lib/pascal/sceneStandard';
 import type { PascalScene } from '@/lib/pascal/types';
-import type * as ToPascal from '@/lib/pascal/toPascal';
+import type * as SceneStandard from '@/lib/pascal/sceneStandard';
 import type * as AuthSession from '@/lib/auth/session';
+import { sceneRepairStore } from '@/pascal-page/sceneRepairStore';
 import { useStore } from '@/store';
 import type { ProjectRole } from '@/types/project';
 
@@ -140,11 +141,11 @@ vi.mock('@/store/projectHydration', () => ({
   },
 }));
 
-// Gián điệp quanh hàm thật: xem cầu trao phong cách nào cho `toPascalScene`.
-vi.mock('@/lib/pascal/toPascal', async (importOriginal) => {
-  const actual = await importOriginal<typeof ToPascal>();
+// Gián điệp quanh hàm thật: xem cầu trao phong cách nào cho `standardSceneOf` (cảnh chuẩn, gồm sửa cảnh).
+vi.mock('@/lib/pascal/sceneStandard', async (importOriginal) => {
+  const actual = await importOriginal<typeof SceneStandard>();
 
-  return { ...actual, toPascalScene: vi.fn(actual.toPascalScene) };
+  return { ...actual, standardSceneOf: vi.fn(actual.standardSceneOf) };
 });
 
 vi.mock('@/screens/viewer/PascalViewer/usePascalEdits', () => ({
@@ -220,16 +221,16 @@ describe('usePascalProjectBridge', () => {
   it.each([
     ['hien-dai-sang', SCENE_STYLES['hien-dai-sang']],
     ['khong-co', SCENE_STYLES['am-ap']],
-  ])('phong cách đã lưu "%s" đi vào toPascalScene (lạ → mặc định)', async (stored, style) => {
+  ])('phong cách đã lưu "%s" đi vào standardSceneOf (lạ → mặc định)', async (stored, style) => {
     localStorage.setItem(SCENE_STYLE_STORAGE_KEY, stored);
     const { result } = renderHook(() => usePascalProjectBridge('p1'));
     await waitFor(() => expect(result.current.status).toBe('ready'));
-    vi.mocked(toPascalScene).mockClear();
+    vi.mocked(standardSceneOf).mockClear();
 
     await act(() => result.current.onLoad());
 
-    expect(toPascalScene).toHaveBeenCalledTimes(1);
-    expect(toPascalScene).toHaveBeenCalledWith(expect.anything(), { style, furnish: 'on' });
+    expect(standardSceneOf).toHaveBeenCalledTimes(1);
+    expect(standardSceneOf).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ style, furnish: 'on' }));
     localStorage.removeItem(SCENE_STYLE_STORAGE_KEY);
   });
 
@@ -247,17 +248,17 @@ describe('usePascalProjectBridge', () => {
     settingsApi.read = { ok: true, data: { ...wireSettings, sceneStyle: 'toi-gian' } };
     const first = renderHook(() => usePascalProjectBridge('p1'));
     await waitFor(() => expect(first.result.current.status).toBe('ready'));
-    vi.mocked(toPascalScene).mockClear();
+    vi.mocked(standardSceneOf).mockClear();
     await act(() => first.result.current.onLoad());
-    expect(toPascalScene).toHaveBeenCalledWith(expect.anything(), { style: SCENE_STYLES['toi-gian'], furnish: 'on' });
+    expect(standardSceneOf).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ style: SCENE_STYLES['toi-gian'], furnish: 'on' }));
     expect(currentProjectSceneStyle()?.id).toBe('toi-gian');
 
     settingsApi.read = { ok: false, error: new Error('403') };
     const second = renderHook(() => usePascalProjectBridge('p1'));
     await waitFor(() => expect(second.result.current.status).toBe('ready'));
-    vi.mocked(toPascalScene).mockClear();
+    vi.mocked(standardSceneOf).mockClear();
     await act(() => second.result.current.onLoad());
-    expect(toPascalScene).toHaveBeenCalledWith(expect.anything(), { style: SCENE_STYLES['go-am'], furnish: 'on' });
+    expect(standardSceneOf).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ style: SCENE_STYLES['go-am'], furnish: 'on' }));
     expect(currentProjectSceneStyle()?.saveToProject).toBeUndefined();
     localStorage.removeItem(SCENE_STYLE_STORAGE_KEY);
   });
@@ -281,20 +282,20 @@ describe('usePascalProjectBridge', () => {
     };
     const withConcept = renderHook(() => usePascalProjectBridge('p1'));
     await waitFor(() => expect(withConcept.result.current.status).toBe('ready'));
-    vi.mocked(toPascalScene).mockClear();
+    vi.mocked(standardSceneOf).mockClear();
     await act(() => withConcept.result.current.onLoad());
-    const [, options] = vi.mocked(toPascalScene).mock.calls[0] ?? [];
-    expect(options?.furnish).toBeUndefined();
+    const [, options] = vi.mocked(standardSceneOf).mock.calls[0] ?? [];
+    expect(options?.furnish).toBe('off');
     expect(options?.additions).toHaveLength(1);
 
     // Concept chưa xong (đang chạy) cũng như không có: tự bày.
     conceptApi.read = { ok: true, data: { enabled: true, active: { id: 'dcn_02', suggested: true, status: 'running', createdAt: T, startedAt: T } } };
     const running = renderHook(() => usePascalProjectBridge('p1'));
     await waitFor(() => expect(running.result.current.status).toBe('ready'));
-    vi.mocked(toPascalScene).mockClear();
+    vi.mocked(standardSceneOf).mockClear();
     await act(() => running.result.current.onLoad());
-    expect(vi.mocked(toPascalScene).mock.calls[0]?.[1]).toMatchObject({ furnish: 'on' });
-    expect(vi.mocked(toPascalScene).mock.calls[0]?.[1]?.additions).toBeUndefined();
+    expect(vi.mocked(standardSceneOf).mock.calls[0]?.[1]).toMatchObject({ furnish: 'on' });
+    expect(vi.mocked(standardSceneOf).mock.calls[0]?.[1]?.additions).toBeUndefined();
   });
 
   it('UX-R2: separateUnits của N5 đọc lúc nạp; vắng hay N5 hỏng thì tắt', async () => {
@@ -378,7 +379,7 @@ describe('usePascalProjectBridge', () => {
     await act(async () => {
       scene = await result.current.onLoad();
     });
-    expect(scene).toEqual(toPascalScene(createSampleBuilding(), { furnish: 'on' }).scene);
+    expect(scene).toEqual(standardSceneOf(createSampleBuilding()).scene);
   });
 
   it('vai người xem: chỉ đọc', async () => {
@@ -418,6 +419,10 @@ describe('usePascalProjectBridge', () => {
     const { result } = renderHook(() => usePascalProjectBridge('p1', (scene) => applied.push(scene as PascalScene)));
 
     await waitFor(() => expect(result.current.status).toBe('ready'));
+    let loaded: unknown;
+    await act(async () => {
+      loaded = await result.current.onLoad();
+    });
 
     await expect(result.current.onSave({ nodes: {}, rootNodeIds: [] })).resolves.toBeUndefined();
     commit.ok = false;
@@ -431,10 +436,14 @@ describe('usePascalProjectBridge', () => {
     const graph = useStore.getState().spatial;
     const restored = applied[0];
     if (graph === null || restored === undefined) throw new Error('thiếu kho hoặc cảnh dựng lại');
+    // Sửa cảnh chốt lúc nạp: cảnh dựng lại khớp đúng cảnh lúc nạp (không chênh "sửa ma"); ngoài các món đã sửa cảnh,
+    // mọi node đọc ngược khớp kho.
+    expect(restored).toEqual(loaded);
+    const repaired = new Set(sceneRepairStore.get().repairs.map((r) => `item_${r.furnitureId}`));
     const back = createPascalEditCommand({
       graph,
       scene: restored,
-      commit: { origin: 'load', changedNodeIds: Object.keys(restored.nodes) },
+      commit: { origin: 'load', changedNodeIds: Object.keys(restored.nodes).filter((id) => !repaired.has(id)) },
       actorId: 'u1',
     });
 
@@ -705,13 +714,13 @@ describe('usePascalProjectBridge', () => {
     });
     const sample = createSampleBuilding();
     const hidden = new Set([sampleLevelId(1)]);
-    expect(scene).toEqual(markNotBuilt(toPascalScene(withoutFloorContents(sample, hidden), { furnish: 'on' }).scene, hidden));
+    expect(scene).toEqual(markNotBuilt(standardSceneOf(withoutFloorContents(sample, hidden)).scene, hidden));
     // UX-R2 K36: danh sách tầng của editor đọc dấu này để ghi "Chưa dựng".
     const notBuilt = (levelId: string) =>
       (scene?.nodes[`level_${levelId}`] as { metadata?: Record<string, unknown> } | undefined)?.metadata?.[NOT_BUILT_KEY];
     expect(notBuilt(sampleLevelId(1))).toBe(true);
     expect(notBuilt(sampleLevelId(0))).toBeUndefined();
-    expect(scene).not.toEqual(toPascalScene(sample, { furnish: 'on' }).scene);
+    expect(scene).not.toEqual(standardSceneOf(sample).scene);
   });
 
   it('Codex P1 — mọi tầng chưa có tỷ lệ: cảnh trống nhưng vẫn mở (không báo lỗi nạp)', async () => {
@@ -727,7 +736,7 @@ describe('usePascalProjectBridge', () => {
     const empty = withoutFloorContents(sample, new Set(sample.levels.map((level) => level.id)));
     expect(empty.levels).toHaveLength(sample.levels.length);
     expect([empty.walls, empty.openings, empty.rooms, empty.furniture].every((list) => list.length === 0)).toBe(true);
-    expect(scene).toEqual(markNotBuilt(toPascalScene(empty).scene, new Set(sample.levels.map((level) => level.id))));
+    expect(scene).toEqual(markNotBuilt(standardSceneOf(empty).scene, new Set(sample.levels.map((level) => level.id))));
   });
 });
 

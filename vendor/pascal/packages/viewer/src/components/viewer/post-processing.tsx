@@ -37,7 +37,7 @@ import { ShadowCache } from '../../lib/shadow-cache'
 import { GRID_LAYER, OVERLAY_LAYER, SCENE_LAYER, ZONE_LAYER } from '../../lib/layers'
 import { isLiveFrameHeld } from '../../lib/live-frame-hold'
 import { mergedOutline } from '../../lib/merged-outline-node'
-import { recordPerfSample, timeSpan } from '../../lib/perf-tracks'
+import { recordPerfSample, subscribePerfSamples, timeSpan } from '../../lib/perf-tracks'
 import { PostProcessingResources } from '../../lib/post-processing-resources'
 import { getSceneTheme } from '../../lib/scene-themes'
 import { packNormalToRGB, unpackRGBToNormal } from '../../lib/tsl-compat'
@@ -86,6 +86,11 @@ const HOVER_DURING_DRAG =
   (new URLSearchParams(window.location.search).get('disable') ?? '').split(',').includes('hoverdrag')
 if (shadowCache && typeof window !== 'undefined') {
   ;(window as unknown as { __pascalShadowCache?: ShadowCache }).__pascalShadowCache = shadowCache
+}
+// `?perf`: every sample (render-encode, gpu-render, gpu-queue…) for bench scripts — the overlay drains its own copy.
+if (PERF_OVERLAY_ENABLED) {
+  ;(window as unknown as { __pascalPerfSamples?: typeof subscribePerfSamples }).__pascalPerfSamples =
+    subscribePerfSamples
 }
 
 // `?disable=ao,denoise,outline,postFx`

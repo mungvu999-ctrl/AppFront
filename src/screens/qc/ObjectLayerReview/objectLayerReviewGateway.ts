@@ -73,6 +73,7 @@ import type {
   Wall as GraphWall,
   WallId,
 } from '@/domain/spatial/types';
+import { isFurnitureVariant } from '@/domain/spatial/types';
 import { millimetresPerPixel, pixels, scaleFromRatio, type Scale } from '@/domain/units/scale';
 import { millimetres, type MillimetresPerPixel } from '@/domain/units/types';
 import {
@@ -949,7 +950,7 @@ export const OBJECT_CHANGE_FURNITURE_VARIANT_COMMAND_TYPE = 'furniture.changeVar
 /** Câu từ chối khi kiểu đích trùng kiểu đang có. */
 export const SAME_VARIANT_REASON = 'Đồ đạc đã ở đúng kiểu đó nên không có gì thay đổi.';
 
-const variantLabelOf = (kind: FurnitureKind, variant: FurnitureVariant | undefined): string =>
+const variantLabelOf = (kind: FurnitureKind, variant: Furniture['variant']): string =>
   variant === undefined
     ? 'theo cỡ'
     : (FURNITURE_VARIANT_OPTIONS[kind]?.find((option) => option.value === variant)?.label ?? variant);
@@ -1754,7 +1755,7 @@ export function objectsOf(
       tracedCentre: entity.centre,
       rotationDeg: entity.rotationDeg,
       furnitureKind: entity.kind,
-      ...(entity.variant === undefined ? {} : { furnitureVariant: entity.variant }),
+      ...(entity.variant === undefined || !isFurnitureVariant(entity.variant) ? {} : { furnitureVariant: entity.variant }),
       ...(entity.variant === 'sofa' ? { isSofa: true } : {}),
     };
 

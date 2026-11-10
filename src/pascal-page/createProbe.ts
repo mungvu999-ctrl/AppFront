@@ -24,10 +24,16 @@ export interface PascalProbe {
   setCamera(pos: Vec3, target: Vec3, fov: number | 'top-ortho'): void;
   /** Hình học tường (m, toạ độ tầng) cho C9. */
   walls(): ProbeWall[];
+  /** Phòng (node `zone`): id, công năng (`metadata.appfront.usage`), đa giác (m, toạ độ tầng), tầng. */
+  rooms(): ProbeRoom[];
+  /** Cửa đi/cửa sổ: `position[0]` = khoảng cách (m) từ đầu tường `wallId` tới tâm ô mở, `position[1]` = cao độ tâm. */
+  openings(): ProbeOpening[];
   /** Vị trí, góc quay (rad) và mô hình của item cho C8. */
   items(): ProbeItem[];
   /** Móc kiểm thử C13: `useScene.updateNode(id, patch)` — chỉ có khi `?probe=1`. */
   editNode(id: string, patch: object): void;
+  /** Bản sao JSON của một node (đọc trước `editNode` để vá sâu, vd. `metadata`); `null` khi không có. */
+  node(id: string): unknown;
   /** Bật/tắt mọi đèn (công tắc trong `useInteractive.lampItems`) — C10 đo màu sàn khi tắt đèn. */
   setLights(on: boolean): void;
   /** Chẩn đoán vật liệu lúc chạy của các item có `src` chứa `match` (tên, loại, trong suốt, màu, kim loại, nhám, map). */
@@ -36,6 +42,10 @@ export interface PascalProbe {
   reflect(): unknown;
   /** Đổi nút vật liệu/phơi sáng lúc chạy (đo biến thể cùng một lần nạp): nhiễu bề mặt, kính, exposure. */
   setLook(v: { surf?: { rough?: number; albedo?: number; scale?: number }; exposure?: number; grade?: { contrast?: number; saturation?: number } }): void;
+  /** Các lần sửa cảnh (`SceneRepair`: món, hành động, luật, lý do, trước/sau) mà lượt dựng gần nhất đã áp. */
+  repairs(): readonly unknown[];
+  /** Tóm tắt lớp dẫn xuất (`SceneLayerSummary`) của lượt dựng gần nhất; `null` khi chưa dựng. */
+  layer(): unknown;
 }
 
 export interface ProbeItem {
@@ -46,6 +56,24 @@ export interface ProbeItem {
   /** Cỡ thật = mẫu × `assetScale` (đo sai cỡ C3); `dimensions` là hộp bao node. */
   assetScale: Vec3 | undefined;
   dimensions: Vec3 | undefined;
+}
+
+export interface ProbeRoom {
+  id: string;
+  name: string | undefined;
+  usage: string | undefined;
+  polygon: [number, number][];
+  levelId: string | undefined;
+  /** Số thứ tự tầng (`level.level`, 0 = tầng trệt); undefined khi không đọc được. */
+  levelIndex: number | undefined;
+}
+
+export interface ProbeOpening {
+  id: string;
+  type: 'door' | 'window';
+  wallId: string | undefined;
+  position: Vec3 | undefined;
+  width: number | undefined;
 }
 
 export interface ProbeWall {
@@ -68,6 +96,13 @@ interface LooseNode {
   readonly height?: number;
   readonly position?: Vec3;
   readonly rotation?: Vec3;
+  readonly name?: string;
+  readonly level?: number;
+  readonly wallId?: string;
+  readonly width?: number;
+  readonly parentId?: string;
+  readonly polygon?: [number, number][];
+  readonly metadata?: { readonly appfront?: { readonly fields?: { readonly usage?: string } } };
   readonly asset?: { readonly src?: string; readonly scale?: Vec3; readonly dimensions?: Vec3 };
 }
 
@@ -108,10 +143,14 @@ export interface PascalProbeStores {
     exposure(v: number): void;
     grade(v: { contrast?: number; saturation?: number }): void;
   };
+  /** Danh sách sửa cảnh hiện hành (`sceneRepairStore`). */
+  readonly repairs?: () => readonly unknown[];
+  readonly layer?: () => unknown;
 }
 
-export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter, useInteractive, look }: PascalProbeStores): PascalProbe => {
-  const entries = () => Object.entries(useScene.getState().nodes as Record<string, LooseNode>);
+export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter, useInteractive, look, repairs, layer }: PascalProbeStores): PascalProbe => {
+  const nodes = () => useScene.getState().nodes as Record<string, LooseNode>;
+  const entries = () => Object.entries(nodes());
   const entriesOf = (type: string) => entries().filter(([, n]) => n.type === type);
 
   return {
@@ -153,6 +192,19 @@ export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter,
         thickness: n.thickness,
         height: n.height,
       })),
+    rooms: () =>
+      entriesOf('zone').map(([id, n]) => ({
+        id,
+        name: n.name,
+        usage: n.metadata?.appfront?.fields?.usage,
+        polygon: n.polygon ?? [],
+        levelId: n.parentId,
+        levelIndex: n.parentId === undefined ? undefined : (nodes()[n.parentId] as LooseNode | undefined)?.level,
+      })),
+    openings: () =>
+      entries()
+        .filter(([, n]) => n.type === 'window' || n.type === 'door')
+        .map(([id, n]) => ({ id, type: n.type as 'door' | 'window', wallId: n.wallId, position: n.position, width: n.width })),
     items: () =>
       entriesOf('item').map(([id, n]) => ({
         id,
@@ -163,10 +215,16 @@ export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter,
         dimensions: n.asset?.dimensions,
       })),
     editNode: (id, patch) => useScene.getState().updateNode(id, patch),
+    node: (id) => {
+      const found = nodes()[id];
+      return found === undefined ? null : (JSON.parse(JSON.stringify(found)) as unknown);
+    },
     setLights: (on) => {
       const { lampItems, setControlValue } = useInteractive.getState();
       for (const [id, indices] of Object.entries(lampItems)) for (const i of indices) setControlValue(id, i, on);
     },
+    repairs: () => [...(repairs?.() ?? [])],
+    layer: () => layer?.() ?? null,
     reflect: () => ({ ...((globalThis as { __realismReflect?: object }).__realismReflect ?? {}) }),
     itemMaterials: (match) => {
       const out: Record<string, unknown>[] = [];

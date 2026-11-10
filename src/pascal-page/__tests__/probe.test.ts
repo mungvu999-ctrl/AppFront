@@ -92,10 +92,33 @@ describe('pascal probe', () => {
     ]);
   });
 
+  it('rooms() và openings() trả phòng (zone) và ô mở (m4-l5)', () => {
+    const { stores } = fakeStores();
+    const nodes = {
+      level_a: { type: 'level', level: 0 },
+      z1: { type: 'zone', name: 'PN', parentId: 'level_a', polygon: [[0, 0], [4, 0], [4, 3]], metadata: { appfront: { fields: { usage: 'bedroom' } } } },
+      d1: { type: 'door', wallId: 'w2', position: [1, 1, 0], width: 0.9 },
+      n1: { type: 'window', wallId: 'w2', position: [2, 1.5, 0], width: 1.2 },
+    };
+    const probe = install('?probe=1', { ...stores, useScene: { getState: () => ({ nodes, updateNode: vi.fn() }) } });
+    expect(probe?.rooms()).toEqual([{ id: 'z1', name: 'PN', usage: 'bedroom', polygon: [[0, 0], [4, 0], [4, 3]], levelId: 'level_a', levelIndex: 0 }]);
+    expect(probe?.openings().map((o) => [o.id, o.type, o.wallId])).toEqual([['d1', 'door', 'w2'], ['n1', 'window', 'w2']]);
+  });
+
   it('editNode() gọi useScene.updateNode (móc C13)', () => {
     const { stores, updateNode } = fakeStores();
     install('?probe=1', stores)?.editNode('w2', { thickness: 0.3 });
     expect(updateNode.mock.calls).toEqual([['w2', { thickness: 0.3 }]]);
+  });
+
+  it('node() trả bản sao JSON của node (vá sâu trước editNode), null khi không có', () => {
+    const { stores } = fakeStores();
+    const probe = install('?probe=1', stores);
+    const copy = probe?.node('w2') as { thickness: number } | null;
+    expect(copy).toMatchObject({ type: 'wall', thickness: 0.2 });
+    if (copy !== null && copy !== undefined) copy.thickness = 9;
+    expect(probe?.node('w2')).toMatchObject({ thickness: 0.2 });
+    expect(probe?.node('khong-co')).toBeNull();
   });
 
   it('setLights() bật/tắt công tắc của mọi đèn trong lampItems (C10)', () => {
@@ -105,5 +128,12 @@ describe('pascal probe', () => {
       ['L1', 0, false],
       ['L2', 1, false],
     ]);
+  });
+
+  it('repairs() trả danh sách sửa cảnh (rỗng khi không nối nguồn)', () => {
+    const { stores } = fakeStores();
+    expect(install('?probe=1', stores)?.repairs()).toEqual([]);
+    const repair = { furnitureId: 'F-1', action: 'hidden', rule: 'roomMismatch', reasonVi: 'x', before: { centre: { x: 0, y: 0 }, rotationDeg: 0 } };
+    expect(install('?probe=1', { ...stores, repairs: () => [repair] })?.repairs()).toEqual([repair]);
   });
 });

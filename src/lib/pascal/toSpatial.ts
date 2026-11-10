@@ -54,7 +54,7 @@ import type {
   WallKind,
   WallPaint,
 } from '@/domain/spatial/types';
-import { FURNITURE_VARIANTS } from '@/domain/spatial/types';
+import { FURNITURE_VARIANTS, STAIR_VARIANTS } from '@/domain/spatial/types';
 import {
   degrees as asDegrees,
   metres,
@@ -72,6 +72,7 @@ import { appFrontIdOf, BUILDING_NODE_ID, toPascalId } from './ids';
 import { LIBRARY_MATERIAL_IDS } from './libraryMaterialIds';
 import { worldBoxOf } from './orientDetected';
 import { roofOf } from './roofs';
+import { DRESSING_OFF_MAX } from './sceneLayer';
 import {
   CEILING_DEFAULT,
   dressNodeIdOf,
@@ -384,7 +385,8 @@ const dressingOffOf = (scene: PascalScene, fields: Fields, roomId: string, adopt
 
     return !isGeneratedLightId(nodeId) || scene.nodes[toPascalId('ceiling', roomId)] !== undefined;
   });
-  const off = [...new Set([...readStrings(fields, 'dressingOff'), ...removed])];
+  // Trần lược đồ: tràn thì giữ những món bỏ mới nhất (món cũ nhất có thể hiện lại) thay vì cả lượt lưu bị từ chối.
+  const off = [...new Set([...readStrings(fields, 'dressingOff'), ...removed])].slice(-DRESSING_OFF_MAX);
 
   return off.length === 0 ? {} : { dressingOff: off };
 };
@@ -987,6 +989,8 @@ const collectLevelChildren = (
         const min = readCorner(fields, 'min');
         const max = readCorner(fields, 'max');
         const roomId = readString(fields, 'roomId');
+        // Kiểu thang lượt đi (`curved`/`spiral` của M1-01): ghi trả nguyên, `PUT` thay cả lớp nên bỏ là mất trên máy chủ.
+        const variant = readOneOf(fields, 'variant', [...STAIR_VARIANTS, ...FURNITURE_VARIANTS]);
         // Thân thang chạy theo +z cục bộ từ `position` (chân thang) → tâm ở giữa thân.
         const centre: Point = {
           x: millimetresOf(child.position[0] + (Math.sin(child.rotation) * length) / 2),
@@ -1021,6 +1025,7 @@ const collectLevelChildren = (
           // Viết −(bù − yaw) chứ không phải yaw − bù: yaw 0 phải ra 0° chứ không phải −0° (diff so giá trị).
           rotationDeg: planDegreesOf(-((runAlongX ? Math.PI / 2 : 0) - child.rotation)),
           ...(roomId !== null && isIdOfKind('room', roomId) ? { roomId } : {}),
+          ...(variant === null ? {} : { variant }),
         });
         break;
       }

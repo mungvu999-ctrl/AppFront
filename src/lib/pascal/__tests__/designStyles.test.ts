@@ -79,12 +79,30 @@ describe('đồ AI bổ sung', () => {
     modelId: 'no-such-model',
   };
 
-  it('id DRESS-ai-<phòng>-<n>, mẫu trong danh mục; món đè đồ có sẵn hoặc món AI trước bị bỏ', () => {
+  /** Id theo nội dung: phòng + loại + tâm làm tròn 100 mm. */
+  const aiIdOf = (a: DesignAddition): string =>
+    `DRESS-ai-${a.roomId}-${a.variant ?? a.kind}-${Math.round(a.centre.x / 100)}_${Math.round(a.centre.y / 100)}`;
+
+  it('id DRESS-ai theo nội dung, mẫu trong danh mục; món đè đồ có sẵn hoặc món AI trước bị bỏ', () => {
     const out = designAdditionsOf([free, free, onExisting], graph.furniture);
 
-    expect(out.map((f) => f.id)).toEqual([`DRESS-ai-${room.id}-1`]);
+    expect(out.map((f) => f.id)).toEqual([aiIdOf(free)]);
     expect(out[0]?.model).toEqual({ id: 'indoor-plant', src: '/items/indoor-plant/model.glb' });
     expect(out[0]?.boundingBox.max.x).toBe(free.centre.x + 150);
+  });
+
+  it('id không phụ thuộc thứ tự: thêm/đổi chỗ món khác, món cũ giữ id (dressingOff không trỏ nhầm); khớp lược đồ', () => {
+    const lamp: DesignAddition = { ...free, variant: 'floorLamp', centre: { x: free.centre.x + 900, y: free.centre.y } };
+    const first = designAdditionsOf([free, lamp], []).map((f) => f.id);
+    const second = designAdditionsOf([lamp, free], []).map((f) => f.id);
+
+    expect([...second].sort()).toEqual([...first].sort());
+    expect(designAdditionsOf([free, free], []).map((f) => f.id)).toEqual([aiIdOf(free)]);
+    expect(designAdditionsOf([{ ...free, variant: 'rug' }, { ...free, variant: 'rug' }], []).map((f) => f.id)).toEqual([
+      aiIdOf({ ...free, variant: 'rug' }),
+      `${aiIdOf({ ...free, variant: 'rug' })}-2`,
+    ]);
+    for (const id of first) expect(id).toMatch(/^DRESS-[A-Za-z0-9_.:-]{1,160}$/);
   });
 
   it('thảm không chặn và không bị chặn', () => {
@@ -95,7 +113,7 @@ describe('đồ AI bổ sung', () => {
   it('toPascalScene: món AI là node sinh ra (kể cả furnish off), không vào lượt lưu', () => {
     const scene = toPascalScene(graph, { additions: [free] }).scene;
     const ids = Object.keys(scene.nodes).filter((id) => bodyOfPascalId(id as PascalNodeId).startsWith('DRESS-ai-'));
-    const id = toPascalId('item', `DRESS-ai-${room.id}-1`);
+    const id = toPascalId('item', aiIdOf(free));
 
     expect(ids).toEqual([id]);
     expect(isGeneratedNodeId(id)).toBe(true);
@@ -107,8 +125,8 @@ describe('đồ AI bổ sung', () => {
     const rugIn: DesignAddition = { ...free, variant: 'rug', modelId: 'rectangular-carpet' };
     const rugOut: DesignAddition = { ...rugIn, centre: { x: -50_000, y: -50_000 } };
     const ai = toPascalScene(graph, { additions: [rugIn, rugOut] }).scene.nodes;
-    expect(ai[toPascalId('item', `DRESS-ai-${room.id}-1`)]).toBeDefined();
-    expect(ai[toPascalId('item', `DRESS-ai-${room.id}-2`)]).toBeUndefined();
+    expect(ai[toPascalId('item', aiIdOf(rugIn))]).toBeDefined();
+    expect(ai[toPascalId('item', aiIdOf(rugOut))]).toBeUndefined();
 
     const noRoom: typeof existing = {
       ...existing,

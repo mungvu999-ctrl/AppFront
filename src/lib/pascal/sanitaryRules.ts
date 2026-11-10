@@ -23,12 +23,12 @@ const FACING_MAX_DEG = 30;
 /** Và tâm hai món cách nhau không quá chừng này, mm. */
 const FACING_MAX_MM = 1500;
 
-const SANITARY_LABELS = { toilet: 'bồn cầu', basin: 'lavabo', shower: 'khu tắm vòi sen', bathtub: 'bồn tắm' } as const;
-type SanitaryRole = keyof typeof SANITARY_LABELS;
+export const SANITARY_LABELS = { toilet: 'bồn cầu', basin: 'lavabo', shower: 'khu tắm vòi sen', bathtub: 'bồn tắm' } as const;
+export type SanitaryRole = keyof typeof SANITARY_LABELS;
 
 const ROOM_LABELS: Partial<Record<RoomUsage, string>> = { bedroom: 'phòng ngủ', livingRoom: 'phòng khách', kitchen: 'bếp' };
 
-const sanitaryRoleOf = (f: Furniture): SanitaryRole | null => {
+export const sanitaryRoleOf = (f: Furniture): SanitaryRole | null => {
   if (f.kind !== 'sanitaryFixture' && f.kind !== 'shower') return null;
   // Không truyền công năng phòng: roleOf trong bếp luôn trả chậu rửa bếp, che mất bồn cầu đặt nhầm.
   const role = roleOf(f);

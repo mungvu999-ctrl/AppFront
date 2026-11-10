@@ -210,8 +210,12 @@ export interface Furniture extends ReviewMetadata {
   model?: { id: string; src: string };
   /** Material per named slot of the model (at most 8); absent slot = the model's own material. */
   slots?: Readonly<Record<string, MaterialRef>>;
-  /** Finer-grained piece than `kind` (the login-house vocabulary); absent = pick from `kind`. */
-  variant?: FurnitureVariant;
+  /**
+   * Finer-grained piece than `kind` (the login-house vocabulary); absent = pick from `kind`.
+   * On `kind: 'stair'` it may instead be a `StairVariant` (AppBack M1-01): carried through read → write untouched so a
+   * save never drops it, even though this branch always builds a straight stair.
+   */
+  variant?: FurnitureVariant | StairVariant;
   /** Height of the piece; absent = the model's own height. */
   heightMm?: Millimetres;
   /** Height of the piece's base above the floor (mirror, wall cabinet); absent = on the floor. */
@@ -260,6 +264,14 @@ export const FURNITURE_VARIANTS = [
 ] as const;
 
 export type FurnitureVariant = (typeof FURNITURE_VARIANTS)[number];
+
+/** Stair kinds on the wire (`kind: 'stair'` only; AppBack M1-01 `packages/domain/spatial/model.py`). */
+export const STAIR_VARIANTS = ['straight', 'curved', 'spiral'] as const;
+
+export type StairVariant = (typeof STAIR_VARIANTS)[number];
+
+export const isFurnitureVariant = (value: string): value is FurnitureVariant =>
+  (FURNITURE_VARIANTS as readonly string[]).includes(value);
 
 /** Floor finish of a room. */
 export type RoomFinish = 'wood' | 'tile' | 'mosaic' | 'decking' | 'concrete';

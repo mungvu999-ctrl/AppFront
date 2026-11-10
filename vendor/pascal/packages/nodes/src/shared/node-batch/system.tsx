@@ -3,11 +3,13 @@
 import {
   type AnyNodeId,
   emitter,
+  pointToKey,
   sceneRegistry,
   useInteractive,
   useLiveNodeOverrides,
   useLiveTransforms,
   useScene,
+  type WallNode,
 } from '@pascal-app/core'
 import {
   getPendingWallRebuildCount,
@@ -19,6 +21,7 @@ import {
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
 import type { Object3D } from 'three'
+import { type WallTreatmentLevelData, useWallTreatmentLevelData } from '../../wall/treatment-level-data'
 import { isSlotPaintPreviewActive, subscribeSlotPaintPreviews } from '../slot-paint'
 import {
   BATCH_KINDS,
@@ -196,6 +199,26 @@ function releaseAll() {
   revealAllBatchedHolds()
 }
 
+/**
+ * Walls of `after` whose trim miters may have moved: they share an endpoint with a wall that was added,
+ * removed or replaced since `before`. `WallSystem` rebuilds such neighbours without a dirty mark, so the
+ * batch would keep drawing their old skirting/crown corners.
+ */
+export function adjacentTreatmentWalls(
+  before: WallTreatmentLevelData | undefined,
+  after: WallTreatmentLevelData | undefined,
+): string[] {
+  if (!before || !after || before === after) return []
+  const keysOf = (wall: WallNode) => [wall.start, wall.end].map(([x, y]) => pointToKey({ x, y }))
+  const kept = new Set(after.walls)
+  const touched = new Set<string>()
+  for (const wall of before.walls) if (!kept.has(wall)) for (const key of keysOf(wall)) touched.add(key)
+  const old = new Set(before.walls)
+  for (const wall of after.walls) if (!old.has(wall)) for (const key of keysOf(wall)) touched.add(key)
+  if (touched.size === 0) return []
+  return after.walls.filter((wall) => keysOf(wall).some((key) => touched.has(key))).map((wall) => wall.id)
+}
+
 export function subscribeBatchInteractions(invalidate: () => void): () => void {
   const changed = (nodeId: string) => {
     const node = useScene.getState().nodes[nodeId as AnyNodeId]
@@ -213,6 +236,11 @@ export function subscribeBatchInteractions(invalidate: () => void): () => void {
     }
   })
   const unsubscribePreviews = subscribeSlotPaintPreviews(changed)
+  const unsubscribeTreatments = useWallTreatmentLevelData.subscribe((state, previous) => {
+    for (const [levelId, data] of state.byLevelId) {
+      for (const wallId of adjacentTreatmentWalls(previous.byLevelId.get(levelId), data)) changed(wallId)
+    }
+  })
   const unsubscribeMaterials = registerMaterialCacheCleanup(() => {
     releaseAll()
     for (const nodeId of getBatchableNodeIds()) changedNodes.add(nodeId)
@@ -221,6 +249,7 @@ export function subscribeBatchInteractions(invalidate: () => void): () => void {
   return () => {
     unsubscribeTransforms()
     unsubscribePreviews()
+    unsubscribeTreatments()
     unsubscribeMaterials()
   }
 }
@@ -233,7 +262,8 @@ export function captureChangedNodes() {
     const node = nodes[id]
     if (!node) continue
     if (BATCH_KINDS.has(node.type)) changedNodes.add(id as string)
-    else if (node.type === 'wall' && Array.isArray(node.children)) {
+    // (walls may be a batch kind themselves — their trims — and still carry openings)
+    if (node.type === 'wall' && Array.isArray(node.children)) {
       // The wall edit moved its openings in level space; their own marks may
       // never come.
       for (const childId of node.children) {
@@ -436,7 +466,8 @@ function processBatchFrame(
     // commit whose mark re-offers the node; dropping it here would strand it.
     if (
       ((sceneNodes[nodeId as AnyNodeId]?.type === 'slab' ||
-        sceneNodes[nodeId as AnyNodeId]?.type === 'ceiling') &&
+        sceneNodes[nodeId as AnyNodeId]?.type === 'ceiling' ||
+        sceneNodes[nodeId as AnyNodeId]?.type === 'wall') &&
         (wallsPending ||
           surfaceLevelReadyAt.has(sceneNodes[nodeId as AnyNodeId]!.parentId ?? ''))) ||
       tinted.has(nodeId) ||

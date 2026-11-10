@@ -23,6 +23,8 @@ import {
   wallRects,
   type Rect,
 } from './placement';
+import { buildxOn } from '@/pascal-page/realism/buildx';
+
 import { itemSlotsOf } from './sceneDressing';
 import { modelFolderOf, roleOf, type FurnitureRole } from './sceneVariety';
 import type { SceneStyle } from './sceneStyles';
@@ -64,6 +66,7 @@ const CURTAIN_WALL_GAP_MM = 20;
 /** Cửa sổ chặn khung tranh: thân cửa nở thêm mỗi phía tường. */
 const WINDOW_CLEAR_MM = 300;
 const DEFAULT_LEVEL_HEIGHT_MM = 2700;
+const DENSE_USAGES: ReadonlySet<Room['usage']> = new Set(['livingRoom', 'bedroom']);
 
 const RUG_ROLES: ReadonlySet<FurnitureRole> = new Set(['rug', 'roundRug']);
 const VASE_HOST_ROLES: ReadonlySet<FurnitureRole> = new Set(['diningTable', 'coffeeTable', 'nightstand']);
@@ -322,6 +325,12 @@ export const dressingOf = (graph: SpatialGraph, style: SceneStyle): readonly Fur
       const lampD = lamp === undefined ? LAMP_FALLBACK_MM : lamp[2] * 1000;
       for (const { f, rect } of inRoom.filter((item) => item.role === 'nightstand')) {
         const top = rectAt(rect, 0, 0, Math.min(lampW, rect.w), Math.min(lampD, rect.d));
+        // Vai đã có đồ thật phủ (đèn đã nhận khi người dùng sửa cả phòng — V4 — giờ đứng trên tủ `F-…` mới):
+        // không sinh thêm. Không kiểm thì `DRESS-tableLamp-<id tủ mới>` mọc cạnh đèn đã nhận (id cũ nhúng host cũ).
+        const covered = graph.furniture.some(
+          (g) => g.id !== f.id && g.levelId === room.levelId && (g.variant === 'tableLamp' || (g.liftMm ?? 0) > 0) && rectsOverlap(top, rectOfFurniture(g)),
+        );
+        if (covered) continue;
         put(`DRESS-tableLamp-${f.id}`, top, 'tableLamp', { liftMm: f.heightMm ?? NIGHTSTAND_HEIGHT_MM });
       }
     }
@@ -502,7 +511,45 @@ export const dressingOf = (graph: SpatialGraph, style: SceneStyle): readonly Fur
         });
       }
     }
+
+    // ---- M5 làn 3c `?buildx=dense`: phụ kiện đứng sàn đúng vai (thử nghiệm, mặc định tắt). ----
+    if (buildxOn('dense') && DENSE_USAGES.has(room.usage)) {
+      // (11) Đèn sàn cạnh một đầu sofa, sát lưng sofa.
+      const lamp = CATALOG_MODELS[VARIANT_MODEL.floorLamp?.folder ?? '']?.dimensions;
+      for (const { f, rect } of withRole(new Set<FurnitureRole>(['sofa'])).slice(0, 1)) {
+        if (lamp === undefined) break;
+        const depthAxis = rect.w >= rect.d ? 1 : 0;
+        const depth = depthAxis === 1 ? rect.d : rect.w;
+        const long = depthAxis === 1 ? rect.w : rect.d;
+        const front = openSideOf(rect, depthAxis, room.outline);
+        const [lw, ld] = [lamp[0] * 1000, lamp[2] * 1000];
+        const along = -front * (depth / 2 - ld / 2);
+        const candidates = [1, -1].map((s) => facing(rect, depthAxis, s * (long / 2 + lw / 2 + FURNITURE_GAP_MM + 20), along, lw, ld, front));
+        tryPlace(`DRESS-floorLamp-${f.id}`, candidates, over(), 'floorLamp');
+      }
+      // (12) Một cây ở góc phòng (góc lồi của đường bao, lùi vào trong), ngoài vùng mở cửa và cửa sổ.
+      const plant = CATALOG_MODELS[VARIANT_MODEL.plant?.folder ?? '']?.dimensions;
+      if (plant !== undefined) {
+        const size = Math.max(plant[0], plant[2]) * 1000;
+        const c = room.outline.reduce((a, p) => ({ x: a.x + p.x / room.outline.length, y: a.y + p.y / room.outline.length }), { x: 0, y: 0 });
+        // Hướng về tâm phòng không trùng phân giác góc (phòng chữ nhật dẹt) → thử lùi 1×, 1,25×, 1,5×.
+        const corners = room.outline
+          .flatMap((p) => {
+            const dx = c.x - p.x;
+            const dy = c.y - p.y;
+            const L = Math.hypot(dx, dy) || 1;
+            return [1, 1.25, 1.5].map((m) => {
+              const k = (size / 2 + ROOM_INSET_MM + 30) * Math.SQRT2 * m;
+              return { cx: Math.round(p.x + (dx / L) * k), cy: Math.round(p.y + (dy / L) * k), w: Math.round(size), d: Math.round(size), rotationDeg: 0 };
+            });
+          })
+          .filter((r) => !windows.some((w) => rectsOverlap(r, w, WINDOW_CLEAR_MM)));
+        // `plantx`, không `plant`: `sceneFurnish` (bày phòng trống) đã dùng `DRESS-plant-<phòng>` → trùng node, xoá ghi nhầm `dressingOff`.
+        tryPlace(`DRESS-plantx-${room.id}`, corners, new Set(), 'plant');
+      }
+    }
   }
 
-  return out;
+  // M5 làn 3c `?buildx=minimal`: chỉ giữ thảm + rèm (thử nghiệm, mặc định tắt).
+  return buildxOn('minimal') ? out.filter((f) => /^DRESS-(rug|curtain)-/.test(f.id)) : out;
 };

@@ -168,15 +168,18 @@ export interface PascalWallNode extends PascalNodeCommon {
   readonly crown?: PascalWallTrim;
 }
 
+export type PascalWallTrimProfile = 'flat' | 'bevel' | 'triangle' | 'cove' | 'bullnose' | 'base-modern' | 'crown-cove';
+
 /** `WallTrimConfig` của Pascal (`core/src/schema/nodes/wall.ts`), mọi trường khai đủ. */
 export interface PascalWallTrim {
   readonly enabled: boolean;
   readonly sides: 'interior' | 'exterior' | 'both';
   readonly height: number;
   readonly proud: number;
-  readonly profile: 'flat';
+  /** `WallTrimProfile` của Pascal; mặc định trong nhà: len `base-modern`, phào trần `crown-cove` (vòng 4). */
+  readonly profile: PascalWallTrimProfile;
   /** Cỡ riêng mặt ngoài (thêm bởi scripts/realism/r9u-skirt-sides.mjs); thiếu = như mặt trong. */
-  readonly exterior?: { readonly height: number; readonly proud: number; readonly profile: 'flat' };
+  readonly exterior?: { readonly height: number; readonly proud: number; readonly profile: PascalWallTrimProfile };
 }
 
 /**
