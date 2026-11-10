@@ -13,6 +13,10 @@ describe('?light=', () => {
     expect(parseLightFlags('?light=none').size).toBe(0);
     expect([...parseLightFlags('?light=lamp-cal')]).toEqual(['lamp-cal']);
   });
+  it('room-clip-box tự bật room-clip; mặc định không có room-clip-box', () => {
+    expect([...parseLightFlags('?light=lamp-ceil,room-clip-box')]).toEqual(['lamp-ceil', 'room-clip-box', 'room-clip']);
+    expect([...parseLightFlags('')]).toEqual(['lamp-ceil']);
+  });
 });
 
 describe('lamp-cal', () => {

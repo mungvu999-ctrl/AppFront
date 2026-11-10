@@ -6,18 +6,22 @@
  * - `room-clip` : (vòng 6) đèn điểm/spot trong nhà chỉ chiếu trong hộp phòng chứa nó (`lightingRoomClip.ts`).
  * - `lamp-ceil` : (vòng 6) đèn phòng dời từ 2,3 m lên sát trần (cùng chỗ đèn âm trần), giữ cường độ (`roomLights.ts`).
  * - `window-spot`: (vòng 6) đèn cửa sổ Ban ngày là spot sát kính hướng vào phòng thay đèn điểm lùi 0,7 m (`windowLight.ts`).
+ * - `room-clip-box`: (đo A/B vòng 7) room-clip nhưng mọi phòng cắt theo hộp AABB như vòng 6; tự bật `room-clip`.
  */
-export type LightFlag = 'lamp-cal' | 'cut-shadow' | 'room-clip' | 'window-spot' | 'lamp-ceil';
-const FLAGS = new Set<string>(['lamp-cal', 'cut-shadow', 'room-clip', 'window-spot', 'lamp-ceil']);
+export type LightFlag = 'lamp-cal' | 'cut-shadow' | 'room-clip' | 'window-spot' | 'lamp-ceil' | 'room-clip-box';
+const FLAGS = new Set<string>(['lamp-cal', 'cut-shadow', 'room-clip', 'window-spot', 'lamp-ceil', 'room-clip-box']);
 
 /** Mặc định từ vòng 6 (chấm mù 39 cặp so master: tổng thể 15/7/17, đốm sáng 10/0/29): đèn phòng sát trần + đèn chỉ chiếu trong phòng. */
-export const DEFAULT_LIGHT_FLAGS: readonly LightFlag[] = ['lamp-ceil', 'room-clip'];
+// Vòng 7: room-clip KHÔNG còn mặc định — đo ch-10 cùng phiên: dựng cảnh 9,5 s (tắt) → 17–21 s (hộp) → 24–28 s (đa giác). Bật lại bằng ?light=lamp-ceil,room-clip.
+export const DEFAULT_LIGHT_FLAGS: readonly LightFlag[] = ['lamp-ceil'];
 
 /** Không có `?light=` → mặc định; `?light=none` → tắt hết (rollback về trước vòng 6); có danh sách → đúng danh sách đó. */
 export function parseLightFlags(search: string): Set<LightFlag> {
   const raw = new URLSearchParams(search).get('light');
   if (raw === null) return new Set(DEFAULT_LIGHT_FLAGS);
-  return new Set(raw.split(',').map((s) => s.trim()).filter((s): s is LightFlag => FLAGS.has(s)));
+  const out = new Set(raw.split(',').map((s) => s.trim()).filter((s): s is LightFlag => FLAGS.has(s)));
+  if (out.has('room-clip-box')) out.add('room-clip');
+  return out;
 }
 
 let memo: Set<LightFlag> | undefined;

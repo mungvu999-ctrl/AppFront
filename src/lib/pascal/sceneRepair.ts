@@ -426,6 +426,23 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[], off: Readonl
     return out;
   };
 
+  /**
+   * Mức vi phạm của `f` nếu chiếm `rect`: lòi khỏi phòng (mm, bước 10), diện tích chạm tường / vùng mở cửa / đồ khác (mm²).
+   * `issuesAt` chỉ biết có/không theo ngưỡng; luật `fit` cần biết lỗi ĐÃ CÓ có nặng thêm không.
+   */
+  const violationOf = (f: Furniture, rect: Rect, room: Room): readonly [number, number, number, number] => {
+    const { walls, swings } = levelOf(f.levelId);
+    let out = 0;
+    while (out < 600 && !rectInsidePolygon(rect, room.outline, -out)) out += 10;
+    const area = (list: readonly Rect[]): number => list.reduce((s, r) => s + (rectsOverlap(rect, r) ? overlapAreaMm2(rect, r) : 0), 0);
+    const others = current()
+      .filter((o) => o.id !== f.id && o.levelId === f.levelId && o.suggested !== true && !isFlat(o) && !tucked(f, o) && !cabinetRun(f, o))
+      .map(rectOfFurniture);
+    return [out, area(walls), area(swings), area(others)];
+  };
+  /** Diện tích tăng dưới mức này (mm²) là nhiễu số, không phải lấn thêm. */
+  const WORSE_EPS_MM2 = 100;
+
   /*
    * 0b. fit — hộp AI theo hồ sơ vai: (1) vai dài/ngắn rõ mà hộp dài theo chiều sâu thì xoay 90° quanh tâm (dấu chân giữ
    * nguyên; mặt trước quay vào tâm phòng, món bám tường thì lưng phải còn áp tường); (2) cạnh ngoài [p10, p90] của vai thì
@@ -492,6 +509,9 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[], off: Readonl
 
       const had = issuesAt(f, before, room);
       if ([...issuesAt(f, after, room)].some((k) => !had.has(k))) continue;
+      // Lỗi đã có mà nặng thêm (lấn tường/cửa/đồ sâu hơn, lòi xa hơn) cũng bị từ chối: giữ nguyên món.
+      const [v0, v1] = [violationOf(f, before, room), violationOf(f, after, room)];
+      if (v1[0] > v0[0] || v1.some((v, i) => i > 0 && v > v0[i]! + WORSE_EPS_MM2)) continue;
 
       const what = capital(labelOf(f));
       const parts = [
