@@ -15,13 +15,17 @@
  * Cách gắn: vá `setupDirect` của `PointLightNode`/`SpotLightNode` (three r186) MỘT LẦN khi cờ bật — lightColor ×
  * mặt nạ theo `positionWorld`. Mỗi đèn: uniform hộp (min/max), vị trí đèn, 3 cổng × (vec4, vec4, vec3), cập nhật mỗi khung
  * (`syncRoomClip`); đèn ngoài mọi phòng giữ hộp vô hạn. Không cờ → không vá gì, shader y hệt hôm nay. Chạy cả WebGL2.
+ *
+ * Vòng 7: mặt XZ cắt theo ĐA GIÁC phòng (≤ 8 đỉnh, `roomClipShape.ts`), hộp chỉ còn giữ dải Y theo tầng. Uniform/đèn:
+ * 12 → 16 (thêm 4 vec4 đỉnh). Phòng > 8 đỉnh → đa giác = chữ nhật AABB (như vòng 6).
  */
 import { type Light, type Object3D, Vector3, Vector4 } from 'three';
-import { abs, clamp, dot, max, positionWorld, uniform } from 'three/tsl';
-import { PointLightNode, SpotLightNode } from 'three/webgpu';
+import { abs, clamp, dot, float, length, max, min, mod, positionWorld, step, uniform } from 'three/tsl';
+import { type Node, PointLightNode, SpotLightNode } from 'three/webgpu';
 
 import { backendOf, currentRenderer } from './backend';
 import { lightFlagOn } from './lightFlag';
+import { clipShapeOf, openShape, polygonClipFactor, ROOM_CLIP_MAX_VERTS } from './roomClipShape';
 import { sceneTier } from './tiers';
 
 /** Nới hộp ra ngoài đa giác phòng (m): đa giác phòng nằm ở mép trong/tim tường → mặt trong tường vẫn trong hộp. */
@@ -131,9 +135,16 @@ export function portalFactor(P: V3, L: V3, q: Portal): number {
   return inA * inB * (1 - clamp01(past / PORTAL_FADE_M)) ** 2 * clamp01(past / 0.02);
 }
 
-/** Mặt nạ đầy đủ (JS, như shader): max(hộp phòng, các cổng). */
-export function lightMask(P: V3, L: V3, box: ClipBox, portals: readonly Portal[] = []): number {
-  return portals.reduce((k, q) => Math.max(k, portalFactor(P, L, q)), roomClipFactor(P, box));
+/** Mặt nạ đầy đủ (JS, như shader): max(hộp phòng × đa giác phòng, các cổng). `verts` bỏ trống = chỉ hộp (vòng 6). */
+export function lightMask(P: V3, L: V3, box: ClipBox, portals: readonly Portal[] = [], verts?: ReadonlyArray<readonly [number, number]>): number {
+  const poly = verts ? polygonClipFactor(P[0], P[2], verts, ROOM_CLIP_MARGIN_M, ROOM_CLIP_EDGE_M) : 1;
+  return portals.reduce((k, q) => Math.max(k, portalFactor(P, L, q)), roomClipFactor(P, box) * poly);
+}
+
+/** Hộp gửi shader khi đã có đa giác: chỉ dải Y của tầng, XZ mở (đa giác lo). */
+export function bandBox(room: ClipRoom): ClipBox {
+  const b = roomClipBox(room);
+  return { min: [-OPEN_BOX, b.min[1], -OPEN_BOX], max: [OPEN_BOX, b.max[1], OPEN_BOX] };
 }
 
 function segDist(x: number, z: number, a: readonly [number, number], b: readonly [number, number]): number {
@@ -180,6 +191,8 @@ interface BoxUniforms {
   max: ReturnType<typeof vec3Uniform>;
   lp: ReturnType<typeof vec3Uniform>;
   portals: PortalUniforms[];
+  /** Đỉnh đa giác XZ, 2 đỉnh / vec4 (x0, z0, x1, z1). */
+  poly: ReturnType<typeof vec4Uniform>[];
 }
 const OFF_PORTAL = -10;
 const boxes = new WeakMap<Light, BoxUniforms>();
@@ -191,11 +204,17 @@ function uniformsOf(light: Light): BoxUniforms {
       max: vec3Uniform(OPEN_BOX),
       lp: vec3Uniform(0),
       portals: Array.from({ length: PORTALS_PER_LIGHT }, () => ({ c: vec4Uniform(OFF_PORTAL), u: vec4Uniform(0), n: vec3Uniform(0) })),
+      poly: Array.from({ length: ROOM_CLIP_MAX_VERTS / 2 }, () => vec4Uniform(0)),
     };
+    setPoly(u, openShape(OPEN_BOX).verts);
     for (const q of u.portals) q.n.value.set(1, 0, 0);
     boxes.set(light, u);
   }
   return u;
+}
+
+function setPoly(u: BoxUniforms, verts: ReadonlyArray<readonly [number, number]>): void {
+  u.poly.forEach((q, i) => q.value.set(verts[2 * i]![0], verts[2 * i]![1], verts[2 * i + 1]![0], verts[2 * i + 1]![1]));
 }
 
 let installed = false;
@@ -213,7 +232,24 @@ export function installRoomClip(): void {
       const u = uniformsOf(this.light);
       const P = positionWorld;
       const b = clamp(P.sub(u.min).div(ROOM_CLIP_EDGE_M).add(0.5), 0, 1).mul(clamp(u.max.sub(P).div(ROOM_CLIP_EDGE_M).add(0.5), 0, 1));
-      let k = b.x.mul(b.y).mul(b.z);
+      // Đa giác XZ — cùng công thức `polygonClipFactor` (test bản JS).
+      const xz = P.xz;
+      const V = u.poly.flatMap((q) => [q.xy, q.zw]);
+      let dmin: Node<'float'> = float(1e9);
+      let cnt: Node<'float'> = float(0);
+      V.forEach((a, i) => {
+        const bv = V[(i + 1) % V.length]!;
+        const e = bv.sub(a);
+        const w = xz.sub(a);
+        const t = clamp(dot(w, e).div(max(dot(e, e), 1e-8)), 0, 1);
+        dmin = min(dmin, length(w.sub(e.mul(t))));
+        // step(edge, x) = x ≥ edge ⇒ (a.z ≥ z) − (b.z ≥ z); vec2 .y ở đây là trục Z thế giới.
+        const straddle = abs(step(xz.y, a.y).sub(step(xz.y, bv.y)));
+        cnt = cnt.add(straddle.mul(step(0, e.x.mul(w.y).sub(w.x.mul(e.y)).mul(e.y))));
+      });
+      const sd = dmin.mul(mod(cnt, 2).mul(2).sub(1));
+      const poly = clamp(sd.add(ROOM_CLIP_MARGIN_M).div(ROOM_CLIP_EDGE_M).add(0.5), 0, 1);
+      let k = b.x.mul(b.y).mul(b.z).mul(poly);
       const d = P.sub(u.lp);
       // Cùng công thức `portalFactor` (test bản JS).
       for (const q of u.portals) {
@@ -325,10 +361,12 @@ export function syncRoomClip(registry: RegistryLike, nodes: Record<string, unkno
     if (!room) {
       u.min.value.setScalar(-OPEN_BOX);
       u.max.value.setScalar(OPEN_BOX);
+      setPoly(u, openShape(OPEN_BOX).verts);
       continue;
     }
-    const b = roomClipBox(room);
+    const b = bandBox(room);
     u.min.value.set(...b.min);
     u.max.value.set(...b.max);
+    setPoly(u, clipShapeOf(room.polygon).verts);
   }
 }
