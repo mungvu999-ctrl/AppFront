@@ -7,7 +7,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
-import { installPascalProbe, type PascalProbe, type PascalProbeStores } from '../createProbe';
+import { createSceneTrace, installPascalProbe, type PascalProbe, type PascalProbeStores } from '../createProbe';
 
 const fakeStores = () => {
   const registry = new Map<string, { userData: Record<string, unknown> }>();
@@ -154,5 +154,45 @@ describe('pascal probe', () => {
       toneMappingName: 'AgX',
       tone: 'agx-cal',
     });
+  });
+
+  it('sceneState(): lượt dựng + lượt áp có gen tăng dần; áp thiếu món/sàn khác là partial; ready chỉ khi áp đủ', () => {
+    const { stores } = fakeStores();
+    let clock = 100;
+    const trace = createSceneTrace(true, () => clock);
+    trace.countServerModels = () => 7;
+    const probe = install('?probe=1', { ...stores, trace });
+    const builtNodes = {
+      a: { type: 'item', metadata: { generated: 'dressing' } },
+      b: { type: 'item' },
+      s: { type: 'slab', slots: { surface: 'library:flooring-woodparquet76' } },
+    };
+    expect(probe?.sceneState().ready).toBe(false);
+    trace.built({ reason: 'load', style: 'am-ap', furnish: 'on', serverModels: 0, nLevels: 1, nFurnitureStored: 1, raw: false, repairsEnabled: true, readOnly: true, nItemsScene: 2, nGenerated: 1, slabMaterials: { 'library:flooring-woodparquet76': 1 } });
+    clock = 250;
+    trace.held('editor-holds', { b: builtNodes.b, s: { type: 'slab', slots: { surface: 'scene:x' } } });
+    let state = probe?.sceneState();
+    expect(state?.builds.map((b) => [b.gen, b.at, b.applied, b.reason])).toEqual([
+      [1, 100, 'built', 'load'],
+      [2, 250, 'partial', 'editor-holds<-gen1'],
+    ]);
+    expect(state?.ready).toBe(false);
+    trace.held('editor-holds', builtNodes);
+    state = probe?.sceneState();
+    expect(state?.ready).toBe(true);
+    expect(state?.builds[2]).toMatchObject({ applied: 'full', nItemsScene: 2, nGenerated: 1 });
+    // `now`: kho editor lúc gọi (bản giả có 1 item, 2 sàn) + thư viện máy chủ hiện tại.
+    expect(state?.now).toMatchObject({ nItemsScene: 1, nGenerated: 0, slabMaterials: { 'scene:wood': 1, tile: 1 }, serverModelsNow: 7, itemLoadFailures: 1 });
+  });
+
+  it('sceneTrace tắt (không ?probe=1) thì không ghi; giữ tối đa 50 dòng', () => {
+    const off = createSceneTrace(false);
+    expect(off.built({ reason: 'x', nItemsScene: 0, nGenerated: 0, slabMaterials: {} })).toBe(0);
+    off.held('y', {});
+    expect(off.state().builds).toEqual([]);
+    const on = createSceneTrace(true, () => 0);
+    for (let i = 0; i < 60; i += 1) on.held('h', {});
+    expect(on.state().builds).toHaveLength(50);
+    expect(on.state().generation).toBe(60);
   });
 });

@@ -19,6 +19,7 @@ import { getSessionSnapshot } from '@/lib/auth/state';
 import { readWireError } from '@/lib/errors/wireError';
 import type { DesignAddition, DesignConcept, DesignConceptState, DesignStyleId } from '@/api/schemas/designConcept';
 import { sceneStyleFromConcept } from '@/lib/pascal/designStyles';
+import { CATALOG_MODELS, isServerModel } from '@/lib/pascal/furnitureCatalog';
 import { readSceneStyle, SCENE_STYLES, type SceneStyle, type SceneStyleId } from '@/lib/pascal/sceneStyles';
 import { toPascalId } from '@/lib/pascal/ids';
 import { createRepairSession, sessionRepairs } from '@/lib/pascal/sceneRepair';
@@ -31,6 +32,7 @@ import { selectViewerSpatial } from '@/screens/viewer/ViewerShell/viewerShellGat
 import { useStore } from '@/store';
 import type { ProjectRole } from '@/types/project';
 
+import { sceneTrace, summarizeScene } from '../createProbe';
 import { sceneRepairStore } from '../sceneRepairStore';
 import { scaleStatusOf } from '../useScaleStatus';
 import { resolveBackHref } from './backHref';
@@ -200,6 +202,10 @@ export async function savePascalNow(): Promise<void> {
   await lastSave;
 }
 
+// `?probe=1`: nhật ký lượt dựng đếm mẫu thư viện máy chủ (giả thuyết H1: thư viện về sau lượt dựng).
+const serverModelCount = (): number => Object.keys(CATALOG_MODELS).filter(isServerModel).length;
+if (sceneTrace.enabled) sceneTrace.countServerModels = serverModelCount;
+
 const messageOf = (error: unknown): string => {
   if (error instanceof BridgeLoadError) return error.message;
 
@@ -351,6 +357,9 @@ export function usePascalProjectBridge(
   // Cùng cổng quyền với `PascalViewer.container`: vai theo dự án trước, phiên dự phòng.
   const roles: readonly ProjectRole[] = storeRoles.length > 0 ? storeRoles : session.roles;
   const readOnly = !can('edit', 'layer', { roles });
+  // Chỉ cho nhật ký lượt dựng (`sceneTrace`): ref để `sceneFromStore`/`onLoad` không đổi danh tính theo vai.
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
 
   useEffect(() => {
     let cancelled = false;
@@ -466,7 +475,7 @@ export function usePascalProjectBridge(
     }),
     [style, additions, furnish],
   );
-  const sceneFromStore = useCallback((): PascalScene | null => {
+  const sceneFromStore = useCallback((reason = 'build'): PascalScene | null => {
     const stored = storedGraph();
     if (stored === null) return null;
 
@@ -476,14 +485,31 @@ export function usePascalProjectBridge(
     // Hợp đồng lớp cảnh dẫn xuất v1 (`sceneLayer.ts`): mọi đường vào dùng `standardSceneOf`; sửa cảnh ghi lên node (`fields.repair`).
     // Đồ AI bổ sung (AID-01) và chế độ tự bày dự phòng đi cùng phong cách: chốt một lần mỗi lượt
     // mở trang, mọi lượt dựng dùng chung, không thì "sửa ma".
+    const options = sceneOptions();
+    const raw = !sceneRepairStore.get().enabled;
     const { scene, layer } = standardSceneOf(graph, {
-      ...sceneOptions(),
-      raw: !sceneRepairStore.get().enabled,
+      ...options,
+      raw,
       repairs: new Map(repairs.map((r) => [r.furnitureId, r])),
     });
     sceneRepairStore.set({ repairs, session: repairSession.current, layer });
+    const built = markNotBuilt(scene, missingFloors.current);
+    if (sceneTrace.enabled) {
+      sceneTrace.built({
+        reason: missingFloors.current.size === 0 ? reason : `${reason}:missingFloors=${missingFloors.current.size}`,
+        style: options.style.id,
+        furnish: options.furnish ?? 'on',
+        raw,
+        repairsEnabled: !raw,
+        nLevels: stored.levels.length,
+        nFurnitureStored: stored.furniture.length,
+        serverModels: serverModelCount(),
+        readOnly: readOnlyRef.current,
+        ...summarizeScene(built.nodes),
+      });
+    }
 
-    return markNotBuilt(scene, missingFloors.current);
+    return built;
   }, [sceneOptions, storedGraph]);
 
   /** Sửa cảnh của kho hiện tại khác danh sách lượt dựng gần nhất đã áp → cảnh editor phải dựng lại. */
@@ -512,7 +538,7 @@ export function usePascalProjectBridge(
     const reason = saveBlock?.message ?? null;
 
     if (target !== undefined) await reloadFloor(target);
-    const restored = applyScene === undefined ? null : sceneFromStore();
+    const restored = applyScene === undefined ? null : sceneFromStore('reload-floor');
     if (restored === null) {
       window.location.reload();
       return;
@@ -523,6 +549,7 @@ export function usePascalProjectBridge(
 
   /* Cảnh editor sau lượt nạp (sceneLoader) hay dựng lại: thành mốc của lượt sửa sau và bản dẫn xuất hiện hành. */
   const rebaseLoaded = useCallback((scene: PascalSceneGraph) => {
+    sceneTrace.held('editor-holds', scene.nodes, { readOnly: readOnlyRef.current });
     const hidden = sceneRepairStore.get().repairs.filter((r) => r.action === 'hidden').map((r) => toPascalId('item', r.furnitureId));
     recordDerived(derived.current, scene as PascalScene, hidden);
     setLoadedScene(scene as PascalScene);
@@ -531,7 +558,7 @@ export function usePascalProjectBridge(
   const onLoad = useCallback(async (): Promise<PascalSceneGraph> => {
     const scale = await scaleStatusOf(projectId);
     missingFloors.current = new Set(scale.status === 'unresolved' ? scale.missingIds : []);
-    const scene = sceneFromStore();
+    const scene = sceneFromStore('load');
     if (scene === null) throw new BridgeLoadError(BRIDGE_EMPTY_ERROR);
     setLoadedScene(scene);
 
@@ -540,7 +567,7 @@ export function usePascalProjectBridge(
 
   /* `applyScene` đổi đúng phần chênh (main.tsx), không dựng lại cả mô hình. */
   const revertToStore = useCallback(() => {
-    const restored = sceneFromStore();
+    const restored = sceneFromStore('revert');
     if (restored !== null) applyScene?.(restored);
   }, [applyScene, sceneFromStore]);
 

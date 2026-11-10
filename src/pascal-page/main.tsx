@@ -24,6 +24,7 @@ import { isEmptyChange, type NodeChanges, nodeChangesTo } from './bridge/sceneRe
 import type { PascalSceneGraph } from './bridge/types';
 import { BackToProjectCard, EditModelButton, ProjectStepsCard } from './BackToProjectCard';
 import { syncChromeTheme } from './chromeTheme';
+import { sceneTrace } from './createProbe';
 import { HomeownerCardMount } from './HomeownerCardMount';
 import { ItemTrustCard } from './ItemTrustCard';
 import { ModelCreditCard } from './ModelCreditCard';
@@ -183,6 +184,8 @@ const applyRejectedRevert = (scene: unknown) => {
     resumeSceneHistory(useScene);
     if (locked) store.setReadOnly(true);
   }
+  // `?probe=1`: kho editor sau lượt đặt lại, so với lượt dựng (`full`/`partial`).
+  sceneTrace.held('revert-applied', useScene.getState().nodes, { readOnly: locked });
 };
 
 /** UX-R3 U10: chữ "Đang dựng" giữ tới khi kho cảnh đã có tường (người xem từng thấy nền trống). */
