@@ -9,12 +9,14 @@ import { useEditor } from '@pascal-app/editor';
 import { useViewer } from '@pascal-app/viewer';
 
 import { applyFirstOpenLook } from './applyFirstOpenLook';
+import { postPascalNotice } from './bridge';
 import { applyUrlIntent } from './urlIntent';
 
 applyFirstOpenLook(useViewer, () => window.localStorage);
 
 applyUrlIntent(window.location.search, {
   scene: useScene,
+  notify: postPascalNotice,
   explodeLevels: () => useViewer.getState().setLevelMode('exploded'),
   // Cùng các bước nút "Đo" của Pascal (`measurement-control.tsx` › `activateMeasurement`).
   startMeasure: () => {

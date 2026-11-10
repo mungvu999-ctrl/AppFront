@@ -153,6 +153,20 @@ export function Breadcrumb({ ariaLabel = NAV_LABEL, items }: BreadcrumbProps) {
                 >
                   {item.label}
                 </span>
+              ) : item.id === 'projects' ? (
+                /* Mục "Dự án" là liên kết thật (mở tab mới được, đọc là link), không phải nút.
+                   `<a>` + onClick của mục thay vì `<Link>`: thanh này cũng được dựng ngoài Router. */
+                <a
+                  href={ROUTES.dashboard}
+                  onClick={(event) => {
+                    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                    event.preventDefault();
+                    item.onClick?.();
+                  }}
+                  className={CRUMB_LINK_CLASS}
+                >
+                  {item.label}
+                </a>
               ) : (
                 /* Cấp đầu — click được, không có dropdown */
                 <button

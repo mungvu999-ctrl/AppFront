@@ -186,6 +186,10 @@ let separateUnits = false;
  */
 export const isSeparateUnits = (): boolean => separateUnits;
 
+/** Đường cho trang (ngoài hook cầu) đưa một câu lên toast của cầu; chưa gắn thì bỏ. */
+let noticeSink: ((message: string) => void) | null = null;
+export const postPascalNotice = (message: string): void => noticeSink?.(message);
+
 /** Lượt `onSave` gần nhất của cầu — `savePascalNow` đợi nó. */
 let lastSave: Promise<unknown> = Promise.resolve();
 
@@ -406,6 +410,12 @@ export function usePascalProjectBridge(
     [push],
   );
   const showAlert = useCallback((alert: string) => push('alert', alert), [push]);
+  useEffect(() => {
+    noticeSink = onNotice;
+    return () => {
+      if (noticeSink === onNotice) noticeSink = null;
+    };
+  }, [onNotice]);
   const dismissNotice = useCallback((id: number) => setNotices((current) => current.filter((item) => item.id !== id)), []);
 
   // C4/A2-07: hỏi trước khi "Tải lại tầng" bỏ phần sửa chưa lưu.

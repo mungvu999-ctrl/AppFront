@@ -780,11 +780,11 @@ describe('ProcessingScreen — màn rỗng (BUG-165)', () => {
     expect(screen.getByRole('navigation', { name: 'Xử lý' })).toHaveTextContent('Dự án›Nhà phố Quận 3›Xử lý');
   });
 
-  it('BUG-546: cấp "Dự án" của breadcrumb là nút về danh sách dự án', () => {
+  it('BUG-546: cấp "Dự án" của breadcrumb là liên kết về danh sách dự án', () => {
     const onBackToProjects = vi.fn();
     renderWithProviders(<ProcessingScreen {...scenarioFor('partial')} onBackToProjects={onBackToProjects} />);
 
-    fireEvent.click(within(screen.getByRole('navigation', { name: 'Xử lý' })).getByRole('button', { name: 'Dự án' }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Xử lý' })).getByRole('link', { name: 'Dự án' }));
     expect(onBackToProjects).toHaveBeenCalledTimes(1);
   });
 

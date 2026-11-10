@@ -24,6 +24,8 @@ import { Section } from '@/components/shell/Section';
 import { Badge } from '@/components/ui/Badge';
 import { Table } from '@/components/ui/Table';
 
+import { Pager } from '../Pager';
+import { usePaged } from '../usePaged';
 import { ModelLibraryDetail } from './ModelLibraryDetail';
 import { ModelLibraryTable } from './ModelLibraryTable';
 import { ModelLibraryToolbar } from './ModelLibraryToolbar';
@@ -85,6 +87,7 @@ function ModelLibraryShell({ children, model }: { readonly children: ReactNode; 
 }
 
 export function ModelLibrary({ actions, model }: ModelLibraryProps) {
+  const paged = usePaged(model.rows);
   if (model.state === 'loading') {
     return (
       <ModelLibraryShell model={model}>
@@ -142,8 +145,9 @@ export function ModelLibrary({ actions, model }: ModelLibraryProps) {
         <Section className="min-w-0 flex-1" flush>
           <ModelLibraryToolbar actions={actions} model={model} />
           <div className={model.viewMode === 'grid' || model.isNarrow ? 'p-5' : undefined}>
-            <ModelLibraryTable actions={actions} model={model} />
+            <ModelLibraryTable actions={actions} model={{ ...model, rows: paged.pageRows }} />
           </div>
+          <Pager onPageChange={paged.setPage} page={paged.page} pageCount={paged.pageCount} total={paged.total} />
         </Section>
         {model.detail !== null && (
           <div className="min-[64rem]:sticky min-[64rem]:top-4 min-[64rem]:max-h-[calc(100vh-2rem)]">

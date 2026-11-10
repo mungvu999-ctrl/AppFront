@@ -185,3 +185,62 @@ describe('QcStatusBar (U49)', () => {
     expect(screen.getByText('Kéo nền hoặc giữ Space để di chuyển').parentElement).toHaveClass('[&_.text-caption]:text-body');
   });
 });
+
+describe('[UX #4] ngăn kéo cột việc dưới 1024 là hộp thoại modal', () => {
+  const narrow = (matches: boolean) =>
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }));
+  const renderDrawer = () =>
+    render(<QcWorkspace canvas={<button type="button">bản vẽ</button>} canvasLabel="Bản vẽ" column left={<button type="button">trong cột</button>} />);
+
+  it('mở: role=dialog aria-modal, focus vào ngăn, nền inert; Esc đóng và trả focus về nút mở', () => {
+    narrow(true);
+    renderDrawer();
+    const opener = screen.getByRole('button', { name: 'Mở cột việc' });
+    opener.focus();
+    fireEvent.click(opener);
+
+    const dialog = screen.getByRole('dialog', { name: 'Cột việc' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    expect(screen.getByLabelText('Bản vẽ')).toHaveAttribute('inert');
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByLabelText('Bản vẽ')).not.toHaveAttribute('inert');
+    expect(document.activeElement).toBe(opener);
+    vi.unstubAllGlobals();
+  });
+
+  it('từ 1024 cột là cột tĩnh, không phải hộp thoại', () => {
+    narrow(false);
+    renderDrawer();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('[UX #4 vòng 2] menu thả đóng đứng đầu cột không nuốt focus', () => {
+  it('focus vào phần tử thấy được đầu tiên, bỏ qua link trong <details> đóng', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: true, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }));
+    render(
+      <QcWorkspace
+        canvas={<p>bv</p>}
+        canvasLabel="Bản vẽ"
+        column
+        left={
+          <>
+            <details>
+              <summary>Dự án</summary>
+              <a href="/x">ẩn trong menu</a>
+            </details>
+            <button type="button">thấy được</button>
+          </>
+        }
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Mở cột việc' }));
+    expect(['SUMMARY', 'BUTTON']).toContain(document.activeElement?.tagName);
+    expect(document.activeElement).not.toBe(screen.getByText('ẩn trong menu'));
+    vi.unstubAllGlobals();
+  });
+});

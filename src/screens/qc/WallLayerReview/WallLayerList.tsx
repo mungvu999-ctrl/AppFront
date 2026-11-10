@@ -292,7 +292,7 @@ export function WallLayerList({ panel, flashingWallId, onToggleSelect, queue, on
               {isReviewed ? (
                 <button
                   aria-expanded={isOpen}
-                  className="flex items-center gap-1 rounded-md text-caption font-medium text-text-secondary hover:text-text-primary focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  className="flex min-h-6 items-center gap-1 rounded-md text-caption font-medium text-text-secondary hover:text-text-primary focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                   onClick={() => setReviewedOpen(!isOpen)}
                   type="button"
                 >

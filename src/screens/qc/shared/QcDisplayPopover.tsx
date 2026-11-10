@@ -1,5 +1,5 @@
 import { ChevronDown, Layers } from 'lucide-react';
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 import { Popover } from '@/components/overlay/Popover';
 import { Checkbox } from '@/components/ui/Checkbox';
@@ -42,6 +42,23 @@ const POPOVER_LABEL = 'Hiển thị trên bản vẽ';
 export function QcDisplayPopover({ groups, label = BUTTON_LABEL, popoverLabel = POPOVER_LABEL, icon, variant = 'float', showActiveCount = false }: QcDisplayPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
+  const bodyId = useId();
+  const bodyRef = useRef<HTMLDivElement>(null);
+  /* `Popover` không nhận `id`: đặt id lên chính phần tử `role=dialog` của nó để `aria-controls` trỏ đúng vùng có vai trò và nhãn. */
+  useEffect(() => {
+    const dialog = isOpen ? bodyRef.current?.closest('[role="dialog"]') : null;
+    if (dialog == null) return undefined;
+    dialog.id = bodyId;
+    return () => dialog.removeAttribute('id');
+  }, [isOpen, bodyId]);
+  /* #11: lớp nằm cuối `body` (portal), nên Tab từ nút phải dẫn thẳng vào trong thay vì đi hết trang. */
+  const enterOnTab = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (!isOpen || event.key !== 'Tab' || event.shiftKey) return;
+    const first = document.getElementById(bodyId)?.querySelector<HTMLElement>('input:not([disabled]), button:not([disabled])');
+    if (first === undefined || first === null) return;
+    event.preventDefault();
+    first.focus();
+  };
   const visible = groups.filter((group) => group.items.length > 0);
   if (visible.length === 0) return null;
   const activeCount = showActiveCount ? visible.reduce((sum, group) => sum + group.items.filter((item) => item.checked).length, 0) : 0;
@@ -50,8 +67,10 @@ export function QcDisplayPopover({ groups, label = BUTTON_LABEL, popoverLabel = 
     <>
       <button
         ref={anchorRef}
+        aria-controls={isOpen ? bodyId : undefined}
         aria-expanded={isOpen}
         aria-haspopup="dialog"
+        onKeyDown={enterOnTab}
         className={cn(
           'flex items-center gap-2 rounded-lg text-body-sm font-medium text-text-primary transition-colors duration-120',
           /* Phẳng: đứng cạnh nút chế độ nhìn ở thanh đầu panel 260–320 px — không xuống dòng; dưới 1280 chỉ còn biểu tượng. */
@@ -73,7 +92,7 @@ export function QcDisplayPopover({ groups, label = BUTTON_LABEL, popoverLabel = 
         <ChevronDown aria-hidden="true" className="h-3.5 w-3.5 text-text-muted" />
       </button>
       <Popover anchorRef={anchorRef} aria-label={popoverLabel} isOpen={isOpen} onClose={() => setIsOpen(false)} width={280}>
-        <div className="flex flex-col gap-3 p-4">
+        <div className="flex flex-col gap-3 p-4" ref={bodyRef}>
           {visible.map((group) => (
             <fieldset key={group.title} className="flex flex-col gap-1.5">
               <legend className="mb-1 text-caption font-medium uppercase tracking-[0.06em] text-text-muted">{group.title}</legend>

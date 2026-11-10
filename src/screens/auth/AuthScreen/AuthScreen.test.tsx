@@ -489,6 +489,17 @@ describe('AuthScreen — keyboard', () => {
     expect(findPositiveTabIndexes(container)).toHaveLength(0);
   });
 
+  it('A-10: gửi form trống thì tiêu điểm nhảy tới ô lỗi đầu tiên', async () => {
+    renderScreen();
+
+    fireEvent.click(submitButton());
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(emailField());
+    });
+    expect(emailField()).toHaveAttribute('aria-invalid', 'true');
+  });
+
   it('submits on Enter from every field, the checkbox included', () => {
     const { gateway, signIn } = stubGateway();
     renderScreen({ gateway });

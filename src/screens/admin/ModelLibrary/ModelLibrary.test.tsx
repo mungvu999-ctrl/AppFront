@@ -710,3 +710,17 @@ describe('[34L-E-007] focus theo panel chi tiết (BUG-P08-005)', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: row.name }));
   });
 });
+
+describe('A-12 — phân trang thư viện mẫu', () => {
+  it('500 hàng chỉ dựng 50 một lượt, có thanh phân trang', async () => {
+    const ModelLibraryView = await loadModelLibraryView();
+    const props = buildModelLibraryProps('success');
+    const seed = props.model.rows;
+    const rows = Array.from({ length: 500 }, (_, i) => ({ ...seed[i % seed.length]!, id: `m-${i}` }));
+    const { container } = renderWithProviders(
+      <ModelLibraryView {...props} model={{ ...props.model, isNarrow: false, viewMode: 'table', rows }} />,
+    );
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(50);
+    expect(screen.getByRole('navigation', { name: 'Phân trang' })).toBeInTheDocument();
+  });
+});

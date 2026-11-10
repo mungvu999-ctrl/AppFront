@@ -165,6 +165,12 @@
   [data-appfront-toast] button[aria-label] { min-width: 44px; }
   [class*="bg-sidebar/95"] button.h-7.w-7 { width: 44px; height: 44px; }
   [class*="bg-sidebar/95"] button.h-7.w-7::after { content: none; }
+  /* UX audit #8: mọi nút của chrome 3D đạt 44 px khi con trỏ thô. min-* thắng mọi height/width cố định
+     của vendor và pascal-chrome.css. Chip menu thanh trên (`[data-appfront-menu] > summary`) đã nới bằng ::after. */
+  html body :is(button, [role="button"], a[href], summary):not([data-appfront-menu] > summary):not(nav[aria-label="Các bước của dự án"] > a) {
+    min-height: 44px;
+    min-width: 44px;
+  }
   :is(.bg-sidebar, [class*="bg-sidebar/95"]) :is(button[class*="border-input"], button[class*="bg-secondary"]),
   :is(.bg-sidebar, [class*="bg-sidebar/95"]) :is(input:not([type=checkbox]):not([type=range]), select, [role=combobox]) {
     min-height: 44px;

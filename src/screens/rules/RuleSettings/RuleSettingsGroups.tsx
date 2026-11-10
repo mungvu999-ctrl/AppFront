@@ -18,7 +18,7 @@ import { lowerFirst } from '@/lib/format/sentence';
 import { NumericField } from '@/components/ui/NumericField';
 import { Toggle } from '@/components/ui/Toggle';
 
-import { type RuleCode, RuleSettingsRuleRow } from './RuleSettingsRow';
+import { type RuleCode, READ_ONLY_REASON_ID, RuleSettingsRuleRow, TOGGLE_COARSE_HIT } from './RuleSettingsRow';
 import type { RuleSettingsGroup, RuleSettingsThreshold } from './types';
 
 type RuleGroup = RuleSettingsGroup['group'];
@@ -60,6 +60,8 @@ export function RuleSettingsGroupCard({
       title={group.label}
       actions={
         <Toggle
+          className={TOGGLE_COARSE_HIT}
+          aria-describedby={canEdit ? undefined : READ_ONLY_REASON_ID}
           aria-label={`Bật hoặc tắt cả nhóm: ${lowerFirst(group.label)}`}
           checked={group.enabled}
           isReadOnly={!canEdit}

@@ -13,7 +13,11 @@ export interface UrlIntentStores {
   };
   readonly explodeLevels: () => void;
   readonly startMeasure: () => void;
+  /** Câu báo lên toast của cầu (UX audit #29). */
+  readonly notify?: (message: string) => void;
 }
+
+export const NEED_TWO_LEVELS = 'Cần ít nhất 2 tầng để xem tách tầng';
 
 export function applyUrlIntent(search: string, stores: UrlIntentStores): () => void {
   const query = new URLSearchParams(search);
@@ -28,7 +32,11 @@ export function applyUrlIntent(search: string, stores: UrlIntentStores): () => v
     if (!Object.values(stores.scene.getState().nodes).some((node) => node?.type === 'wall')) return;
     done = true;
     unsubscribe();
-    if (exploded) stores.explodeLevels();
+    if (exploded) {
+      const levels = Object.values(stores.scene.getState().nodes).filter((node) => node?.type === 'level').length;
+      if (levels < 2) stores.notify?.(NEED_TWO_LEVELS);
+      stores.explodeLevels();
+    }
     if (measure) stores.startMeasure();
   };
   unsubscribe = stores.scene.subscribe(apply);

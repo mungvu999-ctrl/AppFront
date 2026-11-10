@@ -393,8 +393,8 @@ export function NotificationBell({ unreadBadge, isOpen, onToggle, bellNudgeToken
       aria-expanded={isOpen}
       onClick={onToggle}
       className={cn(
-        // 44 px under `sm` (640 px), the dashboard's other touch targets' size (BUG-156); 36 px from 640 px up.
-        'relative flex h-11 w-11 sm:h-9 sm:w-9 items-center justify-center rounded-xl text-text-secondary outline-hidden transition-colors duration-fast',
+        // 44 px under `sm` (640 px), the dashboard's other touch targets' size (BUG-156); 36 px from 640 px up with a fine pointer; coarse pointers keep 44 px.
+        'relative flex h-11 w-11 sm:h-9 sm:w-9 coarse:h-11 coarse:w-11 items-center justify-center rounded-xl text-text-secondary outline-hidden transition-colors duration-fast',
         'hover:bg-bg-hover hover:text-text-primary',
         'focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-surface',
         isOpen && 'bg-bg-selected text-accent-active',

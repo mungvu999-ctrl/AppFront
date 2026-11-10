@@ -51,7 +51,7 @@ export function AddMemberForm(props: AddMemberFormProps) {
       />
       {/* U24: quyền của người này trong riêng dự án này. */}
       <Select.Root
-        className="w-[170px]"
+        className="w-[200px]"
         disabled={props.isAddingMember}
         onChange={(value) => {
           const picked = MEMBER_ACCESS_OPTIONS.find((option) => option.value === value);

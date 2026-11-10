@@ -35,7 +35,7 @@ function LabelButton({ actions, row }: RowPartProps) {
   return (
     <button
       aria-pressed={row.isSelected}
-      className={cn('block max-w-[22ch] truncate text-left font-medium text-text-primary', FOCUS_RING)}
+      className={cn('block min-h-6 max-w-[22ch] truncate text-left font-medium text-text-primary', FOCUS_RING)}
       title={row.label}
       onClick={() => actions.onSelectVersion(row.isSelected ? null : row.id)}
       type="button"

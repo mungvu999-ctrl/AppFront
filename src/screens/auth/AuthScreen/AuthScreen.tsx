@@ -52,7 +52,7 @@ import {
 import { AuthFrame } from '../AuthFrame';
 import { PasswordField } from '../PasswordField';
 import { FIELD_ERROR_SLOT } from '../RecoveryShell';
-import { useReturnFocus } from '../useReturnFocus';
+import { useFocusFirstInvalid, useReturnFocus } from '../useReturnFocus';
 import { ForgotPasswordPanel } from './ForgotPasswordPanel';
 import { useAutoFocusRing } from './useAutoFocusRing';
 
@@ -124,12 +124,14 @@ function CredentialForm({ model, actions, registerFirstField }: CredentialFormPr
   const fieldsDisabled = isSubmitting || isDone;
   const focusReturn = useReturnFocus(isSubmitting);
 
+  const submit = useFocusFirstInvalid(focusReturn.ref, actions.submit);
+
   const handleSubmit = useCallback(
     (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      actions.submit();
+      submit();
     },
-    [actions],
+    [submit],
   );
 
   /**
@@ -148,9 +150,9 @@ function CredentialForm({ model, actions, registerFirstField }: CredentialFormPr
       }
 
       event.preventDefault();
-      actions.submit();
+      submit();
     },
-    [actions],
+    [submit],
   );
 
   const blur = useCallback(

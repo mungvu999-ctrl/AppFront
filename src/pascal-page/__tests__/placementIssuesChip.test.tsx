@@ -30,13 +30,13 @@ describe('PlacementIssuesView', () => {
     const onPick = vi.fn();
     render(<PlacementIssuesView issues={ISSUES} onPick={onPick} />);
     expect(screen.getByLabelText('2 lỗi đặt đồ — mở danh sách')).not.toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Bàn lấn vào tường' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Chọn món đồ: Bàn lấn vào tường' }));
     expect(onPick).toHaveBeenCalledWith('f3');
   });
 
   it('không có cách chọn thì chỉ là danh sách đọc', () => {
     render(<PlacementIssuesView issues={ISSUES} />);
-    expect(screen.queryByRole('button', { name: 'Giường chồng lên tủ' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Giường chồng lên tủ/ })).toBeNull();
     expect(screen.getByText('Giường chồng lên tủ')).not.toBeNull();
   });
 
@@ -50,7 +50,7 @@ describe('PlacementIssuesView', () => {
     const onToggle = vi.fn();
     render(<PlacementIssuesView issues={[]} onPick={onPick} onToggleRepairs={onToggle} repairs={REPAIRS} />);
     expect(screen.getByLabelText('Đã tự xử lý 2 món — mở danh sách')).not.toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /^Đã dời: Giường/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Chọn món đồ: Đã dời: Giường/ }));
     expect(onPick).toHaveBeenCalledWith('F-1');
     expect(screen.queryByRole('button', { name: /^Đã ẩn/ })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Hiện dữ liệu gốc (bỏ tự xử lý)' }));

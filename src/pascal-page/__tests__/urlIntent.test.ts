@@ -44,6 +44,14 @@ describe('applyUrlIntent — ?view=exploded / ?tool=measure của đường chuy
     expect(listeners.size).toBe(0);
   });
 
+  it('?view=exploded khi chỉ 1 tầng thì báo cần 2 tầng', () => {
+    const { stores, load } = fakeStores();
+    const notify = vi.fn();
+    applyUrlIntent('?view=exploded', { ...stores, notify });
+    load({ w1: { type: 'wall' }, l1: { type: 'level' } });
+    expect(notify).toHaveBeenCalledWith('Cần ít nhất 2 tầng để xem tách tầng');
+  });
+
   it('chỉ ?tool=measure thì không tách tầng', () => {
     const { stores, load } = fakeStores();
     applyUrlIntent('?tool=measure', stores);

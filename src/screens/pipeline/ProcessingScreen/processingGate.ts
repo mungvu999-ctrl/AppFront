@@ -8,7 +8,7 @@
  * lệ", không mời sang Duyệt tầng.
  */
 
-import { SCALE_ESTIMATED_NOTE, SCALE_STATE_VIEWS } from '@/lib/viewmodel/provisionalScale';
+import { SCALE_ESTIMATED_NOTE, SCALE_PROPOSED_LABEL, SCALE_STATE_VIEWS } from '@/lib/viewmodel/provisionalScale';
 
 import type { ProcessingReviewReason, ProcessingScreenProps } from './types';
 
@@ -214,7 +214,7 @@ export function deriveProcessingGate(props: ProcessingScreenProps): ProcessingGa
       chipLabel: 'Xong · cần xem lại',
       chipVariant: 'attention',
       title: rows.length === 1 ? 'Còn 1 việc cần xem lại' : `Còn ${String(rows.length)} việc cần xem lại`,
-      scaleValue: isScaleUnresolved ? 'Cần kiểm' : 'Suy từ chuỗi kích thước',
+      scaleValue: isScaleUnresolved ? 'Cần kiểm' : SCALE_PROPOSED_LABEL,
       ...(scaleNote !== undefined ? { scaleNote } : {}),
       isScaleOk: !isScaleUnresolved,
       reviewRows: rows,
@@ -232,7 +232,7 @@ export function deriveProcessingGate(props: ProcessingScreenProps): ProcessingGa
     chipVariant: 'verified',
     title: 'Sẵn sàng duyệt tầng',
     scaleValue:
-      scaleKnown && noDimension ? 'Đã đặt' : scaleNote !== undefined ? 'Máy đề xuất' : 'Suy từ chuỗi kích thước',
+      scaleKnown && noDimension ? 'Đã đặt' : scaleNote !== undefined ? 'Máy đề xuất' : SCALE_PROPOSED_LABEL,
     ...(scaleNote !== undefined ? { scaleNote } : {}),
     isScaleOk: true,
     action: { label: GO_REVIEW_LABEL, isForward: true, onClick: summary.onReviewWalls },

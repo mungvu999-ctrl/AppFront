@@ -13,6 +13,11 @@ function renderHeader(overrides: Partial<AppHeaderProps> = {}) {
 }
 
 describe('AppHeader', () => {
+  it('[#15] mục Quản trị có aria-current ở mọi route /admin/*', () => {
+    render(<MemoryRouter initialEntries={['/admin/models']}><AppHeader accountLabel="Hà" showAdmin project={null} onSignOut={vi.fn()} /></MemoryRouter>);
+    expect(screen.getByRole('link', { name: 'Quản trị' })).toHaveAttribute('aria-current', 'page');
+  });
+
   it('ngoài dự án: không có thanh bước, đăng xuất có hỏi lại', async () => {
     const { props } = renderHeader();
     expect(screen.queryByRole('navigation', { name: 'Các bước của dự án' })).toBeNull();

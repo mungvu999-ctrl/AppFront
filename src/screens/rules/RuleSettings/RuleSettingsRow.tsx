@@ -35,6 +35,12 @@ const SEVERITY_OPTIONS: readonly { label: string; value: RuleSeverity }[] = [
   { label: SEVERITY_LABELS.suggestion, value: 'suggestion' },
 ];
 
+/** Id dải cảnh báo chỉ-đọc đầu trang: công tắc bị khoá trỏ `aria-describedby` tới đây để mỗi cái nói được lý do. */
+export const READ_ONLY_REASON_ID = 'rule-settings-read-only-reason';
+
+/** Vùng bấm 44 px khi con trỏ thô: nới hộp nút bên trong khung bọc của Toggle. */
+export const TOGGLE_COARSE_HIT = 'coarse:[&>button]:min-h-11 coarse:[&>button]:min-w-11';
+
 export const FOCUS_RING =
   'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-app';
 
@@ -152,8 +158,9 @@ export function RuleSettingsRuleRow({
       )}
     >
       <Toggle
-        className={dimmed}
+        className={cn(dimmed, TOGGLE_COARSE_HIT)}
         aria-label={`Bật hoặc tắt luật: ${lowerFirst(row.sentence)}`}
+        aria-describedby={canEdit ? undefined : READ_ONLY_REASON_ID}
         checked={row.enabled}
         isReadOnly={!canEdit}
         onChange={(checked) => {

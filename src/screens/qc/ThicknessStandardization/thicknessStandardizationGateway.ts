@@ -50,7 +50,7 @@ import { readFloorLayerRead, type FloorLayerGraphRead } from '@/api/floorLayerGr
 import { normalizeSpatial, type NormalizedSpatial } from '@/domain/spatial/normalize';
 import type { DataSource, Level, LevelId, Point, Wall, WallId } from '@/domain/spatial/types';
 import { resolveDrawableWallShapes } from '@/domain/walls/joints';
-import { wallStrokeToken } from '@/components/canvas/materialMap';
+import { thicknessGroupToken } from './thicknessGroupColor';
 import {
   createChangeWallThicknessCommand,
   WALL_COMMAND_TYPES,
@@ -722,7 +722,7 @@ export function thicknessLegend(
   return THICKNESS_GROUP_DISPLAY_ORDER.filter((group) => present.has(group)).map((group) => ({
     group,
     label: thicknessGroupLabel(group),
-    colorToken: wallStrokeToken(group),
+    colorToken: thicknessGroupToken(group),
   }));
 }
 

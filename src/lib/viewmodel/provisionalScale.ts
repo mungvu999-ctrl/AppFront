@@ -25,6 +25,9 @@ export function isScaleEstimated(basis: string | undefined): boolean {
   return basis !== undefined && ESTIMATED_SCALE_BASES.has(basis);
 }
 
+/** Một nhãn cho tỷ lệ máy đề xuất mà người chưa xác nhận — thay cho "Suy từ chuỗi kích thước" ở các màn. */
+export const SCALE_PROPOSED_LABEL = 'Tỷ lệ đề xuất, chưa xác nhận';
+
 /** Nhãn tỷ lệ ước lượng (N16 `scaleBasis`), dùng chung mọi màn. */
 export const SCALE_ESTIMATED_NOTE = 'Tỷ lệ ước lượng — nên hiệu chỉnh';
 

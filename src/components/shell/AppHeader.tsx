@@ -56,9 +56,16 @@ export interface AppHeaderProps {
   readonly onSignOut: () => void;
 }
 
+/** Vòng tiêu điểm chung cho mọi liên kết/nút trên thanh đầu (cùng kiểu với Button). */
+const FOCUS_RING =
+  'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-surface';
+/** Vùng bấm 24 px; 44 px khi con trỏ thô. */
+const HIT = 'min-h-6 coarse:min-h-11 coarse:min-w-11';
+
 const navLinkClass = ({ isActive }: { isActive: boolean }): string =>
   cn(
-    'flex h-8 shrink-0 items-center whitespace-nowrap rounded-md px-3 text-[13px] font-medium transition-colors duration-fast',
+    'flex h-8 shrink-0 items-center whitespace-nowrap rounded-md px-3 text-[13px] font-medium transition-colors duration-fast coarse:min-h-11',
+    FOCUS_RING,
     isActive ? 'bg-accent-wash text-accent' : 'text-text-secondary hover:bg-bg-sunken hover:text-text-primary',
   );
 
@@ -129,13 +136,14 @@ function ProjectStepBar({ project }: { readonly project: AppHeaderProject }) {
                 aria-label={`Bước ${index + 1}: ${step.label}, ${stepStateText(state, index, project.stepIndex)}`}
                 title={step.label}
                 className={cn(
-                  'flex h-7 items-center gap-2 rounded-md px-2 text-[13px] transition-colors duration-fast',
+                  'flex h-7 items-center gap-2 rounded-md px-2 text-[13px] transition-colors duration-fast coarse:min-h-11 coarse:min-w-11',
+                  FOCUS_RING,
                   isCurrent ? 'bg-accent-wash font-semibold text-accent' : 'text-text-secondary hover:bg-bg-sunken hover:text-text-primary',
                 )}
               >
                 <StepMarker index={index} isCurrent={isCurrent} state={state} />
-                {/* Dưới 1280 chỉ bước đang đứng hiện chữ; bước khác còn số + chú thích, 768/1024 không cắt chữ (UX-33). */}
-                <span className={cn('whitespace-nowrap', !isCurrent && 'hidden xl:inline')}>{step.label}</span>
+                {/* Dưới 1280 hiện chữ cho bước đang đứng và bước kế tiếp; bước khác còn số, tên nằm ở aria-label/title (UX-33, #25). */}
+                <span className={cn('whitespace-nowrap', !isCurrent && index !== nextIndex && 'hidden xl:inline')}>{step.label}</span>
               </Link>
             </li>
           );
@@ -179,7 +187,7 @@ export function AppHeader({ accountInitials, accountLabel, showAdmin, notificati
   return (
     <header className="shrink-0 border-b border-border-default bg-bg-surface">
       <div className="flex h-12 items-center gap-x-4 px-4 sm:px-6">
-        <Link to={ROUTES.dashboard} className="flex shrink-0 items-center gap-2 rounded-md text-text-primary">
+        <Link to={ROUTES.dashboard} className={cn('flex shrink-0 items-center gap-2 rounded-md text-text-primary', HIT, FOCUS_RING)}>
           <BrandMark size={22} />
           <span className="text-[15px] font-semibold">AppFront</span>
         </Link>
@@ -190,9 +198,9 @@ export function AppHeader({ accountInitials, accountLabel, showAdmin, notificati
           </NavLink>
           {showAdmin && (
             /* Sáng trên mọi màn `/admin/*`, không chỉ màn người dùng mà link trỏ tới. */
-            <NavLink to={ROUTES.adminUsers} className={() => navLinkClass({ isActive: adminActive })}>
+            <Link to={ROUTES.adminUsers} aria-current={adminActive ? 'page' : undefined} className={navLinkClass({ isActive: adminActive })}>
               Quản trị
-            </NavLink>
+            </Link>
           )}
         </nav>
         {adminActive && returnProject != null && (
@@ -239,7 +247,7 @@ export function AppHeader({ accountInitials, accountLabel, showAdmin, notificati
           // ponytail: hiện cho mọi vai; header không biết vai trong dự án, tab Thành viên tự chặn người không có quyền sửa.
           <Link
             to={`${ROUTES.project.settings(project.id)}?tab=members`}
-            className="flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-[13px] text-text-secondary hover:bg-bg-sunken hover:text-text-primary"
+            className={cn('flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-[13px] text-text-secondary hover:bg-bg-sunken hover:text-text-primary coarse:min-h-11', FOCUS_RING)}
           >
             <Users size={14} aria-hidden="true" />
             Thành viên
@@ -248,7 +256,7 @@ export function AppHeader({ accountInitials, accountLabel, showAdmin, notificati
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {notificationBell}
-          <Link to={ROUTES.account} aria-label="Tài khoản của bạn" title={accountLabel} className="rounded-full">
+          <Link to={ROUTES.account} aria-label="Tài khoản của bạn" title={accountLabel} className={cn('flex items-center justify-center rounded-full', HIT, FOCUS_RING)}>
             <Avatar alt="" {...(accountInitials ? { initials: accountInitials } : {})} />
           </Link>
           <button
@@ -256,7 +264,7 @@ export function AppHeader({ accountInitials, accountLabel, showAdmin, notificati
             onClick={() => setConfirmOut(true)}
             aria-label="Đăng xuất"
             title="Đăng xuất"
-            className="flex h-8 w-8 items-center justify-center rounded-md text-text-secondary hover:bg-bg-sunken hover:text-text-primary"
+            className={cn('flex h-8 w-8 items-center justify-center rounded-md text-text-secondary hover:bg-bg-sunken hover:text-text-primary', HIT, FOCUS_RING)}
           >
             <LogOut size={16} aria-hidden="true" />
           </button>

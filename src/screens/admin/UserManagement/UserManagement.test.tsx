@@ -799,3 +799,57 @@ describe('SCR-37 đọc (phase 08, D-a): BUG-P08-014..021', () => {
     expect(screen.getByRole('dialog', { name: 'Chi tiết người dùng' })).toBeTruthy();
   });
 });
+
+describe('UX audit 10/11 — nhóm f1 (A-01, A-02, A-03, A-12)', () => {
+  it('A-01: Esc đóng menu ⋯ của hàng và giữ tiêu điểm ở nút ⋯, không đóng tấm chi tiết', async () => {
+    const UserManagementView = await loadUserManagementView();
+    const actions = buildActions();
+    const model: UserManagementViewModel = { ...USER_MANAGEMENT_SCENARIO_SUCCESS, detail: null, isCollapsed: true };
+    renderWithProviders(<UserManagementView actions={actions} model={model} />);
+    const summary = (await screen.findAllByLabelText(/^Thao tác với /))[0] as HTMLElement;
+    const details = summary.closest('details') as HTMLDetailsElement;
+    details.open = true;
+    summary.focus();
+    fireEvent.keyDown(summary, { key: 'Escape' });
+    expect(details.open).toBe(false);
+    expect(document.activeElement).toBe(summary);
+    expect(summary).toHaveClass('coarse:h-11', 'coarse:w-11');
+  });
+
+  it('A-02: đóng khối mời thì tiêu điểm về nút "Mời người dùng"', async () => {
+    const UserManagementView = await loadUserManagementView();
+    const base: UserManagementViewModel = { ...USER_MANAGEMENT_SCENARIO_SUCCESS, detail: null };
+    const withInvite = (isOpen: boolean): UserManagementViewModel => ({ ...base, invite: { ...base.invite, isOpen } });
+    const view = renderWithProviders(<UserManagementView actions={buildActions()} model={withInvite(false)} />);
+    const opener = await screen.findByRole('button', { name: 'Mời người dùng' });
+    opener.focus();
+    fireEvent.click(opener);
+    view.rerender(<UserManagementView actions={buildActions()} model={withInvite(true)} />);
+    (await screen.findByLabelText('Email người được mời')).focus();
+    view.rerender(<UserManagementView actions={buildActions()} model={withInvite(false)} />);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Mời người dùng' }));
+  });
+
+  it('A-12: danh sách dài chia trang 50 hàng, "Trang sau" sang trang kế', async () => {
+    const UserManagementView = await loadUserManagementView();
+    const seed = USER_MANAGEMENT_SCENARIO_SUCCESS.rows;
+    const rows = Array.from({ length: 120 }, (_, i) => ({ ...(seed[i % seed.length] as (typeof seed)[number]), id: `u-${i}` }));
+    const model: UserManagementViewModel = { ...USER_MANAGEMENT_SCENARIO_SUCCESS, detail: null, isCollapsed: false, rows };
+    const { container } = renderWithProviders(<UserManagementView actions={buildActions()} model={model} />);
+    await screen.findByRole('navigation', { name: 'Phân trang' });
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(50);
+    fireEvent.click(screen.getByRole('button', { name: 'Trang sau' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Trang sau' }));
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(20);
+  });
+
+  it('A-12 (thẻ): 43 người ở khổ hẹp chia trang 20 thẻ', async () => {
+    const UserManagementView = await loadUserManagementView();
+    const seed = USER_MANAGEMENT_SCENARIO_SUCCESS.rows;
+    const rows = Array.from({ length: 43 }, (_, i) => ({ ...(seed[i % seed.length] as (typeof seed)[number]), id: `c-${i}` }));
+    const model: UserManagementViewModel = { ...USER_MANAGEMENT_SCENARIO_SUCCESS, detail: null, isCollapsed: true, rows };
+    const { container } = renderWithProviders(<UserManagementView actions={buildActions()} model={model} />);
+    await screen.findByRole('navigation', { name: 'Phân trang' });
+    expect(container.querySelectorAll('li[class*="rounded-lg"]')).toHaveLength(20);
+  });
+});

@@ -97,7 +97,7 @@ import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { can } from '@/lib/auth/permissions';
 import { formatCalendarDate, formatClockTime, formatDuration } from '@/lib/format/datetime';
 import { formatArea } from '@/lib/format/measure';
-import { SCALE_STATE_VIEWS } from '@/lib/viewmodel/provisionalScale';
+import { SCALE_PROPOSED_LABEL, SCALE_STATE_VIEWS } from '@/lib/viewmodel/provisionalScale';
 import { formatNumber, formatPercent } from '@/lib/format/number';
 import type { HttpError } from '@/lib/http/types';
 import { MILLISECONDS_PER_SECOND } from '@/lib/motion/tokens';
@@ -1519,7 +1519,9 @@ export function useProcessingScreen(options: UseProcessingScreenOptions): Proces
         countLabel(shown.dimensionCount, UNIT.dimensionChain),
         countLabel(shown.roomCount, UNIT.room),
         shownParts.some((part) => part.hasScale === false)
-          ? 'Chưa có tỷ lệ'
+          ? shownParts.some((part) => part.scaleMissing === true)
+            ? 'Chưa có tỷ lệ'
+            : SCALE_PROPOSED_LABEL
           : formatArea(totalArea(shown.roomOutlinesMm)),
       ],
       ...(total.dimensionCount !== 0

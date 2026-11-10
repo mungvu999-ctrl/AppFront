@@ -53,7 +53,7 @@ function Row({ text, id, onPick }: { readonly text: string; readonly id: string 
   return onPick === undefined || id === undefined ? (
     <span className={ROW_CLASS}>{text}</span>
   ) : (
-    <button className={BUTTON_CLASS} onClick={() => onPick(id)} title="Chọn món đồ này" type="button">
+    <button aria-label={`Chọn món đồ: ${text}`} className={BUTTON_CLASS} onClick={() => onPick(id)} title={`Chọn món đồ: ${text}`} type="button">
       {text}
     </button>
   );

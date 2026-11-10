@@ -272,6 +272,26 @@ describe('createFocusTrap', () => {
     expect(document.activeElement).toBe(opener);
   });
 
+  // UX audit #5: with no opener, closing a layer must not land on the skip link (first tab stop).
+  it('sends the focus to the app content area, not the skip link, when there is no opener', () => {
+    const skip = document.createElement('a');
+    skip.href = '#noi-dung';
+    const content = document.createElement('div');
+    content.setAttribute('data-app-content', '');
+    document.body.prepend(content);
+    document.body.prepend(skip);
+    const { dialog } = buildDialog();
+
+    (document.activeElement as HTMLElement | null)?.blur();
+    const trap = createFocusTrap(dialog);
+    trap.activate();
+    trap.release();
+
+    expect(document.activeElement).toBe(content);
+    skip.remove();
+    content.remove();
+  });
+
   // R1-01: the guessed landing spot (first control outside, or body) must not scroll the page
   // to the top when a layer opened with nothing focused closes.
   it('lands the guessed focus without scrolling the page', () => {
