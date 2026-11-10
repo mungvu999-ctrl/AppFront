@@ -92,4 +92,32 @@ describe('sửa cảnh không rò về dữ liệu đã lưu', () => {
     expect(result.data.changes.map((c) => c.after?.id ?? c.before?.id)).toEqual(['F-00000000CHAIR']);
     expect((result.data.changes[0]?.after as Furniture).centre).toEqual({ x: 4000, y: 1000 });
   });
+
+  it('luật fit (vòng 6): món AI đã đổi cỡ/trục trong cảnh không bị ghi khi lưu món khác', () => {
+    const graph0 = {
+      ...stored,
+      furniture: [
+        piece('F-0000000CHAIR2', 'chair', 480, 300, 2500, 2000, { rotationDeg: 0.01 } as Partial<Furniture>),
+        piece('F-00000000CHAIR', 'chair', 450, 450, 3500, 1000, { ...HUMAN, rotationDeg: 90 }),
+      ],
+    } as SpatialGraph;
+    const { graph, repairs } = repairScene(graph0);
+    expect(repairs.map((r) => [r.furnitureId, r.action, r.rule])).toEqual([['F-0000000CHAIR2', 'rescaled', 'fit']]);
+    const loaded: PascalScene = toPascalScene(graph).scene;
+    const chair = loaded.nodes['item_F-00000000CHAIR'] as PascalItemNode;
+    const next: PascalScene = {
+      ...loaded,
+      nodes: { ...loaded.nodes, 'item_F-00000000CHAIR': { ...chair, position: [chair.position[0] + 0.5, chair.position[1], chair.position[2]] } as PascalNode },
+    };
+    const changed = diffScenes(loaded, next).upsert.map((n) => n.id);
+    expect(changed).toEqual(['item_F-00000000CHAIR']);
+    const result = createPascalEditCommand({
+      graph: normalizeSpatial(graph0),
+      scene: next,
+      commit: { origin: 'local', changedNodeIds: changed },
+      actorId: 'U-1',
+    });
+    if (!result.ok) throw new Error(result.error.reasons.join(' '));
+    expect(result.data.changes.map((c) => c.after?.id ?? c.before?.id)).toEqual(['F-00000000CHAIR']);
+  });
 });

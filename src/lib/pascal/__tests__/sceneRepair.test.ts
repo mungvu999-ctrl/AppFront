@@ -381,4 +381,92 @@ describe('repairScene', () => {
       expect(scenePlacementIssues(graph).some((i) => i.kind === 'overlap' && i.furnitureIds.includes('F-b'))).toBe(true);
     });
   });
+
+  describe('fit (vòng 6, luật A): xoay đúng trục + kẹp cỡ về hồ sơ vai', () => {
+    const chair = (id: string, w: number, d: number, x: number, y: number, extra: Partial<Furniture> = {}) =>
+      item(id, 'chair', [w, d], x, y, { roomId: 'R-BED', rotationDeg: 0.01, ...extra } as Partial<Furniture>);
+    const sides = (f: Furniture) => [f.boundingBox.max.x - f.boundingBox.min.x, f.boundingBox.max.y - f.boundingBox.min.y];
+
+    it('bàn làm việc AI dài theo chiều sâu: xoay 90°, đổi hai cạnh, dấu chân và tâm giữ nguyên', () => {
+      const desk = item('F-desk', 'table', [600, 1200], 2000, 1750, { roomId: 'R-BED', rotationDeg: 0.01 } as Partial<Furniture>);
+      const { graph, repairs } = repairScene(graphOf([BED_ROOM], [desk]));
+      expect(repairs).toMatchObject([{ furnitureId: 'F-desk', action: 'rotated', rule: 'fit' }]);
+      const after = byId(graph, 'F-desk') as Furniture;
+      expect(sides(after)).toEqual([1200, 600]);
+      expect(after.centre).toEqual(desk.centre);
+      expect(Math.round(after.rotationDeg)).toBe(90);
+      expect(repairs[0]?.after?.boundingBox).toEqual(after.boundingBox);
+    });
+
+    it('ghế ăn AI sâu 0,30 m: kẹp sâu về dải vai (0,38 m), lý do hiện trên chip; ghế người dùng không đụng', () => {
+      const g = graphOf([BED_ROOM], [chair('F-ai', 480, 300, 1000, 1750), chair('F-me', 480, 300, 3000, 1750, HUMAN)]);
+      const { graph, repairs } = repairScene(g);
+      expect(repairs.map((r) => [r.furnitureId, r.action, r.rule])).toEqual([['F-ai', 'rescaled', 'fit']]);
+      expect(repairs[0]?.reasonVi).toContain('kẹp về 0,48 × 0,38 m');
+      expect(sides(byId(graph, 'F-ai') as Furniture)).toEqual([480, 378]);
+      expect(byId(graph, 'F-me')).toBe(byId(g, 'F-me'));
+      // Idempotent, và tắt riêng bằng ?disable=fit.
+      expect(repairScene(graph).repairs).toEqual([]);
+      expect(repairScene(g, new Set(['fit'])).repairs).toEqual([]);
+    });
+
+    it('món đã sửa (edited) hoặc sai nặng (< ½ p10): để nguyên, không ẩn', () => {
+      const g = graphOf([BED_ROOM], [chair('F-edit', 480, 300, 1000, 1750, { edited: true }), chair('F-tiny', 200, 50, 3000, 1750)]);
+      const { graph, repairs } = repairScene(g);
+      expect(repairs).toEqual([]);
+      expect(byId(graph, 'F-tiny')).toBe(byId(g, 'F-tiny'));
+      expect(byId(graph, 'F-edit')).toBe(byId(g, 'F-edit'));
+    });
+
+    it('kẹp làm món mới lấn tường (> 50 mm) thì giữ nguyên món — không tăng lỗi đặt đồ', () => {
+      // Lưng ghế cách mặt trong tường 30 mm lấn (chưa lỗi); sâu 0,30 → 0,38 m thì lấn 69 mm.
+      const g = graphOf([BED_ROOM], [chair('F-wall', 480, 300, 1000, 220)]);
+      expect(scenePlacementIssues(g)).toEqual([]);
+      const { graph, repairs } = repairScene(g);
+      expect(repairs).toEqual([]);
+      expect(scenePlacementIssues(graph)).toEqual([]);
+    });
+
+    it('tủ áo bám tường sâu 0,30 m: kẹp sâu, lưng vẫn áp tường (tâm dịch theo mặt trước)', () => {
+      const closet = item('F-closet', 'wardrobe', [1000, 300], 2000, 251, { roomId: 'R-BED', rotationDeg: 0.01 } as Partial<Furniture>);
+      const { graph, repairs } = repairScene(graphOf([BED_ROOM], [closet]));
+      expect(repairs).toMatchObject([{ furnitureId: 'F-closet', action: 'rescaled', rule: 'fit' }]);
+      const after = byId(graph, 'F-closet') as Furniture;
+      expect(sides(after)).toEqual([1000, 381]);
+      expect(Math.abs(after.centre.y - 381 / 2 - (251 - 150))).toBeLessThanOrEqual(1);
+    });
+  });
+
+  describe('doorSwing (vòng 6, luật E): đồ AI chắn lối mở cửa', () => {
+    const doorOn = (r: Room, offsetMm: number) =>
+      ({ ...HUMAN, id: 'D-1', levelId: 'L-1', wallId: `W-${r.id}-0`, kind: 'door', offsetMm, widthMm: 900, heightMm: 2100, sillHeightMm: 0, swing: 'left' }) as unknown as SpatialGraph['openings'][number];
+    const withDoor = (r: Room, furniture: Furniture[], offsetMm = 1500): SpatialGraph => ({ ...graphOf([r], furniture), openings: [doorOn(r, offsetMm)] });
+    const chair = (id: string, x: number, y: number, extra: Partial<Furniture> = {}) =>
+      item(id, 'chair', [480, 480], x, y, { roomId: r0.id, rotationDeg: 0.01, ...extra } as Partial<Furniture>);
+    const r0 = BED_ROOM;
+    const blocks = (g: SpatialGraph, id: string) => scenePlacementIssues(g).some((i) => i.kind === 'doorSwing' && i.furnitureIds.includes(id));
+
+    it('ghế AI trong vùng mở cửa: dời ra chỗ hợp lệ gần nhất, lý do trên chip; ghế người dùng giữ nguyên', () => {
+      const g = withDoor(r0, [chair('F-ai', 1950, 500)]);
+      expect(blocks(g, 'F-ai')).toBe(true);
+      const { graph, repairs } = repairScene(g);
+      expect(repairs).toMatchObject([{ furnitureId: 'F-ai', action: 'moved', rule: 'doorSwing' }]);
+      expect(repairs[0]?.reasonVi).toContain('chắn lối mở cửa');
+      expect(blocks(graph, 'F-ai')).toBe(false);
+      expect(repairScene(graph).repairs).toEqual([]);
+
+      const mine = withDoor(r0, [chair('F-me', 1950, 500, HUMAN)]);
+      expect(repairScene(mine).repairs).toEqual([]);
+      expect(repairScene(g, new Set(['door'])).repairs).toEqual([]);
+    });
+
+    it('không có chỗ hợp lệ (phòng nhỏ hơn vùng mở cửa): giữ nguyên, không ẩn, lỗi còn trên chip', () => {
+      const tiny = room('R-T', 'other', box(0, 0, 1000, 1100), 'Kho');
+      const g = withDoor(tiny, [item('F-ai', 'chair', [480, 480], 500, 500, { roomId: 'R-T', rotationDeg: 0.01 } as Partial<Furniture>)], 50);
+      const { graph, repairs } = repairScene(g);
+      expect(repairs).toEqual([]);
+      expect(byId(graph, 'F-ai')).toBe(byId(g, 'F-ai'));
+      expect(blocks(graph, 'F-ai')).toBe(true);
+    });
+  });
 });

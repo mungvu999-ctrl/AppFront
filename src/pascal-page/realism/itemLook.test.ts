@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { MeshStandardMaterial, Texture, type EventDispatcher } from 'three';
 import { SCENE_PALETTE } from '@/lib/pascal/scenePalette';
 import { hasPendingTextures, libraryRefsIn, preloadSceneTextures } from './texturePreload';
-import { autoPatch, folderOf, itemKindOf, nameKind, tunedRoughness } from './itemLook';
+import { autoPatch, dielectricName, flagOff, folderOf, itemKindOf, nameKind, tunedRoughness } from './itemLook';
 import { clearItemMaterialCache, specGlossPlugin, tuneItemMaterial } from './itemMaterials';
 import { useRealism } from './store';
 
@@ -168,6 +168,34 @@ describe('luật chung (mẫu lạ, không có trong ITEM_KIND)', () => {
     expect(autoPatch({ ...f, roughness: 0.02 })).toEqual({ roughness: 0.12 });
     // Kính trong suốt: chỉ kẹp kim loại, giữ bóng.
     expect(autoPatch({ ...f, metalness: 1, roughness: 0, transparent: true })).toEqual({ metalness: 0.6 });
+  });
+  it('M7: vật liệu tên phi kim (vải/gỗ) mà GLB đặt kim loại → 0, cả khi có ảnh; tên có từ kim loại giữ luật cũ', () => {
+    expect(dielectricName('Lenestol_fabric')).toBe(true);
+    expect(dielectricName('Wood_12')).toBe(true);
+    expect(dielectricName('M_commode_marble')).toBe(true);
+    expect(dielectricName('wood_metal_legs')).toBe(false);
+    expect(dielectricName('CabinetA_handles')).toBe(false);
+    expect(dielectricName('B07RMJSGS7_TRB_MDL_MR')).toBe(false);
+    // Lenestol_fabric: metallicFactor 0,68 không ảnh; Wood_12: hệ số 0,5 + metalnessMap kênh B ≈ 1.
+    expect(autoPatch({ ...f, name: 'Lenestol_fabric', metalness: 0.68, roughness: 1 })).toEqual({ metalness: 0 });
+    expect(autoPatch({ ...f, name: 'Wood_12', metalness: 0.5, roughness: 1, metalnessMap: true, roughnessMap: true })).toEqual({ metalness: 0 });
+    // Tên không rõ / kim loại: giữ trần 0,6 / 0,5 như cũ.
+    expect(autoPatch({ ...f, name: 'Material.001', metalness: 1, roughness: 0.5 })).toEqual({ metalness: 0.6 });
+    expect(autoPatch({ ...f, name: 'DrawerHandles', metalness: 1, roughness: 0.3 })).toEqual({ metalness: 0.6 });
+    // `?disable=dielectric`.
+    expect(autoPatch({ ...f, name: 'Lenestol_fabric', metalness: 0.68, roughness: 1 }, false)).toEqual({ metalness: 0.6 });
+    expect(flagOff('?disable=idle,dielectric', 'dielectric')).toBe(true);
+    expect(flagOff('?disable=idle', 'dielectric')).toBe(false);
+  });
+  it('M7: tuneItemMaterial — vải tên rõ, kim loại 0,68 → clone kim loại 0, giữ màu/ảnh; gốc không đổi', () => {
+    clearItemMaterialCache();
+    useRealism.setState({ flags: { ...useRealism.getState().flags, materials: true } });
+    const fab = new MeshStandardMaterial({ name: 'Lenestol_fabric', color: 0xffffff, metalness: 0.68, roughness: 1 });
+    fab.map = new Texture();
+    const a = tuneItemMaterial(fab, { src: '/library/chair-x/model.glb', slotId: 'a', textures: true }) as MeshStandardMaterial;
+    expect(a).not.toBe(fab);
+    expect([a.metalness, a.map, a.color.getHexString()]).toEqual([0, fab.map, 'ffffff']);
+    expect(fab.metalness).toBe(0.68);
   });
   it('nameKind: gương luôn nhận; mẫu có ảnh màu không đoán; kim loại/kính để luật chung', () => {
     expect(nameKind('Bathroom_Mirror', true)).toBe('mirror');

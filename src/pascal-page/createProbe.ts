@@ -40,6 +40,8 @@ export interface PascalProbe {
   itemMaterials(match: string): Record<string, unknown>[];
   /** Tone mapper THẬT của renderer lúc chạy (M6 làn A): số + tên three, phơi sáng, không gian màu ra, backend, cờ `?tone=`. */
   renderer(): ProbeRenderer | null;
+  /** Đối tượng three THÔ để thí nghiệm cô lập lúc chạy (M7): renderer + gốc cảnh (đi ngược `parent` từ một node đã đăng ký). */
+  raw(): { gl: unknown; scene: unknown } | null;
   /** Số đo reflection probe (`realism/reflect.ts`): số lần chụp, ms CPU, số vật liệu bóng. */
   reflect(): unknown;
   /** Đổi nút vật liệu/phơi sáng lúc chạy (đo biến thể cùng một lần nạp): nhiễu bề mặt, kính, exposure. */
@@ -253,6 +255,16 @@ export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter,
         backend: r.backend,
         tone: r.tone,
       };
+    },
+    raw: () => {
+      const gl = renderer?.()?.gl;
+      for (const [id] of entries()) {
+        let o = sceneRegistry.nodes.get(id) as { parent?: unknown } | undefined;
+        if (!o) continue;
+        while ((o as { parent?: unknown }).parent) o = (o as { parent: { parent?: unknown } }).parent;
+        return { gl, scene: o };
+      }
+      return null;
     },
     reflect: () => ({ ...((globalThis as { __realismReflect?: object }).__realismReflect ?? {}) }),
     itemMaterials: (match) => {

@@ -174,6 +174,7 @@ export function tuneItemMaterial(mat: Material, ctx: TuneContext): Material {
     metalnessMap: Boolean(m.metalnessMap),
     roughnessMap: Boolean(m.roughnessMap),
     transparent: m.transparent,
+    name: m.name,
   });
   if (!look && patch.metalness == null && patch.roughness == null) return mat;
 

@@ -27,7 +27,8 @@ export const matxOn = (name: MatxName): boolean => active.has(name);
  * Có `?mat=` thì chỉ bật đúng tên liệt kê.
  * - cap-top    : đồ dạng tủ có vật liệu HAI MẶT (GLB thư viện/Sketchfab xuất doubleSided) bị mặt cắt 1,0 m của
  *                "Tường: cắt" cắt ngang cũng được tô nắp phẳng như tường (trước đây bỏ qua → lòng tủ đen tuyền).
- * - floor-rough: sàn trong nhà (gỗ/gạch/đá) nhám tối thiểu `FLOOR_ROUGH_MIN`, clearcoat 0 — bớt vệt cháy gần đèn.
+ * - floor-rough: mặt SÀN (vai `floor`) nhám trong dải theo loại `FLOOR_ROUGH_BAND` — bớt vệt cháy gần đèn mà đá bóng
+ *                vẫn bóng; mặt bàn/tường cùng mã giữ vật liệu catalogue.
  */
 export const MAT_NAMES = ['cap-top', 'floor-rough'] as const;
 export type MatName = (typeof MAT_NAMES)[number];
@@ -41,8 +42,18 @@ export function parseMat(search: string): ReadonlySet<MatName> {
 const activeMat = parseMat(search);
 export const matOn = (name: MatName): boolean => activeMat.has(name);
 
-/** `?mat=floor-rough`: nhám tối thiểu của sàn trong nhà. */
-export const FLOOR_ROUGH_MIN = 0.45;
+/**
+ * `?mat=floor-rough` (vòng 6): dải nhám [min, max] theo LOẠI sàn, chỉ áp cho vai `floor` (mặt trên tấm sàn), không áp
+ * cho mặt bàn/tường/đồ dùng cùng mã. Vòng 5 ép mọi sàn ≥ 0,45 → đá bóng mất bóng. Loại ngoài bảng (bê tông, gạch thô,
+ * đá nhám, …) = giữ nguyên vật liệu catalogue. Căn cứ số (đỉnh phản xạ dưới đèn phòng): `F:/runs/m6/l2/BAO-CAO.md`.
+ */
+export type FloorBandKind = 'wood' | 'tile' | 'stone' | 'carpet';
+export const FLOOR_ROUGH_BAND: Readonly<Record<FloorBandKind, readonly [number, number]>> = {
+  stone: [0.2, 0.3], // đá đánh bóng: còn ảnh phản chiếu mờ
+  tile: [0.3, 0.4], // gạch men: bóng nhẹ
+  wood: [0.45, 0.6], // gỗ phủ dầu/sơn mờ
+  carpet: [0.85, 1], // thảm: không bóng
+};
 /**
  * `?mat=cap-top`: chỉ thư mục mẫu dạng tủ KÍN (mẫu Pascal + thư viện máy chủ `/items/<id>/`). Đồ mở (kệ sách, kệ, kệ
  * tivi, console) làm bằng tấm một lớp: mặt sau là mặt thật, bật DoubleSide sẽ tô màu nắp lên chỗ không bị cắt.

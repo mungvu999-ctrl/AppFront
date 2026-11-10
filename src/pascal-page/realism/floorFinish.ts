@@ -6,15 +6,19 @@
  * - `tuneFloorFinish`: colorNode TSL = màu đích × (1 + (lum / lumTB − 1) · contrast) — giữ vân ảnh,
  *   đổi tông về bảng màu; đá/gạch có `groutM` thêm ron mảnh tính bằng fract(UV) + fwidth (sắc ở mọi tầm).
  * - Độ nhám biến thiên tần số thấp (`surfaceNoise`, `?disable=surfnoise` tắt); màu giữ nguyên vân ảnh.
+ * - Vai `floor` (vòng 6, chỉ mặt trên tấm sàn truyền vào): nhám trong dải theo loại (`FLOOR_ROUGH_BAND`). Preset của vai
+ *   sàn mang thêm khoá `surfaceRole` → khoá cache vendor (JSON preset) riêng: MỘT vật liệu cho mỗi (mã × vai), mọi sàn
+ *   cùng mã dùng chung, mặt bàn/tường cùng mã giữ vật liệu không vai. Ảnh lấy từ cache ảnh vendor (không nạp lại).
  * Cờ `materials` tắt → y cũ.
  */
+import { getCatalogMaterialById } from '@pascal-app/core/material-library';
 import type { Material } from 'three';
 import { clamp, color, float, fract, fwidth, luminance, materialColor, materialRoughness, max, min, mix, smoothstep, uv, vec3, vec4 } from 'three/tsl';
 import type { Node } from 'three/webgpu';
 
 import { SCENE_PALETTE } from '@/lib/pascal/scenePalette';
 
-import { FLOOR_GLOSS, FLOOR_ROUGH_MIN, type FloorKind, matOn, matxOn } from './matx';
+import { FLOOR_GLOSS, FLOOR_ROUGH_BAND, type FloorBandKind, type FloorKind, matOn, matxOn } from './matx';
 import { useRealism } from './store';
 import { applySurfaceNoise, surfaceNoiseNode } from './surfaceNoise';
 
@@ -83,6 +87,42 @@ export function floorFinishOf(ref: string | undefined): FloorFinish | null {
 
 const enabled = (): boolean => useRealism.getState().flags.materials;
 
+/** Vai hiển thị có luật riêng. Chỉ `floor` (mặt trên tấm sàn); vai khác/không truyền = vật liệu dùng chung như cũ. */
+export type SurfaceRole = 'floor';
+
+/** Đá catalogue coi là đánh bóng khi không có ảnh nhám và nhám gốc ≤ mức này (statuaretto, labradorite, quartzite 0,35). */
+const POLISHED_STONE_MAX = 0.4;
+
+/**
+ * Loại sàn cho dải nhám: họ trong `FLOOR_FINISHES` (đã đếm tay trên ảnh, vd. tile79 = gạch dù catalogue ghi `stone`),
+ * không có thì `category` của catalogue vật liệu vendor (+ dữ liệu preset để tách đá bóng/đá nhám). Không rõ → `null`
+ * (bê tông, gạch nung, đất, đá nhám có ảnh nhám, mã chưa nạp…): giữ nguyên vật liệu catalogue.
+ */
+export function floorKindOf(ref: string | undefined): FloorBandKind | null {
+  if (!ref?.startsWith(LIBRARY_PREFIX)) return null;
+  const id = ref.slice(LIBRARY_PREFIX.length);
+  const kind = FLOOR_FINISHES[id]?.kind;
+  if (kind) return kind in FLOOR_ROUGH_BAND ? (kind as FloorBandKind) : null;
+  const item = getCatalogMaterialById(id);
+  switch (item?.category) {
+    case 'wood':
+    case 'tile':
+    case 'carpet':
+      return item.category;
+    case 'stone':
+      return !item.preset.maps?.roughnessMap && (item.preset.mapProperties?.roughness ?? 1) <= POLISHED_STONE_MAX ? 'stone' : null;
+    default:
+      return null;
+  }
+}
+
+/** Dải nhám áp cho (mã × vai): chỉ vai `floor`, cờ `floor-rough` bật, loại có trong bảng. */
+export function floorBandOf(ref: string | undefined, role?: SurfaceRole): readonly [number, number] | null {
+  if (role !== 'floor' || !matOn('floor-rough')) return null;
+  const kind = floorKindOf(ref);
+  return kind ? FLOOR_ROUGH_BAND[kind] : null;
+}
+
 /** Lặp ảnh theo cỡ thật (UV mét). */
 export const repeatOf = (finish: FloorFinish): number => 1 / finish.sizeM;
 
@@ -112,19 +152,23 @@ interface PresetLike {
   readonly mapProperties: Readonly<Record<string, unknown>>;
 }
 
-/** Bản sao preset với repeat cỡ thật + normal nhẹ; preset ngoài bảng / cờ tắt → nguyên. */
-export function floorFinishPreset<T extends PresetLike>(ref: string | undefined, preset: T): T {
+/**
+ * Bản sao preset với repeat cỡ thật + normal nhẹ; vai sàn có dải nhám thêm `surfaceRole` (chỉ đổi khoá cache vendor,
+ * vendor không đọc khoá này; khoá cache ảnh tính theo đường dẫn + repeat nên ảnh vẫn dùng chung). Không gì áp → nguyên.
+ */
+export function floorFinishPreset<T extends PresetLike>(ref: string | undefined, preset: T, role?: SurfaceRole): T {
+  if (!enabled()) return preset;
   const finish = floorFinishOf(ref);
-  if (!finish || !enabled()) return preset;
-  const repeat = repeatOf(finish);
+  const band = floorBandOf(ref, role);
+  if (!finish && !band) return preset;
   return {
     ...preset,
+    ...(band ? { surfaceRole: role } : {}),
     mapProperties: {
       ...preset.mapProperties,
-      repeatX: repeat,
-      repeatY: repeat,
-      normalScaleX: finish.normalScale,
-      normalScaleY: finish.normalScale,
+      ...(finish
+        ? { repeatX: repeatOf(finish), repeatY: repeatOf(finish), normalScaleX: finish.normalScale, normalScaleY: finish.normalScale }
+        : {}),
     },
   } as T;
 }
@@ -173,27 +217,32 @@ function glossFloor(m: NodeLike, finish: FloorFinish): boolean {
 }
 
 /**
- * M5-LC `?mat=floor-rough`: sàn trong nhà (gỗ/gạch/đá; bê tông = ngoài nhà, giữ nguyên) nhám ≥ `FLOOR_ROUGH_MIN`
- * sau mọi chỉnh khác (kể cả `?matx=floor`), clearcoat 0 — bớt phản xạ gương cháy trắng gần đèn/cửa.
+ * `?mat=floor-rough` (vai `floor`): nhám cuối (ảnh nhám × hệ số, nhiễu, `?matx=floor`) kẹp vào dải [lo, hi] của loại —
+ * giữ vân nhám của ảnh trong dải. Không đụng clearcoat (đường preset vendor luôn tạo MeshStandardNodeMaterial).
+ * `userData.realismRole/realismRoughBand` để đầu dò đọc được (nhám nằm trong roughnessNode, `roughness` vô hướng không đổi).
  */
-export function roughFloor(m: NodeLike & { clearcoat?: number }, finish: FloorFinish): boolean {
-  if (finish.kind !== 'wood' && finish.kind !== 'tile' && finish.kind !== 'stone') return false;
-  m.roughnessNode = max((m.roughnessNode ?? materialRoughness) as Node<'float'>, FLOOR_ROUGH_MIN);
-  if (typeof m.clearcoat === 'number') m.clearcoat = 0;
-  return true;
+export function roughFloor(m: NodeLike, band: readonly [number, number]): void {
+  m.roughnessNode = clamp((m.roughnessNode ?? materialRoughness) as Node<'float'>, band[0], band[1]);
+  m.userData.realismRole = 'floor';
+  m.userData.realismRoughBand = [...band];
 }
 
-/** Đổi màu + ron cho vật liệu node PBR của sàn trong bảng; mọi thứ khác trả nguyên. */
-export function tuneFloorFinish<T extends Material | null>(ref: string | undefined, mat: T): T {
-  const finish = floorFinishOf(ref);
+/**
+ * Đổi màu + ron cho vật liệu node PBR của sàn trong bảng; vai `floor` thêm dải nhám theo loại. Vật liệu mà
+ * `floorFinishPreset(ref, preset, role)` tạo ra là MỘT đối tượng cache riêng cho (mã × vai) nên sửa tại chỗ an toàn.
+ */
+export function tuneFloorFinish<T extends Material | null>(ref: string | undefined, mat: T, role?: SurfaceRole): T {
   const m = mat as NodeLike | null;
-  if (!m || !finish || !enabled() || !m.isNodeMaterial || typeof m.roughness !== 'number') return mat;
+  if (!m || !enabled() || !m.isNodeMaterial || typeof m.roughness !== 'number') return mat;
   if (m.userData[TUNED]) return mat;
-  m.colorNode = finishColorNode(finish);
-  if (!(matxOn('floor') && glossFloor(m, finish))) applySurfaceNoise(m);
-  // ponytail: vật liệu cache theo preset, dùng chung cho sàn lẫn mặt bàn/tường sơn cùng mã `library:flooring-*` → nhám áp
-  // cả mặt không phải sàn. Tách cần khoá cache riêng + cờ ở ~27 chỗ gọi vendor; làm khi có người sơn đá bóng lên bàn.
-  if (matOn('floor-rough')) roughFloor(m, finish);
+  const finish = floorFinishOf(ref);
+  const band = floorBandOf(ref, role);
+  if (!finish && !band) return mat;
+  if (finish) {
+    m.colorNode = finishColorNode(finish);
+    if (!(matxOn('floor') && glossFloor(m, finish))) applySurfaceNoise(m);
+  }
+  if (band) roughFloor(m, band);
   m.userData[TUNED] = true;
   m.needsUpdate = true;
   return mat;

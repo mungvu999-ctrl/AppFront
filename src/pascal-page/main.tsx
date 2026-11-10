@@ -162,6 +162,10 @@ const readEditorScene = () => {
 const applyRejectedRevert = (scene: unknown) => {
   const { nodes, rootNodeIds, collections, materials } = scene as SceneGraph;
   const store = useScene.getState();
+  /* Người "Chỉ xem": kho khoá sửa (`readOnly`) nên `applyNodeChanges` bỏ qua → bật/tắt "Hiện dữ liệu gốc" đổi chip
+     mà cảnh 3D đứng yên (M7 làn 1). Dựng lại từ kho là đổi HIỂN THỊ, không phải lượt sửa: mở khoá đúng trong lượt này. */
+  const locked = store.readOnly;
+  if (locked) store.setReadOnly(false);
   pauseSceneHistory(useScene);
   try {
     let changes: NodeChanges | null = null;
@@ -177,6 +181,7 @@ const applyRejectedRevert = (scene: unknown) => {
     }
   } finally {
     resumeSceneHistory(useScene);
+    if (locked) store.setReadOnly(true);
   }
 };
 

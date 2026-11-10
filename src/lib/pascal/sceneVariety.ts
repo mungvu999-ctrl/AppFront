@@ -9,11 +9,13 @@
  */
 
 import type { Furniture, RoomUsage } from '@/domain/spatial/types';
-import { millimetres, millimetresToMetres } from '@/domain/units/types';
+import { degrees, millimetres, millimetresToMetres } from '@/domain/units/types';
 
 import { CATALOG_MODELS, isServerModel, VARIANT_MODEL } from './furnitureCatalog';
 import LIBRARY_ROLES_JSON from './libraryRoles.json' with { type: 'json' };
 import { rectOfFurniture, rectsOverlap } from './placement';
+import { GENERATED_DRESS_PREFIX } from './sceneDressing';
+import { SCENE_RULES_OFF } from './sceneLayer';
 import type { SceneStyle } from './sceneStyles';
 
 export type FurnitureRole =
@@ -226,9 +228,61 @@ const STYLE_TIE = 1.1;
  */
 const LIBRARY = LIBRARY_ROLES_JSON as {
   readonly roles: Readonly<Record<string, readonly string[]>>;
-  /** s = mã phong cách (0–3 trong 12 mã), c = độ rực màu đo từ ảnh (C* Lab). */
-  readonly models: Readonly<Record<string, { readonly s: readonly string[]; readonly c: number }>>;
+  /**
+   * s = mã phong cách (0–3 trong 12 mã), c = độ rực màu đo từ ảnh (C* Lab), t = tông gỗ chủ đạo (`l` sáng /
+   * `d` tối, theo vật liệu hồ sơ), h = họ màu của màu chiếm nhiều nhất (cream/black/grey/brown/…).
+   */
+  readonly models: Readonly<Record<string, { readonly s: readonly string[]; readonly c: number; readonly t?: string; readonly h?: string }>>;
 };
+
+/** Phong cách + phần lớp cảnh tính một lần cho cả căn (`standardSceneOf`): luật đã tắt, tông gỗ của căn (`woodToneOf`). */
+export type LayerStyle = SceneStyle & { readonly rulesOff?: ReadonlySet<string>; readonly woodTone?: 'l' | 'd' };
+
+const SAVED_FOLDER = /\/items\/([^/]+)\//;
+/**
+ * Luật `tone` (C): tông gỗ của căn = đa số tông (sáng/tối) của mẫu đang dựng cho đồ CÓ SẴN (người dùng xác nhận + AI);
+ * hoà hoặc không món gỗ nào → đa số tông các mẫu thư viện của mã phong cách đầu (`libraryStyles[0]`), hoà → sáng.
+ * `undefined` khi phong cách không có mã thư viện. Đồ sinh (`DRESS-`) không tính.
+ */
+export const woodToneOf = (
+  items: readonly { readonly f: Shaped & Pick<Furniture, 'id' | 'roomId'> & Partial<Pick<Furniture, 'model'>>; readonly usage?: RoomUsage }[],
+  style: SceneStyle,
+): 'l' | 'd' | undefined => {
+  const count = { l: 0, d: 0 };
+  for (const { f, usage } of items) {
+    if (isGenerated(f) || f.kind === 'stair') continue;
+    const folder = f.model === undefined ? modelFolderOf(f, style, usage) : (SAVED_FOLDER.exec(f.model.src)?.[1] ?? null);
+    const t = folder === null ? undefined : LIBRARY.models[folder]?.t;
+    if (t === 'l' || t === 'd') count[t] += 1;
+  }
+  if (count.l !== count.d) return count.d > count.l ? 'd' : 'l';
+  const first = style.libraryStyles?.[0];
+  if (first === undefined) return undefined;
+  const byStyle = { l: 0, d: 0 };
+  for (const m of Object.values(LIBRARY.models)) if (m.s.includes(first) && (m.t === 'l' || m.t === 'd')) byStyle[m.t] += 1;
+  return byStyle.d > byStyle.l ? 'd' : 'l';
+};
+const rulesOffOf = (style: SceneStyle): ReadonlySet<string> => (style as LayerStyle).rulesOff ?? SCENE_RULES_OFF;
+const isGenerated = (f: Pick<Furniture, 'id'>): boolean => f.id.startsWith(GENERATED_DRESS_PREFIX);
+
+/**
+ * Luật `orient` (B): chi phí cỡ THEO HƯỚNG TRỤC — rộng mẫu với rộng hộp, sâu với sâu (`swap` = món xoay 90°).
+ * `sizeCostOf` so cạnh dài/ngắn đã sắp xếp nên mẫu dài theo x vẫn "vừa" hộp dài theo y, rồi bị bóp từng trục.
+ */
+const orientedCostOf = (f: Shaped, folder: string, swap = false): number => {
+  const model = CATALOG_MODELS[folder];
+  if (model === undefined) return Infinity;
+  const w = metresOf(f.boundingBox.max.x - f.boundingBox.min.x);
+  const d = metresOf(f.boundingBox.max.y - f.boundingBox.min.y);
+  const [mw, , md] = model.dimensions;
+  const [a, b] = swap ? [d, w] : [w, d];
+  return Math.abs(Math.log(a / mw)) + Math.abs(Math.log(b / md));
+};
+/** Mẫu nằm ngang hộp: xoay 90° vừa hơn quá chừng này (ln 1,2 ≈ lệch 20 % một trục). */
+const ORIENT_MARGIN = Math.log(1.2);
+const misOriented = (f: Shaped, folder: string): boolean => orientedCostOf(f, folder) - orientedCostOf(f, folder, true) > ORIENT_MARGIN;
+/** Vai không có mặt trước rõ: xoay món 90° giữ dấu chân và giữ đúng mẫu đã chọn (không đổi màu/kiểu). */
+const ROTATABLE_ROLES: ReadonlySet<FurnitureRole> = new Set(['rug', 'roundRug', 'coffeeTable', 'diningTable']);
 const libraryFoldersOf = (role: FurnitureRole, variant: string | undefined): readonly string[] =>
   (role === 'fixed' ? (variant === undefined ? undefined : LIBRARY.roles[variant]) : LIBRARY.roles[role]) ?? [];
 /** Mẫu thư viện vừa cỡ: chi phí cỡ không quá mẫu vừa nhất + chừng này (khớp hộp còn co giãn từng trục). */
@@ -260,12 +314,51 @@ const libraryModelOf = (
   if (library.length === 0) return null;
   const best = Math.min(...library.map((folder) => sizeCostOf(f, folder)));
   const wanted = style.libraryStyles ?? [];
+  // Luật `tone` (C): CHỈ món sinh — mẫu lệch tông gỗ của căn xếp sau, trong cùng giới hạn cỡ (đồ AI/người dùng không đổi).
+  const tone = isGenerated(f) && !rulesOffOf(style).has('tone') ? (style as LayerStyle).woodTone : undefined;
+  const toneMiss = (folder: string): number => {
+    const t = LIBRARY.models[folder]?.t;
+    return tone !== undefined && t !== undefined && t !== tone ? 1 : 0;
+  };
   const ranked = library
     .filter((folder) => sizeCostOf(f, folder) <= best + LIBRARY_SIZE_SLACK)
-    .map((folder) => ({ folder, tier: styleTierOf(folder, wanted), chroma: LIBRARY.models[folder]?.c ?? 0 }))
-    .sort((a, b) => a.tier - b.tier || a.chroma - b.chroma || a.folder.localeCompare(b.folder));
-  const top = ranked.filter((r) => r.tier === ranked[0]?.tier).slice(0, PER_ITEM_ROLES.has(role) ? 4 : 1);
-  return top[fnv1a(f.id) % top.length]?.folder ?? null;
+    .map((folder) => ({ folder, miss: toneMiss(folder), tier: styleTierOf(folder, wanted), chroma: LIBRARY.models[folder]?.c ?? 0 }))
+    .sort((a, b) => a.miss - b.miss || a.tier - b.tier || a.chroma - b.chroma || a.folder.localeCompare(b.folder));
+  const top = ranked
+    .filter((r) => r.tier === ranked[0]?.tier && r.miss === ranked[0]?.miss)
+    .slice(0, PER_ITEM_ROLES.has(role) ? 4 : 1);
+  const pick = top[fnv1a(f.id) % top.length]?.folder ?? null;
+  /* Luật `orient` (B), món sinh có mặt trước (giường, tủ…): mẫu nằm ngang hộp → mẫu khác CÙNG HỌ MÀU vừa hướng hơn;
+     không có thì giữ mẫu cũ (không đổi tông chỉ để khớp hướng). Vai đối xứng thì xoay món (`orientedGenerated`). */
+  if (pick === null || !isGenerated(f) || ROTATABLE_ROLES.has(role) || rulesOffOf(style).has('orient') || !misOriented(f, pick)) return pick;
+  const family = LIBRARY.models[pick]?.h;
+  const own = orientedCostOf(f, pick);
+  const better = library
+    .filter((folder) => family !== undefined && LIBRARY.models[folder]?.h === family && orientedCostOf(f, folder) + ORIENT_MARGIN < own)
+    .map((folder) => ({ folder, miss: toneMiss(folder), tier: styleTierOf(folder, wanted), chroma: LIBRARY.models[folder]?.c ?? 0 }))
+    .sort((a, b) => a.miss - b.miss || a.tier - b.tier || a.chroma - b.chroma || a.folder.localeCompare(b.folder));
+  return better[0]?.folder ?? pick;
+};
+
+/**
+ * Luật `orient` (B) cho món sinh vai đối xứng (thảm, bàn trà, bàn ăn): mẫu đã chọn nằm ngang hộp thì xoay MÓN 90°
+ * (đổi hai cạnh hộp — dấu chân trên sàn không đổi) để chính mẫu ấy khớp hộp không méo; giữ đúng mẫu, đúng màu.
+ * Món không phải đồ sinh, hoặc `?disable=orient`, giữ nguyên.
+ */
+export const orientedGenerated = (f: Furniture, style: SceneStyle, usage?: RoomUsage): Furniture => {
+  if (!isGenerated(f) || rulesOffOf(style).has('orient') || !ROTATABLE_ROLES.has(roleOf(f, usage))) return f;
+  const folder = modelFolderOf(f, style, usage);
+  if (folder === null || !misOriented(f, folder)) return f;
+  const { min, max } = f.boundingBox;
+  const cx = (min.x + max.x) / 2;
+  const cy = (min.y + max.y) / 2;
+  const hw = (max.y - min.y) / 2;
+  const hd = (max.x - min.x) / 2;
+  return {
+    ...f,
+    rotationDeg: degrees((f.rotationDeg + 90) % 360),
+    boundingBox: { min: { x: cx - hw, y: cy - hd }, max: { x: cx + hw, y: cy + hd } } as Furniture['boundingBox'],
+  };
 };
 
 /**
