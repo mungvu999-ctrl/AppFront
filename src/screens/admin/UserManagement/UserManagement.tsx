@@ -153,7 +153,8 @@ function renderContent(model: UserManagementViewModel, actions: UserManagementAc
 }
 
 function PagedUserList({ actions, model }: { readonly actions: UserManagementActions; readonly model: UserManagementViewModel }) {
-  const paged = usePaged(model.rows);
+  // Thẻ (khổ hẹp) cao ~270 px: trang ngắn hơn bảng (A-12).
+  const paged = usePaged(model.rows, model.isCollapsed ? 20 : undefined);
   return (
     <>
       <div className={model.isCollapsed ? 'p-5' : undefined}>
@@ -167,7 +168,7 @@ function PagedUserList({ actions, model }: { readonly actions: UserManagementAct
           state={model.state}
         />
       </div>
-      <Pager onPageChange={paged.setPage} page={paged.page} pageCount={paged.pageCount} total={paged.total} />
+      <Pager pageSize={model.isCollapsed ? 20 : 50} onPageChange={paged.setPage} page={paged.page} pageCount={paged.pageCount} total={paged.total} />
     </>
   );
 }

@@ -49,7 +49,7 @@ export function PasswordField({ disabled, id, ...props }: PasswordFieldProps) {
           // Vùng bấm 24 px, 44 px khi con trỏ thô (`coarse:`), icon vẫn 16 px; `-mr-*` ăn vào lề khối suffix để icon gần như không dời (BUG-040).
           // Vòng accent riêng như mọi nút (BUG-036): vòng `focus-within` của ô không nói tiêu điểm đang ở ô hay ở nút.
           // Không `disabled:opacity-*`: ô khoá đã mờ cả khối, mờ thêm ở đây là mờ hai lần.
-          className="-mr-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm outline-hidden coarse:-mr-3 coarse:h-11 coarse:w-11 text-text-muted transition-colors duration-120 hover:text-text-primary focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-surface disabled:cursor-not-allowed"
+          className="-mr-1 inline-flex h-6 w-6 min-h-6 min-w-6 shrink-0 items-center justify-center rounded-sm outline-hidden coarse:-mr-3 coarse:h-11 coarse:w-11 text-text-muted transition-colors duration-120 hover:text-text-primary focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-surface disabled:cursor-not-allowed"
         >
           {isVisible ? (
             <EyeOff aria-hidden="true" className="h-4 w-4" strokeWidth={1.75} />

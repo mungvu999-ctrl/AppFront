@@ -136,7 +136,7 @@ function ProjectStepBar({ project }: { readonly project: AppHeaderProject }) {
                 aria-label={`Bước ${index + 1}: ${step.label}, ${stepStateText(state, index, project.stepIndex)}`}
                 title={step.label}
                 className={cn(
-                  'flex h-7 items-center gap-2 rounded-md px-2 text-[13px] transition-colors duration-fast coarse:min-h-11',
+                  'flex h-7 items-center gap-2 rounded-md px-2 text-[13px] transition-colors duration-fast coarse:min-h-11 coarse:min-w-11',
                   FOCUS_RING,
                   isCurrent ? 'bg-accent-wash font-semibold text-accent' : 'text-text-secondary hover:bg-bg-sunken hover:text-text-primary',
                 )}
@@ -247,7 +247,7 @@ export function AppHeader({ accountInitials, accountLabel, showAdmin, notificati
           // ponytail: hiện cho mọi vai; header không biết vai trong dự án, tab Thành viên tự chặn người không có quyền sửa.
           <Link
             to={`${ROUTES.project.settings(project.id)}?tab=members`}
-            className="flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-[13px] text-text-secondary hover:bg-bg-sunken hover:text-text-primary"
+            className={cn('flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-[13px] text-text-secondary hover:bg-bg-sunken hover:text-text-primary coarse:min-h-11', FOCUS_RING)}
           >
             <Users size={14} aria-hidden="true" />
             Thành viên

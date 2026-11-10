@@ -11,7 +11,7 @@ describe('[UX #11] popover Lọc/Hiển thị', () => {
     fireEvent.click(button);
 
     const dialog = await screen.findByRole('dialog', { name: 'Lọc danh sách' });
-    expect(dialog.querySelector(`#${CSS.escape(button.getAttribute('aria-controls') ?? 'x')}`)).not.toBeNull();
+    expect(document.getElementById(button.getAttribute("aria-controls") ?? "x")).toBe(dialog);
 
     button.focus();
     fireEvent.keyDown(button, { key: 'Tab' });

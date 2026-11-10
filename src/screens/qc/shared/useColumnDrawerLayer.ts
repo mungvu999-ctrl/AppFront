@@ -33,9 +33,11 @@ export function useColumnDrawerLayer(columnRef: RefObject<HTMLElement | null>, o
     const background = Array.from(column.parentElement?.children ?? []).filter(
       (element): element is HTMLElement => element !== column && !element.hasAttribute(SCRIM_ATTR),
     );
-    background.forEach((element) => element.setAttribute('inert', ''));
+    // Kích hoạt bẫy trước khi đặt inert: bẫy nhớ nút mở (đang giữ focus) làm nơi trả về;
+    // inert trước thì nút mở mất focus và bẫy không còn nhớ gì.
     const trap = createFocusTrap(column, { onEscape: onClose });
     trap.activate();
+    background.forEach((element) => element.setAttribute('inert', ''));
     return () => {
       // Bỏ inert trước: nút mở nằm trong nền, release mới focus lại được nó.
       background.forEach((element) => element.removeAttribute('inert'));

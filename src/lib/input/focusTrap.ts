@@ -64,6 +64,14 @@ export function getFocusableElements(container: HTMLElement): readonly HTMLEleme
       return false;
     }
 
+    // Content of a closed <details> (a collapsed menu) is not rendered, so it can neither
+    // take the focus nor be a Tab stop; counting it made the trap focus nothing (UX #4).
+    const closed = element.closest('details:not([open])');
+
+    if (closed !== null && !element.closest('summary')) {
+      return false;
+    }
+
     return element.closest('[hidden], [aria-hidden="true"]') === null;
   });
 }
@@ -220,6 +228,20 @@ export function createFocusTrap(
     const marked = focusable.find((element) => element.hasAttribute('data-autofocus'));
 
     (options.initialFocus ?? marked ?? focusable[0] ?? container).focus();
+
+    // A candidate that cannot take the focus (display:none, inert) leaves it outside:
+    // try the rest, then the container, so the focus never stays behind the layer.
+    for (const element of focusable) {
+      if (container.contains(doc.activeElement)) {
+        break;
+      }
+
+      element.focus();
+    }
+
+    if (!container.contains(doc.activeElement)) {
+      container.focus();
+    }
   };
 
   const release = (): void => {

@@ -3,7 +3,7 @@ import { useState } from 'react';
 
 export const PAGE_SIZE = 50;
 
-export function usePaged<T>(rows: readonly T[], pageSize = PAGE_SIZE) {
+export function usePaged<T>(rows: readonly T[], pageSize: number = PAGE_SIZE) {
   const [requested, setPage] = useState(0);
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   // Lọc làm danh sách ngắn lại thì kẹp về trang cuối, khỏi rơi vào trang trống.

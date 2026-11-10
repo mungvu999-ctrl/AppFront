@@ -218,3 +218,29 @@ describe('[UX #4] ngăn kéo cột việc dưới 1024 là hộp thoại modal',
     vi.unstubAllGlobals();
   });
 });
+
+describe('[UX #4 vòng 2] menu thả đóng đứng đầu cột không nuốt focus', () => {
+  it('focus vào phần tử thấy được đầu tiên, bỏ qua link trong <details> đóng', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: true, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }));
+    render(
+      <QcWorkspace
+        canvas={<p>bv</p>}
+        canvasLabel="Bản vẽ"
+        column
+        left={
+          <>
+            <details>
+              <summary>Dự án</summary>
+              <a href="/x">ẩn trong menu</a>
+            </details>
+            <button type="button">thấy được</button>
+          </>
+        }
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Mở cột việc' }));
+    expect(['SUMMARY', 'BUTTON']).toContain(document.activeElement?.tagName);
+    expect(document.activeElement).not.toBe(screen.getByText('ẩn trong menu'));
+    vi.unstubAllGlobals();
+  });
+});

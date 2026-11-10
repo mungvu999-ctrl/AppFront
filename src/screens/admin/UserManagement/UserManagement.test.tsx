@@ -842,4 +842,14 @@ describe('UX audit 10/11 — nhóm f1 (A-01, A-02, A-03, A-12)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Trang sau' }));
     expect(container.querySelectorAll('tbody tr')).toHaveLength(20);
   });
+
+  it('A-12 (thẻ): 43 người ở khổ hẹp chia trang 20 thẻ', async () => {
+    const UserManagementView = await loadUserManagementView();
+    const seed = USER_MANAGEMENT_SCENARIO_SUCCESS.rows;
+    const rows = Array.from({ length: 43 }, (_, i) => ({ ...(seed[i % seed.length] as (typeof seed)[number]), id: `c-${i}` }));
+    const model: UserManagementViewModel = { ...USER_MANAGEMENT_SCENARIO_SUCCESS, detail: null, isCollapsed: true, rows };
+    const { container } = renderWithProviders(<UserManagementView actions={buildActions()} model={model} />);
+    await screen.findByRole('navigation', { name: 'Phân trang' });
+    expect(container.querySelectorAll('li[class*="rounded-lg"]')).toHaveLength(20);
+  });
 });

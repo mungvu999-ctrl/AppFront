@@ -1,5 +1,5 @@
 import { ChevronDown, Layers } from 'lucide-react';
-import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 import { Popover } from '@/components/overlay/Popover';
 import { Checkbox } from '@/components/ui/Checkbox';
@@ -43,6 +43,14 @@ export function QcDisplayPopover({ groups, label = BUTTON_LABEL, popoverLabel = 
   const [isOpen, setIsOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
   const bodyId = useId();
+  const bodyRef = useRef<HTMLDivElement>(null);
+  /* `Popover` không nhận `id`: đặt id lên chính phần tử `role=dialog` của nó để `aria-controls` trỏ đúng vùng có vai trò và nhãn. */
+  useEffect(() => {
+    const dialog = isOpen ? bodyRef.current?.closest('[role="dialog"]') : null;
+    if (dialog == null) return undefined;
+    dialog.id = bodyId;
+    return () => dialog.removeAttribute('id');
+  }, [isOpen, bodyId]);
   /* #11: lớp nằm cuối `body` (portal), nên Tab từ nút phải dẫn thẳng vào trong thay vì đi hết trang. */
   const enterOnTab = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (!isOpen || event.key !== 'Tab' || event.shiftKey) return;
@@ -84,7 +92,7 @@ export function QcDisplayPopover({ groups, label = BUTTON_LABEL, popoverLabel = 
         <ChevronDown aria-hidden="true" className="h-3.5 w-3.5 text-text-muted" />
       </button>
       <Popover anchorRef={anchorRef} aria-label={popoverLabel} isOpen={isOpen} onClose={() => setIsOpen(false)} width={280}>
-        <div className="flex flex-col gap-3 p-4" id={bodyId}>
+        <div className="flex flex-col gap-3 p-4" ref={bodyRef}>
           {visible.map((group) => (
             <fieldset key={group.title} className="flex flex-col gap-1.5">
               <legend className="mb-1 text-caption font-medium uppercase tracking-[0.06em] text-text-muted">{group.title}</legend>
