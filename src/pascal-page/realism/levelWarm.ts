@@ -133,7 +133,14 @@ const stats = {
   pausedFrames: 0,
   /** Lời gọi vẽ (đã chặn) dài nhất của một vật tầng ấm — ngân sách chỉ kiểm GIỮA các vật. */
   maxObjectMs: 0,
+  /** Phần vẽ thường (không tính việc ấm) của khung ấm dài nhất — tách nguyên nhân khung ấm dài: base hay việc ấm. */
+  maxBaseMs: 0,
+  /** Khung không ấm vì tầng đang hiện còn vật chờ (nhường tầng người dùng vừa chọn). */
+  yieldFrames: 0,
 };
+/** Đo đổi tầng (bộ chọn tầng → `useLevelPreparing`): chọn lúc nào, sẵn sàng lúc nào. */
+const switchStats = { levelId: null as string | null, selectedAt: 0, readyAt: null as number | null, lastWaitMs: null as number | null, maxWaitMs: 0, count: 0, waited: 0 };
+const frameListeners = new Set<() => void>();
 /** Khoá shader chưa dựng gặp trong khung ấm, theo tầng (≈ số bản dựng tầng ấy cần). */
 const keysNeeded = new Map<string, Set<string>>();
 let frameScene: unknown = null;
@@ -247,8 +254,11 @@ export function levelWarmFrame(scene: unknown, draw: () => void): void {
   }
   const paused = root !== null && state.current !== null && interacting();
   if (paused) stats.pausedFrames++; // tầng vẫn là `current`; khung sau hết thao tác ấm tiếp
-  const warm = root && state.current && !paused ? root : null;
-  sampling = wantSample || warm !== null;
+  // Tầng đang hiện còn vật chờ (người dùng vừa chọn tầng chưa ấm) → nhường W2/W1 cho nó; vẫn lấy mẫu để biết lúc xong.
+  const yieldShown = root !== null && state.current !== null && !paused && [...rootIds].some(([o, id]) => o.visible && (lastPending.get(id) ?? 0) > 0);
+  if (yieldShown) stats.yieldFrames++;
+  const warm = root && state.current && !paused && !yieldShown ? root : null;
+  sampling = wantSample || state.current !== null;
   wantSample = false;
   framePending.clear();
   const culled: Obj[] = [];
@@ -270,6 +280,8 @@ export function levelWarmFrame(scene: unknown, draw: () => void): void {
       }
       stats.lastBudgetMs = budgetMs;
     }
+    // Tầng đang hiện mà khung này không vẽ vật nào của nó (tầng rỗng, mọi vật ngoài khung nhìn) = 0 vật chờ.
+    if (sampling) for (const [o, id] of rootIds) if (o.visible) framePending.set(id, 0);
     warmSpent = 0;
     frameScene = scene;
     t0 = performance.now();
@@ -290,12 +302,18 @@ export function levelWarmFrame(scene: unknown, draw: () => void): void {
     }
   }
   sampling = false;
-  if (!warm) return;
-  const total = performance.now() - t0;
+  if (warm) finishWarmFrame(performance.now() - t0);
+  for (const f of [...frameListeners]) f();
+}
+
+function finishWarmFrame(total: number): void {
   stats.warmFrames++;
   stats.lastWarmMs = Math.round(warmSpent);
   stats.lastBaseMs = Math.round(total - warmSpent);
-  stats.maxWarmFrameMs = Math.max(stats.maxWarmFrameMs, Math.round(total));
+  if (Math.round(total) > stats.maxWarmFrameMs) {
+    stats.maxWarmFrameMs = Math.round(total);
+    stats.maxBaseMs = stats.lastBaseMs;
+  }
   budgetMs = warmBudgetMs(total - warmSpent);
   const id = state.current!;
   const pending = framePending.get(id) ?? 0;
@@ -400,10 +418,35 @@ export function levelReadiness(): LevelReadiness[] {
   });
 }
 
+/** Sau mỗi khung sống đã lấy mẫu (`levelWarmFrame`) — tín hiệu thật cho UI hỏi lại `levelReadiness()`. */
+export function onLevelWarmFrame(f: () => void): () => void {
+  frameListeners.add(f);
+  return () => void frameListeners.delete(f);
+}
+
+/** Luật w3 đã áp và khung sống đang chạy qua `levelWarmFrame` (không thì không có tín hiệu để báo xong). */
+export const levelWarmActive = (): boolean => stats.frameCalls > 0;
+
+export function noteLevelSelected(levelId: string, now = performance.now()): void {
+  Object.assign(switchStats, { levelId, selectedAt: now, readyAt: null, lastWaitMs: null, count: switchStats.count + 1 });
+}
+
+/** Tầng vừa chọn báo sẵn sàng (chỉ lần đầu sau `noteLevelSelected` của đúng tầng ấy). */
+export function noteLevelReady(levelId: string, now = performance.now()): void {
+  if (switchStats.levelId !== levelId || switchStats.readyAt !== null) return;
+  switchStats.readyAt = now;
+  switchStats.lastWaitMs = Math.round(now - switchStats.selectedAt);
+  if (switchStats.lastWaitMs > 0) switchStats.waited++;
+  switchStats.maxWaitMs = Math.max(switchStats.maxWaitMs, switchStats.lastWaitMs);
+}
+
 /** Bộ đếm chẩn đoán (đầu dò `levelWarmStats()`). */
 export function levelWarmStats() {
+  const remaining = rootIds.size ? levelInfos().filter((l) => !l.shown && !l.userHidden && !state.warmed.has(l.id)).length : 0;
   return {
     ...stats,
+    remaining,
+    switch: { ...switchStats },
     reject: { ...stats.reject },
     off: URL_OFF,
     current: state.current,

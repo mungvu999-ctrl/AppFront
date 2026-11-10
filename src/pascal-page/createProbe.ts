@@ -50,7 +50,7 @@ export interface PascalProbe {
   reflect(): unknown;
   /** Tầng nào còn đang nạp (`realism/levelWarm.ts` `levelReadiness`); `null` = module chưa nạp (luật w3 chưa áp). */
   levelReadiness(): unknown;
-  /** Bộ đếm làm ấm tầng ẩn (`levelWarmStats`): lượt rảnh, lý do từ chối, khung ấm, khoá shader; `null` như trên. */
+  /** Bộ đếm làm ấm tầng ẩn (`levelWarmStats`): lượt rảnh, lý do từ chối, khung ấm (`maxWarmFrameMs`/`maxBaseMs`/`maxObjectMs`), tầng còn chờ ấm (`remaining`), đổi tầng → sẵn sàng (`switch.lastWaitMs`/`maxWaitMs`); `null` như trên. */
   levelWarmStats(): unknown;
   /** Đổi nút vật liệu/phơi sáng lúc chạy (đo biến thể cùng một lần nạp): nhiễu bề mặt, kính, exposure. */
   setLook(v: { surf?: { rough?: number; albedo?: number; scale?: number }; exposure?: number; grade?: { contrast?: number; saturation?: number } }): void;
