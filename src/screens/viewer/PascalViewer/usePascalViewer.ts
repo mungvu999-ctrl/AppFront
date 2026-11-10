@@ -385,11 +385,13 @@ export function usePascalViewer({
     echoPending.current = false;
 
     // `diff` nạp cùng lượt: nhập tĩnh thì nó vào chunk của màn bản xem/di động.
-    Promise.all([import('@/lib/pascal/toPascal'), import('@/lib/pascal/diff')])
+    Promise.all([import('@/lib/pascal/toPascal'), import('@/lib/pascal/diff'), import('@/lib/pascal/sceneLibrary')])
       .catch((error: unknown) => {
         converterChunkFailed.current = true;
         throw error;
       })
+      // Thư viện máy chủ chốt TRƯỚC khi dựng (cùng điểm vào với editor); `cancelled` bỏ kết quả của bản vẽ cũ.
+      .then(async ([pascal, diffs, { ensureSceneLibrary }]) => [pascal, diffs, await ensureSceneLibrary()] as const)
       .then(([{ toPascalScene }, { diffScenes, isEmptyDiff }]) => {
         if (cancelled) return;
         const converted = toPascalScene(graph);

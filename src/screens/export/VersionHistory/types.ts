@@ -211,6 +211,8 @@ export interface VisualDiffModel {
   readonly unavailableReason: string | null;
   /** Trạng thái 3: đang dựng cảnh. */
   readonly isBuilding: boolean;
+  /** Câu báo khi cảnh dựng bằng mẫu dự phòng vì đọc thư viện máy chủ hỏng; `null`/thiếu = không báo. */
+  readonly libraryNotice?: string | null;
   /**
    * Câu nói thẳng rằng đây là mô hình HIỆN TẠI, không phải bản cũ, và bao nhiêu đối tượng
    * đang được đánh dấu. Bắt buộc hiện — người đọc không được phép tưởng đây là bản cũ.

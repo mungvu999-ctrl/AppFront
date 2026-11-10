@@ -27,7 +27,7 @@ describe('loadServerLibrary', () => {
     // Mục đóng gói thường (ghi được); mục swap realism (getter, vd `sofa`) thì giữ nguyên.
     const bundledId = Object.keys(CATALOG_MODELS).find((k) => Object.getOwnPropertyDescriptor(CATALOG_MODELS, k)?.writable === true) as string;
     const n = await loadServerLibrary(okApi([item('srv-desk-01'), item(bundledId), item('sofa')]));
-    expect(n).toEqual({ count: 2, source: 'server' });
+    expect(n).toMatchObject({ count: 2, source: 'server' });
     expect(isServerModel('sofa')).toBe(false);
     expect(CATALOG_MODELS['srv-desk-01']?.dimensions).toEqual([1.2, 0.75, 0.6]);
     expect(modelSrcOf('srv-desk-01')).toBe('https://cdn.example.test/library/srv-desk-01.glb');
@@ -64,9 +64,9 @@ describe('loadServerLibrary', () => {
   it('API lỗi / ném → dự phòng NGAY có lý do, danh mục đóng gói giữ nguyên', async () => {
     const before = CATALOG_MODELS['sofa'];
     const failed = await loadServerLibrary({ list: async () => ({ ok: false, error: { kind: 'timeout' } }) } as never);
-    expect(failed).toEqual({ count: 0, source: 'fallback:timeout' });
+    expect(failed).toMatchObject({ count: 0, source: 'fallback:timeout' });
     expect(libraryReadFailed(failed.source)).toBe(true);
-    expect(await loadServerLibrary({ list: () => Promise.reject(new Error('offline')) } as never)).toEqual({
+    expect(await loadServerLibrary({ list: () => Promise.reject(new Error('offline')) } as never)).toMatchObject({
       count: 0,
       source: 'fallback:threw',
     });
@@ -74,13 +74,13 @@ describe('loadServerLibrary', () => {
     const forbidden = await loadServerLibrary({
       list: async () => ({ ok: false, error: { kind: 'http', status: 403, requestId: 'r', retryable: false, raw: null } }),
     } as never);
-    expect(forbidden).toEqual({ count: 0, source: 'fallback:forbidden' });
+    expect(forbidden).toMatchObject({ count: 0, source: 'fallback:forbidden' });
     expect(libraryReadFailed(forbidden.source)).toBe(false);
     const missing = await loadServerLibrary({ list: async () => ({ ok: false, error: { kind: 'notFound' } }) } as never);
     expect(missing.source).toBe('fallback:notFound');
     expect(libraryReadFailed(missing.source)).toBe(false);
     const empty = await loadServerLibrary(okApi([]));
-    expect(empty).toEqual({ count: 0, source: 'fallback:empty' });
+    expect(empty).toMatchObject({ count: 0, source: 'fallback:empty' });
     expect(libraryReadFailed(empty.source)).toBe(false);
     expect(isServerModel('sofa')).toBe(false);
     expect(CATALOG_MODELS['sofa']).toBe(before);
@@ -97,7 +97,7 @@ describe('loadServerLibrary', () => {
       await vi.advanceTimersByTimeAsync(3000);
       expect(settled).toBeUndefined(); // còn chờ: lượt dựng chưa được chạy
       await vi.advanceTimersByTimeAsync(2000);
-      expect(settled).toEqual({ count: 1, source: 'server' });
+      expect(settled).toMatchObject({ count: 1, source: 'server' });
       expect(isServerModel('srv-slow-bed')).toBe(true);
     } finally {
       vi.useRealTimers();

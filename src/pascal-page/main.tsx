@@ -322,11 +322,11 @@ if (projectId) {
 // nội dung cảnh không phụ thuộc tốc độ máy/mạng). Lỗi/offline → danh mục đóng gói + thông báo (serverLibrary.ts).
 // Mở phiên TRƯỚC: token chỉ ở bộ nhớ, gọi ngay lúc tải trang là 401 và mất thư viện máy chủ (e2e fullstack
 // bước 11). `startAppSession` nhớ lượt đang chạy nên cầu (`bridge/loadProject`) dùng lại đúng lượt này.
-const serverLibraryLoaded: Promise<LibrarySource> = Promise.all([import('@/api/appClient'), import('@/routes/sessionSetup')])
-  .then(async ([{ createAppApiClient }, { startAppSession }]): Promise<LibrarySource> => {
-    if (!(await startAppSession())) return 'fallback:no-session';
-    const { loadServerLibrary } = await import('@/lib/pascal/serverLibrary');
-    const { source } = await loadServerLibrary(createAppApiClient().library);
+// Cùng điểm vào với lịch sử phiên bản và viewer di động (`sceneLibrary.ts`): cùng danh mục, cùng phiên bản, cùng fallback.
+const serverLibraryLoaded: Promise<LibrarySource> = import('@/lib/pascal/sceneLibrary')
+  .then(async ({ ensureSceneLibrary }): Promise<LibrarySource> => {
+    const { source, version } = await ensureSceneLibrary();
+    sceneTrace.source('libraryVersion', version);
     // Bảng đồ Pascal chỉ đọc `CATALOG_ITEMS`: có mẫu máy chủ thì thay mẫu đóng gói bằng chúng (giữ công cụ).
     CATALOG_ITEMS.splice(0, CATALOG_ITEMS.length, ...libraryOnlyCatalog(CATALOG_ITEMS, serverCatalogTiles()));
     return source;

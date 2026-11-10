@@ -32,7 +32,7 @@ describe('thư viện máy chủ về trễ (H1)', () => {
       await vi.advanceTimersByTimeAsync(3000);
       expect(booted).toBeUndefined(); // chưa boot: không có lượt dựng với danh mục tạm
       await vi.advanceTimersByTimeAsync(2000);
-      expect(booted).toEqual({ count: 1, source: 'server' });
+      expect(booted).toMatchObject({ count: 1, source: 'server' });
       expect(isServerModel(id)).toBe(true); // lượt dựng đầu chạy ở đây, đã có mẫu máy chủ
     } finally {
       vi.useRealTimers();

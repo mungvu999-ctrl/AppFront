@@ -84,3 +84,11 @@ describe('câu hướng dẫn của khối 3D', () => {
     expect(screen.queryByText(/phần đã thêm, xoá hoặc sửa được tô sáng/)).toBeNull();
   });
 });
+
+describe('câu báo dự phòng thư viện', () => {
+  it('hiện câu báo khi cảnh dựng bằng mẫu dự phòng', () => {
+    loadMount.mockReturnValue(new Promise(() => undefined));
+    render(<VersionVisualDiff visual={visual({ libraryNotice: 'Chưa tải được thư viện nội thất' })} />);
+    expect(screen.getByText('Chưa tải được thư viện nội thất')).toBeTruthy();
+  });
+});

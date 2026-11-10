@@ -29,7 +29,12 @@ export function mountMobileViewerPascal(
   let disposed = false;
   let handle: { readonly dispose: () => void } | null = null;
 
-  Promise.all([defaultLoadMount(), import('@/lib/pascal/sceneStandard')])
+  // Thư viện máy chủ chốt TRƯỚC khi dựng cảnh — cùng điểm vào với editor (`ensureSceneLibrary`).
+  Promise.all([
+    defaultLoadMount(),
+    import('@/lib/pascal/sceneStandard'),
+    import('@/lib/pascal/sceneLibrary').then(({ ensureSceneLibrary }) => ensureSceneLibrary()),
+  ])
     .then(([module, { standardSceneOf }]) => {
       if (disposed) {
         return;

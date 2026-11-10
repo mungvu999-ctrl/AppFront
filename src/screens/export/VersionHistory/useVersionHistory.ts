@@ -25,6 +25,7 @@
 import { useInfiniteQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { ensureSceneLibrary, sceneLibraryNow, type SceneLibrary } from '@/lib/pascal/sceneLibrary';
 import type { FloorVersionSummary } from '@/api/schemas/versions';
 import { flushAutosaves, useFloorLayerAutosave } from '@/hooks/useAutosave';
 import { formatDuration } from '@/lib/format/datetime';
@@ -85,7 +86,7 @@ import {
   unsavedEditsNotice,
 } from './versionHistoryModel';
 import { buildPlanDiffModel, entityCountsOf, togglePinned } from './versionHistoryPlan';
-import { buildVisualModel, convertScene, graphOfVersion, isEmptySource } from './versionHistoryScene';
+import { buildVisualModel, convertScene, graphOfVersion, isEmptySource, NO_SCENE } from './versionHistoryScene';
 
 /** Lượt N18 cùng lúc. */
 export const SNAPSHOT_CONCURRENCY = 2;
@@ -364,7 +365,17 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
     () => (sceneSource === undefined ? graph : (graphOfVersion(graph, sceneSource) ?? graph)),
     [graph, sceneSource],
   );
-  const scene = useMemo(() => convertScene(sceneGraph), [sceneGraph]);
+  // Thư viện máy chủ chốt TRƯỚC khi dựng cảnh — cùng điểm vào/phiên bản/fallback với editor (`ensureSceneLibrary`).
+  const [library, setLibrary] = useState<SceneLibrary | null>(sceneLibraryNow);
+  useEffect(() => {
+    if (library !== null) return undefined;
+    let live = true;
+    void ensureSceneLibrary().then((loaded) => live && setLibrary(loaded));
+    return () => {
+      live = false;
+    };
+  }, [library]);
+  const scene = useMemo(() => (library === null ? NO_SCENE : convertScene(sceneGraph)), [sceneGraph, library]);
   const plan = useMemo(
     () =>
       diff === null || leftSource === undefined || rightSource === undefined
@@ -392,12 +403,15 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
           null,
         hoveredEntityId,
         isFetchingDiff: pairFetching,
+        libraryPending: library === null,
+        libraryNotice: library?.notice ?? null,
       }),
     [
       gateway.capabilities,
       graph,
       sceneGraph,
       scene,
+      library,
       diff,
       builds,
       leftVersionId,

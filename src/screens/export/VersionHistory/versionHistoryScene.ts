@@ -140,6 +140,10 @@ export interface VisualModelInput {
   readonly isOldVersion?: boolean;
   /** Bản gốc trống nên cảnh dựng bản ĐỐI CHIẾU; `leftVersionLabel` khi đó là nhãn bản đối chiếu. */
   readonly isTargetVersion?: boolean;
+  /** Thư viện mẫu chưa chốt: cảnh chờ, không dựng bằng danh mục đóng gói rồi đổi mẫu sau. */
+  readonly libraryPending?: boolean;
+  /** Câu báo dự phòng thư viện (`LIBRARY_FALLBACK_NOTICE`), `null` khi thư viện máy chủ dùng được. */
+  readonly libraryNotice?: string | null;
 }
 
 /**
@@ -156,7 +160,8 @@ export interface VisualModelInput {
  */
 export function buildVisualModel(input: VisualModelInput): VisualDiffModel {
   const { capabilities, graph, scene, diff, leftVersionLabel } = input;
-  const isAvailable = capabilities.canShowCurrentModel3d && scene.scene !== null;
+  const pending = input.libraryPending === true && graph !== null;
+  const isAvailable = capabilities.canShowCurrentModel3d && (scene.scene !== null || pending);
   const found = diff === null ? [] : [...new Set(changedEntityIdsOf(diff).map(planEntityIdOf))];
   const changedEntityIds =
     graph === null ? found : found.filter((id) => graph.byId[id] !== undefined);
@@ -169,13 +174,14 @@ export function buildVisualModel(input: VisualModelInput): VisualDiffModel {
 
   return {
     isAvailable,
-    unavailableReason: unavailableReasonOf(
+    unavailableReason: pending && capabilities.canShowCurrentModel3d ? null : unavailableReasonOf(
       capabilities.canShowCurrentModel3d,
       graph,
       scene,
       input.isOldVersion === true ? leftVersionLabel : null,
     ),
-    isBuilding: isAvailable && input.isFetchingDiff,
+    isBuilding: isAvailable && (input.isFetchingDiff || pending),
+    libraryNotice: input.libraryNotice ?? null,
     caption:
       input.isTargetVersion === true && leftVersionLabel !== null
         ? `Đây là phiên bản ${leftVersionLabel} (bản đối chiếu, vì bản gốc chưa có đối tượng nào); ${marked}`

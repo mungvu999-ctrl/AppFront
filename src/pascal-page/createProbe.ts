@@ -379,7 +379,7 @@ const MAX_BUILDS = 50;
 export const createSceneTrace = (enabled: boolean, now: () => number = () => performance.now()) => {
   let generation = 0;
   const builds: SceneBuild[] = [];
-  const sources: { library?: string; concept?: string } = {};
+  const sources: { library?: string; libraryVersion?: string; concept?: string } = {};
   const settled = (): boolean => sources.library !== undefined && sources.concept !== undefined;
   const lastBuilt = (): SceneBuild | undefined => [...builds].reverse().find((b) => b.applied === 'built');
   return {
@@ -389,8 +389,9 @@ export const createSceneTrace = (enabled: boolean, now: () => number = () => per
     /**
      * Nguồn dữ liệu cuối của cảnh (S2 vòng 8): `library` = `server` | `fallback:<lý do>`, `concept` = `done` | `none` |
      * `fallback:<lý do>`. Ghi cả khi tắt (hai chuỗi): `ready` cần biết không còn lượt đọc nào treo.
+     * `libraryVersion` = phiên bản thư viện chung (`ensureSceneLibrary`), so được với lịch sử phiên bản / viewer di động.
      */
-    source(key: 'library' | 'concept', value: string): void {
+    source(key: 'library' | 'libraryVersion' | 'concept', value: string): void {
       sources[key] = value;
     },
     settled,

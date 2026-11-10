@@ -97,3 +97,25 @@ describe('tô sáng trên cảnh bản gốc', () => {
     );
   });
 });
+
+describe('thư viện mẫu chung (ensureSceneLibrary)', () => {
+  const base = {
+    capabilities: { canShowCurrentModel3d: true, canHighlightEntity: true } as never,
+    graph: current,
+    diff: null,
+    leftVersionLabel: null,
+    hoveredEntityId: null,
+    isFetchingDiff: false,
+  };
+
+  it('thư viện chưa chốt: đang dựng, chưa có cảnh, không báo "hỏng" (không dựng trước bằng danh mục đóng gói)', () => {
+    const model = buildVisualModel({ ...base, scene: { scene: null, failed: false }, libraryPending: true });
+    expect(model).toMatchObject({ isAvailable: true, isBuilding: true, unavailableReason: null, scene: null });
+  });
+
+  it('dự phòng vì đọc hỏng: câu báo đi theo mô hình view', () => {
+    const model = buildVisualModel({ ...base, scene: convertScene(current), libraryNotice: 'báo' });
+    expect(model.libraryNotice).toBe('báo');
+    expect(buildVisualModel({ ...base, scene: convertScene(current) }).libraryNotice).toBeNull();
+  });
+});
