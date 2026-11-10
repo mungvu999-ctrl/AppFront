@@ -137,6 +137,10 @@ const stats = {
   maxBaseMs: 0,
   /** Khung không ấm vì tầng đang hiện còn vật chờ (nhường tầng người dùng vừa chọn). */
   yieldFrames: 0,
+  /** Vật chưa dựng bị dời sang khung sau vì thời gian dựng trung bình (`avgColdMs`) sẽ vượt ngân sách còn lại. */
+  predictSkips: 0,
+  /** Trung bình trượt thời gian một vật CHƯA dựng trong khung ấm (W2 khởi động bản dựng đồng bộ trong lời gọi). */
+  avgColdMs: 0,
 };
 /** Đo đổi tầng (bộ chọn tầng → `useLevelPreparing`): chọn lúc nào, sẵn sàng lúc nào. */
 const switchStats = { levelId: null as string | null, selectedAt: 0, readyAt: null as number | null, lastWaitMs: null as number | null, maxWaitMs: 0, count: 0, waited: 0 };
@@ -372,6 +376,8 @@ export function installLevelWarm(renderer: unknown, off = URL_OFF): void {
       need.add(key);
     }
     if (warmSpent >= budgetMs) return void stats.budgetSkips++;
+    // Ngân sách chỉ kiểm GIỮA các vật: vật chưa dựng dự kiến vượt phần còn lại → để khung sau (vật đầu khung luôn được làm).
+    if (!built && warmSpent > 0 && warmSpent + stats.avgColdMs > budgetMs) return void stats.predictSkips++;
     if (!built) stats.keysStarted++;
     stats.warmObjects++;
     const draw = backend.draw;
@@ -384,6 +390,7 @@ export function installLevelWarm(renderer: unknown, off = URL_OFF): void {
       const spent = performance.now() - t;
       warmSpent += spent;
       if (spent > stats.maxObjectMs) stats.maxObjectMs = Math.round(spent);
+      if (!built) stats.avgColdMs = stats.avgColdMs === 0 ? spent : stats.avgColdMs + (spent - stats.avgColdMs) * 0.2;
     }
   };
 }

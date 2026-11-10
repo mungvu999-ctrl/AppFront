@@ -66,12 +66,13 @@ describe('levelWarm: ngân sách khung, nhường tầng đang hiện, tín hi�
     expect(lw.levelWarmStats().current).toBe('L2');
     expect(lw.levelWarmStats().remaining).toBe(2);
 
-    // Ngân sách 50 ms: vật 1 (30) + vật 2 (60 ≥ 50) rồi dừng; vật 3 để khung sau.
+    // Ngân sách 50 ms: vật 1 (30 ms, chưa dựng); vật 2 dự kiến 30 + 30 > 50 → dời sang khung sau, khung không vượt.
     lw.levelWarmFrame(scene, drawAll([m2, m3, m4]));
     let s = lw.levelWarmStats();
-    expect(s.warmObjects).toBe(2);
-    expect(s.budgetSkips).toBe(1);
-    expect(s.maxWarmFrameMs).toBe(60);
+    expect(s.warmObjects).toBe(1);
+    expect(s.predictSkips).toBe(2);
+    expect(s.avgColdMs).toBe(30);
+    expect(s.maxWarmFrameMs).toBe(30);
     expect(s.maxBaseMs).toBe(0);
 
     // Người dùng chọn L3 (chưa ấm): L3 hiện, còn vật chờ → khung sau KHÔNG ấm L2 (nhường), vẫn lấy mẫu.
