@@ -70,6 +70,15 @@ describe('loadServerLibrary', () => {
       count: 0,
       source: 'fallback:threw',
     });
+    // 403/404 = không được phép / không có: dự phòng nhưng không báo "chưa tải được".
+    const forbidden = await loadServerLibrary({
+      list: async () => ({ ok: false, error: { kind: 'http', status: 403, requestId: 'r', retryable: false, raw: null } }),
+    } as never);
+    expect(forbidden).toEqual({ count: 0, source: 'fallback:forbidden' });
+    expect(libraryReadFailed(forbidden.source)).toBe(false);
+    const missing = await loadServerLibrary({ list: async () => ({ ok: false, error: { kind: 'notFound' } }) } as never);
+    expect(missing.source).toBe('fallback:notFound');
+    expect(libraryReadFailed(missing.source)).toBe(false);
     const empty = await loadServerLibrary(okApi([]));
     expect(empty).toEqual({ count: 0, source: 'fallback:empty' });
     expect(libraryReadFailed(empty.source)).toBe(false);

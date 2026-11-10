@@ -360,6 +360,25 @@ describe('usePascalProjectBridge', () => {
     expect(vi.mocked(standardSceneOf).mock.calls[0]?.[1]).toMatchObject({ furnish: 'on' });
   });
 
+  it.each([
+    ['403 (vai chỉ đọc)', { kind: 'http', status: 403, requestId: 'r', retryable: false, raw: null }],
+    ['404 (không có concept)', { kind: 'notFound', code: 'X', messageKey: 'k', params: {}, requestId: 'r', retryable: false }],
+  ])('S2 vòng 8 — concept %s: như không có (none), không báo lỗi tải', async (_label, error) => {
+    conceptApi.read = { ok: false, error };
+    const { result } = renderHook(() => usePascalProjectBridge('p1'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(sceneTrace.state().concept).toBe('none');
+    expect(textsOf(result.current)).toEqual([]);
+  });
+
+  it('S2 vòng 8 — nạp dự án hỏng: nguồn concept vẫn chốt (error) để ready() không kẹt', async () => {
+    sceneTrace.source('concept', 'done');
+    detail.fail = true;
+    const { result } = renderHook(() => usePascalProjectBridge('p1'));
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    expect(sceneTrace.state().concept).toBe('error');
+  });
+
   it('S2 vòng 8 — thư viện máy chủ đọc lỗi: thông báo dự phòng; thư viện máy chủ / trống: không báo', async () => {
     const timedOut = Promise.resolve('fallback:timeout' as const);
     const failed = renderHook(() => usePascalProjectBridge('p1', undefined, undefined, timedOut));

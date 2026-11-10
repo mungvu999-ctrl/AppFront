@@ -20,7 +20,7 @@ import { readWireError } from '@/lib/errors/wireError';
 import type { DesignAddition, DesignConcept, DesignConceptState, DesignStyleId } from '@/api/schemas/designConcept';
 import { sceneStyleFromConcept } from '@/lib/pascal/designStyles';
 import { CATALOG_MODELS, isServerModel } from '@/lib/pascal/furnitureCatalog';
-import { LIBRARY_FALLBACK_NOTICE, libraryReadFailed, type LibrarySource } from '@/lib/pascal/serverLibrary';
+import { absenceOf, LIBRARY_FALLBACK_NOTICE, libraryReadFailed, type LibrarySource } from '@/lib/pascal/serverLibrary';
 import { readSceneStyle, SCENE_STYLES, type SceneStyle, type SceneStyleId } from '@/lib/pascal/sceneStyles';
 import { toPascalId } from '@/lib/pascal/ids';
 import { createRepairSession, sessionRepairs } from '@/lib/pascal/sceneRepair';
@@ -244,7 +244,9 @@ async function loadProject(projectId: string): Promise<{
      âm thầm). Giới hạn thời gian là của client HTTP chung; lỗi/ném → dự phòng có lý do (AID-01). */
   const conceptRead = (async (): Promise<{ readonly state: DesignConceptState | null; readonly failure?: string }> => {
     const result = await client.designConcept.read({ projectId });
-    return result.ok ? { state: result.data } : { state: null, failure: result.error.kind };
+    if (result.ok) return { state: result.data };
+    // 403/404: không được phép / không có concept — như "không có", không báo lỗi tải.
+    return absenceOf(result.error) === undefined ? { state: null, failure: result.error.kind } : { state: null };
   })().catch(() => ({ state: null, failure: 'threw' }));
   const floorsRead = (async () => {
     const result = await client.floors.list({ projectId });
@@ -389,7 +391,11 @@ export function usePascalProjectBridge(
         setLoad({ status: 'ready', projectName, style, additions, furnish });
         if (concept.startsWith('fallback:')) push('info', CONCEPT_FALLBACK_NOTICE);
       },
-      (error: unknown) => !cancelled && setLoad({ status: 'error', error: messageOf(error) }),
+      (error: unknown) => {
+        // Trang lỗi cũng là "đã chốt": `ready()` không kẹt false (E2E/kit chờ nó).
+        sceneTrace.source('concept', 'error');
+        if (!cancelled) setLoad({ status: 'error', error: messageOf(error) });
+      },
     );
 
     return () => {

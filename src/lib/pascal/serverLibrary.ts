@@ -1,4 +1,5 @@
-import type { LibraryApi } from '@/api/client';
+import type { ApiError, LibraryApi } from '@/api/client';
+import { readWireError } from '@/lib/errors/wireError';
 
 import { registerServerLibrary } from './furnitureCatalog';
 
@@ -13,9 +14,22 @@ export interface LibraryLoad {
 /** Câu báo khi đọc thư viện máy chủ HỎNG (không báo khi thư viện trống hay chưa có phiên). */
 export const LIBRARY_FALLBACK_NOTICE = 'Chưa tải được thư viện nội thất, đang hiện mẫu dự phòng. Tải lại trang để thử lại.';
 
-/** Dự phòng vì lượt đọc hỏng (người dùng cần biết) — khác dự phòng vì thư viện trống / chưa có phiên. */
-export const libraryReadFailed = (source: LibrarySource): boolean =>
-  source !== 'server' && source !== 'fallback:empty' && source !== 'fallback:no-session';
+/**
+ * 403/404 = máy chủ trả lời rõ "không được phép / không có" (vai chỉ đọc, tính năng tắt), KHÔNG phải lỗi tải:
+ * dùng dự phòng nhưng không báo. Chỉ mạng/hết hạn/5xx/giải mã mới là "chưa tải được".
+ */
+export const absenceOf = (error: ApiError): 'forbidden' | 'notFound' | undefined => {
+  const status = readWireError(error)?.status;
+  if (error.kind === 'forbidden' || status === 403) return 'forbidden';
+  if (error.kind === 'notFound' || status === 404) return 'notFound';
+  return undefined;
+};
+
+/** Nguồn dự phòng không cần báo: thư viện trống, chưa có phiên, không được phép, không có. */
+const QUIET_FALLBACKS: ReadonlySet<string> = new Set(['fallback:empty', 'fallback:no-session', 'fallback:forbidden', 'fallback:notFound']);
+
+/** Dự phòng vì lượt đọc hỏng (người dùng cần biết). */
+export const libraryReadFailed = (source: LibrarySource): boolean => source !== 'server' && !QUIET_FALLBACKS.has(source);
 
 /**
  * Nạp thư viện nội thất máy chủ (`GET /api/library`) vào danh mục Pascal trước khi dựng cảnh.
@@ -26,7 +40,7 @@ export const libraryReadFailed = (source: LibrarySource): boolean =>
 export async function loadServerLibrary(api: Pick<LibraryApi, 'list'>): Promise<LibraryLoad> {
   try {
     const result = await api.list();
-    if (!result.ok) return { count: 0, source: `fallback:${result.error.kind}` };
+    if (!result.ok) return { count: 0, source: `fallback:${absenceOf(result.error) ?? result.error.kind}` };
     const count = registerServerLibrary(result.data);
     return { count, source: count > 0 ? 'server' : 'fallback:empty' };
   } catch {
