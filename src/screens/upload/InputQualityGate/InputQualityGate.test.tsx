@@ -907,7 +907,7 @@ describe('InputQualityGate — NO-361: chưa có bản vẽ thì không đi ti�
     await mountScreen(clock, { onNavigate });
 
     const nav = screen.getByRole('navigation', { name: 'Đường dẫn trang' });
-    fireEvent.click(within(nav).getByRole('button', { name: 'Dự án' }));
+    fireEvent.click(within(nav).getByRole('link', { name: 'Dự án' }));
 
     expect(onNavigate).toHaveBeenCalledWith('/');
   });

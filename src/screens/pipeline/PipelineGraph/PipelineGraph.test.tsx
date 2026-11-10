@@ -140,7 +140,7 @@ describe('PipelineGraph — breadcrumb (BUG-546, BUG-558)', () => {
 
     const nav = screen.getByRole('navigation', { name: 'Đường dẫn trang' });
     expect(screen.queryByRole('navigation', { name: PIPELINE_GRAPH_TEXT.title })).toBeNull();
-    fireEvent.click(within(nav).getByRole('button', { name: 'Dự án' }));
+    fireEvent.click(within(nav).getByRole('link', { name: 'Dự án' }));
     expect(onBackToProjects).toHaveBeenCalledTimes(1);
   });
 });

@@ -574,7 +574,7 @@ describe('breadcrumb chung (BUG-079)', () => {
     renderWithProviders(<FloorManager {...scenarioArgsFor('success')} onBackToProjects={onBackToProjects} />);
 
     const nav = screen.getByRole('navigation', { name: 'Đường dẫn trang' });
-    fireEvent.click(within(nav).getByRole('button', { name: 'Dự án' }));
+    fireEvent.click(within(nav).getByRole('link', { name: 'Dự án' }));
 
     expect(onBackToProjects).toHaveBeenCalledTimes(1);
   });
@@ -583,7 +583,7 @@ describe('breadcrumb chung (BUG-079)', () => {
     renderWithProviders(<FloorManager {...scenarioArgsFor('success')} onBackToProjects={vi.fn()} />);
     const nav = screen.getByRole('navigation', { name: 'Đường dẫn trang' });
 
-    expect(within(nav).getByRole('button', { name: 'Dự án' })).toHaveClass('min-h-11', 'min-w-11', 'fine:min-h-6', 'fine:min-w-0');
+    expect(within(nav).getByRole('link', { name: 'Dự án' })).toHaveClass('min-h-11', 'min-w-11', 'fine:min-h-6', 'fine:min-w-0');
   });
 });
 
