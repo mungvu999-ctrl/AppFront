@@ -19,6 +19,8 @@ import { getSessionSnapshot } from '@/lib/auth/state';
 import { readWireError } from '@/lib/errors/wireError';
 import type { DesignAddition, DesignConcept, DesignConceptState, DesignStyleId } from '@/api/schemas/designConcept';
 import { sceneStyleFromConcept } from '@/lib/pascal/designStyles';
+import { CATALOG_MODELS, isServerModel } from '@/lib/pascal/furnitureCatalog';
+import { absenceOf, LIBRARY_FALLBACK_NOTICE, libraryReadFailed, type LibrarySource } from '@/lib/pascal/serverLibrary';
 import { readSceneStyle, SCENE_STYLES, type SceneStyle, type SceneStyleId } from '@/lib/pascal/sceneStyles';
 import { toPascalId } from '@/lib/pascal/ids';
 import { createRepairSession, sessionRepairs } from '@/lib/pascal/sceneRepair';
@@ -31,6 +33,7 @@ import { selectViewerSpatial } from '@/screens/viewer/ViewerShell/viewerShellGat
 import { useStore } from '@/store';
 import type { ProjectRole } from '@/types/project';
 
+import { sceneTrace, summarizeScene } from '../createProbe';
 import { sceneRepairStore } from '../sceneRepairStore';
 import { scaleStatusOf } from '../useScaleStatus';
 import { resolveBackHref } from './backHref';
@@ -44,6 +47,8 @@ export const BRIDGE_SESSION_ERROR = 'Phiên đăng nhập đã hết. Đăng nh�
 export const BRIDGE_NOT_FOUND_ERROR = 'Không tìm thấy dự án này, hoặc bạn chưa được thêm vào dự án.';
 export const BRIDGE_LOAD_ERROR = 'Không tải được mô hình của dự án. Tải lại trang để thử lại.';
 export const BRIDGE_EMPTY_ERROR = 'Dự án chưa có mô hình để mở trong 3D.';
+/** Đọc concept AI (N47) hỏng: cảnh mở với phong cách cũ + tự bày đồ — báo rõ, không âm thầm. */
+export const CONCEPT_FALLBACK_NOTICE = 'Chưa tải được phong cách thiết kế AI, đang hiện phong cách dự phòng. Tải lại trang để thử lại.';
 
 /** Câu khi lượt gửi N16 hỏng mà không có dải khối nào nêu lý do. */
 export const BRIDGE_SAVE_FAILED = 'Lưu thất bại. Kiểm tra mạng rồi sửa tiếp để thử lại.';
@@ -147,9 +152,6 @@ export interface ProjectDesignConcept {
   readonly read: () => Promise<DesignConceptState>;
 }
 
-/** Đọc N47 lúc mở trang: lỗi hoặc quá 3 s → `null`, trang mở với phong cách cũ (AID-01). */
-const DESIGN_CONCEPT_TIMEOUT_MS = 3000;
-
 let projectSceneStyle: ProjectSceneStyle | null = null;
 
 /** Phong cách của dự án đang mở; `null` trước khi cầu nạp xong. */
@@ -204,6 +206,10 @@ export async function savePascalNow(): Promise<void> {
   await lastSave;
 }
 
+// `?probe=1`: nhật ký lượt dựng đếm mẫu thư viện máy chủ (giả thuyết H1: thư viện về sau lượt dựng).
+const serverModelCount = (): number => Object.keys(CATALOG_MODELS).filter(isServerModel).length;
+if (sceneTrace.enabled) sceneTrace.countServerModels = serverModelCount;
+
 const messageOf = (error: unknown): string => {
   if (error instanceof BridgeLoadError) return error.message;
 
@@ -216,7 +222,7 @@ const messageOf = (error: unknown): string => {
 
 /**
  * Đồ bày trong 3D: có concept AI đã xong → AI quyết (không tự bày, chỉ đồ AI bổ sung); không có
- * (Design Director tắt, chưa chạy, lỗi, hết giờ đọc) → tự bày phòng trống làm dự phòng.
+ * (Design Director tắt, chưa chạy, đọc lỗi) → tự bày phòng trống làm dự phòng.
  */
 export const furnishModeOf = (concept: DesignConcept['result']): 'on' | 'off' => (concept === undefined ? 'on' : 'off');
 
@@ -225,6 +231,8 @@ async function loadProject(projectId: string): Promise<{
   readonly style: SceneStyle;
   readonly additions: readonly DesignAddition[];
   readonly furnish: 'on' | 'off';
+  /** `done` | `none` | `fallback:<lý do>` (đọc N47 hỏng). */
+  readonly concept: string;
 }> {
   if (!(await startAppSession())) throw new BridgeLoadError(BRIDGE_SESSION_ERROR);
 
@@ -236,16 +244,14 @@ async function loadProject(projectId: string): Promise<{
     const result = await client.projectSettings.read({ projectId });
     return result.ok ? result.data : null;
   })().catch(() => null);
-  let conceptTimer: ReturnType<typeof setTimeout> | undefined;
-  const conceptRead = Promise.race([
-    (async () => {
-      const result = await client.designConcept.read({ projectId });
-      return result.ok ? result.data : null;
-    })().catch(() => null),
-    new Promise<null>((resolve) => {
-      conceptTimer = setTimeout(() => resolve(null), DESIGN_CONCEPT_TIMEOUT_MS);
-    }),
-  ]).finally(() => clearTimeout(conceptTimer));
+  /* N47 lúc mở trang: chờ ĐÚNG kết quả (không đua giờ riêng — concept về chậm từng làm mất phong cách + đồ AI
+     âm thầm). Giới hạn thời gian là của client HTTP chung; lỗi/ném → dự phòng có lý do (AID-01). */
+  const conceptRead = (async (): Promise<{ readonly state: DesignConceptState | null; readonly failure?: string }> => {
+    const result = await client.designConcept.read({ projectId });
+    if (result.ok) return { state: result.data };
+    // 403/404: không được phép / không có concept — như "không có", không báo lỗi tải.
+    return absenceOf(result.error) === undefined ? { state: null, failure: result.error.kind } : { state: null };
+  })().catch(() => ({ state: null, failure: 'threw' }));
   const floorsRead = (async () => {
     const result = await client.floors.list({ projectId });
     return result.ok ? result.data : [];
@@ -271,7 +277,7 @@ async function loadProject(projectId: string): Promise<{
 
   const settings = await settingsRead;
   separateUnits = settings?.separateUnits === true;
-  const conceptState = await conceptRead;
+  const { state: conceptState, failure: conceptFailure } = await conceptRead;
   // Concept đã xong thắng mọi phong cách khác (kể cả bản xem thử trên máy); chưa xong/hỏng → phong cách cũ.
   const concept = conceptState?.active?.status === 'done' ? conceptState.active.result : undefined;
   const style =
@@ -318,7 +324,15 @@ async function loadProject(projectId: string): Promise<{
       : {}),
   };
 
-  return { projectName: project.name, style, additions: concept?.additions ?? [], furnish: furnishModeOf(concept) };
+  const conceptSource = conceptFailure !== undefined ? `fallback:${conceptFailure}` : concept === undefined ? 'none' : 'done';
+  sceneTrace.source('concept', conceptSource);
+  return {
+    projectName: project.name,
+    style,
+    additions: concept?.additions ?? [],
+    furnish: furnishModeOf(concept),
+    concept: conceptSource,
+  };
 }
 
 /** Giữ tối đa chừng này thông báo nổi; câu cũ nhất rơi ra trước. */
@@ -343,6 +357,8 @@ export function usePascalProjectBridge(
   applyScene?: (scene: PascalSceneGraph) => void,
   /** Cảnh editor đang giữ, đã điền mặc định lược đồ. */
   editorScene?: () => PascalSceneGraph,
+  /** Nguồn danh mục lượt dựng đầu (`main.tsx`): đọc thư viện hỏng → báo người dùng. */
+  librarySource?: Promise<LibrarySource>,
 ): PascalBridge {
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
   const { style, additions, furnish } = load;
@@ -355,27 +371,9 @@ export function usePascalProjectBridge(
   // Cùng cổng quyền với `PascalViewer.container`: vai theo dự án trước, phiên dự phòng.
   const roles: readonly ProjectRole[] = storeRoles.length > 0 ? storeRoles : session.roles;
   const readOnly = !can('edit', 'layer', { roles });
-
-  useEffect(() => {
-    let cancelled = false;
-
-    setLoad({ status: 'loading' });
-    loadProject(projectId).then(
-      ({ projectName, style, additions, furnish }) =>
-        !cancelled && setLoad({ status: 'ready', projectName, style, additions, furnish }),
-      (error: unknown) => !cancelled && setLoad({ status: 'error', error: messageOf(error) }),
-    );
-
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
-
-  /* Bộ tự lưu tầng dùng chung (A7): mỗi `commit` của `usePascalEdits` đổi kho, saver gửi N16.
-     Trạng thái thật của nó (đang lưu / đã lưu / bị khối) lên thẻ trang — "đã lưu" của Pascal chỉ
-     là lượt vào kho, không phải lượt PUT (v3 BE.md major 1). */
-  const { autosave, isFloorBlocked, label: savedLabel, reloadFloor, saveBlock } = useFloorLayerAutosave({ projectId });
-  const engineState = useSyncExternalStore(autosave.subscribe, autosave.getState, autosave.getState);
+  // Chỉ cho nhật ký lượt dựng (`sceneTrace`): ref để `sceneFromStore`/`onLoad` không đổi danh tính theo vai.
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
 
   /* Thông báo nổi: mỗi câu một mục (id, giọng, lúc tạo), không gộp — câu báo thường dính câu lỗi
      từng bị nhuộm đỏ cả cụm. Thẻ tự gỡ (BackToProjectCard). Câu trùng câu đang hiện thì không thêm. */
@@ -387,6 +385,43 @@ export function usePascalProjectBridge(
         : [...current, { id: nextNoticeId++, tone, text, createdAt: Date.now() }].slice(-MAX_NOTICES),
     );
   }, []);
+  useEffect(() => {
+    let cancelled = false;
+
+    setLoad({ status: 'loading' });
+    loadProject(projectId).then(
+      ({ projectName, style, additions, furnish, concept }) => {
+        if (cancelled) return;
+        setLoad({ status: 'ready', projectName, style, additions, furnish });
+        if (concept.startsWith('fallback:')) push('info', CONCEPT_FALLBACK_NOTICE);
+      },
+      (error: unknown) => {
+        // Trang lỗi cũng là "đã chốt": `ready()` không kẹt false (E2E/kit chờ nó).
+        sceneTrace.source('concept', 'error');
+        if (!cancelled) setLoad({ status: 'error', error: messageOf(error) });
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, push]);
+  useEffect(() => {
+    let cancelled = false;
+    void librarySource?.then((source) => {
+      if (!cancelled && libraryReadFailed(source)) push('info', LIBRARY_FALLBACK_NOTICE);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [librarySource, push]);
+
+  /* Bộ tự lưu tầng dùng chung (A7): mỗi `commit` của `usePascalEdits` đổi kho, saver gửi N16.
+     Trạng thái thật của nó (đang lưu / đã lưu / bị khối) lên thẻ trang — "đã lưu" của Pascal chỉ
+     là lượt vào kho, không phải lượt PUT (v3 BE.md major 1). */
+  const { autosave, isFloorBlocked, label: savedLabel, reloadFloor, saveBlock } = useFloorLayerAutosave({ projectId });
+  const engineState = useSyncExternalStore(autosave.subscribe, autosave.getState, autosave.getState);
+
   /* Phần sửa chưa lưu được: mỗi nhãn báo một lần mỗi phiên. */
   const noticed = useRef(new Set<string>());
   const noticedMessages = useRef(new Set<string>());
@@ -476,7 +511,7 @@ export function usePascalProjectBridge(
     }),
     [style, additions, furnish],
   );
-  const sceneFromStore = useCallback((): PascalScene | null => {
+  const sceneFromStore = useCallback((reason = 'build'): PascalScene | null => {
     const stored = storedGraph();
     if (stored === null) return null;
 
@@ -486,14 +521,31 @@ export function usePascalProjectBridge(
     // Hợp đồng lớp cảnh dẫn xuất v1 (`sceneLayer.ts`): mọi đường vào dùng `standardSceneOf`; sửa cảnh ghi lên node (`fields.repair`).
     // Đồ AI bổ sung (AID-01) và chế độ tự bày dự phòng đi cùng phong cách: chốt một lần mỗi lượt
     // mở trang, mọi lượt dựng dùng chung, không thì "sửa ma".
+    const options = sceneOptions();
+    const raw = !sceneRepairStore.get().enabled;
     const { scene, layer } = standardSceneOf(graph, {
-      ...sceneOptions(),
-      raw: !sceneRepairStore.get().enabled,
+      ...options,
+      raw,
       repairs: new Map(repairs.map((r) => [r.furnitureId, r])),
     });
     sceneRepairStore.set({ repairs, session: repairSession.current, layer });
+    const built = markNotBuilt(scene, missingFloors.current);
+    if (sceneTrace.enabled) {
+      sceneTrace.built({
+        reason: missingFloors.current.size === 0 ? reason : `${reason}:missingFloors=${missingFloors.current.size}`,
+        style: options.style.id,
+        furnish: options.furnish ?? 'on',
+        raw,
+        repairsEnabled: !raw,
+        nLevels: stored.levels.length,
+        nFurnitureStored: stored.furniture.length,
+        serverModels: serverModelCount(),
+        readOnly: readOnlyRef.current,
+        ...summarizeScene(built.nodes),
+      });
+    }
 
-    return markNotBuilt(scene, missingFloors.current);
+    return built;
   }, [sceneOptions, storedGraph]);
 
   /** Sửa cảnh của kho hiện tại khác danh sách lượt dựng gần nhất đã áp → cảnh editor phải dựng lại. */
@@ -522,7 +574,7 @@ export function usePascalProjectBridge(
     const reason = saveBlock?.message ?? null;
 
     if (target !== undefined) await reloadFloor(target);
-    const restored = applyScene === undefined ? null : sceneFromStore();
+    const restored = applyScene === undefined ? null : sceneFromStore('reload-floor');
     if (restored === null) {
       window.location.reload();
       return;
@@ -533,6 +585,7 @@ export function usePascalProjectBridge(
 
   /* Cảnh editor sau lượt nạp (sceneLoader) hay dựng lại: thành mốc của lượt sửa sau và bản dẫn xuất hiện hành. */
   const rebaseLoaded = useCallback((scene: PascalSceneGraph) => {
+    sceneTrace.held('editor-holds', scene.nodes, { readOnly: readOnlyRef.current });
     const hidden = sceneRepairStore.get().repairs.filter((r) => r.action === 'hidden').map((r) => toPascalId('item', r.furnitureId));
     recordDerived(derived.current, scene as PascalScene, hidden);
     setLoadedScene(scene as PascalScene);
@@ -541,7 +594,7 @@ export function usePascalProjectBridge(
   const onLoad = useCallback(async (): Promise<PascalSceneGraph> => {
     const scale = await scaleStatusOf(projectId);
     missingFloors.current = new Set(scale.status === 'unresolved' ? scale.missingIds : []);
-    const scene = sceneFromStore();
+    const scene = sceneFromStore('load');
     if (scene === null) throw new BridgeLoadError(BRIDGE_EMPTY_ERROR);
     setLoadedScene(scene);
 
@@ -550,7 +603,7 @@ export function usePascalProjectBridge(
 
   /* `applyScene` đổi đúng phần chênh (main.tsx), không dựng lại cả mô hình. */
   const revertToStore = useCallback(() => {
-    const restored = sceneFromStore();
+    const restored = sceneFromStore('revert');
     if (restored !== null) applyScene?.(restored);
   }, [applyScene, sceneFromStore]);
 

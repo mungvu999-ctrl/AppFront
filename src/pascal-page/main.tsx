@@ -17,6 +17,7 @@ import { createRoot } from 'react-dom/client';
 
 import { flushAutosaves } from '@/hooks/useAutosave';
 import { libraryOnlyCatalog, serverCatalogTiles, setRealismModels } from '@/lib/pascal/furnitureCatalog';
+import type { LibrarySource } from '@/lib/pascal/serverLibrary';
 import { getFeatureFlagsSnapshot } from '@/lib/telemetry/flags';
 
 import { BRIDGE_SESSION_ERROR, loginHrefOf, savePascalNow, usePascalProjectBridge } from './bridge';
@@ -24,6 +25,7 @@ import { isEmptyChange, type NodeChanges, nodeChangesTo } from './bridge/sceneRe
 import type { PascalSceneGraph } from './bridge/types';
 import { BackToProjectCard, EditModelButton, ProjectStepsCard } from './BackToProjectCard';
 import { syncChromeTheme } from './chromeTheme';
+import { sceneTrace } from './createProbe';
 import { HomeownerCardMount } from './HomeownerCardMount';
 import { ItemTrustCard } from './ItemTrustCard';
 import { ModelCreditCard } from './ModelCreditCard';
@@ -183,6 +185,8 @@ const applyRejectedRevert = (scene: unknown) => {
     resumeSceneHistory(useScene);
     if (locked) store.setReadOnly(true);
   }
+  // `?probe=1`: kho editor sau lượt đặt lại, so với lượt dựng (`full`/`partial`).
+  sceneTrace.held('revert-applied', useScene.getState().nodes, { readOnly: locked });
 };
 
 /** UX-R3 U10: chữ "Đang dựng" giữ tới khi kho cảnh đã có tường (người xem từng thấy nền trống). */
@@ -197,7 +201,7 @@ const exportSceneGlb = async (): Promise<Blob | null> =>
 const TEXTURE_HOLD_MS = 1500;
 
 function PascalPage({ projectId }: { readonly projectId: string }) {
-  const bridge = usePascalProjectBridge(projectId, applyRejectedRevert, readEditorScene);
+  const bridge = usePascalProjectBridge(projectId, applyRejectedRevert, readEditorScene, serverLibraryLoaded);
   const readOnly = bridge.status === 'ready' && bridge.readOnly;
   // Cầu khai kiểu lỏng (`PascalSceneGraph`, `unknown`) để không nhập Pascal; `useSceneLoader` ráp với `SceneGraph`.
   const loadScene = useSceneLoader(bridge.onLoad, bridge.rebaseLoaded);
@@ -314,19 +318,24 @@ if (projectId) {
   void import('@/store/projectHydration').catch(() => {});
 }
 
-// Thư viện máy chủ gộp vào danh mục trước lượt dựng đầu; lỗi/offline → danh mục đóng gói (serverLibrary.ts).
+// Thư viện máy chủ gộp vào danh mục trước lượt dựng đầu; lượt dựng chờ ĐÚNG kết quả lượt đọc (không đua giờ —
+// nội dung cảnh không phụ thuộc tốc độ máy/mạng). Lỗi/offline → danh mục đóng gói + thông báo (serverLibrary.ts).
 // Mở phiên TRƯỚC: token chỉ ở bộ nhớ, gọi ngay lúc tải trang là 401 và mất thư viện máy chủ (e2e fullstack
 // bước 11). `startAppSession` nhớ lượt đang chạy nên cầu (`bridge/loadProject`) dùng lại đúng lượt này.
-const serverLibraryLoaded = Promise.all([import('@/api/appClient'), import('@/routes/sessionSetup')])
-  .then(async ([{ createAppApiClient }, { startAppSession }]) => {
-    if (!(await startAppSession())) return 0;
+const serverLibraryLoaded: Promise<LibrarySource> = Promise.all([import('@/api/appClient'), import('@/routes/sessionSetup')])
+  .then(async ([{ createAppApiClient }, { startAppSession }]): Promise<LibrarySource> => {
+    if (!(await startAppSession())) return 'fallback:no-session';
     const { loadServerLibrary } = await import('@/lib/pascal/serverLibrary');
-    const count = await loadServerLibrary(createAppApiClient().library);
+    const { source } = await loadServerLibrary(createAppApiClient().library);
     // Bảng đồ Pascal chỉ đọc `CATALOG_ITEMS`: có mẫu máy chủ thì thay mẫu đóng gói bằng chúng (giữ công cụ).
     CATALOG_ITEMS.splice(0, CATALOG_ITEMS.length, ...libraryOnlyCatalog(CATALOG_ITEMS, serverCatalogTiles()));
-    return count;
+    return source;
   })
-  .catch(() => 0);
+  .catch((): LibrarySource => 'fallback:threw')
+  .then((source) => {
+    sceneTrace.source('library', source);
+    return source;
+  });
 
 // Trang vẽ ngay để cầu nạp dự án SONG SONG với thư viện máy chủ (cùng một lượt `startAppSession`);
 // chỉ phần Pascal (`Home`) đợi node dựng sẵn + danh mục máy chủ, như trước.

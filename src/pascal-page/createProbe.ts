@@ -15,6 +15,10 @@
 
 type Vec3 = [number, number, number];
 
+/** `realism/levelWarm.ts` tự gắn lên `globalThis` khi nạp (không nhập thẳng: module đó nhập `@pascal-app/core`). */
+const levelWarm = () =>
+  (globalThis as { __realismLevelWarm?: { levelReadiness(): unknown; levelWarmStats(): unknown } }).__realismLevelWarm;
+
 export interface PascalProbe {
   ready(): boolean;
   counts(): Record<string, number>;
@@ -44,12 +48,22 @@ export interface PascalProbe {
   raw(): { gl: unknown; scene: unknown } | null;
   /** Số đo reflection probe (`realism/reflect.ts`): số lần chụp, ms CPU, số vật liệu bóng. */
   reflect(): unknown;
+  /** Tầng nào còn đang nạp (`realism/levelWarm.ts` `levelReadiness`); `null` = module chưa nạp (luật w3 chưa áp). */
+  levelReadiness(): unknown;
+  /** Bộ đếm làm ấm tầng ẩn (`levelWarmStats`): lượt rảnh, lý do từ chối, khung ấm, khoá shader; `null` như trên. */
+  levelWarmStats(): unknown;
   /** Đổi nút vật liệu/phơi sáng lúc chạy (đo biến thể cùng một lần nạp): nhiễu bề mặt, kính, exposure. */
   setLook(v: { surf?: { rough?: number; albedo?: number; scale?: number }; exposure?: number; grade?: { contrast?: number; saturation?: number } }): void;
   /** Các lần sửa cảnh (`SceneRepair`: món, hành động, luật, lý do, trước/sau) mà lượt dựng gần nhất đã áp. */
   repairs(): readonly unknown[];
   /** Tóm tắt lớp dẫn xuất (`SceneLayerSummary`) của lượt dựng gần nhất; `null` khi chưa dựng. */
   layer(): unknown;
+  /**
+   * Nhật ký lượt dựng/áp cảnh (`sceneTrace`) + ảnh chụp kho editor NGAY LÚC GỌI (`now`): so `now` với dòng cuối để
+   * tách "kho thiếu món" (dữ liệu) khỏi "kho đủ mà không vẽ" (tải mẫu/ảnh); `serverModelsNow` > `serverModels` của
+   * lượt dựng = thư viện máy chủ về SAU lượt dựng (H1).
+   */
+  sceneState(): ReturnType<SceneTrace['state']> & { now: SceneSummary & { serverModelsNow?: number; itemLoadFailures: number } };
 }
 
 export interface ProbeItem {
@@ -164,17 +178,20 @@ export interface PascalProbeStores {
   readonly layer?: () => unknown;
   /** Renderer hiện hành (`realism/backend` `currentRenderer`) + biến thể tone đang áp. */
   readonly renderer?: () => { gl: unknown; backend: string; tone: string | null } | undefined;
+  /** Nhật ký lượt dựng cảnh; mặc định `sceneTrace` của trang. */
+  readonly trace?: SceneTrace;
 }
 
-export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter, useInteractive, look, repairs, layer, renderer }: PascalProbeStores): PascalProbe => {
+export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter, useInteractive, look, repairs, layer, renderer, trace = sceneTrace }: PascalProbeStores): PascalProbe => {
   const nodes = () => useScene.getState().nodes as Record<string, LooseNode>;
   const entries = () => Object.entries(nodes());
   const entriesOf = (type: string) => entries().filter(([, n]) => n.type === type);
 
   return {
-    // Có node và mọi item đã ổn (tải xong hoặc hỏng hẳn). Cảnh mặc định của editor trước khi
+    // Thư viện + concept đã chốt (không lượt đọc nào còn treo có thể đổi nội dung), có node và mọi item đã ổn (tải xong hoặc hỏng hẳn). Cảnh mặc định của editor trước khi
     // `onLoad` về cũng "sẵn sàng" — bài kiểm ghép thêm `counts()` với số mong đợi.
     ready: () =>
+      trace.settled() &&
       entries().length > 0 &&
       entriesOf('item').every(([id]) => sceneRegistry.nodes.get(id)?.userData.itemModelSettled === true),
     counts: () => {
@@ -243,6 +260,14 @@ export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter,
     },
     repairs: () => [...(repairs?.() ?? [])],
     layer: () => layer?.() ?? null,
+    sceneState: () => ({
+      ...trace.state(),
+      now: {
+        ...summarizeScene(nodes()),
+        ...(trace.countServerModels === undefined ? {} : { serverModelsNow: trace.countServerModels() }),
+        itemLoadFailures: Object.keys(useViewer.getState().itemLoadFailures).length,
+      },
+    }),
     renderer: () => {
       const r = renderer?.();
       const gl = r?.gl as { toneMapping?: number; toneMappingExposure?: number; outputColorSpace?: string } | undefined;
@@ -267,6 +292,8 @@ export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter,
       return null;
     },
     reflect: () => ({ ...((globalThis as { __realismReflect?: object }).__realismReflect ?? {}) }),
+    levelReadiness: () => levelWarm()?.levelReadiness() ?? null,
+    levelWarmStats: () => levelWarm()?.levelWarmStats() ?? null,
     itemMaterials: (match) => {
       const out: Record<string, unknown>[] = [];
       for (const [id, n] of entriesOf('item')) {
@@ -283,6 +310,128 @@ export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter,
     },
   };
 };
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Nhật ký lượt dựng cảnh (S1 vòng 8): mỗi lượt cầu nối dựng cảnh từ kho (`built`) và mỗi lượt cảnh ấy vào kho editor
+ * (`full`/`partial`) ghi một dòng có số `gen` tăng dần — thấy được lượt cũ đè lượt mới hay cảnh trung gian bị giữ.
+ * Chỉ ghi khi `?probe=1`; mảng ≤ 50 dòng; không log console; không đổi hành vi.
+ * ------------------------------------------------------------------------------------------------------------- */
+
+export type SceneApplied = 'built' | 'full' | 'partial';
+
+export interface SceneSummary {
+  /** Số node `item` của cảnh. */
+  readonly nItemsScene: number;
+  /** Số item do FE sinh (`metadata.generated`). */
+  readonly nGenerated: number;
+  /** Vật liệu mặt sàn (`slots.surface`/`materialPreset`) → số tấm sàn. */
+  readonly slabMaterials: Readonly<Record<string, number>>;
+}
+
+export interface SceneBuild extends SceneSummary {
+  readonly gen: number;
+  /** ms từ navigationStart (`performance.now()`). */
+  readonly at: number;
+  readonly reason: string;
+  readonly applied: SceneApplied;
+  readonly style?: string;
+  readonly furnish?: string;
+  readonly raw?: boolean;
+  readonly repairsEnabled?: boolean;
+  readonly nLevels?: number;
+  readonly nFurnitureStored?: number;
+  /** Số mẫu thư viện máy chủ đã đăng ký LÚC dựng (giả thuyết H1: thư viện về trễ sau lượt dựng). */
+  readonly serverModels?: number;
+  readonly readOnly?: boolean;
+}
+
+interface LooseSceneNode {
+  readonly type?: string;
+  readonly slots?: Record<string, string>;
+  readonly materialPreset?: string;
+  readonly metadata?: { readonly generated?: unknown };
+}
+
+export const summarizeScene = (nodes: object): SceneSummary => {
+  let nItemsScene = 0;
+  let nGenerated = 0;
+  const slabMaterials: Record<string, number> = {};
+  for (const node of Object.values(nodes as Record<string, LooseSceneNode>)) {
+    if (node.type === 'item') {
+      nItemsScene += 1;
+      if (node.metadata?.generated !== undefined) nGenerated += 1;
+    } else if (node.type === 'slab') {
+      const material = node.slots?.surface ?? node.materialPreset ?? '?';
+      slabMaterials[material] = (slabMaterials[material] ?? 0) + 1;
+    }
+  }
+  return { nItemsScene, nGenerated, slabMaterials };
+};
+
+/** Cảnh editor so với lượt dựng: thiếu item hay sàn khác → `partial`. */
+export const appliedOf = (built: SceneSummary, held: SceneSummary): 'full' | 'partial' =>
+  held.nItemsScene >= built.nItemsScene && JSON.stringify(held.slabMaterials) === JSON.stringify(built.slabMaterials)
+    ? 'full'
+    : 'partial';
+
+const MAX_BUILDS = 50;
+
+export const createSceneTrace = (enabled: boolean, now: () => number = () => performance.now()) => {
+  let generation = 0;
+  const builds: SceneBuild[] = [];
+  const sources: { library?: string; concept?: string } = {};
+  const settled = (): boolean => sources.library !== undefined && sources.concept !== undefined;
+  const lastBuilt = (): SceneBuild | undefined => [...builds].reverse().find((b) => b.applied === 'built');
+  return {
+    enabled,
+    /** Đếm mẫu thư viện máy chủ đã đăng ký (cầu nối gắn; createProbe không nhập danh mục). */
+    countServerModels: undefined as (() => number) | undefined,
+    /**
+     * Nguồn dữ liệu cuối của cảnh (S2 vòng 8): `library` = `server` | `fallback:<lý do>`, `concept` = `done` | `none` |
+     * `fallback:<lý do>`. Ghi cả khi tắt (hai chuỗi): `ready` cần biết không còn lượt đọc nào treo.
+     */
+    source(key: 'library' | 'concept', value: string): void {
+      sources[key] = value;
+    },
+    settled,
+    /** Ghi một lượt dựng; trả `gen` (0 khi tắt). */
+    built(entry: Omit<SceneBuild, 'gen' | 'at' | 'applied'>): number {
+      if (!enabled) return 0;
+      generation += 1;
+      builds.push({ ...entry, gen: generation, at: Math.round(now()), applied: 'built' });
+      if (builds.length > MAX_BUILDS) builds.shift();
+      return generation;
+    },
+    /** Ghi cảnh editor đang giữ sau một lượt áp, so với lượt dựng gần nhất. */
+    held(reason: string, nodes: object, extra: { readonly readOnly?: boolean } = {}): void {
+      if (!enabled) return;
+      const summary = summarizeScene(nodes);
+      const built = lastBuilt();
+      generation += 1;
+      builds.push({
+        ...summary,
+        ...extra,
+        gen: generation,
+        at: Math.round(now()),
+        reason: built === undefined ? reason : `${reason}<-gen${built.gen}`,
+        applied: built === undefined ? 'partial' : appliedOf(built, summary),
+      });
+      if (builds.length > MAX_BUILDS) builds.shift();
+    },
+    /** `ready`: nguồn đã chốt và dòng cuối là lượt áp `full` của lượt dựng mới nhất. */
+    state(): { generation: number; builds: SceneBuild[]; ready: boolean; library?: string; concept?: string } {
+      const last = builds[builds.length - 1];
+      return { generation, builds: [...builds], ...sources, ready: settled() && last?.applied === 'full' };
+    },
+  };
+};
+
+export type SceneTrace = ReturnType<typeof createSceneTrace>;
+
+/** Nhật ký dùng chung của trang (cầu nối + main.tsx ghi, đầu dò đọc). */
+export const sceneTrace: SceneTrace = createSceneTrace(
+  typeof location !== 'undefined' && new URLSearchParams(location.search).get('probe') === '1',
+);
 
 /** Gắn đầu dò lên `window` khi và chỉ khi `?probe=1`; không cờ thì không làm gì. */
 export const installPascalProbe = (search: string, target: { __pascalProbe?: PascalProbe }, stores: PascalProbeStores) => {

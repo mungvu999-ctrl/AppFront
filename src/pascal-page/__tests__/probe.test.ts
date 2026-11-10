@@ -7,7 +7,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
-import { installPascalProbe, type PascalProbe, type PascalProbeStores } from '../createProbe';
+import { createSceneTrace, installPascalProbe, type PascalProbe, type PascalProbeStores } from '../createProbe';
 
 const fakeStores = () => {
   const registry = new Map<string, { userData: Record<string, unknown> }>();
@@ -47,9 +47,10 @@ describe('pascal probe', () => {
     expect(install('?project=p1&probe=0', stores)).toBeUndefined();
   });
 
-  it('counts() gom node theo loại; ready() chờ mọi item đã ổn; materials() đọc slot', () => {
+  it('counts() gom node theo loại; ready() chờ thư viện + concept chốt và mọi item đã ổn; materials() đọc slot', () => {
     const { stores, registry } = fakeStores();
-    const probe = install('?project=p1&probe=1', stores);
+    const trace = createSceneTrace(false);
+    const probe = install('?project=p1&probe=1', { ...stores, trace });
 
     expect(probe?.counts()).toEqual({ wall: 2, slab: 2, item: 1 });
     expect(probe?.materials().slabs).toEqual({ s1: 'scene:wood', s2: 'tile' });
@@ -63,6 +64,10 @@ describe('pascal probe', () => {
 
     expect(probe?.ready()).toBe(false);
     registry.set('i1', { userData: { itemModelSettled: true } });
+    expect(probe?.ready()).toBe(false); // thư viện/concept còn treo: nội dung còn có thể đổi
+    trace.source('library', 'fallback:timeout');
+    expect(probe?.ready()).toBe(false);
+    trace.source('concept', 'none'); // ghi cả khi nhật ký tắt
     expect(probe?.ready()).toBe(true);
   });
 
@@ -154,5 +159,49 @@ describe('pascal probe', () => {
       toneMappingName: 'AgX',
       tone: 'agx-cal',
     });
+  });
+
+  it('sceneState(): lượt dựng + lượt áp có gen tăng dần; áp thiếu món/sàn khác là partial; ready chỉ khi áp đủ', () => {
+    const { stores } = fakeStores();
+    let clock = 100;
+    const trace = createSceneTrace(true, () => clock);
+    trace.countServerModels = () => 7;
+    const probe = install('?probe=1', { ...stores, trace });
+    const builtNodes = {
+      a: { type: 'item', metadata: { generated: 'dressing' } },
+      b: { type: 'item' },
+      s: { type: 'slab', slots: { surface: 'library:flooring-woodparquet76' } },
+    };
+    expect(probe?.sceneState().ready).toBe(false);
+    trace.built({ reason: 'load', style: 'am-ap', furnish: 'on', serverModels: 0, nLevels: 1, nFurnitureStored: 1, raw: false, repairsEnabled: true, readOnly: true, nItemsScene: 2, nGenerated: 1, slabMaterials: { 'library:flooring-woodparquet76': 1 } });
+    clock = 250;
+    trace.held('editor-holds', { b: builtNodes.b, s: { type: 'slab', slots: { surface: 'scene:x' } } });
+    let state = probe?.sceneState();
+    expect(state?.builds.map((b) => [b.gen, b.at, b.applied, b.reason])).toEqual([
+      [1, 100, 'built', 'load'],
+      [2, 250, 'partial', 'editor-holds<-gen1'],
+    ]);
+    expect(state?.ready).toBe(false);
+    trace.held('editor-holds', builtNodes);
+    expect(probe?.sceneState().ready).toBe(false); // áp đủ nhưng nguồn chưa chốt
+    trace.source('library', 'server');
+    trace.source('concept', 'fallback:network');
+    state = probe?.sceneState();
+    expect(state?.ready).toBe(true);
+    expect(state).toMatchObject({ library: 'server', concept: 'fallback:network' });
+    expect(state?.builds[2]).toMatchObject({ applied: 'full', nItemsScene: 2, nGenerated: 1 });
+    // `now`: kho editor lúc gọi (bản giả có 1 item, 2 sàn) + thư viện máy chủ hiện tại.
+    expect(state?.now).toMatchObject({ nItemsScene: 1, nGenerated: 0, slabMaterials: { 'scene:wood': 1, tile: 1 }, serverModelsNow: 7, itemLoadFailures: 1 });
+  });
+
+  it('sceneTrace tắt (không ?probe=1) thì không ghi; giữ tối đa 50 dòng', () => {
+    const off = createSceneTrace(false);
+    expect(off.built({ reason: 'x', nItemsScene: 0, nGenerated: 0, slabMaterials: {} })).toBe(0);
+    off.held('y', {});
+    expect(off.state().builds).toEqual([]);
+    const on = createSceneTrace(true, () => 0);
+    for (let i = 0; i < 60; i += 1) on.held('h', {});
+    expect(on.state().builds).toHaveLength(50);
+    expect(on.state().generation).toBe(60);
   });
 });
