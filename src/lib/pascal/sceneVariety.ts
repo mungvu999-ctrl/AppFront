@@ -411,17 +411,20 @@ export const modelFolderOf = (
   const preferred = (style.prefer[role] ?? []).filter((folder) =>
     catalogue.includes(folder) ? isNearBest(folder) : isServerModel(folder),
   );
-  // Mẫu AI chọn bị loại (libraryQc.json) → luật thư viện chọn mẫu hợp lệ cùng vai; ghi nhận để công bố.
-  const rejected = preferred.find((folder) => QC_EXCLUDED.has(folder));
-  if (rejected !== undefined && !catalogue.includes(rejected)) {
-    const replacement = libraryModelOf(f, role, style);
-    if (replacement !== null && !QC_EXCLUDED.has(replacement)) {
-      QC_SWAPS.set(f.id, { from: rejected, to: replacement, role });
-      return replacement;
-    }
-  }
   const key = PER_ITEM_ROLES.has(role) ? f.id : `${f.roomId ?? 'none'}|${role}`;
-  const pickHashed = (folders: readonly string[]): string => folders[fnv1a(key) % folders.length] as string;
+  const hashed = (folders: readonly string[]): string => folders[fnv1a(key) % folders.length] as string;
+  /* Mẫu AI chọn bị loại (libraryQc.json, chỉ mẫu máy chủ): băm trên CẢ danh sách như cũ — món băm vào mẫu tốt giữ
+     đúng mẫu ấy; chỉ món băm vào mẫu bị loại mới băm lại trên phần còn lại; danh sách lọc xong rỗng thì luật thư viện. */
+  const isRejected = (folder: string): boolean => QC_EXCLUDED.has(folder) && !catalogue.includes(folder);
+  const pickHashed = (folders: readonly string[]): string => {
+    const first = hashed(folders);
+    if (!isRejected(first)) return first;
+    const good = folders.filter((folder) => !isRejected(folder));
+    const replacement = good.length > 0 ? hashed(good) : libraryModelOf(f, role, style);
+    if (replacement === null || isRejected(replacement)) return first;
+    QC_SWAPS.set(f.id, { from: first, to: replacement, role });
+    return replacement;
+  };
 
   // Mẫu đẹp của thư viện máy chủ thay mẫu Pascal low-poly cùng loại (khi thư viện đã nạp); mẫu AI chọn vẫn thắng.
   if (!preferred.some(isServerModel)) {
@@ -458,6 +461,8 @@ export const contextRolesOf = (
   items: readonly Placed[],
   usageOf: (f: Placed) => RoomUsage | undefined,
 ): ReadonlyMap<string, FurnitureRole> => {
+  // Điểm vào một lượt dựng cảnh: `toPascalScene` gọi đúng một lần, trước vòng chọn mẫu → sổ thay mẫu chỉ giữ lượt này.
+  QC_SWAPS.clear();
   const roles = new Map<string, FurnitureRole>();
   const toiletsOf = new Map<string, Placed[]>();
   const beds = items.filter((f) => f.kind === 'bed');

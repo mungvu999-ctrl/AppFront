@@ -91,4 +91,45 @@ describe('libraryQc — loại mẫu lỗi khỏi chọn tự động', () => {
     expect(variety.libraryQcSwaps().size).toBe(0);
     vi.doUnmock('../libraryQc.json');
   });
+
+  it('danh sách AI có mẫu bị loại: món băm vào mẫu tốt giữ đúng mẫu, chỉ món băm vào mẫu bị loại đổi sang mẫu tốt của danh sách', async () => {
+    const load = async () => {
+      const catalog = await import('../furnitureCatalog');
+      const variety = await import('../sceneVariety');
+      register([BAD, alt1, alt2], catalog.registerServerLibrary);
+      return variety;
+    };
+    vi.resetModules();
+    vi.doMock('../libraryQc.json', () => ({ default: { rev: 1, generatedFrom: 'test', excluded: {} } }));
+    const off = await load();
+    vi.doUnmock('../libraryQc.json');
+    vi.resetModules();
+    const on = await load();
+    const ai = { ...base, prefer: { ...base.prefer, nightstand: [alt1, alt2, BAD] } };
+    const items = Array.from({ length: 24 }, (_, i) => ({ ...stand(`P${i}`), roomId: `R-${i}` }) as Furniture);
+    let kept = 0;
+    let swapped = 0;
+    for (const f of items) {
+      const before = off.modelFolderOf(f, ai, 'bedroom');
+      const after = on.modelFolderOf(f, ai, 'bedroom');
+      if (before === BAD) {
+        swapped++;
+        expect([alt1, alt2]).toContain(after);
+        expect(on.libraryQcSwaps().get(f.id)).toEqual({ from: BAD, to: after, role: 'nightstand' });
+      } else {
+        kept++;
+        expect(after).toBe(before);
+        expect(on.libraryQcSwaps().has(f.id)).toBe(false);
+      }
+    }
+    expect(kept).toBeGreaterThan(0);
+    expect(swapped).toBeGreaterThan(0);
+    // Danh sách [tốt, bị loại]: luôn ra mẫu tốt của danh sách, không rơi sang luật thư viện.
+    const pair = { ...base, prefer: { ...base.prefer, nightstand: [alt1, BAD] } };
+    for (const f of items) expect(on.modelFolderOf(f, pair, 'bedroom')).toBe(alt1);
+    // Lượt dựng cảnh mới (`contextRolesOf` — điểm vào của `toPascalScene`) xoá sổ thay của lượt trước.
+    expect(on.libraryQcSwaps().size).toBeGreaterThan(0);
+    on.contextRolesOf([], () => undefined);
+    expect(on.libraryQcSwaps().size).toBe(0);
+  });
 });

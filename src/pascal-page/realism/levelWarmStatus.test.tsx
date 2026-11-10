@@ -2,11 +2,12 @@ import { act, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const ready = new Map<string, boolean>();
+const stalled = new Set<string>();
 const listeners = new Set<() => void>();
 const noteSelected = vi.fn();
 const noteReady = vi.fn();
 vi.mock('./levelWarm', () => ({
-  levelReadiness: () => [...ready].map(([levelId, r]) => ({ levelId, ready: r })),
+  levelReadiness: () => [...ready].map(([levelId, r]) => ({ levelId, ready: r, stalled: stalled.has(levelId) })),
   levelWarmActive: () => true,
   noteLevelSelected: (id: string) => noteSelected(id),
   noteLevelReady: (id: string) => noteReady(id),
@@ -75,6 +76,18 @@ describe('LevelWarmStatus', () => {
     frame();
     expect(err).not.toHaveBeenCalled();
     err.mockRestore();
+  });
+
+  it('tầng kẹt (stalled) → tắt nhãn, gỡ đăng ký, KHÔNG ghi là sẵn sàng', () => {
+    ready.set('L2', false);
+    render(<LevelWarmStatus levelId="L2" />);
+    expect(label()).toBe('Đang chuẩn bị tầng…');
+    stalled.add('L2');
+    frame();
+    expect(label()).toBe('');
+    expect(listeners.size).toBe(0);
+    expect(noteReady).not.toHaveBeenCalled();
+    stalled.clear();
   });
 
   it('không có tầng chọn → rỗng', () => {

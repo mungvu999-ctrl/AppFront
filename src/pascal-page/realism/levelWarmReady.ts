@@ -6,8 +6,14 @@ import { levelReadiness, levelWarmActive, noteLevelReady, noteLevelSelected, onL
 const STATUS_OFF =
   typeof location !== 'undefined' && (new URLSearchParams(location.search).get('disable') ?? '').split(',').includes('levelstatus');
 
-/** Tầng chưa có trong sổ (vừa thêm, chưa vẽ) coi như sẵn sàng: không có gì để chờ. */
-const isReady = (levelId: string): boolean => levelReadiness().find((l) => l.levelId === levelId)?.ready ?? true;
+/**
+ * Tầng chưa có trong sổ (vừa thêm, chưa vẽ) coi như sẵn sàng: không có gì để chờ. `stalled` (số chờ không giảm qua
+ * `STALL_FRAMES` khung) = thôi chờ: tắt nhãn nhưng KHÔNG ghi là sẵn sàng (`noteLevelReady`).
+ */
+const stateOf = (levelId: string): 'ready' | 'stalled' | 'pending' => {
+  const l = levelReadiness().find((r) => r.levelId === levelId);
+  return !l || l.ready ? 'ready' : l.stalled ? 'stalled' : 'pending';
+};
 
 /** `true` khi tầng `levelId` đang được chọn nhưng chưa sẵn sàng. Đổi tầng → theo tầng mới; unmount → huỷ đăng ký. */
 export function useLevelPreparing(levelId: string | null | undefined, off = STATUS_OFF): boolean {
@@ -15,15 +21,16 @@ export function useLevelPreparing(levelId: string | null | undefined, off = STAT
   useEffect(() => {
     if (!levelId || off || !levelWarmActive()) return setPendingId(null);
     noteLevelSelected(levelId);
-    if (isReady(levelId)) {
-      noteLevelReady(levelId);
-      return setPendingId(null);
-    }
+    const settled = (): boolean => {
+      const s = stateOf(levelId);
+      if (s === 'ready') noteLevelReady(levelId);
+      return s !== 'pending';
+    };
+    if (settled()) return setPendingId(null);
     setPendingId(levelId);
     const stop = onLevelWarmFrame(() => {
-      if (!isReady(levelId)) return;
+      if (!settled()) return;
       stop();
-      noteLevelReady(levelId);
       setPendingId(null);
     });
     return stop;

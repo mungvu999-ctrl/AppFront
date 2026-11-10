@@ -86,6 +86,32 @@ export function isLevelReady(l: { pendingAssets: number; warmed: boolean; shown:
   return l.shown && l.touchedLastFrame && l.pendingDraws === 0 && !l.w2Busy;
 }
 
+/**
+ * Số khung lấy mẫu LIÊN TIẾP mà số việc chờ (vật chờ shader/pipeline + việc W2/W1 + đồ GLB chưa nạp) không xuống dưới
+ * mức thấp nhất đã thấy → coi phần ấy là KẸT (biên dịch hỏng, ảnh lỗi). Theo tiến triển, không theo đồng hồ: việc chậm
+ * mà vẫn xong dần thì bộ đếm về 0 mỗi lần số chờ giảm, nên không bao giờ báo xong sớm. 600 khung ≈ 10 s vẽ liên tục ở
+ * 60 fps — dài hơn nhiều một lần dựng pipeline chậm. Kẹt KHÔNG báo `ready`: chỉ ngừng nhường, ngừng tự vẽ lại (vòng vẽ
+ * về nghỉ), tắt nhãn "đang chuẩn bị"; đầu dò ghi `stalled`. Số chờ giảm lại thì tự hết kẹt.
+ */
+export const STALL_FRAMES = 600;
+export interface Progress {
+  best: number;
+  flat: number;
+}
+/** Thuần: ghi số việc chờ của một khung; `true` = đã kẹt (không giảm qua `STALL_FRAMES` khung). 0 việc = xoá theo dõi. */
+export function trackProgress(map: Map<string, Progress>, key: string, work: number): boolean {
+  const p = map.get(key);
+  if (work <= 0) {
+    map.delete(key);
+    return false;
+  }
+  if (!p || work < p.best) {
+    map.set(key, { best: work, flat: 0 });
+    return false;
+  }
+  return ++p.flat >= STALL_FRAMES;
+}
+
 export interface WarmState {
   sceneKey: string;
   warmed: Set<string>;
@@ -166,6 +192,12 @@ let shadowsPending = true;
 let wantSample = false;
 let sampling = false;
 let lastSampleFrame = -1;
+/** Theo dõi tiến triển (`trackProgress`): khoá = id tầng đang hiện, `warm:<id>` tầng đang ấm, `#w2` hàng việc W2/W1. */
+const progress = new Map<string, Progress>();
+/** Tầng đang hiện kẹt (số chờ không giảm) / tầng ẩn bỏ làm ấm vì kẹt — không tính là sẵn sàng hay đã ấm. */
+const stalledShown = new Set<string>();
+const stalledWarm = new Set<string>();
+let w2Stalled = false;
 
 // ponytail: chỉ kiểm cha trực tiếp; một tổ tiên xa đổi cha thì cache sai tới lúc cảnh dựng lại.
 function levelRootOf(o: Obj): Obj | null {
@@ -191,6 +223,9 @@ function refreshRoots(scene: unknown): void {
     lastTouch.clear();
     rootOf = new WeakMap();
     keysNeeded.clear();
+    progress.clear();
+    stalledShown.clear();
+    stalledWarm.clear();
   }
   rootIds = next;
 }
@@ -213,10 +248,11 @@ function unsettledItems(): Map<string, number> {
   return out;
 }
 
-const w2Busy = (): boolean => {
+const w2Work = (): number => {
   const w = warmStats();
-  return w.pending > 0 || w.buildsPending > 0 || w.texWaiting > 0;
+  return w.pending + w.buildsPending + w.texWaiting;
 };
+const w2Busy = (): boolean => w2Work() > 0;
 
 /** Đang thao tác: bộ đếm lý do thao tác của `idle.ts` vừa tăng, hoặc tăng trong `HOLD_MS` vừa qua. */
 function interacting(nowMs = performance.now()): boolean {
@@ -232,11 +268,12 @@ function onIdle(): void {
   requestIdleCallback(onIdle);
   stats.idleCalls++;
   if (state.current !== null) return;
-  const pick = nextWarmLevel(levelInfos(), state.warmed, {
+  const pick = nextWarmLevel(levelInfos(), new Set([...state.warmed, ...stalledWarm]), {
     tier: currentTier(),
     off: URL_OFF,
     firstLoad: isFirstLoad(),
-    busy: w2Busy(),
+    // Hàng việc W2/W1 kẹt (ví dụ một ảnh lỗi không bao giờ tải) không chặn làm ấm tầng ẩn mãi.
+    busy: w2Busy() && !w2Stalled,
     interacting: interacting(),
   });
   if ('reason' in pick) return void stats.reject[pick.reason]++;
@@ -250,6 +287,7 @@ function onIdle(): void {
 export function levelWarmFrame(scene: unknown, draw: () => void): void {
   stats.frameCalls++;
   refreshRoots(scene);
+  w2Stalled = trackProgress(progress, '#w2', w2Work());
   const root = state.current ? ([...rootIds].find(([, id]) => id === state.current)?.[0] ?? null) : null;
   if (state.current && (!root || root.visible)) {
     // Tầng mất (cảnh đổi) hoặc người dùng vừa chọn nó: W2 lo phần còn lại.
@@ -259,7 +297,7 @@ export function levelWarmFrame(scene: unknown, draw: () => void): void {
   const paused = root !== null && state.current !== null && interacting();
   if (paused) stats.pausedFrames++; // tầng vẫn là `current`; khung sau hết thao tác ấm tiếp
   // Tầng đang hiện còn vật chờ (người dùng vừa chọn tầng chưa ấm) → nhường W2/W1 cho nó; vẫn lấy mẫu để biết lúc xong.
-  const yieldShown = root !== null && state.current !== null && !paused && [...rootIds].some(([o, id]) => o.visible && (lastPending.get(id) ?? 0) > 0);
+  const yieldShown = root !== null && state.current !== null && !paused && [...rootIds].some(([o, id]) => o.visible && (lastPending.get(id) ?? 0) > 0 && !stalledShown.has(id));
   if (yieldShown) stats.yieldFrames++;
   const warm = root && state.current && !paused && !yieldShown ? root : null;
   sampling = wantSample || state.current !== null;
@@ -304,6 +342,16 @@ export function levelWarmFrame(scene: unknown, draw: () => void): void {
       lastPending.set(id, n);
       lastTouch.set(id, stats.frameCalls);
     }
+    const items = unsettledItems();
+    const w2 = w2Work();
+    for (const [o, id] of rootIds) {
+      if (!o.visible || !framePending.has(id)) continue;
+      const work = (framePending.get(id) ?? 0) + w2 + (items.get(id) ?? 0);
+      // Tầng đang hiện đã sẵn sàng trọn một lần = coi như đã ấm (như tầng ấm xong): quay lại không báo chờ nhầm.
+      if (work === 0) state.warmed.add(id);
+      if (trackProgress(progress, id, work)) stalledShown.add(id);
+      else stalledShown.delete(id);
+    }
   }
   sampling = false;
   if (warm) finishWarmFrame(performance.now() - t0);
@@ -322,8 +370,15 @@ function finishWarmFrame(total: number): void {
   const id = state.current!;
   const pending = framePending.get(id) ?? 0;
   shadowsPending = pending > 0;
-  if (pending === 0 && !w2Busy() && !unsettledItems().get(id)) {
+  const work = pending + w2Work() + (unsettledItems().get(id) ?? 0);
+  const stuck = trackProgress(progress, `warm:${id}`, work);
+  if (work === 0) {
     state.warmed.add(id);
+    state.current = null;
+  } else if (stuck) {
+    // Kẹt: bỏ tầng này (không ghi là đã ấm), thôi tự vẽ lại; tầng ẩn khác vẫn được làm ấm.
+    progress.delete(`warm:${id}`);
+    stalledWarm.add(id);
     state.current = null;
   } else markDirty('level-warm'); // khung ấm kế tiếp phải liền ngay (bắt tay xếp hạng→dựng của W2)
 }
@@ -404,15 +459,16 @@ export interface LevelReadiness {
   pendingDraws: number | null;
   warmed: boolean;
   ready: boolean;
+  /** Số việc chờ không giảm qua `STALL_FRAMES` khung (biên dịch hỏng/ảnh lỗi): không sẵn sàng, nhưng thôi chờ. */
+  stalled: boolean;
 }
 
 /** Cho đầu dò/E2E: tầng nào còn đang nạp. */
 export function levelReadiness(): LevelReadiness[] {
   // Số đếm vật chờ lấy ở khung có lấy mẫu gần nhất; hỏi lần này thì khung kế lấy mẫu (bài kiểm hỏi lặp).
-  if (!wantSample) {
-    wantSample = true;
-    markDirty('level-readiness');
-  }
+  // Tầng đang hiện đều kẹt thì chỉ lấy mẫu ở khung tự có, không ép vẽ lại (vòng vẽ không chạy mãi vì một vật hỏng).
+  if (!wantSample && [...rootIds].some(([o, id]) => o.visible && !stalledShown.has(id))) markDirty('level-readiness');
+  wantSample = true;
   const items = unsettledItems();
   const busy = w2Busy();
   return [...rootIds].map(([o, levelId]) => {
@@ -421,7 +477,8 @@ export function levelReadiness(): LevelReadiness[] {
     const warmed = state.warmed.has(levelId);
     const touchedLastFrame = lastTouch.get(levelId) === lastSampleFrame;
     const ready = isLevelReady({ pendingAssets, warmed, shown: o.visible, touchedLastFrame, pendingDraws, w2Busy: busy });
-    return { levelId, shown: o.visible, pendingAssets, pendingDraws, warmed, ready };
+    const stalled = !ready && (stalledShown.has(levelId) || stalledWarm.has(levelId));
+    return { levelId, shown: o.visible, pendingAssets, pendingDraws, warmed, ready, stalled };
   });
 }
 
@@ -449,7 +506,7 @@ export function noteLevelReady(levelId: string, now = performance.now()): void {
 
 /** Bộ đếm chẩn đoán (đầu dò `levelWarmStats()`). */
 export function levelWarmStats() {
-  const remaining = rootIds.size ? levelInfos().filter((l) => !l.shown && !l.userHidden && !state.warmed.has(l.id)).length : 0;
+  const remaining = rootIds.size ? levelInfos().filter((l) => !l.shown && !l.userHidden && !state.warmed.has(l.id) && !stalledWarm.has(l.id)).length : 0;
   return {
     ...stats,
     remaining,
@@ -458,6 +515,10 @@ export function levelWarmStats() {
     off: URL_OFF,
     current: state.current,
     warmed: [...state.warmed],
+    /** Tầng ẩn bỏ làm ấm vì kẹt / tầng đang hiện kẹt / hàng việc W2-W1 kẹt. */
+    stalled: [...stalledWarm],
+    stalledShown: [...stalledShown],
+    w2Stalled,
     keysNeeded: Object.fromEntries([...keysNeeded].map(([id, s]) => [id, s.size])),
   };
 }
