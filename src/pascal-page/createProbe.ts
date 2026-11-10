@@ -15,6 +15,10 @@
 
 type Vec3 = [number, number, number];
 
+/** `realism/levelWarm.ts` tự gắn lên `globalThis` khi nạp (không nhập thẳng: module đó nhập `@pascal-app/core`). */
+const levelWarm = () =>
+  (globalThis as { __realismLevelWarm?: { levelReadiness(): unknown; levelWarmStats(): unknown } }).__realismLevelWarm;
+
 export interface PascalProbe {
   ready(): boolean;
   counts(): Record<string, number>;
@@ -44,6 +48,10 @@ export interface PascalProbe {
   raw(): { gl: unknown; scene: unknown } | null;
   /** Số đo reflection probe (`realism/reflect.ts`): số lần chụp, ms CPU, số vật liệu bóng. */
   reflect(): unknown;
+  /** Tầng nào còn đang nạp (`realism/levelWarm.ts` `levelReadiness`); `null` = module chưa nạp (luật w3 chưa áp). */
+  levelReadiness(): unknown;
+  /** Bộ đếm làm ấm tầng ẩn (`levelWarmStats`): lượt rảnh, lý do từ chối, khung ấm, khoá shader; `null` như trên. */
+  levelWarmStats(): unknown;
   /** Đổi nút vật liệu/phơi sáng lúc chạy (đo biến thể cùng một lần nạp): nhiễu bề mặt, kính, exposure. */
   setLook(v: { surf?: { rough?: number; albedo?: number; scale?: number }; exposure?: number; grade?: { contrast?: number; saturation?: number } }): void;
   /** Các lần sửa cảnh (`SceneRepair`: món, hành động, luật, lý do, trước/sau) mà lượt dựng gần nhất đã áp. */
@@ -284,6 +292,8 @@ export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter,
       return null;
     },
     reflect: () => ({ ...((globalThis as { __realismReflect?: object }).__realismReflect ?? {}) }),
+    levelReadiness: () => levelWarm()?.levelReadiness() ?? null,
+    levelWarmStats: () => levelWarm()?.levelWarmStats() ?? null,
     itemMaterials: (match) => {
       const out: Record<string, unknown>[] = [];
       for (const [id, n] of entriesOf('item')) {
