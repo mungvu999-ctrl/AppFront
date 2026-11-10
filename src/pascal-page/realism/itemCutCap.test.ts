@@ -119,16 +119,3 @@ describe('nắp cắt cho đồ cao (U62) — theo từng mesh, trạng thái th
     expect(ready).toBe(true);
   });
 });
-
-describe('đồ kín: mặt sau luôn tô phẳng (nóc hở nhìn từ trên xuống)', () => {
-  it('closed: biến thể riêng, không lẫn với biến thể thường', () => {
-    const m = new MeshStandardMaterial({ color: 0x886644 });
-    const open = cutCapVariant(m);
-    const closed = cutCapVariant(m, false, true);
-    expect(closed).not.toBe(open);
-    expect(cutCapVariant(m, false, true)).toBe(closed);
-    expect(closed.side).toBe(DoubleSide);
-    expect((closed as WithNodes).emissiveNode).toBeTruthy();
-    expect(m.metalness).toBe(0);
-  });
-});

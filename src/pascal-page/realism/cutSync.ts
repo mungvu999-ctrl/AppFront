@@ -93,9 +93,6 @@ export function capCutMaterial<T extends Material>(material: T): T {
 
 /** Vật liệu gốc → biến thể có nắp (clone riêng; gốc không bao giờ bị vá). */
 const itemCapVariants = new WeakMap<Material, Material>();
-const closedCapVariants = new WeakMap<Material, Material>();
-/** Hệ số sáng của mặt sau đồ kín khi không cắt (so với màu thân). */
-export const CLOSED_BACK_TINT = 0.85;
 const itemBox = new Box3();
 const levelPos = new Vector3();
 
@@ -128,13 +125,12 @@ function followSourceTextures(variant: Material, source: Material): void {
  * trong suốt và vật liệu vốn hai mặt / mặt sau (mặt sau là mặt thật: rèm, lá). `color` dùng CHUNG đối tượng với gốc:
  * nhuộm vải (`applyUpholstery`, có thể trễ khi chờ ảnh) đổi gốc thì biến thể đổi theo.
  */
-export function cutCapVariant<T extends Material>(material: T, capDoubleSided = false, closed = capDoubleSided): T {
+export function cutCapVariant<T extends Material>(material: T, capDoubleSided = false): T {
   if (material.transparent) return material;
   // `?mat=cap-top`: tủ GLB vốn hai mặt (không lá alphaTest) cũng nắp; mặt sau vẫn là lòng tủ lộ qua mặt cắt.
   const doubleSided = capDoubleSided && material.side === DoubleSide && !material.alphaTest;
   if (material.side !== FrontSide && !doubleSided) return material;
-  const cache = closed ? closedCapVariants : itemCapVariants;
-  const hit = cache.get(material);
+  const hit = itemCapVariants.get(material);
   if (hit) return hit as T;
   const variant = material.clone() as T;
   const colored = material as unknown as { color?: unknown };
@@ -142,23 +138,18 @@ export function cutCapVariant<T extends Material>(material: T, capDoubleSided = 
   followSourceTextures(variant, material);
   variant.name = `${material.name}|capped`;
   const m = variant as unknown as ColorMaterial;
+  const cap = cutOn.greaterThan(0.5).and(frontFacing.not());
   const base = vec4((m.colorNode ?? materialColor) as Node<'vec4'>);
-  const cutting = cutOn.greaterThan(0.5);
-  // Đồ KÍN (`closed`, thư mục dạng tủ): mặt sau chỉ lộ qua nóc hở của mô hình / mặt cắt → luôn tô phẳng, kể cả khi
-  // không cắt (nhìn từ trên xuống `cutOn` = 0: lòng tủ trước đây đen tuyền do AO + bóng). Không cắt: màu thân × 0,85
-  // (khớp thân, không kim loại); đang cắt: màu nắp tường như cũ.
-  const cap = closed ? frontFacing.not() : cutting.and(frontFacing.not());
-  const capColor = vec3(color(CUT_CAP_COLOR) as unknown as Node<'vec3'>);
   m.colorNode = select(cap, vec4(0, 0, 0, base.a), base);
   m.emissiveNode = select(
     cap,
-    closed ? select(cutting, capColor, vec3(base.rgb.mul(CLOSED_BACK_TINT))) : capColor,
+    vec3(color(CUT_CAP_COLOR) as unknown as Node<'vec3'>),
     vec3((m.emissiveNode ?? materialEmissive) as Node<'vec3'>),
   );
   if (!doubleSided) variant.shadowSide ??= BackSide;
   variant.side = DoubleSide;
   variant.needsUpdate = true;
-  cache.set(material, variant);
+  itemCapVariants.set(material, variant);
   return variant;
 }
 
@@ -185,7 +176,7 @@ export function meshTopAboveLevel(mesh: Mesh): number {
  */
 export function capItemMeshesForCut(meshes: readonly Mesh[], src?: string | null): void {
   const ds = matOn('cap-top') && CAP_TOP_FOLDER.test(folderOf(src) ?? '');
-  const cap = (m: Material): Material => cutCapVariant(m, ds, ds);
+  const cap = (m: Material): Material => cutCapVariant(m, ds);
   for (const mesh of meshes) {
     if (meshTopAboveLevel(mesh) <= CUT_HEIGHT_M) continue;
     mesh.material = Array.isArray(mesh.material) ? mesh.material.map(cap) : cap(mesh.material);
