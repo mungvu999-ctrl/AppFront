@@ -77,7 +77,7 @@ function SummaryStat({ value, label, toneClassName, filter }: SummaryStatProps) 
             aria-label={`${label}: ${text}`}
             onClick={filter.onClick}
             className={cn(
-              '-mx-2 rounded-md px-2 transition-colors duration-fast hover:bg-bg-hover',
+              '-mx-2 min-h-6 min-w-6 rounded-md px-2 transition-colors duration-fast hover:bg-bg-hover coarse:min-h-11 coarse:min-w-11',
               filter.isActive && 'bg-bg-selected ring-1 ring-accent',
               FOCUS_RING,
             )}

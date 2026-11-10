@@ -40,7 +40,7 @@ function StatusBadge({ counts, canReview, onShowQc }: { readonly counts: Project
   if (counts.qc > 0 && !canReview) return null;
   if (counts.qc > 0) {
     return (
-      <button type="button" onClick={onShowQc} className="rounded-full outline-hidden focus-visible:ring-2 focus-visible:ring-accent">
+      <button type="button" onClick={onShowQc} className="inline-flex min-h-6 items-center rounded-full outline-hidden focus-visible:ring-2 focus-visible:ring-accent">
         <Badge variant="attention">{`${String(counts.qc)} dự án cần duyệt`}</Badge>
       </button>
     );

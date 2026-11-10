@@ -60,3 +60,10 @@ describe('Breadcrumb · tên dự án', () => {
     expect(screen.getByText('Nhà A')).toBeInTheDocument();
   });
 });
+
+describe('Breadcrumb · mục Dự án', () => {
+  it('[#6] mục "Dự án" có onClick vẫn là link có href', () => {
+    render(<MemoryRouter><Breadcrumb items={[{ id: 'projects', label: 'Dự án', onClick: () => undefined }, { id: 'current', label: 'Xuất' }]} /></MemoryRouter>);
+    expect(screen.getByRole('link', { name: 'Dự án' })).toHaveAttribute('href', '/');
+  });
+});

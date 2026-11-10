@@ -165,6 +165,20 @@ export function createFocusTrap(
       return;
     }
 
+    // No opener (the layer opened from an unfocused page): the page's work area
+    // is home, never the first tab stop, which is the "skip to content" link (#5).
+    const home = doc.querySelector<HTMLElement>('[data-focus-home], [data-app-content], main, [role="main"]');
+
+    if (home !== null && !container.contains(home)) {
+      if (!home.hasAttribute('tabindex')) {
+        home.tabIndex = -1;
+      }
+
+      home.focus({ preventScroll: true });
+
+      return;
+    }
+
     const elsewhere = getFocusableElements(doc.body).find(
       (element) => !container.contains(element),
     );

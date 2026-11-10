@@ -201,7 +201,7 @@ export function ExportPanelFormats({
               <button
                 type="button"
                 onClick={onOpenData}
-                className={cn('self-start rounded-sm px-4 text-[13px] font-medium text-accent hover:underline', FOCUS_RING)}
+                className={cn('self-start rounded-sm px-4 min-h-6 coarse:min-h-11 text-[13px] font-medium text-accent hover:underline', FOCUS_RING)}
               >
                 Xem trước nội dung
               </button>

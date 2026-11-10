@@ -145,3 +145,11 @@ describe('tạo/thu hồi liên kết', () => {
     expect(result.ok && result.data.status).toBe('revoked');
   });
 });
+
+describe('A-09 — liên kết hết hiệu lực', () => {
+  it('có lối "Về trang đăng nhập"', async () => {
+    renderAt('khong-co');
+    const link = await screen.findByRole('link', { name: 'Về trang đăng nhập' });
+    expect(link).toHaveAttribute('href', '/login');
+  });
+});

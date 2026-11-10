@@ -8,9 +8,10 @@
  * Thẻ 3D (U17) nạp lười `SharedModel3D`: 2D vẫn là mặc định cho máy yếu, three.js chỉ tải khi bấm 3D.
  */
 import { lazy, Suspense, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 
 import type { ApiClient, SharedModel } from '@/api/client';
+import { ROUTES } from '@/routes/paths';
 
 import { SharedPlan } from './SharedPlan';
 import { useSharedModel } from './useSharedModel';
@@ -113,6 +114,15 @@ export function SharedModelPage({ client }: { client?: Pick<ApiClient, 'share'> 
               ? shareGoneReason(query.error)
               : 'Không kết nối được máy chủ. Thử tải lại trang sau ít phút.'}
           </p>
+          {/* Trang cụt thì có lối ra (A-09). */}
+          {isNotFound(query.error) ? (
+            <Link
+              className="mt-2 inline-flex min-h-6 w-fit items-center rounded-sm text-sm text-accent-hover outline-hidden hover:underline focus-visible:ring-2 focus-visible:ring-accent coarse:min-h-11"
+              to={ROUTES.login}
+            >
+              Về trang đăng nhập
+            </Link>
+          ) : null}
         </div>
       ) : null}
       {query.data === undefined ? null : <SharedModelView model={query.data} />}

@@ -1282,3 +1282,16 @@ describe('F-10 — useRuleSettings nối N21/N22', () => {
     expect(Object.keys(replace.mock.calls[0]?.[0].body.overrides ?? {})).toEqual(['WALL-THICKNESS']);
   });
 });
+
+describe('#28 — công tắc chỉ đọc nói được lý do', () => {
+  it('mỗi công tắc bị khoá có aria-describedby trỏ tới dải cảnh báo chỉ đọc', async () => {
+    const RuleSettingsView = await loadRuleSettingsView();
+    const props = buildRuleSettingsProps({ status: 'ready' }, { capabilities: READ_ONLY_CAPABILITIES });
+    render(<RuleSettingsView {...props} />);
+
+    const switches = screen.getAllByRole('switch');
+    expect(switches.length).toBeGreaterThan(0);
+    for (const node of switches) expect(node.getAttribute('aria-describedby')).toBe('rule-settings-read-only-reason');
+    expect(document.getElementById('rule-settings-read-only-reason')).not.toBeNull();
+  });
+});

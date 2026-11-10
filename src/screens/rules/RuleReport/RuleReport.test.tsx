@@ -713,7 +713,7 @@ describe('K5 — đường dẫn "Dự án › <tên dự án> › …" như cá
 
     const nav = screen.getByRole('navigation', { name: 'Đường dẫn trang' });
     expect(within(nav).getByText('Nhà mẫu')).toBeTruthy();
-    fireEvent.click(within(nav).getByRole('button', { name: 'Dự án' }));
+    fireEvent.click(within(nav).getByRole('link', { name: 'Dự án' }));
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 });

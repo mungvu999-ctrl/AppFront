@@ -69,6 +69,8 @@ export function DimensionRowBox({ row, onHover, onSelect }: DimensionRowBoxProps
       title={row.pixelLengthLabel}
       type="button"
     >
+      {/* Nét khung chỉ dày 3 px: vùng bấm trong suốt ≥ 24 px quanh nét (WCAG 2.5.8). */}
+      <span aria-hidden="true" className="absolute -inset-3" />
       <span
         className={cn(
           // Nền đặc sau chữ: chữ nằm trên nét bản vẽ, không nền thì vàng chỉ còn 2,6:1 (impeccable 1024).

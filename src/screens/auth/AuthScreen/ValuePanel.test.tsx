@@ -32,3 +32,12 @@ describe('ValuePanel — mặt bằng nét mực', () => {
     expect(out).toContain('<text>a</text>');
   });
 });
+
+describe('A-11 — hoạ tiết không vào cây truy cập', () => {
+  it('drawablePlan bỏ role/nhãn của SVG gốc', () => {
+    const out = drawablePlan('<svg role="img" aria-label="Mặt bằng"><line x1="0"/></svg>');
+    expect(out).not.toContain('role="img"');
+    expect(out).not.toContain('aria-label');
+    expect(out).toContain('aria-hidden="true"');
+  });
+});

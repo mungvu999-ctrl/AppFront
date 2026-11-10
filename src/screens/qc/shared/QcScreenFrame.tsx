@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { QcCanvasCoverContext, useMeasuredCanvasCover } from './qcCanvasCover';
 import { useQcCompare } from './qcCompare';
 import { QC_COLUMN_DRAWER_CLASS, QC_COLUMN_ID } from './qcLayout';
+import { SCRIM_ATTR, useColumnDrawerLayer } from './useColumnDrawerLayer';
 
 /**
  * Khung chung của các màn QC (BUG-413, AES-01/AES-04): một gốc lấp phần còn lại dưới header và
@@ -141,6 +142,8 @@ export function QcWorkspace({
   const isColumnOpen = columnManual?.key === selectionKey ? columnManual.open : false;
   const setColumnOpen = (open: boolean) => setColumnManual({ key: selectionKey, open });
   const columnDrawer = column && hasLeft;
+  const columnRef = useRef<HTMLDivElement | null>(null);
+  const isColumnModal = useColumnDrawerLayer(columnRef, columnDrawer && isColumnOpen, () => setColumnOpen(false));
   /* Chưa chọn gì: panel phải ẩn, bản vẽ rộng hết; nút "Chi tiết" mở nó với panel "Tầng này" (chú giải, Hiển thị). Đổi lựa chọn thì đóng. */
   const [sheet, setSheet] = useState<{ readonly key: string | null; readonly open: boolean }>({ key: selectionKey, open: false });
   const isSheetOpen = sheet.key === selectionKey && sheet.open;
@@ -168,6 +171,8 @@ export function QcWorkspace({
             column ? QC_PANEL_WIDTH_CLASS : wideLeft ? 'lg:w-[320px]' : 'lg:w-[240px]',
           )}
           id={columnDrawer ? QC_COLUMN_ID : undefined}
+          ref={columnRef}
+          {...(isColumnModal ? { 'aria-label': 'Cột việc', 'aria-modal': true, role: 'dialog' } : {})}
         >
           {left}
         </div>
@@ -304,7 +309,7 @@ export function QcStatusBar({ onUndo, saveLabel, saveFailed = false, children, f
 
 /** Nền mờ sau ngăn kéo cột việc; bấm là đóng. Chỉ có dưới 1024. */
 export function QcColumnScrim({ onClose }: { readonly onClose: () => void }) {
-  return <button aria-label={COLUMN_CLOSE_LABEL} className="absolute inset-0 z-30 cursor-default bg-bg-overlay lg:hidden" onClick={onClose} type="button" />;
+  return <button {...{ [SCRIM_ATTR]: '' }} aria-label={COLUMN_CLOSE_LABEL} className="absolute inset-0 z-30 cursor-default bg-bg-overlay lg:hidden" onClick={onClose} type="button" />;
 }
 
 /**

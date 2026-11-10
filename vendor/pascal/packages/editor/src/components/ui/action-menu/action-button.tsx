@@ -36,6 +36,7 @@ export const ActionButton = React.forwardRef<HTMLButtonElement, ActionButtonProp
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
+            aria-pressed={isActive}
             className={cn('relative h-11 w-11 transition-all', className)}
             onClick={(event) => {
               triggerSFX('sfx:menu-click')

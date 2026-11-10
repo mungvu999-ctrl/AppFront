@@ -205,7 +205,7 @@ function LevelRow({
             {...dragHandleProps}
             aria-label={`Reorder ${getLevelDisplayName(level)}`}
             className={cn(
-              'ml-0.5 flex h-6 w-4 shrink-0 cursor-grab touch-none items-center justify-center rounded-md text-muted-foreground/35 opacity-0 transition-colors hover:bg-white/5 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 group-hover/level:opacity-100',
+              'ml-0.5 flex h-6 min-w-6 shrink-0 cursor-grab touch-none items-center justify-center rounded-md text-muted-foreground/35 opacity-0 transition-colors hover:bg-white/5 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 group-hover/level:opacity-100',
               isDragging && 'cursor-grabbing opacity-100',
             )}
             onClick={(e) => {
@@ -243,7 +243,7 @@ function LevelRow({
           <Popover>
             <PopoverTrigger asChild>
               <button
-                className="mr-0.5 shrink-0 whitespace-nowrap rounded px-1 py-0.5 font-mono text-[10px] text-muted-foreground/50 tabular-nums transition-colors hover:bg-white/5 hover:text-foreground"
+                className="mr-0.5 min-h-6 shrink-0 whitespace-nowrap rounded px-1 py-0.5 font-mono text-[10px] text-muted-foreground/50 tabular-nums transition-colors hover:bg-white/5 hover:text-foreground"
                 onClick={(e) => e.stopPropagation()}
                 title="Level height"
                 type="button"
@@ -285,7 +285,7 @@ function LevelRow({
           <Popover>
             <PopoverTrigger asChild>
               <button
-                className="flex h-5 w-4 shrink-0 items-center justify-center text-muted-foreground/40 opacity-0 transition-all hover:text-foreground group-hover/level:opacity-100"
+                className="flex min-h-6 min-w-6 shrink-0 items-center justify-center text-muted-foreground/40 opacity-0 transition-all hover:text-foreground focus-visible:opacity-100 group-focus-within/level:opacity-100 group-hover/level:opacity-100"
                 onClick={(e) => e.stopPropagation()}
                 type="button"
               >

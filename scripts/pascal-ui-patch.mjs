@@ -41,8 +41,8 @@ export const UI_PATCHES = {
   ],
   'editor/src/components/ui/floating-level-selector.tsx': [
     [
-      'className="flex h-5 w-4 shrink-0 items-center justify-center text-muted-foreground/40 opacity-0 transition-all hover:text-foreground group-hover/level:opacity-100"',
-      'aria-label="Tùy chọn tầng" className="flex h-5 w-4 shrink-0 items-center justify-center text-muted-foreground/40 opacity-0 transition-all hover:text-foreground group-hover/level:opacity-100"',
+      'className="flex min-h-6 min-w-6 shrink-0 items-center justify-center text-muted-foreground/40 opacity-0 transition-all hover:text-foreground focus-visible:opacity-100 group-focus-within/level:opacity-100 group-hover/level:opacity-100"',
+      'aria-label="Tuỳ chọn tầng" className="flex min-h-6 min-w-6 shrink-0 items-center justify-center text-muted-foreground/40 opacity-0 transition-all hover:text-foreground focus-visible:opacity-100 group-focus-within/level:opacity-100 group-hover/level:opacity-100"',
       1,
     ],
     // UX-R1 K39/K46 (Codex P2): nút "+" chèn tầng nằm giữa ô (left-1/2), đè lên tên tầng. Có từ hai tầng

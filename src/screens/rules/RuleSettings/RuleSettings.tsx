@@ -55,7 +55,7 @@ import { cn } from '@/lib/utils';
 import { RuleSettingsGeneralThresholdsCard, RuleSettingsGroupCard } from './RuleSettingsGroups';
 import { RuleSettingsPresetsRow } from './RuleSettingsPresets';
 import { RuleSettingsReloadDialog } from './RuleSettingsReloadDialog';
-import { type RuleCode, FOCUS_RING } from './RuleSettingsRow';
+import { type RuleCode, FOCUS_RING, READ_ONLY_REASON_ID } from './RuleSettingsRow';
 import type { BuildingKind, RuleSettingsGroup, RuleSettingsProps } from './types';
 
 /** Mục nav cho thẻ "Ngưỡng chung" — không phải mã nhóm luật thật. */
@@ -188,7 +188,7 @@ function RuleSettingsMain({
   return (
     <div className="flex flex-col gap-6">
       {capabilities.readOnlyReason !== null && (
-        <InlineAlert level="attention" message={capabilities.readOnlyReason} />
+        <InlineAlert id={READ_ONLY_REASON_ID} level="attention" message={capabilities.readOnlyReason} />
       )}
 
       {model.saveProblem !== null && !model.saveProblem.onGeneralCard && (

@@ -113,7 +113,7 @@ interface RowActionsProps {
 }
 
 const MENU_ITEM_CLASS = cn(
-  'block w-full rounded-sm px-3 py-1.5 text-left text-[13px] hover:bg-bg-hover disabled:text-text-secondary',
+  'block w-full rounded-sm px-3 py-1.5 coarse:min-h-11 text-left text-[13px] hover:bg-bg-hover disabled:text-text-secondary',
   FOCUS_RING,
 );
 
@@ -138,11 +138,20 @@ function RowActions({ actions, row }: RowActionsProps) {
 
   return (
     <div className="flex justify-end">
-      <details className="relative">
+      <details
+        className="relative"
+        // Esc đóng menu và giữ tiêu điểm ở nút ⋯; chặn nổi bọt để không đóng luôn tấm chi tiết (A-01).
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape' || !event.currentTarget.open) return;
+          event.stopPropagation();
+          event.currentTarget.open = false;
+          event.currentTarget.querySelector('summary')?.focus();
+        }}
+      >
         <summary
           aria-label={`Thao tác với ${row.name}`}
           className={cn(
-            'flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md text-text-secondary hover:bg-bg-hover [&::-webkit-details-marker]:hidden',
+            'flex h-8 w-8 coarse:h-11 coarse:w-11 cursor-pointer list-none items-center justify-center rounded-md text-text-secondary hover:bg-bg-hover [&::-webkit-details-marker]:hidden',
             FOCUS_RING,
           )}
         >
@@ -181,11 +190,11 @@ function RowActions({ actions, row }: RowActionsProps) {
             </button>
           )}
           {row.removeBlockedReason !== null ? (
-            <span className={cn(BLOCKED_REASON_CLASS, 'px-3 py-1.5')}>{row.removeBlockedReason}</span>
+            <span className={cn(BLOCKED_REASON_CLASS, 'px-3 py-1.5 coarse:mt-2')}>{row.removeBlockedReason}</span>
           ) : (
             <button
               aria-label={`${REMOVE_LABEL} ${row.name}`}
-              className={cn(MENU_ITEM_CLASS, REMOVE_CLASS)}
+              className={cn(MENU_ITEM_CLASS, REMOVE_CLASS, 'coarse:mt-2')}
               onClick={run(() => actions.onOpenRemove(row.id))}
               type="button"
             >

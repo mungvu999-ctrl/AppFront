@@ -38,7 +38,7 @@ import {
 } from '@pascal-app/editor'
 import { Hammer, Layers, Package, Settings } from 'lucide-react'
 import { type ComponentProps, type ReactNode, useCallback, useEffect, useRef } from 'react'
-import { isSeparateUnits } from '../bridge'
+import { isSeparateUnits, postPascalNotice } from '../bridge'
 import { downloadSnapshot } from '../realism/snapshot'
 import { ScaleBanner, ScaleEmptyNotice } from '../scaleBanner'
 import { BuildTab } from './components/build-tab'
@@ -143,7 +143,11 @@ function applyStartParams() {
   // AppFront edit (UX-R1 K19): open one floor at a time (product scope: one-floor apartments);
   // the stacked default built unrelated plans into a 46 m tower. `?view=exploded` still wins,
   // unless the project says its floors are separate units (UX-R2): then solo only.
-  const exploded = params.get('view') === 'exploded' && !isSeparateUnits()
+  const levelCount = Object.values(useScene.getState().nodes).filter((n) => n.type === 'level').length
+  const wantsExploded = params.get('view') === 'exploded'
+  // AppFront edit (UX audit #29): one floor cannot be exploded; say why instead of opening a plain view.
+  if (wantsExploded && levelCount < 2) postPascalNotice('Cần ít nhất 2 tầng để xem tách tầng')
+  const exploded = wantsExploded && !isSeparateUnits()
   useViewer.getState().setLevelMode(exploded ? 'exploded' : 'solo')
   // AppFront edit (UX-R1): start solo on the first floor that has walls; missing-scale floors are
   // left empty by the bridge, and opening on one of them showed a blank scene.

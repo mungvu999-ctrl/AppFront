@@ -125,7 +125,7 @@ function ModelLibraryCardList({ actions, rows }: RowLayoutProps) {
           <div className="flex items-center gap-3">
             <ModelPreviewThumb onRetry={actions.retryPreviewImage} row={row} sizeClassName="h-10 w-10" />
             <button
-              className={cn('text-left font-medium text-text-primary', FOCUS_RING)}
+              className={cn('min-h-6 text-left font-medium text-text-primary', FOCUS_RING)}
               onClick={() => actions.openDetail(row.id)}
               type="button"
             >
@@ -259,7 +259,7 @@ export function ModelLibraryTable({ actions, model }: ModelLibraryTableProps) {
               </Table.Cell>
               <Table.Cell className={ROW_HEIGHT}>
                 <button
-                  className={cn('text-left font-medium text-text-primary', FOCUS_RING)}
+                  className={cn('min-h-6 text-left font-medium text-text-primary', FOCUS_RING)}
                   onClick={() => actions.openDetail(row.id)}
                   type="button"
                 >

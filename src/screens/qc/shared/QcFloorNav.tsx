@@ -1,5 +1,5 @@
 import { useMemo, type KeyboardEvent, type ReactNode } from 'react';
-import { Check, ChevronDown, Lock } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, Lock } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { useEditorChrome } from '@/components/shell/EditorChromeContext';
@@ -313,6 +313,16 @@ export function QcFloorNav({ projectId, floorId, layer, floors = [], progress, t
       <div className="flex shrink-0 flex-col gap-1 border-b border-border-default px-2 py-1.5" data-testid="qc-panel-nav">
         <div className="flex min-w-0 items-center justify-between gap-2">
           {chrome.fileMenu(floorItems)}
+          {/* #24: lối ra luôn nhìn thấy, không chỉ trong menu thả của dự án. */}
+          <Link
+            aria-label="Về danh sách dự án"
+            className="flex h-6 shrink-0 items-center gap-0.5 rounded-md px-1.5 text-caption text-text-secondary hover:bg-bg-hover hover:text-text-primary focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-accent"
+            title="Về danh sách dự án"
+            to={ROUTES.dashboard}
+          >
+            <ChevronLeft aria-hidden="true" className="h-3.5 w-3.5" />
+            Dự án
+          </Link>
           <p className="max-w-[45%] shrink-0 truncate pr-2 text-[13px] font-medium text-text-secondary">
             {floors.some((floor) => floor.id === floorId) ? floorLabel : <ProjectFloorLabel floorId={floorId} projectId={projectId} />}
           </p>

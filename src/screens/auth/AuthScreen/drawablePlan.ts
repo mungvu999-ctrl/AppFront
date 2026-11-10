@@ -8,10 +8,12 @@ const SHAPE = /<(polygon|circle|line|path|rect)\b/gu;
  * → cây) — nét mực lan dần như đang vẽ tay.
  */
 export function drawablePlan(svg: string): string {
-  const total = svg.match(SHAPE)?.length ?? 1;
+  // Hoạ tiết: bỏ role/nhãn của SVG gốc để cây truy cập không đọc ~24 nhãn phòng, hai lần (A-11).
+  const decorative = svg.replace(/ role="img" aria-label="[^"]*"/u, ' aria-hidden="true"');
+  const total = decorative.match(SHAPE)?.length ?? 1;
   let index = 0;
 
-  return svg.replace(SHAPE, (_match, tag: string) => {
+  return decorative.replace(SHAPE, (_match, tag: string) => {
     const delay = Math.round((index / total) * DRAW_STAGGER_MS);
     index += 1;
 

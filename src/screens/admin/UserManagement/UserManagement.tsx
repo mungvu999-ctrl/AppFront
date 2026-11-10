@@ -32,6 +32,8 @@ import { useShortcut } from '@/hooks/useShortcut';
 
 import { RemoveConfirmDialog, UserManagementDetail } from './UserManagementDetail';
 import { UserManagementPermissionMatrix } from './UserManagementPermissionMatrix';
+import { Pager } from '../Pager';
+import { usePaged } from '../usePaged';
 import { UserManagementTable } from './UserManagementTable';
 import { UserManagementToolbar } from './UserManagementToolbar';
 import type {
@@ -147,18 +149,26 @@ function renderContent(model: UserManagementViewModel, actions: UserManagementAc
     );
   }
 
+  return <PagedUserList actions={actions} model={model} />;
+}
+
+function PagedUserList({ actions, model }: { readonly actions: UserManagementActions; readonly model: UserManagementViewModel }) {
+  const paged = usePaged(model.rows);
   return (
-    <div className={model.isCollapsed ? 'p-5' : undefined}>
-      <UserManagementTable
-        actions={actions}
-        isCollapsed={model.isCollapsed}
-        roleOptions={model.toolbar.roleOptions}
-        rows={model.rows}
-        selectedUserId={model.selectedUserId}
-        skeletonRowCount={model.skeletonRowCount}
-        state={model.state}
-      />
-    </div>
+    <>
+      <div className={model.isCollapsed ? 'p-5' : undefined}>
+        <UserManagementTable
+          actions={actions}
+          isCollapsed={model.isCollapsed}
+          roleOptions={model.toolbar.roleOptions}
+          rows={paged.pageRows}
+          selectedUserId={model.selectedUserId}
+          skeletonRowCount={model.skeletonRowCount}
+          state={model.state}
+        />
+      </div>
+      <Pager onPageChange={paged.setPage} page={paged.page} pageCount={paged.pageCount} total={paged.total} />
+    </>
   );
 }
 
@@ -169,6 +179,21 @@ export function UserManagement({ model, actions }: UserManagementProps) {
   // Nút đã mở chi tiết: đóng (Esc/nút X) thì tiêu điểm về đó, không rơi về `body` (BUG-P08-019, 37U-E-006).
   const openerRef = useRef<HTMLElement | null>(null);
   const isDetailOpen = model.detail !== null;
+  // Nút đã mở khối mời: đóng khối (Esc/Huỷ/gửi xong) thì tiêu điểm về đó, không rơi về `body` (A-02).
+  const inviteOpenerRef = useRef<HTMLElement | null>(null);
+  const isInviteOpen = model.invite.isOpen;
+  useEffect(() => {
+    if (isInviteOpen) return;
+    const opener = inviteOpenerRef.current;
+    inviteOpenerRef.current = null;
+    if (opener?.isConnected === true) opener.focus();
+  }, [isInviteOpen]);
+  const openInvite = () => {
+    if (document.activeElement instanceof HTMLElement && document.activeElement !== document.body) {
+      inviteOpenerRef.current = document.activeElement;
+    }
+    actions.onOpenInvite();
+  };
   useEffect(() => {
     if (isDetailOpen) return;
     const opener = openerRef.current;
@@ -177,6 +202,7 @@ export function UserManagement({ model, actions }: UserManagementProps) {
   }, [isDetailOpen]);
   const contentActions: UserManagementActions = {
     ...actions,
+    onOpenInvite: openInvite,
     onSelectUser: (userId) => {
       if (userId !== null && document.activeElement instanceof HTMLElement && document.activeElement !== document.body) {
         openerRef.current = document.activeElement;
@@ -228,7 +254,7 @@ export function UserManagement({ model, actions }: UserManagementProps) {
   const inviteControl = toolbar.canInvite ? (
     <Button
       iconBefore={<UserPlus aria-hidden="true" size={16} />}
-      onClick={actions.onOpenInvite}
+      onClick={openInvite}
       variant={invite.isOpen ? 'secondary' : 'primary'}
     >
       {INVITE_BUTTON_LABEL}

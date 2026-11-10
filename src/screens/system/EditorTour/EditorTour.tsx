@@ -333,7 +333,7 @@ export function EditorTour(props: EditorTourProps) {
                   }}
                   aria-label={`Tới bước ${index + 1}: ${dot.title}`}
                   aria-current={index === activeIndex ? 'step' : undefined}
-                  className="flex h-6 w-6 items-center justify-center rounded-full outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-app"
+                  className="flex h-6 w-6 coarse:h-11 coarse:w-11 items-center justify-center rounded-full outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-app"
                 >
                   <span
                     aria-hidden="true"

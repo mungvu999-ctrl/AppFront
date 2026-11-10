@@ -39,7 +39,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { wallStrokeToken } from '@/components/canvas/materialMap';
+import { thicknessGroupToken } from './thicknessGroupColor';
 import { SelectionHalo } from '@/components/canvas/SelectionHalo';
 
 import {
@@ -132,7 +132,7 @@ export function ThicknessPreviewCanvas({
       shapes.map((shape) => ({
         wallId: shape.wallId,
         group: shape.group,
-        colorToken: wallStrokeToken(shape.group),
+        colorToken: thicknessGroupToken(shape.group),
         points: svgPointsAttr(projectOutline(shape.outline, projection)),
         boundsPx: projectedBoundsOf(shape, projection),
       })),
