@@ -1,7 +1,7 @@
 import type { ApiError, LibraryApi } from '@/api/client';
 import { readWireError } from '@/lib/errors/wireError';
 
-import { registerServerLibrary } from './furnitureCatalog';
+import { registerServerLibrary, type ServerLibraryModel } from './furnitureCatalog';
 
 /** Nguồn danh mục của lượt dựng: `server` hoặc `fallback:<lý do>` (danh mục đóng gói giữ nguyên). */
 export type LibrarySource = 'server' | `fallback:${string}`;
@@ -9,7 +9,23 @@ export type LibrarySource = 'server' | `fallback:${string}`;
 export interface LibraryLoad {
   readonly count: number;
   readonly source: LibrarySource;
+  /** Phiên bản thư viện: băm ổn định (id + kích thước + đường dẫn mẫu, bỏ chữ ký URL); `bundled` khi dự phòng. */
+  readonly version: string;
 }
+
+/** Phiên bản của danh mục đóng gói (cố định theo bản dựng). */
+export const BUNDLED_LIBRARY_VERSION = 'bundled';
+
+/** FNV-1a 32 bit trên danh sách mẫu đã sắp: cùng thư viện → cùng chuỗi, ở mọi viewer, mọi lượt ký URL. */
+export const libraryVersionOf = (items: readonly ServerLibraryModel[]): string => {
+  const text = items
+    .map((i) => `${i.id}:${i.widthMm}x${i.heightMm}x${i.depthMm}:${i.modelUrl.split('?')[0] ?? ''}`)
+    .sort()
+    .join('|');
+  let hash = 0x811c9dc5;
+  for (let k = 0; k < text.length; k += 1) hash = Math.imul(hash ^ text.charCodeAt(k), 0x01000193) >>> 0;
+  return `lib-${items.length}-${hash.toString(16).padStart(8, '0')}`;
+};
 
 /** Câu báo khi đọc thư viện máy chủ HỎNG (không báo khi thư viện trống hay chưa có phiên). */
 export const LIBRARY_FALLBACK_NOTICE = 'Chưa tải được thư viện nội thất, đang hiện mẫu dự phòng. Tải lại trang để thử lại.';
@@ -40,10 +56,12 @@ export const libraryReadFailed = (source: LibrarySource): boolean => source !== 
 export async function loadServerLibrary(api: Pick<LibraryApi, 'list'>): Promise<LibraryLoad> {
   try {
     const result = await api.list();
-    if (!result.ok) return { count: 0, source: `fallback:${absenceOf(result.error) ?? result.error.kind}` };
+    if (!result.ok) return { count: 0, source: `fallback:${absenceOf(result.error) ?? result.error.kind}`, version: BUNDLED_LIBRARY_VERSION };
     const count = registerServerLibrary(result.data);
-    return { count, source: count > 0 ? 'server' : 'fallback:empty' };
+    return count > 0
+      ? { count, source: 'server', version: libraryVersionOf(result.data) }
+      : { count, source: 'fallback:empty', version: BUNDLED_LIBRARY_VERSION };
   } catch {
-    return { count: 0, source: 'fallback:threw' };
+    return { count: 0, source: 'fallback:threw', version: BUNDLED_LIBRARY_VERSION };
   }
 }

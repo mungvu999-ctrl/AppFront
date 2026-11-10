@@ -18,10 +18,10 @@ import { can } from '@/lib/auth/permissions';
 import { getSessionSnapshot } from '@/lib/auth/state';
 import { readWireError } from '@/lib/errors/wireError';
 import type { DesignAddition, DesignConcept, DesignConceptState, DesignStyleId } from '@/api/schemas/designConcept';
-import { sceneStyleFromConcept } from '@/lib/pascal/designStyles';
 import { CATALOG_MODELS, isServerModel } from '@/lib/pascal/furnitureCatalog';
-import { absenceOf, LIBRARY_FALLBACK_NOTICE, libraryReadFailed, type LibrarySource } from '@/lib/pascal/serverLibrary';
-import { readSceneStyle, SCENE_STYLES, type SceneStyle, type SceneStyleId } from '@/lib/pascal/sceneStyles';
+import { CONCEPT_FALLBACK_NOTICE, readConcept, sceneConceptOf } from '@/lib/pascal/sceneConcept';
+import { LIBRARY_FALLBACK_NOTICE, libraryReadFailed, type LibrarySource } from '@/lib/pascal/serverLibrary';
+import { readSceneStyle, type SceneStyle, type SceneStyleId } from '@/lib/pascal/sceneStyles';
 import { toPascalId } from '@/lib/pascal/ids';
 import { createRepairSession, sessionRepairs } from '@/lib/pascal/sceneRepair';
 import { standardSceneOf } from '@/lib/pascal/sceneStandard';
@@ -47,8 +47,8 @@ export const BRIDGE_SESSION_ERROR = 'Phiên đăng nhập đã hết. Đăng nh�
 export const BRIDGE_NOT_FOUND_ERROR = 'Không tìm thấy dự án này, hoặc bạn chưa được thêm vào dự án.';
 export const BRIDGE_LOAD_ERROR = 'Không tải được mô hình của dự án. Tải lại trang để thử lại.';
 export const BRIDGE_EMPTY_ERROR = 'Dự án chưa có mô hình để mở trong 3D.';
-/** Đọc concept AI (N47) hỏng: cảnh mở với phong cách cũ + tự bày đồ — báo rõ, không âm thầm. */
-export const CONCEPT_FALLBACK_NOTICE = 'Chưa tải được phong cách thiết kế AI, đang hiện phong cách dự phòng. Tải lại trang để thử lại.';
+// Concept AI (N47) dùng chung với lịch sử phiên bản + viewer di động (`sceneConcept.ts`).
+export { CONCEPT_FALLBACK_NOTICE, furnishModeOf } from '@/lib/pascal/sceneConcept';
 
 /** Câu khi lượt gửi N16 hỏng mà không có dải khối nào nêu lý do. */
 export const BRIDGE_SAVE_FAILED = 'Lưu thất bại. Kiểm tra mạng rồi sửa tiếp để thử lại.';
@@ -220,12 +220,6 @@ const messageOf = (error: unknown): string => {
   return BRIDGE_LOAD_ERROR;
 };
 
-/**
- * Đồ bày trong 3D: có concept AI đã xong → AI quyết (không tự bày, chỉ đồ AI bổ sung); không có
- * (Design Director tắt, chưa chạy, đọc lỗi) → tự bày phòng trống làm dự phòng.
- */
-export const furnishModeOf = (concept: DesignConcept['result']): 'on' | 'off' => (concept === undefined ? 'on' : 'off');
-
 async function loadProject(projectId: string): Promise<{
   readonly projectName: string;
   readonly style: SceneStyle;
@@ -246,12 +240,7 @@ async function loadProject(projectId: string): Promise<{
   })().catch(() => null);
   /* N47 lúc mở trang: chờ ĐÚNG kết quả (không đua giờ riêng — concept về chậm từng làm mất phong cách + đồ AI
      âm thầm). Giới hạn thời gian là của client HTTP chung; lỗi/ném → dự phòng có lý do (AID-01). */
-  const conceptRead = (async (): Promise<{ readonly state: DesignConceptState | null; readonly failure?: string }> => {
-    const result = await client.designConcept.read({ projectId });
-    if (result.ok) return { state: result.data };
-    // 403/404: không được phép / không có concept — như "không có", không báo lỗi tải.
-    return absenceOf(result.error) === undefined ? { state: null, failure: result.error.kind } : { state: null };
-  })().catch(() => ({ state: null, failure: 'threw' }));
+  const conceptRead = readConcept(client.designConcept, projectId);
   const floorsRead = (async () => {
     const result = await client.floors.list({ projectId });
     return result.ok ? result.data : [];
@@ -277,13 +266,11 @@ async function loadProject(projectId: string): Promise<{
 
   const settings = await settingsRead;
   separateUnits = settings?.separateUnits === true;
-  const { state: conceptState, failure: conceptFailure } = await conceptRead;
+  const conceptLoaded = await conceptRead;
+  const conceptState = conceptLoaded.state;
   // Concept đã xong thắng mọi phong cách khác (kể cả bản xem thử trên máy); chưa xong/hỏng → phong cách cũ.
-  const concept = conceptState?.active?.status === 'done' ? conceptState.active.result : undefined;
-  const style =
-    concept === undefined
-      ? readSceneStyle(() => localStorage, { id: projectId, style: settings?.sceneStyle })
-      : sceneStyleFromConcept(concept, SCENE_STYLES[concept.baseStyle], conceptState?.active?.styleId);
+  const concept = sceneConceptOf(conceptLoaded);
+  const style = concept.style ?? readSceneStyle(() => localStorage, { id: projectId, style: settings?.sceneStyle });
   // Cùng cổng vai như hook: vai theo dự án vừa nạp trước, phiên dự phòng.
   const storeRoles = useStore.getState().userRoles;
   const canEditSettings = can('edit', 'project.settings', { roles: storeRoles.length > 0 ? storeRoles : session.roles });
@@ -324,14 +311,13 @@ async function loadProject(projectId: string): Promise<{
       : {}),
   };
 
-  const conceptSource = conceptFailure !== undefined ? `fallback:${conceptFailure}` : concept === undefined ? 'none' : 'done';
-  sceneTrace.source('concept', conceptSource);
+  sceneTrace.source('concept', concept.source);
   return {
     projectName: project.name,
     style,
-    additions: concept?.additions ?? [],
-    furnish: furnishModeOf(concept),
-    concept: conceptSource,
+    additions: concept.additions,
+    furnish: concept.furnish,
+    concept: concept.source,
   };
 }
 

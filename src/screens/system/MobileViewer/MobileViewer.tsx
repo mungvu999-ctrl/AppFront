@@ -170,6 +170,7 @@ export function MobileViewer({
   detailLabel,
   partialReason,
   fallback2dHref,
+  sceneNotice = null,
 }: MobileViewerProps) {
   // `collapsed` là "màn rất nhỏ", tức cùng một điều kiện mà `isCompact` mang.
   // Đọc cả hai để một bên bật là thanh dưới rút, dù container nói bằng đường nào.
@@ -234,6 +235,14 @@ export function MobileViewer({
       </header>
 
       <main className="relative min-h-0 flex-1">
+        {sceneNotice !== null && (
+          <p
+            className="absolute inset-x-3 top-2 z-10 rounded-md bg-bg-surface px-3 py-2 text-[13px] text-text-secondary shadow-xs"
+            role="status"
+          >
+            {sceneNotice}
+          </p>
+        )}
         <StateLayer
           detailLabel={detailLabel}
           fallback2dHref={fallback2dHref}

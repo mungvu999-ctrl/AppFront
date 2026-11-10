@@ -171,6 +171,7 @@ export function VersionVisualDiff({ visual }: VersionVisualDiffProps) {
         <figcaption className="text-[13px] leading-relaxed text-text-secondary">
           <span className="block">{visual.caption}</span>
           <span className="block">{VISUAL_HINT}</span>
+          {visual.libraryNotice ? <span className="block" role="status">{visual.libraryNotice}</span> : null}
         </figcaption>
       </figure>
     );
@@ -189,6 +190,7 @@ export function VersionVisualDiff({ visual }: VersionVisualDiffProps) {
       <figcaption className="text-[13px] leading-relaxed text-text-secondary">
         <span className="block">{visual.caption}</span>
         <span className="block">{VISUAL_HINT}</span>
+          {visual.libraryNotice ? <span className="block" role="status">{visual.libraryNotice}</span> : null}
       </figcaption>
     </figure>
   );

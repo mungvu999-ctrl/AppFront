@@ -25,6 +25,8 @@
 import { useInfiniteQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { loadSceneConcept, type SceneConcept } from '@/lib/pascal/sceneConcept';
+import { ensureSceneLibrary, sceneLibraryNow, type SceneLibrary } from '@/lib/pascal/sceneLibrary';
 import type { FloorVersionSummary } from '@/api/schemas/versions';
 import { flushAutosaves, useFloorLayerAutosave } from '@/hooks/useAutosave';
 import { formatDuration } from '@/lib/format/datetime';
@@ -85,7 +87,7 @@ import {
   unsavedEditsNotice,
 } from './versionHistoryModel';
 import { buildPlanDiffModel, entityCountsOf, togglePinned } from './versionHistoryPlan';
-import { buildVisualModel, convertScene, graphOfVersion, isEmptySource } from './versionHistoryScene';
+import { buildVisualModel, convertScene, graphOfVersion, isEmptySource, NO_SCENE, versionSceneOptions } from './versionHistoryScene';
 
 /** Lượt N18 cùng lúc. */
 export const SNAPSHOT_CONCURRENCY = 2;
@@ -364,7 +366,37 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
     () => (sceneSource === undefined ? graph : (graphOfVersion(graph, sceneSource) ?? graph)),
     [graph, sceneSource],
   );
-  const scene = useMemo(() => convertScene(sceneGraph), [sceneGraph]);
+  // Thư viện máy chủ chốt TRƯỚC khi dựng cảnh — cùng điểm vào/phiên bản/fallback với editor (`ensureSceneLibrary`).
+  const [library, setLibrary] = useState<SceneLibrary | null>(sceneLibraryNow);
+  useEffect(() => {
+    if (library !== null) return undefined;
+    let live = true;
+    void ensureSceneLibrary().then((loaded) => live && setLibrary(loaded));
+    return () => {
+      live = false;
+    };
+  }, [library]);
+  /* Concept AI (N47) của dự án — cùng quy tắc với editor (`loadSceneConcept`): chờ kết quả, 403/404 im lặng, lỗi có
+     câu báo. N47 chỉ có concept HIỆN HÀNH (không có lịch sử concept), nên bản cũ cũng dựng với concept hiện hành; đồ AI bổ
+     sung chỉ vào phòng có trong bản ấy (`toPascalScene` lọc theo phòng đã dựng). Kết quả của dự án cũ bị bỏ (`live`). */
+  const [concept, setConcept] = useState<{ readonly projectId: string; readonly value: SceneConcept } | null>(null);
+  useEffect(() => {
+    let live = true;
+    void loadSceneConcept(projectId).then((value) => live && setConcept({ projectId, value }));
+    return () => {
+      live = false;
+    };
+  }, [projectId]);
+  const sceneConcept = concept?.projectId === projectId ? concept.value : null;
+  // Bản cũ có phòng khác concept → tự bày + chú thích (`versionSceneOptions`).
+  const versionScene = useMemo(
+    () => (sceneConcept === null ? null : versionSceneOptions(sceneConcept, sceneGraph, graph)),
+    [sceneConcept, sceneGraph, graph],
+  );
+  const scene = useMemo(
+    () => (library === null || versionScene === null ? NO_SCENE : convertScene(sceneGraph, versionScene.options)),
+    [sceneGraph, library, versionScene],
+  );
   const plan = useMemo(
     () =>
       diff === null || leftSource === undefined || rightSource === undefined
@@ -392,12 +424,18 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
           null,
         hoveredEntityId,
         isFetchingDiff: pairFetching,
+        // Chờ cả thư viện lẫn concept: không dựng bằng mẫu đóng gói/phong cách mặc định rồi đổi sau.
+        libraryPending: library === null || sceneConcept === null,
+        libraryNotice: [library?.notice, sceneConcept?.notice, versionScene?.note].filter(Boolean).join(' ') || null,
       }),
     [
       gateway.capabilities,
       graph,
       sceneGraph,
       scene,
+      library,
+      sceneConcept,
+      versionScene,
       diff,
       builds,
       leftVersionId,

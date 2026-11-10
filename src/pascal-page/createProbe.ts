@@ -50,7 +50,7 @@ export interface PascalProbe {
   reflect(): unknown;
   /** Tầng nào còn đang nạp (`realism/levelWarm.ts` `levelReadiness`); `null` = module chưa nạp (luật w3 chưa áp). */
   levelReadiness(): unknown;
-  /** Bộ đếm làm ấm tầng ẩn (`levelWarmStats`): lượt rảnh, lý do từ chối, khung ấm, khoá shader; `null` như trên. */
+  /** Bộ đếm làm ấm tầng ẩn (`levelWarmStats`): lượt rảnh, lý do từ chối, khung ấm (`maxWarmFrameMs`/`maxBaseMs`/`maxObjectMs`), tầng còn chờ ấm (`remaining`), đổi tầng → sẵn sàng (`switch.lastWaitMs`/`maxWaitMs`); `null` như trên. */
   levelWarmStats(): unknown;
   /** Đổi nút vật liệu/phơi sáng lúc chạy (đo biến thể cùng một lần nạp): nhiễu bề mặt, kính, exposure. */
   setLook(v: { surf?: { rough?: number; albedo?: number; scale?: number }; exposure?: number; grade?: { contrast?: number; saturation?: number } }): void;
@@ -379,7 +379,7 @@ const MAX_BUILDS = 50;
 export const createSceneTrace = (enabled: boolean, now: () => number = () => performance.now()) => {
   let generation = 0;
   const builds: SceneBuild[] = [];
-  const sources: { library?: string; concept?: string } = {};
+  const sources: { library?: string; libraryVersion?: string; concept?: string } = {};
   const settled = (): boolean => sources.library !== undefined && sources.concept !== undefined;
   const lastBuilt = (): SceneBuild | undefined => [...builds].reverse().find((b) => b.applied === 'built');
   return {
@@ -389,8 +389,9 @@ export const createSceneTrace = (enabled: boolean, now: () => number = () => per
     /**
      * Nguồn dữ liệu cuối của cảnh (S2 vòng 8): `library` = `server` | `fallback:<lý do>`, `concept` = `done` | `none` |
      * `fallback:<lý do>`. Ghi cả khi tắt (hai chuỗi): `ready` cần biết không còn lượt đọc nào treo.
+     * `libraryVersion` = phiên bản thư viện chung (`ensureSceneLibrary`), so được với lịch sử phiên bản / viewer di động.
      */
-    source(key: 'library' | 'concept', value: string): void {
+    source(key: 'library' | 'libraryVersion' | 'concept', value: string): void {
       sources[key] = value;
     },
     settled,

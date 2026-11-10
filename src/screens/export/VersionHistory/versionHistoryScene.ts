@@ -14,6 +14,7 @@
 
 import { denormalizeSpatial, normalizeSpatial, type NormalizedSpatial } from '@/domain/spatial/normalize';
 import { formatNumber } from '@/lib/format/number';
+import { conceptSceneOptions, type SceneConcept } from '@/lib/pascal/sceneConcept';
 import { standardSceneOf } from '@/lib/pascal/sceneStandard';
 import type { PascalScene } from '@/lib/pascal/types';
 import type { VersionDiff } from '@/lib/versioning/diff';
@@ -53,19 +54,45 @@ export interface SceneConversion {
 /** Chưa có gì để dựng, và cũng chưa có gì hỏng. */
 export const NO_SCENE: SceneConversion = Object.freeze({ scene: null, failed: false });
 
+/** Chú thích khi bản cũ không khớp phòng của concept AI (concept chỉ có bản hiện hành, dựng cho phòng hiện tại). */
+export const OLD_VERSION_FURNISH_NOTE =
+  'Bản cũ có phòng khác mô hình hiện tại: nội thất được tự bày theo phong cách gợi ý hiện hành, không phải đồ AI đã chọn.';
+
 /**
- * Đồ thị không gian thành cảnh Pascal — cảnh chuẩn `standardSceneOf` (cùng luật bày với màn 3D chính).
+ * Tuỳ chọn dựng cảnh của một bản: concept AI hiện hành như editor; riêng bản CŨ có phòng không có trong mô hình hiện tại
+ * (id phòng khác → concept không bày, đồ AI không vào) thì tự bày như khi không có concept, giữ phong cách gợi ý, kèm
+ * chú thích — thay vì phòng trống dễ hiểu nhầm.
+ */
+export function versionSceneOptions(
+  concept: SceneConcept,
+  version: NormalizedSpatial | null,
+  current: NormalizedSpatial | null,
+): { readonly options: ReturnType<typeof conceptSceneOptions>; readonly note: string | null } {
+  const options = conceptSceneOptions(concept);
+  if (version === null || version === current || options.furnish === 'on') return { options, note: null };
+  const currentRooms = new Set<string>(current?.byKind.room ?? []);
+  const mismatch = (version.byKind.room ?? []).some((id) => !currentRooms.has(id));
+  if (!mismatch) return { options, note: null };
+  return { options: { ...(options.style === undefined ? {} : { style: options.style }), furnish: 'on' }, note: OLD_VERSION_FURNISH_NOTE };
+}
+
+/**
+ * Đồ thị không gian thành cảnh Pascal — cảnh chuẩn `standardSceneOf` (cùng luật bày với màn 3D chính); `options` mang
+ * concept AI của dự án (`conceptSceneOptions`) như editor.
  *
  * `toPascalScene` NÉM khi đồ thị mang số đo không hữu hạn: đó là một mô hình không dựng
  * được, không phải sự cố kỹ thuật để hiện mã lỗi — nó thành một câu giải thích trên tab.
  */
-export function convertScene(graph: NormalizedSpatial | null): SceneConversion {
+export function convertScene(
+  graph: NormalizedSpatial | null,
+  options: Parameters<typeof standardSceneOf>[1] = {},
+): SceneConversion {
   if (graph === null) {
     return NO_SCENE;
   }
 
   try {
-    const { scene } = standardSceneOf(denormalizeSpatial(graph));
+    const { scene } = standardSceneOf(denormalizeSpatial(graph), options);
 
     return scene.rootNodeIds.length === 0 ? { scene: null, failed: true } : { scene, failed: false };
   } catch {
@@ -140,6 +167,10 @@ export interface VisualModelInput {
   readonly isOldVersion?: boolean;
   /** Bản gốc trống nên cảnh dựng bản ĐỐI CHIẾU; `leftVersionLabel` khi đó là nhãn bản đối chiếu. */
   readonly isTargetVersion?: boolean;
+  /** Thư viện mẫu chưa chốt: cảnh chờ, không dựng bằng danh mục đóng gói rồi đổi mẫu sau. */
+  readonly libraryPending?: boolean;
+  /** Câu báo dự phòng thư viện (`LIBRARY_FALLBACK_NOTICE`), `null` khi thư viện máy chủ dùng được. */
+  readonly libraryNotice?: string | null;
 }
 
 /**
@@ -156,7 +187,8 @@ export interface VisualModelInput {
  */
 export function buildVisualModel(input: VisualModelInput): VisualDiffModel {
   const { capabilities, graph, scene, diff, leftVersionLabel } = input;
-  const isAvailable = capabilities.canShowCurrentModel3d && scene.scene !== null;
+  const pending = input.libraryPending === true && graph !== null;
+  const isAvailable = capabilities.canShowCurrentModel3d && (scene.scene !== null || pending);
   const found = diff === null ? [] : [...new Set(changedEntityIdsOf(diff).map(planEntityIdOf))];
   const changedEntityIds =
     graph === null ? found : found.filter((id) => graph.byId[id] !== undefined);
@@ -169,13 +201,14 @@ export function buildVisualModel(input: VisualModelInput): VisualDiffModel {
 
   return {
     isAvailable,
-    unavailableReason: unavailableReasonOf(
+    unavailableReason: pending && capabilities.canShowCurrentModel3d ? null : unavailableReasonOf(
       capabilities.canShowCurrentModel3d,
       graph,
       scene,
       input.isOldVersion === true ? leftVersionLabel : null,
     ),
-    isBuilding: isAvailable && input.isFetchingDiff,
+    isBuilding: isAvailable && (input.isFetchingDiff || pending),
+    libraryNotice: input.libraryNotice ?? null,
     caption:
       input.isTargetVersion === true && leftVersionLabel !== null
         ? `Đây là phiên bản ${leftVersionLabel} (bản đối chiếu, vì bản gốc chưa có đối tượng nào); ${marked}`

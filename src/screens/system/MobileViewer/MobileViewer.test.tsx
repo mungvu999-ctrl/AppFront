@@ -326,3 +326,15 @@ describe('MobileViewer — liên kết chia sẻ tắt thì hai nút chia sẻ r
     expect(getByRole('button', { name: 'Gửi liên kết sang máy tính' })).toBeInTheDocument();
   });
 });
+
+describe('câu báo dự phòng thư viện/concept', () => {
+  it('hiện câu báo trong vùng role="status"; vắng thì không có', async () => {
+    const { LIBRARY_FALLBACK_NOTICE } = await import('@/lib/pascal/serverLibrary');
+    const base = mobileViewerScenarioFor('success');
+    const shown = renderMobileViewer({ ...base, sceneNotice: LIBRARY_FALLBACK_NOTICE });
+    expect(within(shown.container).getByText(LIBRARY_FALLBACK_NOTICE)).toHaveAttribute('role', 'status');
+    shown.unmount();
+    const hidden = renderMobileViewer(base);
+    expect(within(hidden.container).queryByText(LIBRARY_FALLBACK_NOTICE)).toBeNull();
+  });
+});
