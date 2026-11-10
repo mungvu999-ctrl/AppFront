@@ -139,8 +139,7 @@ export function cutCapVariant<T extends Material>(material: T, capDoubleSided = 
   variant.name = `${material.name}|capped`;
   const m = variant as unknown as ColorMaterial;
   const cap = cutOn.greaterThan(0.5).and(frontFacing.not());
-  // clone() không chép colorNode (khoá riêng): mang theo nút của gốc (vá texel chết `deadTexel.ts`).
-  const base = vec4((m.colorNode ?? (material as unknown as ColorMaterial).colorNode ?? materialColor) as Node<'vec4'>);
+  const base = vec4((m.colorNode ?? materialColor) as Node<'vec4'>);
   m.colorNode = select(cap, vec4(0, 0, 0, base.a), base);
   m.emissiveNode = select(
     cap,

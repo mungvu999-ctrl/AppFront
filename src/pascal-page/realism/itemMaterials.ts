@@ -11,7 +11,6 @@ import type { EventDispatcher, Material, Texture } from 'three';
 import { materialColor, mix, vec3 } from 'three/tsl';
 import { MeshPhysicalNodeMaterial, type Node } from 'three/webgpu';
 import { AUTO, autoPatch, folderOf, itemKindOf, KIND_LOOK, nameKind, tunedRoughness, type KindLook } from './itemLook';
-import { applyDeadTexel, deadTexelPlan } from './deadTexel';
 import { hasPendingTextures, whenTexturesReady } from './texturePreload';
 import { FABRIC, FABRIC_SHEEN_WHITE, fabricSheenColor, matxOn } from './matx';
 import { useRealism } from './store';
@@ -177,9 +176,7 @@ export function tuneItemMaterial(mat: Material, ctx: TuneContext): Material {
     transparent: m.transparent,
     name: m.name,
   });
-  // Texel chết ở mặt nóc (`deadTexel.ts`): vật liệu có map đã nạp mà cần vá thì không thoát sớm.
-  const dead = deadTexelPlan(m.map) != null;
-  if (!look && patch.metalness == null && patch.roughness == null && !dead) return mat;
+  if (!look && patch.metalness == null && patch.roughness == null) return mat;
 
   const key = `${mat.uuid}|${look ? kind : 'auto'}`;
   const hit = cache.get(key);
@@ -190,11 +187,7 @@ export function tuneItemMaterial(mat: Material, ctx: TuneContext): Material {
   // clone() chép cả userData (đếm của gốc); `follow` đếm lại cho riêng bản này.
   delete next.userData.texPending;
   // Clone lúc gốc chưa nạp ảnh thì mất ảnh mãi (đồ gỗ ra trắng) → theo gốc tới khi có map.
-  follow(next, m, () => {
-    copySourceMaps(next, m);
-    applyDeadTexel(next);
-  });
-  applyDeadTexel(next);
+  follow(next, m, () => copySourceMaps(next, m));
   next.name = `${mat.name}|${look ? kind : 'auto'}`;
   // Loại không tự đặt kim loại/nhám → luật chung.
   if (patch.metalness != null && look?.metalness == null) next.metalness = patch.metalness;
