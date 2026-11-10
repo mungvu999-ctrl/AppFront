@@ -26,7 +26,7 @@ import {
 import { buildxOn } from '@/pascal-page/realism/buildx';
 
 import { itemSlotsOf } from './sceneDressing';
-import { modelFolderOf, roleOf, type FurnitureRole } from './sceneVariety';
+import { modelFolderOf, orientedGenerated, roleOf, type FurnitureRole } from './sceneVariety';
 import type { SceneStyle } from './sceneStyles';
 
 const ROOM_INSET_MM = 100;
@@ -550,6 +550,9 @@ export const dressingOf = (graph: SpatialGraph, style: SceneStyle): readonly Fur
     }
   }
 
+  // Luật `orient` (vòng 6): thảm/bàn sinh mà mẫu nằm ngang hộp thì xoay món 90° (dấu chân giữ nguyên, mẫu giữ nguyên).
+  const usageOfRoom = new Map(graph.rooms.map((r) => [r.id as string, r.usage]));
+  const oriented = out.map((f) => orientedGenerated(f, style, f.roomId === undefined ? undefined : usageOfRoom.get(f.roomId)));
   // M5 làn 3c `?buildx=minimal`: chỉ giữ thảm + rèm (thử nghiệm, mặc định tắt).
-  return buildxOn('minimal') ? out.filter((f) => /^DRESS-(rug|curtain)-/.test(f.id)) : out;
+  return buildxOn('minimal') ? oriented.filter((f) => /^DRESS-(rug|curtain)-/.test(f.id)) : oriented;
 };

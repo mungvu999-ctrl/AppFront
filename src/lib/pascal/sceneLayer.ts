@@ -37,6 +37,19 @@ export interface SceneProvenance {
   readonly hostId?: string;
 }
 
+/**
+ * Luật lớp cảnh vòng 6 tắt riêng được bằng `?disable=<tên>` (cùng quy ước `?disable=` của vendor):
+ * `orient` (đồ sinh chọn mẫu/xoay theo hướng trục), `fit` (đồ AI xoay đúng trục + kẹp cỡ về hồ sơ vai),
+ * `tone` (một tông gỗ cho đồ sinh/AI), `door` (đồ AI chắn lối mở cửa được dời). "Hiện dữ liệu gốc" tắt cả bốn.
+ */
+export const SCENE_RULES = ['orient', 'fit', 'tone', 'door'] as const;
+export type SceneRuleName = (typeof SCENE_RULES)[number];
+export const sceneRulesOffOf = (search: string): ReadonlySet<string> =>
+  new Set((new URLSearchParams(search).get('disable') ?? '').split(',').filter(Boolean));
+/** Đọc một lần lúc nạp trang (như `realism/casing.ts`); hàm luật nhận tập này qua tham số mặc định, test truyền tay. */
+export const SCENE_RULES_OFF: ReadonlySet<string> = typeof location === 'undefined' ? new Set() : sceneRulesOffOf(location.search);
+export const ALL_SCENE_RULES_OFF: ReadonlySet<string> = new Set(SCENE_RULES);
+
 export type SceneRepairAction = 'moved' | 'rotated' | 'hidden' | 'rescaled';
 
 /** Một lần luật chung sửa đồ AI chưa xác nhận trong cảnh (không lưu); hiện trong bảng kiểm tra của chip lỗi đặt đồ. */

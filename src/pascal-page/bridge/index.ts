@@ -476,7 +476,11 @@ export function usePascalProjectBridge(
     // Hợp đồng lớp cảnh dẫn xuất v1 (`sceneLayer.ts`): mọi đường vào dùng `standardSceneOf`; sửa cảnh ghi lên node (`fields.repair`).
     // Đồ AI bổ sung (AID-01) và chế độ tự bày dự phòng đi cùng phong cách: chốt một lần mỗi lượt
     // mở trang, mọi lượt dựng dùng chung, không thì "sửa ma".
-    const { scene, layer } = standardSceneOf(graph, { ...sceneOptions(), repairs: new Map(repairs.map((r) => [r.furnitureId, r])) });
+    const { scene, layer } = standardSceneOf(graph, {
+      ...sceneOptions(),
+      raw: !sceneRepairStore.get().enabled,
+      repairs: new Map(repairs.map((r) => [r.furnitureId, r])),
+    });
     sceneRepairStore.set({ repairs, session: repairSession.current, layer });
 
     return markNotBuilt(scene, missingFloors.current);
@@ -492,7 +496,12 @@ export function usePascalProjectBridge(
 
   /** Node của món đã đụng ở dữ liệu trước khi đụng (đích hoàn tác về một vị trí đã sửa cảnh); dựng lười, chỉ khi cần. */
   const touchedTargetOf = useCallback(
-    () => touchedTargetFor(repairSession.current, storedGraph, (graph) => standardSceneOf(graph, { ...sceneOptions(), repairs: new Map() }).scene),
+    () =>
+      touchedTargetFor(
+        repairSession.current,
+        storedGraph,
+        (graph) => standardSceneOf(graph, { ...sceneOptions(), raw: !sceneRepairStore.get().enabled, repairs: new Map() }).scene,
+      ),
     [sceneOptions, storedGraph],
   );
 
