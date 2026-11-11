@@ -15,7 +15,7 @@
  * Khe người dùng gán vật liệu (món không sinh) giữ nguyên.
  */
 import { DoubleSide, type Material, type Mesh } from 'three';
-import { clamp, faceDirection, Fn, materialColor, mix, mx_noise_float, normalView, positionView, positionWorld, vec2, vec3, vec4 } from 'three/tsl';
+import { abs, clamp, cross, dFdx, dFdy, dot, faceDirection, materialColor, mix, mx_noise_float, normalize, normalView, positionView, positionWorld, sign, vec3, vec4 } from 'three/tsl';
 import { MeshPhysicalNodeMaterial, type Node } from 'three/webgpu';
 import LIBRARY_ROLES_JSON from '@/lib/pascal/libraryRoles.json' with { type: 'json' };
 import { namedFolderOf, serverKindOf, VARIANT_MODEL } from '@/lib/pascal/furnitureCatalog';
@@ -79,19 +79,18 @@ function fabricNodes(): Nodes {
   const L = FABRIC_LOOK;
   const fold = mx_noise_float(positionWorld.div(L.foldPeriodM));
   const grain = mx_noise_float(positionWorld.div(L.grainPeriodM).add(31.7));
-  const height = fold.mul(L.foldHeightM).add(grain.mul(L.grainHeightM));
+  // mx_noise_float / faceDirection khai kiểu Node chung → ép về float.
+  const height = fold.mul(L.foldHeightM).add(grain.mul(L.grainHeightM)) as unknown as Node<'float'>;
+  const face = faceDirection as unknown as Node<'float'>;
   // Mikkelsen "bump mapping unparametrized surfaces": đạo hàm màn hình của độ cao (mét) + của vị trí view (không chuẩn hoá
   // → biên độ đúng theo mét).
-  const normal = Fn(() => {
-    const sx = positionView.dFdx();
-    const sy = positionView.dFdy();
-    const r1 = sy.cross(normalView);
-    const r2 = normalView.cross(sx);
-    const det = sx.dot(r1).mul(faceDirection);
-    const dH = vec2(height.dFdx(), height.dFdy());
-    const grad = det.sign().mul(r1.mul(dH.x).add(r2.mul(dH.y)));
-    return det.abs().mul(normalView).sub(grad).normalize();
-  })() as unknown as Node<'vec3'>;
+  const sx = dFdx(positionView);
+  const sy = dFdy(positionView);
+  const r1 = cross(sy, normalView);
+  const r2 = cross(normalView, sx);
+  const det = dot(sx, r1).mul(face);
+  const grad = r1.mul(dFdx(height)).add(r2.mul(dFdy(height))).mul(sign(det));
+  const normal = normalize(normalView.mul(abs(det)).sub(grad)) as unknown as Node<'vec3'>;
   const base = (materialColor as unknown as Node<'vec4'>).rgb;
   const shade = grain.mul(L.grainAlbedo).add(fold.mul(L.foldAlbedo)).add(1);
   nodes = {
