@@ -924,6 +924,12 @@ interface SetRoom {
 }
 /** Sổ phòng của lượt dựng: đồ đã lưu (`contextRolesOf`) + đồ bày phòng trống (`addRoomSetMembers`, trước lớp trang trí). */
 const SET_ROOMS = new Map<string, SetRoom>();
+/** Id phòng → khoá nội dung (`roomSetKeysOf`) của lượt dựng; vắng thì băm theo id. */
+let SET_ROOM_KEYS: ReadonlyMap<string, string> = new Map();
+/** toPascal: khoá nội dung các phòng của lượt dựng, gọi trước vòng chọn mẫu. */
+export const setRoomSetKeys = (keys: ReadonlyMap<string, string>): void => {
+  SET_ROOM_KEYS = keys;
+};
 /** Quyết định đã chốt trong lượt dựng theo đối tượng phong cách (mỗi lượt một đối tượng); `contextRolesOf` làm mới. */
 let setPlans = new WeakMap<SceneStyle, Map<string, SetDecision>>();
 /** Sổ báo cáo (đầu dò): id món → quyết định + phòng. */
@@ -979,7 +985,7 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
     };
   });
   const tone = rulesOffOf(style).has('tone') ? undefined : (style as LayerStyle).woodTone;
-  const plan = roomSetOf(roomId, members, decided, {
+  const plan = roomSetOf(SET_ROOM_KEYS.get(roomId) ?? roomId, members, decided, {
     tierOf: (x) => styleTierOf(x, wanted),
     tiers: wanted.length,
     dimsOf: (x) => CATALOG_MODELS[x]?.dimensions,

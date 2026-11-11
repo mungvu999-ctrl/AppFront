@@ -10,7 +10,7 @@
  * sẵn — chỉ dùng những cái có đủ tệp (`.ktx2` của repo hoặc `.webp` tự dựng, J2).
  */
 
-import type { Room, RoomFinish, RoomUsage, Wall } from '@/domain/spatial/types';
+import type { FurnitureId, Room, RoomFinish, RoomUsage, Wall } from '@/domain/spatial/types';
 import { millimetres, millimetresToMetres } from '@/domain/units/types';
 import { GLASS_MATERIAL_REF, isGlassWall } from '@/domain/walls/glass';
 import { INTERIOR_SKIRTING } from '@/pascal-page/realism/details';
@@ -234,6 +234,26 @@ export const lightOffIdOf = (roomId: string): string => `${LIGHT_OFF_PREFIX}${ro
  * mẫu thật không có khe đó thì `a` nghĩa là "cả món một màu" (`toPascal` trải ra, `toSpatial` gộp lại).
  */
 export const OUTLINE_PAINT_SLOT = 'a';
+
+/** FNV-1a 32 bit, hạt `seed`. */
+const fnv = (text: string, seed: number): number => {
+  let hash = seed;
+  for (let i = 0; i < text.length; i += 1) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193) >>> 0;
+  return hash;
+};
+
+/**
+ * Id đồ thật của MỘT món sinh đã nhận (`DRESS-…` của phòng): suy tất định từ id món sinh. Cặp "`dressingOff` có
+ * `DRESS-x`" + "đồ thật mang `adoptedFurnitureIdOf('DRESS-x')`" = món ấy đã thành đồ thật, khác với xoá; lớp dẫn xuất
+ * của phòng vẫn tính như khi món còn là đồ sinh (`toPascal`). Không đổi hợp đồng dữ liệu. 14 ký tự base36 (~64 bit).
+ */
+export const adoptedFurnitureIdOf = (dressId: string): FurnitureId => {
+  const part = (seed: number): string => fnv(dressId, seed).toString(36).toUpperCase().padStart(7, '0');
+  return `F-${part(0x811c9dc5)}${part(0x2b6c1a93)}` as FurnitureId;
+};
+
+/** Trường siêu dữ liệu của node món sinh: thư mục mẫu đang dựng (lượt về lưu khi món được nhận). */
+export const MODEL_FOLDER_FIELD = 'modelFolder';
 
 /** Node của một id trong `dressIds`/`dressingOff`. */
 export const dressNodeIdOf = (dressId: string): PascalNodeId =>

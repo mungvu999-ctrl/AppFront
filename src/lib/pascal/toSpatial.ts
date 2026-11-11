@@ -68,7 +68,7 @@ import {
 import { AUTHORED_BY_HAND, toPointMm } from '@/lib/commands/business/shared';
 
 import { isServerModel, serverKindOf, serverModelPath } from './furnitureCatalog';
-import { appFrontIdOf, BUILDING_NODE_ID, toPascalId } from './ids';
+import { appFrontIdOf, bodyOfPascalId, BUILDING_NODE_ID, toPascalId } from './ids';
 import { LIBRARY_MATERIAL_IDS } from './libraryMaterialIds';
 import { libRoles2BaseIdOf } from './libraryRoles2';
 import { worldBoxOf } from './orientDetected';
@@ -76,8 +76,10 @@ import { roofOf } from './roofs';
 import { DRESSING_OFF_MAX } from './sceneLayer';
 import { drapeSavedSrc } from './sceneDressingDrape';
 import {
+  adoptedFurnitureIdOf,
   CEILING_DEFAULT,
   dressNodeIdOf,
+  MODEL_FOLDER_FIELD,
   isGeneratedLightId,
   OUTLINE_PAINT_SLOT,
   isGeneratedNodeId,
@@ -173,14 +175,14 @@ const planDegreesOf = (yaw: number): number => {
 /** Cấp id AppFront cho một node Pascal, nhớ lại nếu phiên này đã cấp rồi. */
 const minterFor =
   (book: PascalIdBook | undefined) =>
-  <K extends EntityKind>(kind: K, nodeId: PascalNodeId): IdByKind[K] => {
+  <K extends EntityKind>(kind: K, nodeId: PascalNodeId, fixed?: IdByKind[K]): IdByKind[K] => {
     const remembered = book?.get(nodeId);
 
     if (remembered !== undefined && isIdOfKind(kind, remembered)) {
       return remembered;
     }
 
-    const created = createId(kind);
+    const created = fixed ?? createId(kind);
 
     book?.set(nodeId, created);
 
@@ -474,6 +476,18 @@ const itemFieldsOf = (item: PascalItemNode, kind: FurnitureKind): Partial<Furnit
   };
 };
 
+/**
+ * Mẫu đang thấy của món sinh vừa nhận (lượt đi ghi `MODEL_FOLDER_FIELD`): thành `Furniture.model` để tải lại vẫn đúng
+ * mẫu người dùng đã thấy và chỉnh (mẫu luật chọn giữ `asset.id` = `appfront-<loại>` nên `itemFieldsOf` không lưu).
+ * Người dùng đổi mẫu thì `itemFieldsOf` ghi đè.
+ */
+const shownModelOf = (item: PascalItemNode): Partial<Furniture> => {
+  const folder = readString(fieldsOf(item), MODEL_FOLDER_FIELD);
+  const src = folder === null ? '' : serverModelPath(folder);
+
+  return folder !== null && MODEL_SRC.test(src) ? { model: { id: folder.slice(0, 120), src } } : {};
+};
+
 const readCorner = (fields: Fields, corner: 'min' | 'max'): Point | null => {
   const box = fields['boundingBox'];
 
@@ -607,8 +621,8 @@ interface Collector {
   readonly boundaryNodeIdsOf: Map<RoomId, readonly PascalNodeId[]>;
   /** Cấp id cho node Pascal chưa có id AppFront. */
   readonly mint: Minter;
-  /** Phòng có đồ bày biện sinh ra được "nhận nuôi" trong lượt này (V4). */
-  readonly adoptRoomIds: ReadonlySet<string>;
+  /** Node `DRESS-` người dùng đã sửa: riêng từng món thành đồ thật trong lượt này (V4). */
+  readonly adoptNodeIds: ReadonlySet<string>;
 }
 
 const positionIsUsable = (position: PascalVec3): boolean => isUsable(...position);
@@ -811,12 +825,14 @@ const collectItem = (scene: PascalScene, item: PascalItemNode, levelId: LevelId,
     return;
   }
 
-  // Đồ bày biện / đèn AppFront tự sinh (J10): dựng lại mỗi lần mở, không thành đồ đạc —
-  // trừ khi người dùng vừa sửa một món của phòng ấy: cả bộ của phòng thành đồ thật, id `F-` mới (V4); món rời thì riêng nó.
-  // Đồ người dùng đặt LÊN món sinh ra thì vẫn đi xuống bên dưới.
-  const looseAdopted = collector.adoptRoomIds.has(item.id);
+  // Đồ bày biện / đèn AppFront tự sinh (J10): dựng lại mỗi lần mở, không thành đồ đạc — trừ món người dùng vừa sửa:
+  // RIÊNG nó thành đồ thật, id gốc vào `dressingOff`. Món của phòng mang id suy từ id sinh (`adoptedFurnitureIdOf`) và
+  // mẫu đang thấy, để lớp dẫn xuất của phòng tính như cũ (anh em không mất, không đổi mẫu). Đồ đặt LÊN món sinh vẫn đi xuống.
+  const adoptedOne = collector.adoptNodeIds.has(item.id);
+  const roomAdopted = adoptedOne && adoptableRoomOf(item) !== null;
+  const looseAdopted = adoptedOne && !roomAdopted;
 
-  if (!isGeneratedNodeId(item.id) || looseAdopted || collector.adoptRoomIds.has(adoptableRoomOf(item) ?? '')) {
+  if (!isGeneratedNodeId(item.id) || adoptedOne) {
     const fields = fieldsOf(item);
     const knownId = appFrontIdOf('furniture', item.id);
     const centre: Point = {
@@ -836,13 +852,14 @@ const collectItem = (scene: PascalScene, item: PascalItemNode, levelId: LevelId,
 
     collector.furniture.push({
       ...reviewOf(item, knownId !== null),
-      id: knownId ?? collector.mint('furniture', item.id),
+      id: knownId ?? collector.mint('furniture', item.id, roomAdopted ? adoptedFurnitureIdOf(bodyOfPascalId(item.id)) : undefined),
       levelId,
       kind,
       centre,
-      boundingBox: wholeBox(autoKept ? worldBoxOf(box, rotationDeg) : looseAdopted ? boxAtCentre(box, centre) : box),
+      boundingBox: wholeBox(autoKept ? worldBoxOf(box, rotationDeg) : adoptedOne ? boxAtCentre(box, centre) : box),
       rotationDeg: autoKept ? asDegrees(0) : rotationDeg,
       ...(roomId !== null && isIdOfKind('room', roomId) ? { roomId } : {}),
+      ...(roomAdopted ? shownModelOf(item) : {}),
       ...itemFieldsOf(item, kind),
       // Món rời thành đồ thật giữ đúng mẫu và độ nâng lượt đi tự chọn (lan can, mặt bếp…), không đoán lại theo `kind`.
       ...(looseAdopted && MODEL_SRC.test(item.asset.src) ? { model: { id: item.asset.id.slice(0, 120), src: drapeSavedSrc(item.asset.src) } } : {}),
@@ -968,7 +985,7 @@ const collectLevelChildren = (
           wallIds: [],
           ...(knownId === null ? {} : floorFieldsOf(scene, knownId)),
           ...(knownId === null ? {} : ceilingFieldsOf(scene, knownId)),
-          ...dressingOffOf(scene, fields, roomId, collector.adoptRoomIds),
+          ...dressingOffOf(scene, fields, roomId, collector.adoptNodeIds),
         });
         break;
       }
@@ -1134,7 +1151,7 @@ const collectLevelChildren = (
 export const toSpatialGraph = (
   shownScene: PascalScene,
   idBook?: PascalIdBook,
-  adoptRoomIds: ReadonlySet<string> = new Set(),
+  adoptNodeIds: ReadonlySet<string> = new Set(),
 ): SpatialGraphResult => {
   /* Tầng căn chỉ là phép biến đổi hiển thị: gỡ ra trước khi đọc, dữ liệu giữ toạ độ đã lưu. */
   const scene = undoFloorTransforms(shownScene);
@@ -1202,7 +1219,7 @@ export const toSpatialGraph = (
     wallIdOfNode: new Map(),
     boundaryNodeIdsOf: new Map(),
     mint,
-    adoptRoomIds,
+    adoptNodeIds,
   };
 
   usableLevels.forEach((node, index) => {

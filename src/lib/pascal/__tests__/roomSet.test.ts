@@ -18,6 +18,7 @@ import {
   MIN_GAIN,
   paletteOf,
   ROOMSET_VERSION,
+  roomSetKeysOf,
   roomSetOf,
   roomSetOnOf,
   setCostOf,
@@ -25,6 +26,7 @@ import {
   type SetContext,
   type SetMember,
 } from '../roomSet';
+import { adoptedFurnitureIdOf } from '../sceneDressing';
 import { PROV_FIELD, type SceneProvenance } from '../sceneLayer';
 import { createRepairSession, sessionRepairs } from '../sceneRepair';
 import { standardSceneOf } from '../sceneStandard';
@@ -228,6 +230,37 @@ describe('roomSetOf — hàm thuần', () => {
   });
 });
 
+/* ---- Khoá băm theo nội dung phòng (REVIEW-1 #2): id sinh lại khi chép dự án không được đổi nội thất ---- */
+
+describe('roomSetKeysOf — khoá nội dung, không theo id', () => {
+  const box = (x: number, y: number, w: number, h: number): Point[] => [
+    { x, y },
+    { x: x + w, y },
+    { x: x + w, y: y + h },
+    { x, y: y + h },
+  ];
+  const flat = (ids: readonly string[], level: string, dx = 0) => [
+    { id: ids[0] as string, levelId: level, usage: 'bedroom', outline: box(dx, 0, 3500, 3200) },
+    { id: ids[1] as string, levelId: level, usage: 'bedroom', outline: box(dx + 3600, 0, 3500, 3200) },
+    { id: ids[2] as string, levelId: level, usage: 'bedroom', outline: box(dx, 3300, 4200, 3600) },
+  ];
+  const keysOf = (rooms: ReturnType<typeof flat>): string[] => {
+    const keys = roomSetKeysOf(rooms);
+    return rooms.map((r) => keys.get(r.id) as string);
+  };
+
+  it('cùng nội dung, id khác + căn dời chỗ → cùng khoá', () => {
+    expect(keysOf(flat(['R-a', 'R-b', 'R-c'], 'L-1'))).toEqual(keysOf(flat(['R-x9', 'R-y9', 'R-z9'], 'L-2', 25_000)));
+  });
+
+  it('hai phòng trùng chữ ký: khoá khác nhau theo vị trí tương đối; phòng khác cỡ: chữ ký khác', () => {
+    const [a, b, c] = keysOf(flat(['R-a', 'R-b', 'R-c'], 'L-1'));
+    expect(a).not.toBe(b);
+    expect(a?.split('#')[0]).toBe(b?.split('#')[0]);
+    expect(c?.split('#')[0]).not.toBe(a?.split('#')[0]);
+  });
+});
+
 /* ---- Tích hợp: cùng đường toPascalScene (standardSceneOf), thư viện máy chủ giả + dữ liệu chất lượng giả ---- */
 
 const HUMAN = { source: 'human', reviewed: true, confidence: 1 } as const;
@@ -342,6 +375,24 @@ describe('roomset trong đường dựng cảnh', () => {
     }
   });
 
+  it('chép sang dự án khác (id phòng/tầng sinh lại): mọi món, kể cả đồ sinh, giữ mẫu', () => {
+    const copies = ['R-0000COPYA001', 'R-0000COPYB002', 'R-0000COPYC003', 'R-0000COPYD004'];
+    const renamed = (g: SpatialGraph, roomId: string): SpatialGraph =>
+      JSON.parse(JSON.stringify(g).split(ROOM).join(roomId).split(LVL).join('L-0000COPY0001')) as SpatialGraph;
+    const picks = (g: SpatialGraph, roomId: string): string[] => {
+      const scene = sceneOf(g, ON);
+      return Object.values(scene.nodes)
+        .filter((n): n is PascalItemNode => n.type === 'item')
+        .map((n) => `${n.id.split(roomId).join(ROOM)}=${assetOf(scene, n.id.slice(5))}`)
+        .sort();
+    };
+    for (const g of [graphWith(), { ...graphWith(), furniture: [] }]) {
+      const original = picks(g, ROOM);
+      for (const id of copies) expect(picks(renamed(g, id), id)).toEqual(original);
+    }
+    // Dải neo của phòng này có 6 ứng viên: băm theo id thì 4 bản chép gần như chắc chắn rút khác nhau.
+  });
+
   it('món ghim (người dùng xác nhận) giữ nguyên mẫu, không mang prov.model', () => {
     const pinned = graphWith({ ...HUMAN } as Partial<Furniture>);
     const scene = sceneOf(pinned, ON);
@@ -430,6 +481,96 @@ describe('roomset trong đường dựng cảnh', () => {
       expect(unclaimed(page.stored, NS2)).toBe(true);
       expect(assetOf(page.base, BED)).toBe(bed);
       expect(assetOf(page.base, NS2)).toBe(ns2);
+    });
+  });
+
+  /* Điểm chặn REVIEW-1 #1: sửa MỘT món sinh chỉ ghi món đó (kèm mẫu đang thấy); anh em vẫn là lớp dẫn xuất. */
+  describe('sửa một món sinh: ghi đúng một món, lưu + tải lại giữ chỗ và mẫu cả phòng', () => {
+    const empty = (): SpatialGraph => ({ ...graphWith(), furniture: [] });
+    const roomItems = (scene: PascalScene): PascalItemNode[] =>
+      Object.values(scene.nodes).filter(
+        (n): n is PascalItemNode =>
+          n.type === 'item' && n.id.startsWith('item_DRESS-') && n.metadata?.appfront?.fields?.['roomId'] === ROOM,
+      );
+    const spot = (n: PascalNode | undefined): string =>
+      n?.type === 'item' ? `${n.position[0].toFixed(3)},${n.position[2].toFixed(3)}|${assetOf({ nodes: { [n.id]: n } } as PascalScene, n.id.slice(5))}` : 'vắng';
+    /** Áp lệnh lên đồ thị như máy chủ: thêm/sửa/xoá đồ, thay phòng. */
+    const apply = (graph: SpatialGraph, changes: readonly { kind: string; before?: unknown; after?: unknown }[]): SpatialGraph =>
+      changes.reduce((g, c) => {
+        const after = c.after as { id: string } | null;
+        const id = (after ?? (c.before as { id: string })).id;
+        if (c.kind === 'room') return { ...g, rooms: g.rooms.map((r) => (r.id === id ? (after as Room) : r)) };
+        const rest = g.furniture.filter((f) => f.id !== id);
+        return { ...g, furniture: after === null ? rest : [...rest, after as Furniture] };
+      }, graph);
+
+    for (const [name, style] of [['bật', ON], ['tắt', OFF]] as const) {
+      it(`roomset ${name}: dời giường sinh → 1 món + phòng (dressingOff); tải lại: giường đúng chỗ/mẫu, anh em y nguyên; Ctrl+Z trả về đồ sinh`, () => {
+        const graph = empty();
+        const scene = sceneOf(graph, style);
+        const before = roomItems(scene);
+        const bed = before.find((n) => n.metadata?.appfront?.fields?.['kind'] === 'bed') as PascalItemNode;
+        expect(before.length).toBeGreaterThan(2);
+        const movedBed = { ...bed, position: [bed.position[0] + 0.1, bed.position[1], bed.position[2]] } as PascalItemNode;
+        const moved: PascalScene = { ...scene, nodes: { ...scene.nodes, [bed.id]: movedBed } };
+        const idBook = new Map<string, string>();
+        const result = createPascalEditCommand({ graph: normalizeSpatial(graph), scene: moved, commit: { origin: 'local', changedNodeIds: [bed.id] }, actorId: 'U-1', idBook });
+        if (!result.ok) throw new Error(result.error.reasons.join(' '));
+        const furniture = result.data.changes.filter((c) => c.kind === 'furniture');
+        const adoptedId = adoptedFurnitureIdOf(bed.id.slice(5));
+        expect(furniture).toHaveLength(1);
+        expect(furniture[0]?.after).toMatchObject({ id: adoptedId, model: { src: `/items/${assetOf(scene, bed.id.slice(5))}/model.glb` } });
+        expect(result.data.changes.find((c) => c.kind === 'room')?.after).toMatchObject({ dressingOff: [bed.id.slice(5)] });
+
+        const saved = apply(graph, result.data.changes);
+        const reloaded = sceneOf(saved, style);
+        expect(spot(reloaded.nodes[`item_${adoptedId}`])).toBe(spot(movedBed));
+        expect(reloaded.nodes[bed.id]).toBeUndefined();
+        for (const n of before.filter((x) => x.id !== bed.id)) expect(spot(reloaded.nodes[n.id])).toBe(spot(n));
+        expect(roomItems(reloaded)).toHaveLength(before.length - 1);
+        // Tải lại lần nữa: không trôi.
+        expect(itemsOf(sceneOf(saved, style))).toBe(itemsOf(reloaded));
+
+        // Ctrl+Z (cảnh về như lúc nạp, cùng sổ id): đồ thật đi, id rời `dressingOff`, phòng lại như chưa sửa.
+        const undo = createPascalEditCommand({ graph: normalizeSpatial(saved), scene, commit: { origin: 'local', changedNodeIds: [bed.id] }, actorId: 'U-1', idBook });
+        if (!undo.ok) throw new Error(undo.error.reasons.join(' '));
+        const restored = apply(saved, undo.data.changes);
+        expect(restored.furniture).toHaveLength(0);
+        expect(restored.rooms[0]?.dressingOff ?? []).toEqual([]);
+        expect(itemsOf(sceneOf(restored, style))).toBe(itemsOf(scene));
+      });
+    }
+
+    it('dữ liệu cũ (cả phòng đã nhận, id ngẫu nhiên, không dressingOff): tải lại y nguyên, không mọc đồ sinh', () => {
+      const scene = sceneOf(empty(), ON);
+      const nodes = roomItems(scene);
+      const all = createPascalEditCommand({
+        graph: normalizeSpatial(empty()),
+        scene,
+        commit: { origin: 'local', changedNodeIds: nodes.map((n) => n.id) },
+        actorId: 'U-1',
+        adoptNodeIds: nodes.map((n) => n.id),
+      });
+      if (!all.ok) throw new Error(all.error.reasons.join(' '));
+      const legacy: SpatialGraph = {
+        ...empty(),
+        furniture: all.data.changes
+          .filter((c) => c.kind === 'furniture')
+          .map((c, i) => {
+            // Hợp đồng cũ không ghi mẫu luật chọn.
+            const f = { ...(c.after as Furniture), id: `F-0000LEGACY${String(i).padStart(2, '0')}` as Furniture['id'] };
+            delete f.model;
+            return f;
+          }),
+      };
+      const reloaded = sceneOf(legacy, ON);
+      expect(legacy.furniture).toHaveLength(nodes.length);
+      expect(roomItems(reloaded).map((n) => n.id)).toEqual([]);
+      for (const f of legacy.furniture) {
+        const node = reloaded.nodes[`item_${f.id}`] as PascalItemNode;
+        expect([Math.round(node.position[0] * 1000), Math.round(node.position[2] * 1000)]).toEqual([f.centre.x, f.centre.y]);
+      }
+      expect(itemsOf(sceneOf(legacy, ON))).toBe(itemsOf(reloaded));
     });
   });
 });

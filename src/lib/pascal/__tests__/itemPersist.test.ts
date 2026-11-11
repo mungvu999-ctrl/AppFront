@@ -176,9 +176,10 @@ describe('W3b — đồ đạc giữ khe, mẫu, độ cao', () => {
     if (!result.ok) throw new Error(result.error.reasons.join(' '));
 
     const fields = dress.metadata?.appfront?.fields ?? {};
-    const adopted = result.data.changes.map((change) => change.after as Furniture);
+    const adopted = result.data.changes.filter((change) => change.kind === 'furniture').map((change) => change.after as Furniture);
     const same = adopted.find((candidate) => candidate.centre.x === Math.round(dress.position[0] * 1000));
 
+    expect(adopted).toHaveLength(1);
     expect(adopted.every((candidate) => candidate.id.startsWith('F-'))).toBe(true);
     expect(same?.variant).toBe(fields['variant']);
     expect(same?.heightMm).toBe(fields['heightMm']);

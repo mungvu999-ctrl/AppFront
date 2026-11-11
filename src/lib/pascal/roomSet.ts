@@ -226,12 +226,57 @@ export const setCostOf = (folders: readonly string[], ctx: SetContext, memo: Map
 
 const byId = (a: { readonly id: string }, b: { readonly id: string }): number => a.id.localeCompare(b.id);
 
+/** Cỡ ô làm tròn của chữ ký phòng, mm (diện tích làm tròn 0,1 m²). */
+const KEY_GRID_MM = 100;
+
 /**
- * Bộ của một phòng. `decided` = món đã chốt ở lượt trước trong cùng lượt dựng (giữ nguyên, làm ngữ cảnh). Trả quyết
- * định cho mọi món trong phạm vi chưa chốt. Thứ tự xử lý: vai neo, rồi `SET_ROLES`; trong vai theo id.
+ * Khoá băm của từng phòng theo NỘI DUNG, không theo id (id sinh lại khi chép sang dự án khác → nội thất không được
+ * đổi): công năng + cạnh ngắn/dài hộp bao (làm tròn 100 mm) + diện tích (0,1 m²), rồi thứ hạng giữa các phòng trùng
+ * chữ ký theo tâm hộp bao TƯƠNG ĐỐI trong tầng (góc nhỏ nhất của mọi phòng cùng tầng; sắp y rồi x, làm tròn 100 mm).
+ * Hai tầng giống hệt cho cùng khoá — cùng nội dung thì cùng bộ.
+ */
+export const roomSetKeysOf = (
+  rooms: readonly { readonly id: string; readonly levelId: string; readonly usage: string | undefined; readonly outline: readonly { readonly x: number; readonly y: number }[] }[],
+): Map<string, string> => {
+  const grid = (v: number): number => Math.round(v / KEY_GRID_MM);
+  const originOf = new Map<string, { x: number; y: number }>();
+  for (const r of rooms) {
+    for (const p of r.outline) {
+      const o = originOf.get(r.levelId);
+      originOf.set(r.levelId, o === undefined ? { x: p.x, y: p.y } : { x: Math.min(o.x, p.x), y: Math.min(o.y, p.y) });
+    }
+  }
+  const info = rooms.map((r) => {
+    const xs = r.outline.map((p) => p.x);
+    const ys = r.outline.map((p) => p.y);
+    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    const o = originOf.get(r.levelId) ?? { x: 0, y: 0 };
+    const area = Math.abs(r.outline.reduce((sum, p, i) => {
+      const q = r.outline[(i + 1) % r.outline.length] ?? p;
+      return sum + p.x * q.y - q.x * p.y;
+    }, 0)) / 2;
+    const [w, h] = [x1 - x0, y1 - y0];
+    const sig = `${r.usage ?? ''}|${grid(Math.min(w, h))}x${grid(Math.max(w, h))}|${Math.round(area / 1e5)}`;
+    return { id: r.id, sig, at: [grid((y0 + y1) / 2 - o.y), grid((x0 + x1) / 2 - o.x)] as const };
+  });
+  const keys = new Map<string, string>();
+  for (const { id, sig, at } of info) {
+    const spots = [...new Set(info.filter((r) => r.sig === sig).map((r) => r.at.join(',')))]
+      .map((s) => s.split(',').map(Number) as [number, number])
+      .sort((a, b) => a[0] - b[0] || a[1] - b[1])
+      .map((a) => a.join(','));
+    keys.set(id, `${sig}#${spots.indexOf(at.join(','))}`);
+  }
+  return keys;
+};
+
+/**
+ * Bộ của một phòng. `roomKey` = khoá nội dung (`roomSetKeysOf`), chỉ dùng để băm rút neo. `decided` = món đã chốt ở
+ * lượt trước trong cùng lượt dựng (giữ nguyên, làm ngữ cảnh). Trả quyết định cho mọi món trong phạm vi chưa chốt.
+ * Thứ tự xử lý: vai neo, rồi `SET_ROLES`; trong vai theo id.
  */
 export const roomSetOf = (
-  roomId: string,
+  roomKey: string,
   members: readonly SetMember[],
   decided: ReadonlyMap<string, SetDecision>,
   ctx: SetContext,
@@ -275,9 +320,9 @@ export const roomSetOf = (
       .map((f) => ({ f, cost: setCostOf(anchor ? [f] : [...context, f], ctx, memo) }))
       .sort((a, b) => a.cost - b.cost || a.f.localeCompare(b.f));
     const best = ranked[0] as { f: string; cost: number };
-    // Neo: rút trong dải sát tốt nhất theo băm phòng + vai (đa dạng có kiểm soát); món khác: rẻ nhất.
+    // Neo: rút trong dải sát tốt nhất theo băm khoá nội dung phòng + vai (đa dạng có kiểm soát); món khác: rẻ nhất.
     const band = anchor ? ranked.filter((r) => r.cost <= best.cost + ANCHOR_BAND) : [best];
-    const pick = band[fnv1a(`${roomId}|${role}`) % band.length] as { f: string; cost: number };
+    const pick = band[fnv1a(`${roomKey}|${role}`) % band.length] as { f: string; cost: number };
     for (const m of todo) chosen.push({ m, to: pick.f, anchor, cost: pick.cost, why: anchor ? `neo, dải ${band.length}` : 'hợp neo' });
     context.push(pick.f);
   }
