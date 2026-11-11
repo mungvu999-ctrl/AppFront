@@ -17,6 +17,7 @@
 import { DoubleSide, type Material, type Mesh } from 'three';
 import { abs, clamp, smoothstep, uniform, cross, dFdx, dFdy, dot, faceDirection, materialColor, mix, mx_noise_float, normalize, normalView, positionView, positionWorld, sign, vec3, vec4 } from 'three/tsl';
 import { MeshPhysicalNodeMaterial, type Node } from 'three/webgpu';
+import { sceneRegistry } from '@pascal-app/core';
 import LIBRARY_ROLES_JSON from '@/lib/pascal/libraryRoles.json' with { type: 'json' };
 import { namedFolderOf, serverKindOf, VARIANT_MODEL } from '@/lib/pascal/furnitureCatalog';
 import { fabricRoleOf, fabricSurfaceOf, type FabricMatch, type FabricRole } from './fabricRules';
@@ -150,13 +151,47 @@ function fabricNodes(): Nodes {
 
 type Src = Material & { color?: { r: number; g: number; b: number }; map?: unknown; roughness?: number; metalness?: number; emissiveIntensity?: number; emissive?: { r: number; g: number; b: number } };
 
-const cache = new Map<string, Material>();
+/**
+ * Lát 3 (review Codex #3): vật liệu vải thuộc về các MÓN đang dùng nó (đếm tham chiếu theo id món). Món đổi vật liệu → nhả
+ * khoá cũ; món rời cảnh (gỡ khỏi `sceneRegistry` lúc unmount — xoá món, đổi mẫu, đổi dự án) → nhả hết. Hết tham chiếu →
+ * `dispose()` + gỡ khỏi cache. Không có điểm dọn realism chung cho vật liệu đồ, nên việc quét chạy ở lượt áp kế tiếp.
+ */
+interface Entry {
+  mat: Material;
+  refs: number;
+}
+const cache = new Map<string, Entry>();
+/** Món → khoá vật liệu đang giữ; `seen` = đã từng thấy trong registry (món con dựng trước khi nhóm cha đăng ký thì chưa). */
+const usage = new Map<string, { keys: Set<string>; seen: boolean }>();
 const sides = new Set<number>();
 
+const keyOf = (src: Material, bedding: boolean): string => `${src.uuid}|${bedding ? 'b' : ''}`;
+
+function release(key: string): void {
+  const e = cache.get(key);
+  if (!e || --e.refs > 0) return;
+  e.mat.dispose();
+  cache.delete(key);
+}
+
+function releaseItem(id: string): void {
+  const u = usage.get(id);
+  if (!u) return;
+  for (const k of u.keys) release(k);
+  usage.delete(id);
+}
+
+/** Nhả món đã từng đăng ký mà nay không còn trong registry. */
+function sweep(nodes: ReadonlyMap<string, unknown>): void {
+  for (const [id, u] of usage) {
+    if (nodes.has(id)) u.seen = true;
+    else if (u.seen) releaseItem(id);
+  }
+}
+
 function fabricMaterialFor(src: Src, bedding: boolean): Material {
-  const key = `${src.uuid}|${bedding ? 'b' : ''}`;
-  const hit = cache.get(key);
-  if (hit) return hit;
+  const hit = cache.get(keyOf(src, bedding));
+  if (hit) return hit.mat;
   const L = FABRIC_LOOK;
   const m = new MeshPhysicalNodeMaterial();
   m.name = `${src.name}|fabricmat`;
@@ -177,10 +212,25 @@ function fabricMaterialFor(src: Src, bedding: boolean): Material {
   // phong cách (cùng họ trắng); không bỏ dấu `upholsteryHex` của gốc để nhuộm chạy lại.
   const tag = src.userData.upholstery as UpholsteryTag | undefined;
   const upholstery: UpholsteryTag | undefined = tag ?? (bedding ? { kind: 'bedding', recolour: true } : undefined);
-  m.userData = { fabricMat: true, ...(upholstery ? { upholstery } : {}) };
+  m.userData = { fabricMat: true, fabricKey: keyOf(src, bedding), ...(upholstery ? { upholstery } : {}) };
   sides.add(m.side);
-  cache.set(key, m);
+  cache.set(keyOf(src, bedding), { mat: m, refs: 0 });
   return m;
+}
+
+/**
+ * Lát 3 (review Codex #2): khe có tham chiếu HIỆU LỰC như renderer giải (`slots[khe] ?? slots.a`, luật u53) mà khác mặc
+ * định phong cách lớp sinh đã ghi (`metadata.appfront.fields.styleSlots`, cùng dấu toSpatial dùng để biết món đã sơn) → của
+ * người dùng → giữ. Món không có `styleSlots` (đặt từ bảng đồ Pascal): mọi khe đã gán coi là của người dùng.
+ */
+export function userSlotRef(item: FabricItem, slot: string | null | undefined): boolean {
+  if (!slot) return false;
+  const ref = item.slots?.[slot] ?? item.slots?.a;
+  if (ref == null || ref === '') return false;
+  const style = item.metadata?.appfront?.fields?.styleSlots;
+  if (style == null || typeof style !== 'object') return true;
+  const def = (style as Record<string, unknown>)[slot] ?? (style as Record<string, unknown>).a;
+  return ref !== def;
 }
 
 // ---- Áp cho một món ----
@@ -188,6 +238,7 @@ export interface FabricItem {
   id?: string;
   asset?: { src?: string | null };
   slots?: Readonly<Record<string, unknown>> | null;
+  metadata?: { appfront?: { fields?: { styleSlots?: unknown } } } | null;
 }
 
 interface Capture {
@@ -205,11 +256,23 @@ const luminance = (c: { r: number; g: number; b: number }): number => 0.2126 * c
 export const BEDDING_LIGHT_MIN = 0.6;
 
 /** Gọi từ `applyUpholstery` (trước khi chọn vật liệu nhuộm). Thay vật liệu vải của món bằng vật liệu vải dùng chung. */
-export function applyFabricMaterials(meshes: readonly Mesh[], item: FabricItem | undefined): void {
-  if (!on || !item) return;
-  const role = fabricRoleOf(item.id, item.asset?.src, roleOfKey);
-  if (!role) return;
-  const generated = /(?:^|_)DRESS-/.test(item.id ?? '');
+export function applyFabricMaterials(meshes: readonly Mesh[], item: FabricItem | undefined, nodes: ReadonlyMap<string, unknown> = sceneRegistry.nodes): void {
+  const id = item?.id;
+  if (!item || !id) return;
+  sweep(nodes);
+  const held = new Set<string>();
+  const role = on ? fabricRoleOf(id, item.asset?.src, roleOfKey) : null;
+  if (role) applyRole(meshes, { ...item, id }, role, held);
+  // Đếm lại tham chiếu của món: giữ khoá mới trước, nhả khoá cũ sau (khoá chung không bị dispose giữa chừng).
+  const prev = usage.get(id);
+  for (const k of held) if (!prev?.keys.has(k)) cache.get(k)!.refs += 1;
+  if (prev) for (const k of prev.keys) if (!held.has(k)) release(k);
+  if (held.size) usage.set(id, { keys: held, seen: prev?.seen ?? nodes.has(id) });
+  else usage.delete(id);
+}
+
+function applyRole(meshes: readonly Mesh[], item: FabricItem & { id: string }, role: FabricRole, held: Set<string>): void {
+  const generated = /(?:^|_)DRESS-/.test(item.id);
   let count = 0;
   for (const mesh of meshes) {
     const cap = mesh.userData.pascalItemMaterialCapture as Capture | undefined;
@@ -217,11 +280,14 @@ export function applyFabricMaterials(meshes: readonly Mesh[], item: FabricItem |
     const hasUv = mesh.geometry.getAttribute('uv') != null;
     const next = list.map((mat, i) => {
       const src = mat as Src;
-      if (src.userData.fabricMat) return mat;
+      if (src.userData.fabricMat) {
+        held.add(src.userData.fabricKey as string);
+        return mat;
+      }
       const authored = Array.isArray(cap?.authoredMaterials) ? cap.authoredMaterials[i] : cap?.authoredMaterials;
       const slot = Array.isArray(cap?.slotIds) ? cap.slotIds[i] : cap?.slotIds;
-      // Khe người dùng gán vật liệu (món không sinh): giữ lựa chọn.
-      if (slot && !generated && item.slots?.[slot] != null) return mat;
+      // Khe người dùng gán vật liệu (kể cả món sinh vừa được sơn): giữ lựa chọn.
+      if (userSlotRef(item, slot)) return mat;
       const emissive = (src.emissiveIntensity ?? 0) > 0 && src.emissive != null && luminance(src.emissive) > 0;
       const match = fabricSurfaceOf({
         names: [authored?.name, slot, src.name.split('|')[0]],
@@ -236,11 +302,13 @@ export function applyFabricMaterials(meshes: readonly Mesh[], item: FabricItem |
       if (!match) return mat;
       count += 1;
       report.match[match] += 1;
-      return fabricMaterialFor(src, role === 'bed' && luminance(src.color ?? { r: 0, g: 0, b: 0 }) >= BEDDING_LIGHT_MIN);
+      const fab = fabricMaterialFor(src, role === 'bed' && luminance(src.color ?? { r: 0, g: 0, b: 0 }) >= BEDDING_LIGHT_MIN);
+      held.add(fab.userData.fabricKey as string);
+      return fab;
     });
     if (next.some((m, i) => m !== list[i])) mesh.material = Array.isArray(mesh.material) ? next : next[0]!;
   }
-  if (!count || !item.id || report.items.has(item.id)) return;
+  if (!count || report.items.has(item.id)) return;
   report.items.set(item.id, { role, surfaces: count, generated });
   report.surfaces[role] += count;
 }
@@ -255,6 +323,7 @@ export function fabricReport() {
     items: report.items.size,
     generatedItems: [...report.items.values()].filter((i) => i.generated).length,
     materials: cache.size,
+    heldBy: usage.size,
     shaderKeys: sides.size,
     doubleSided: sides.has(DoubleSide),
   };
@@ -270,9 +339,11 @@ export function exposeFabricProbe(): void {
   probed = true;
 }
 
-/** Cho test. */
+/** Huỷ toàn bộ (teardown/test): dispose mọi vật liệu vải còn giữ. */
 export function clearFabricMaterials(): void {
+  for (const e of cache.values()) e.mat.dispose();
   cache.clear();
+  usage.clear();
   sides.clear();
   report.items.clear();
   for (const k of Object.keys(report.surfaces) as FabricRole[]) report.surfaces[k] = 0;

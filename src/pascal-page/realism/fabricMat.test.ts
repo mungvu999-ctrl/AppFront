@@ -150,3 +150,107 @@ describe('applyFabricMaterials', () => {
     expect(mesh.material).toBe(m);
   });
 });
+
+describe('lát 3: lựa chọn người dùng + vòng đời vật liệu', () => {
+  afterEach(() => {
+    setFabricMat(false);
+    clearFabricMaterials();
+  });
+  const SOFA_SRC = '/items/sofa/model.glb';
+  const meshWithSlot = (slot: string) => {
+    const m = new MeshStandardMaterial({ name: 'Standardmaterial', roughness: 0.9 });
+    const mesh = new Mesh(new BoxGeometry(), m);
+    mesh.userData.pascalItemMaterialCapture = { authoredMaterials: m, slotIds: slot };
+    return { m, mesh };
+  };
+
+  it('dự phòng cả món slots.a (mẫu không khe) của người dùng: giữ', () => {
+    setFabricMat(true);
+    const { m, mesh } = meshWithSlot('a');
+    applyFabricMaterials([mesh], { id: 'item_F-9', asset: { src: SOFA_SRC }, slots: { a: 'library:wood-oak' }, metadata: { appfront: { fields: { styleSlots: {} } } } });
+    expect(mesh.material).toBe(m);
+  });
+
+  it('khe có khe riêng rỗng nhưng slots.a đã sơn: giữ (renderer dùng slots.a)', () => {
+    setFabricMat(true);
+    const { m, mesh } = meshWithSlot('body');
+    applyFabricMaterials([mesh], { id: 'item_F-10', asset: { src: SOFA_SRC }, slots: { a: 'library:leather-calf' } });
+    expect(mesh.material).toBe(m);
+  });
+
+  it('món sinh (DRESS-) người dùng vừa sơn khác mặc định phong cách: giữ; còn đúng mặc định: được đổi', () => {
+    setFabricMat(true);
+    const styleSlots = { fabric: 'library:fabric-linen' };
+    const painted = meshWithSlot('fabric');
+    applyFabricMaterials([painted.mesh], { id: 'item_DRESS-curtain-D-1-L', asset: { src: '/items/curtain/model.glb' }, slots: { fabric: 'library:fabric-velvet' }, metadata: { appfront: { fields: { styleSlots } } } });
+    expect(painted.mesh.material).toBe(painted.m);
+    const def = meshWithSlot('fabric');
+    applyFabricMaterials([def.mesh], { id: 'item_DRESS-curtain-D-1-R', asset: { src: '/items/curtain/model.glb' }, slots: { ...styleSlots }, metadata: { appfront: { fields: { styleSlots } } } });
+    expect((def.mesh.material as MeshStandardMaterial).userData.fabricMat).toBe(true);
+  });
+
+  it('không đổi node (dữ liệu lưu qua toSpatial đọc node, không đọc vật liệu mesh)', () => {
+    setFabricMat(true);
+    const { mesh } = bedMesh();
+    const item = { id: 'item_F-11', asset: { src: 'http://h/appback/library/bed-white-oak-headboard/model.glb' }, slots: {}, metadata: { appfront: { fields: { styleSlots: {} } } } };
+    const before = JSON.stringify(item);
+    applyFabricMaterials([mesh], item);
+    expect(((mesh.material as MeshStandardMaterial[])[0]!).userData.fabricMat).toBe(true);
+    expect(JSON.stringify(item)).toBe(before);
+  });
+
+  it('vòng đời: vật liệu dùng chung chỉ dispose khi món cuối rời registry; đổi lựa chọn nhả khoá', () => {
+    setFabricMat(true);
+    const src = 'http://h/appback/library/bed-white-oak-headboard/model.glb';
+    const sheet = new MeshStandardMaterial({ name: 'Standardmaterial', roughness: 0.9 });
+    const a = new Mesh(new BoxGeometry(), sheet);
+    const b = new Mesh(new BoxGeometry(), sheet);
+    const nodes = new Map<string, unknown>([['item_F-A', 1], ['item_F-B', 1]]);
+    applyFabricMaterials([a], { id: 'item_F-A', asset: { src } }, nodes);
+    applyFabricMaterials([b], { id: 'item_F-B', asset: { src } }, nodes);
+    const fab = a.material as MeshStandardMaterial;
+    expect(b.material).toBe(fab);
+    let disposed = 0;
+    fab.addEventListener('dispose', () => (disposed += 1));
+    expect(fabricReport().materials).toBe(1);
+    nodes.delete('item_F-A');
+    applyFabricMaterials([new Mesh(new BoxGeometry(), new MeshStandardMaterial())], { id: 'item_F-C', asset: { src: '/items/closet/model.glb' } }, nodes);
+    expect(disposed).toBe(0);
+    nodes.delete('item_F-B');
+    applyFabricMaterials([new Mesh(new BoxGeometry(), new MeshStandardMaterial())], { id: 'item_F-C', asset: { src: '/items/closet/model.glb' } }, nodes);
+    expect(disposed).toBe(1);
+    expect(fabricReport().materials).toBe(0);
+    expect(fabricReport().heldBy).toBe(0);
+  });
+
+  it('món đổi sang khe người dùng: nhả và dispose vật liệu vải nó giữ', () => {
+    setFabricMat(true);
+    const first = meshWithSlot('body');
+    const item = { id: 'item_F-12', asset: { src: SOFA_SRC }, slots: {} as Record<string, string>, metadata: { appfront: { fields: { styleSlots: {} } } } };
+    applyFabricMaterials([first.mesh], item, new Map([['item_F-12', 1]]));
+    const fab = first.mesh.material as MeshStandardMaterial;
+    expect(fab.userData.fabricMat).toBe(true);
+    let disposed = 0;
+    fab.addEventListener('dispose', () => (disposed += 1));
+    first.mesh.material = first.m; // renderer gán lại vật liệu đã giải
+    applyFabricMaterials([first.mesh], { ...item, slots: { body: 'library:leather-calf' } }, new Map([['item_F-12', 1]]));
+    expect(first.mesh.material).toBe(first.m);
+    expect(disposed).toBe(1);
+  });
+
+  it('clearFabricMaterials dispose mọi vật liệu còn giữ', () => {
+    setFabricMat(true);
+    const { mesh } = bedMesh();
+    applyFabricMaterials([mesh], { id: 'item_F-13', asset: { src: 'http://h/appback/library/bed-white-oak-headboard/model.glb' } });
+    let disposed = 0;
+    ((mesh.material as MeshStandardMaterial[])[0]!).addEventListener('dispose', () => (disposed += 1));
+    clearFabricMaterials();
+    expect(disposed).toBe(1);
+  });
+});
+
+function bedMesh() {
+  const sheet = new MeshStandardMaterial({ name: 'Standardmaterial', roughness: 0.9 });
+  const frame = new MeshStandardMaterial({ name: 'Standardmaterial_0', roughness: 0.9, map: {} as never });
+  return { mesh: new Mesh(new BoxGeometry(), [sheet, frame]) };
+}
