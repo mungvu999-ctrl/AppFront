@@ -105,3 +105,20 @@ describe('sheen vải', () => {
     expect(wood).not.toBeInstanceOf(MeshPhysicalMaterial);
   });
 });
+
+describe('upholstery — ?drape=light (vòng 10)', () => {
+  it('rèm sinh: nhuộm màu chăn ga, không đổi phong cách hiện tại theo ref lanh', async () => {
+    const { setDrapeFlags } = await import('@/lib/pascal/sceneDressingDrape');
+    const mat = new MeshStandardMaterial();
+    tagUpholstery(mat, 'fabric', 'library:fabric-linen', 'curtain');
+    expect(mat.userData.upholstery).toEqual({ kind: 'fabric', recolour: true });
+    setDrapeFlags(['light']);
+    try {
+      const m2 = new MeshStandardMaterial();
+      tagUpholstery(m2, 'fabric', 'library:fabric-linen', 'curtain');
+      expect(m2.userData.upholstery).toEqual({ kind: 'bedding', recolour: true });
+    } finally {
+      setDrapeFlags([]);
+    }
+  });
+});

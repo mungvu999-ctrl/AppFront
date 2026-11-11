@@ -8,6 +8,7 @@
 import { Color, SRGBColorSpace, Triangle } from 'three';
 import type { BufferGeometry, Material, Mesh, Texture } from 'three';
 import { UPHOLSTERY_PALETTE } from '@/lib/pascal/scenePalette';
+import { CURTAIN_FOLDER, drapeOn } from '@/lib/pascal/sceneDressingDrape';
 import { DEFAULT_SCENE_STYLE, readSceneStyle, SCENE_STYLE_IDS, SCENE_STYLES, type SceneStyleId } from '@/lib/pascal/sceneStyles';
 import type { MaterialKind } from './itemLook';
 import { useRealism } from './store';
@@ -80,6 +81,12 @@ function currentStyle(): SceneStyleId {
 /** Gọi từ `tuneItemMaterial` khi tạo bản clone: ghi loại + quyền nhuộm vào userData. */
 export function tagUpholstery(mat: Material, kind: MaterialKind | null, ref: string | null | undefined, folder: string | null): void {
   if (!kind || !UPHOLSTERY_KINDS.has(kind)) return;
+  // `?drape=light`: rèm sinh nhuộm màu chăn ga (sáng) của phong cách, không màu bọc sofa; ref lanh của rèm không được
+  // coi là "phong cách hiện tại" (lanh = họ vải của ấm áp → nhuộm nhầm cả cảnh).
+  if ((folder === CURTAIN_FOLDER || folder === `${CURTAIN_FOLDER}-uv`) && drapeOn('light')) {
+    mat.userData.upholstery = { kind: 'bedding', recolour: true } satisfies UpholsteryTag;
+    return;
+  }
   const style = ref ? styleOfFabricRef(ref) : null;
   if (style) lastStyle = style;
   const auto = !ref || style != null || CURATED_DEFAULT.test(ref);

@@ -70,3 +70,10 @@ if (window.__pascalProbe) {
     if (window.__pascalProbe) Object.assign(window.__pascalProbe, { winView: winViewReport });
   });
 }
+
+// Rèm/vải sinh (vòng 10, `?drape=light,tall,uv`, sceneDressingDrape.ts): { flags, curtains: [{ id, heightMm, fabric, color }] }.
+if (window.__pascalProbe) {
+  void import('@/lib/pascal/sceneDressingDrape').then(({ drapeReport }) => {
+    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { drape: drapeReport });
+  });
+}

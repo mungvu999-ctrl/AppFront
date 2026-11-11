@@ -26,6 +26,7 @@ import {
 import { buildxOn } from '@/pascal-page/realism/buildx';
 
 import { itemSlotsOf } from './sceneDressing';
+import { CURTAIN_FOLDER, drapeColourOf, drapeFabricOf, drapeHeightMm, drapeOn, recordCurtain } from './sceneDressingDrape';
 import { modelFolderOf, orientedGenerated, roleOf, type FurnitureRole } from './sceneVariety';
 import type { SceneStyle } from './sceneStyles';
 
@@ -497,6 +498,14 @@ export const dressingOf = (graph: SpatialGraph, style: SceneStyle): readonly Fur
     }
 
     // (10) Rèm hai bên mỗi cửa sổ phòng khách / phòng ngủ: áp mặt tường phía phòng, chừa cửa đi.
+    // Vòng 10 `?drape=light,tall` (sceneDressingDrape.ts): vải dệt sáng mọi phong cách, cao sát trần.
+    const curtainExtra = (): Extra => {
+      const base = decor(CURTAIN_FOLDER, 0);
+      const next: Extra = { ...base };
+      if (drapeOn('light')) next.slots = { ...base.slots, fabric: drapeFabricOf(style) } as NonNullable<Extra['slots']>;
+      if (drapeOn('tall')) next.heightMm = drapeHeightMm(levelHeightMm, base.heightMm ?? 0) as Millimetres;
+      return next;
+    };
     if (CURTAIN_USAGES.has(room.usage)) {
       for (const win of windowsOfRoom(graph, room)) {
         const [cw, , cd] = CATALOG_MODELS['curtain']?.dimensions ?? [0, 0, 0];
@@ -507,7 +516,12 @@ export const dressingOf = (graph: SpatialGraph, style: SceneStyle): readonly Fur
           const candidates = CURTAIN_OVERLAPS_MM.map((overlap) =>
             facing(win.frame, 1, sign * (win.width / 2 + panelW / 2 - overlap), win.inward * (win.thickness / 2 + panelD / 2 + CURTAIN_WALL_GAP_MM), panelW, panelD, win.inward),
           );
-          tryPlace(`DRESS-curtain-${win.id}-${side}`, candidates, over(), undefined, decor('curtain', 0), 0);
+          const id = `DRESS-curtain-${win.id}-${side}`;
+          const extra = curtainExtra();
+          if (tryPlace(id, candidates, over(), undefined, extra, 0)) {
+            const fabric = (extra.slots as Readonly<Record<string, string>> | undefined)?.fabric;
+            recordCurtain({ id, heightMm: extra.heightMm ?? 0, fabric, color: drapeOn('light') ? drapeColourOf(style.id) : null });
+          }
         });
       }
     }
