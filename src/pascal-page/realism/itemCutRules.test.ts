@@ -71,6 +71,19 @@ describe('luật cắt đồ theo node/hình học (vòng 10)', () => {
     expect(mesh.material).toBe(cutWholeVariant(wood));
   });
 
+  it('lượt bóng trước ném lỗi (không có onAfterShadow): mesh thường sau đó không dùng vật liệu bóng bị nhiễm', () => {
+    const depth = new NodeMaterial() as unknown as Depth;
+    const whole = box(level(), new MeshStandardMaterial(), 2) as ShadowMesh;
+    const plain = box(level(), new MeshStandardMaterial(), 0.5) as ShadowMesh;
+    markShadowWhole(whole, true);
+    markShadowWhole(plain, false);
+    whole.onBeforeShadow(null, whole, null, null, whole.geometry, depth, null);
+    expect(Object.hasOwn(depth, 'setupClipping')).toBe(true);
+    plain.onBeforeShadow(null, plain, null, null, plain.geometry, depth, null);
+    expect(Object.hasOwn(depth, 'setupClipping')).toBe(false);
+    expect(Object.hasOwn(depth, 'setupHardwareClipping')).toBe(false);
+  });
+
   it('mesh mới phân loại lần đầu không làm vật liệu bóng dựng lại', () => {
     const depth = new NodeMaterial() as unknown as Depth;
     const a = box(level(), new MeshStandardMaterial(), 2) as ShadowMesh;
