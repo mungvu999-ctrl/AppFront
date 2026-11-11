@@ -688,13 +688,32 @@ export const clearServerLibrary = (): void => {
 };
 
 /**
+ * THAY toàn bộ thư viện máy chủ bằng `items` (một lượt đọc được chấp nhận): mẫu không còn trong danh sách — người dùng
+ * mất quyền, mẫu bị gỡ — bị gỡ khỏi danh mục, mục đóng gói bị che được trả lại. Đồng bộ: không có khung nào thấy danh
+ * mục rỗng giữa chừng. Trả số mục đã gộp.
+ */
+export const replaceServerLibrary = (items: Parameters<typeof registerServerLibrary>[0]): number => {
+  clearServerLibrary();
+  return registerServerLibrary(items);
+};
+
+/**
  * Id mẫu máy chủ đang giữ URL `url` (so phần trước `?`: chữ ký đổi mỗi lượt ký). `undefined` = không phải mẫu thư viện
  * đang nạp — kể cả URL của người dùng trước khi đã đổi phiên (`clearServerLibrary`).
  */
 export const serverModelIdOfUrl = (url: string): string | undefined => {
-  const bare = url.split('?')[0];
-  for (const [id, file] of SERVER_FILES) if (file.model.split('?')[0] === bare) return id;
+  const bare = absoluteUrl(url).split('?')[0];
+  for (const [id, file] of SERVER_FILES) if (absoluteUrl(file.model).split('?')[0] === bare) return id;
   return undefined;
+};
+
+/** URL tuyệt đối theo trang (fetch nhận `Request.url` đã chuẩn hoá); không chuẩn hoá được thì giữ nguyên. */
+export const absoluteUrl = (url: string): string => {
+  try {
+    return new URL(url, globalThis.location?.href).href;
+  } catch {
+    return url;
+  }
 };
 
 /** true khi thư mục đến từ thư viện máy chủ. */

@@ -2,8 +2,16 @@ import type { LibraryApi } from '@/api/client';
 import type { DesignAddition, DesignResult } from '@/api/schemas/designConcept';
 
 import { getSessionSnapshot } from '@/lib/auth/state';
+import { interceptPlatformFetch } from '@/lib/http/platform';
 
-import { CATALOG_MODELS, clearServerLibrary, modelSrcOf, registerServerLibrary, serverModelIdOfUrl } from './furnitureCatalog';
+import {
+  absoluteUrl,
+  CATALOG_MODELS,
+  clearServerLibrary,
+  modelSrcOf,
+  replaceServerLibrary,
+  serverModelIdOfUrl,
+} from './furnitureCatalog';
 
 import {
   absenceOf,
@@ -46,6 +54,8 @@ const withNotice = (load: LibraryLoad): SceneLibrary => ({
 
 let shared: Promise<SceneLibrary> | null = null;
 let settled: SceneLibrary | null = null;
+/** `shared` đang chạy (chưa chốt): lượt đọc lại theo tuổi dùng chung nó thay vì mỗi lời gọi tự phát request (Codex #2). */
+let sharedPending = false;
 /** Người dùng của lượt đọc đã chốt (`null` = chưa có phiên). */
 let settledOwner: string | null = null;
 /** Lúc lượt đọc chốt (ms) — URL ký MinIO hết hạn ~2 giờ. */
@@ -58,6 +68,7 @@ const currentOwner = (): string | null => getSessionSnapshot().user?.id ?? null;
 /** Quên lượt đọc + gỡ mẫu máy chủ đã gộp (mẫu riêng, URL ký của người trước). */
 const forget = (): void => {
   shared = null;
+  sharedPending = false;
   settled = null;
   generation += 1;
   refreshing = null;
@@ -81,23 +92,30 @@ const forget = (): void => {
  *   ấy, khớp câu báo "Tải lại trang để thử lại" (editor là trang riêng nên tự đọc lượt của nó).
  */
 export function ensureSceneLibrary(getApi: LibraryApiSource = defaultApi): Promise<SceneLibrary> {
-  void installAssetRefresh();
+  installAssetRefresh();
   const session = getSessionSnapshot();
   /** Thư viện máy chủ đã chốt nhưng URL quá tuổi: GIỮ nó (không gỡ `SERVER_FILES`) tới khi lượt đọc lại thành công. */
   let keep: SceneLibrary | null = null;
   if (settled !== null && session.status !== 'unknown' && currentOwner() !== settledOwner) forget();
   // URL ký đã quá tuổi: cảnh dựng mới (đổi dự án/phiên bản) lấy URL mới thay vì URL sắp/đã hết hạn.
-  else if (settled?.source === 'server' && Date.now() - settledAt > SIGNED_URL_MAX_AGE_MS) {
+  else if (!sharedPending && settled?.source === 'server' && Date.now() - settledAt > SIGNED_URL_MAX_AGE_MS) {
     keep = settled;
     shared = null;
   }
   if (shared !== null) return shared;
+  /** Người của phiên mà lượt đọc này dùng (chốt sau khi có client — phiên có thể còn `unknown` lúc gọi). */
+  let reqOwner: string | null = null;
   const mine = getApi()
-    .then((api) =>
-      api === null
+    .then((api) => {
+      reqOwner = currentOwner();
+      return api === null
         ? { count: 0, source: 'fallback:no-session' as const, version: BUNDLED_LIBRARY_VERSION }
-        : loadServerLibrary(api),
-    )
+        : // Ghi danh mục chỉ khi lượt đọc này còn hiệu lực (chưa bị quên vì đổi người, chưa bị lượt mới thay): phản
+          // hồi cũ về muộn không ghi đè URL mới / danh mục của người sau. Ghi = THAY cả thư viện (mẫu bị gỡ quyền rơi ra).
+          loadServerLibrary(api, (items) =>
+            shared === mine && currentOwner() === reqOwner ? replaceServerLibrary(items) : items.length,
+          );
+    })
     .catch((): LibraryLoad => ({ count: 0, source: 'fallback:threw', version: BUNDLED_LIBRARY_VERSION }))
     .then((load) => {
       // Đọc lại vì quá tuổi mà hỏng: giữ thư viện cũ (URL cũ vẫn gia hạn được từng mẫu), lượt dựng sau thử lại.
@@ -110,14 +128,17 @@ export function ensureSceneLibrary(getApi: LibraryApiSource = defaultApi): Promi
         sameUrlRetried.clear();
       }
       if (shared === mine) {
+        sharedPending = false;
         settled = result;
-        settledOwner = currentOwner();
+        // Chủ = người của lượt đọc: đổi người giữa chừng thì lượt sau thấy lệch chủ → quên + đọc lại.
+        settledOwner = reqOwner;
         if (result !== keep) settledAt = Date.now();
         if (load.source === 'fallback:no-session' || result === keep) shared = null;
       }
       return result;
     });
   shared = mine;
+  sharedPending = true;
   return mine;
 }
 
@@ -215,9 +236,12 @@ const fail = (modelId: string, reason: AssetRefreshFailure): null => {
 const refreshLibrary = (getApi: LibraryApiSource): Promise<AssetRefreshFailure | null> => {
   if (refreshing !== null) return refreshing;
   const gen = generation;
-  const owner = currentOwner();
+  // Chủ của danh mục đang nạp (không phải người đang đăng nhập lúc này): đổi tài khoản mà chưa qua `ensureSceneLibrary`
+  // thì lượt này là stale — không nạp thư viện của người mới vào danh mục của người cũ (Codex #1).
+  const owner = settledOwner;
   const isStale = (): boolean => gen !== generation || currentOwner() !== owner;
   const mine = (async (): Promise<AssetRefreshFailure | null> => {
+    if (isStale()) return 'stale';
     const api = await getApi().catch(() => null);
     if (isStale()) return 'stale';
     if (api === null) return 'no-session';
@@ -225,7 +249,7 @@ const refreshLibrary = (getApi: LibraryApiSource): Promise<AssetRefreshFailure |
     if (isStale()) return 'stale';
     if (result === null) return 'failed';
     if (!result.ok) return absenceOf(result.error) === undefined ? 'failed' : 'no-permission';
-    registerServerLibrary(result.data);
+    replaceServerLibrary(result.data);
     refreshedIds = new Set(result.data.map((i) => i.id));
     settledAt = Date.now();
     return null;
@@ -275,14 +299,18 @@ async function refreshOnce(
   if (wait === undefined) return fail(modelId, 'exhausted');
   assetAttempts.set(modelId, used + 1);
   const gen = generation;
+  const owner = settledOwner;
+  // Kiểm cả thế hệ lẫn chủ sau MỖI await: đổi tài khoản trong lúc chờ lùi không làm đổi `generation` (Codex #1).
+  const isStale = (): boolean => gen !== generation || currentOwner() !== owner;
   await sleep(wait);
-  if (gen !== generation) return fail(modelId, 'stale');
+  if (isStale()) return fail(modelId, 'stale');
   const failure = await refreshLibrary(getApi);
+  if (failure === null && isStale()) return fail(modelId, 'stale');
   if (failure !== null) return fail(modelId, failure);
   // Lượt đọc mới không còn mẫu này = người dùng mất quyền với nó.
   if (!refreshedIds.has(modelId)) return fail(modelId, 'no-permission');
   const fresh = modelSrcOf(modelId);
-  if (fresh === url) {
+  if (absoluteUrl(fresh) === absoluteUrl(url)) {
     // URL y hệt: thử lại ĐÚNG MỘT lần URL cũ (403 thoáng qua/proxy), vẫn trong trần lượt của mẫu; lần sau thì dừng.
     if (sameUrlRetried.has(modelId)) return fail(modelId, 'unchanged');
     sameUrlRetried.add(modelId);
@@ -295,12 +323,15 @@ async function refreshOnce(
   return fresh;
 }
 
-type LoadFn = (
-  url: string,
-  onLoad?: (data: unknown) => void,
-  onProgress?: (event: unknown) => void,
-  onError?: (err: unknown) => void,
-) => unknown;
+/**
+ * Rời dự án/màn dựng cảnh (SPA: lịch sử phiên bản): lượt gia hạn đang chạy bị bỏ (`stale`, đếm `dropped`), không gộp
+ * kết quả, không tải lại GLB cho cảnh đã gỡ. Không gỡ thư viện, không tính lại trần lượt (trần vẫn giữ qua lần mở lại).
+ */
+export const abandonAssetRefresh = (): void => {
+  generation += 1;
+  refreshing = null;
+  inflight.clear();
+};
 
 /**
  * Một URL tải THÀNH CÔNG: mẫu ấy (nếu đã từng gia hạn) được tính lại trần lượt — phiên dài không báo `exhausted` mãi
@@ -314,57 +345,68 @@ export const assetLoadedOk = (url: string): void => {
   sameUrlRetried.delete(modelId);
 };
 
-let installed: Promise<void> | null = null;
+let installed = false;
 let restore: (() => void) | null = null;
 
+const urlOfRequest = (input: RequestInfo | URL): string =>
+  typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+
+/** Request lặp lại với URL mới: giữ header/credentials/signal của request gốc (FileLoader truyền `Request`). */
+const initOf = (input: RequestInfo | URL, init: RequestInit | undefined): RequestInit | undefined =>
+  typeof input === 'string' || input instanceof URL
+    ? init
+    : { method: input.method, headers: input.headers, credentials: input.credentials, signal: input.signal, ...init };
+
 /**
- * Nối gia hạn vào `FileLoader.load` của three: điểm tải GLB chung của mọi viewer (Pascal `useGLTF` → GLTFLoader →
- * FileLoader), không vá mã vendor. HTTP 401/403 của URL mẫu thư viện → `refreshAssetUrl` → tải lại bằng URL mới; lỗi
- * khác hoặc hết lượt → chuyển nguyên lỗi cho Pascal (hình thay thế) + `assetRefreshStatus().notice`.
- * Tắt: `?disable=assetrefresh`. Nạp `three` động để không kéo three vào chunk của màn không có 3D.
+ * Lớp chặn fetch: 401/403 của URL mẫu thư viện → `refreshAssetUrl` → tải lại bằng URL mới NGAY TRONG lời gọi fetch ấy
+ * (người gọi — FileLoader của bất kỳ bản three nào — chỉ thấy phản hồi cuối). Hết lượt/không phải mẫu → trả nguyên phản
+ * hồi lỗi: Pascal hiện hình thay thế + `assetRefreshStatus().notice`. Vòng lặp hữu hạn nhờ trần của `refreshAssetUrl`.
+ */
+export async function fetchWithAssetRefresh(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  next: typeof fetch,
+  getApi: LibraryApiSource = defaultApi,
+  sleep: (ms: number) => Promise<void> = defaultSleep,
+): Promise<Response> {
+  let url = urlOfRequest(input);
+  let response = await next(input, init);
+  while (response.status === 401 || response.status === 403) {
+    const fresh = await refreshAssetUrl(url, response.status, getApi, sleep);
+    if (fresh === null) return response;
+    url = fresh;
+    response = await next(fresh, initOf(input, init));
+  }
+  if (response.ok) assetLoadedOk(url);
+  return response;
+}
+
+/**
+ * Nối gia hạn vào `fetch` của tài liệu (`interceptPlatformFetch`): mọi bản three — gói editor3d, gói pascal-mount mà
+ * lịch sử phiên bản/viewer SPA nạp, three của SPA — tải GLB qua `FileLoader` → `fetch(req)` tự do, nên một lớp chặn phủ
+ * hết, không vá prototype từng bản, không vá mã vendor. Gói nào gọi trước thì lớp của gói ấy thắng (SPA gọi
+ * `ensureSceneLibrary` trước khi nạp pascal-mount, nên danh mục/phiên dùng là của SPA).
+ * Tắt: `?disable=assetrefresh`. `?probe=1` → `window.__assetRefreshStatus()` để đo ở trang không có `__pascalProbe`.
  */
 export function installAssetRefresh(
   getApi: LibraryApiSource = defaultApi,
   sleep: (ms: number) => Promise<void> = defaultSleep,
-): Promise<void> {
-  if (installed !== null) return installed;
-  const off = new URLSearchParams(globalThis.location?.search ?? '').getAll('disable').some((v) => v.split(',').includes('assetrefresh'));
-  if (off) return Promise.resolve();
-  installed = import('three')
-    .then(({ FileLoader }) => {
-      const proto = FileLoader.prototype as unknown as { load: LoadFn };
-      const original = proto.load;
-      restore = () => {
-        proto.load = original;
-      };
-      proto.load = function patched(this: unknown, url, onLoad, onProgress, onError) {
-        const loaded = (data: unknown): void => {
-          assetLoadedOk(url);
-          onLoad?.(data);
-        };
-        return original.call(this, url, loaded, onProgress, (err: unknown) => {
-          const status = (err as { response?: { status?: number } } | null)?.response?.status;
-          if (status === undefined) {
-            onError?.(err);
-            return;
-          }
-          void refreshAssetUrl(url, status, getApi, sleep).then((fresh) =>
-            fresh === null ? onError?.(err) : patched.call(this, fresh, onLoad, onProgress, onError),
-          );
-        });
-      };
-    })
-    .catch(() => {
-      installed = null;
-    });
-  return installed;
+): void {
+  if (installed) return;
+  const params = new URLSearchParams(globalThis.location?.search ?? '');
+  if (params.getAll('disable').some((v) => v.split(',').includes('assetrefresh'))) return;
+  installed = true;
+  restore = interceptPlatformFetch((input, init, next) => fetchWithAssetRefresh(input, init, next, getApi, sleep));
+  if (params.get('probe') === '1') {
+    (globalThis as { __assetRefreshStatus?: () => AssetRefreshStatus }).__assetRefreshStatus = assetRefreshStatus;
+  }
 }
 
-/** Gỡ bản vá `FileLoader` (test; bản dựng không gọi). */
+/** Gỡ lớp chặn fetch (test; bản dựng không gọi). */
 export const uninstallAssetRefreshForTests = (): void => {
   restore?.();
   restore = null;
-  installed = null;
+  installed = false;
 };
 
 /** Một `modelId` không có trong danh mục (đóng gói + thư viện máy chủ đã gộp) và thứ dựng thay nó. */

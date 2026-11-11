@@ -54,6 +54,31 @@ export function requirePlatformFetch(message: string): typeof fetch {
   return platformFetch;
 }
 
+/** Khoá trên global object: mỗi tài liệu một lớp chặn, kể cả khi hai gói dựng (SPA + Pascal) cùng nạp file này. */
+const INTERCEPTOR_KEY = Symbol.for('appfront.platformFetchInterceptor');
+
+/** Lớp chặn `fetch` toàn cục: nhận request gốc và `next` (fetch gốc đã bind), trả phản hồi thay thế. */
+export type FetchInterceptor = (input: RequestInfo | URL, init: RequestInit | undefined, next: typeof fetch) => Promise<Response>;
+
+/**
+ * Đặt MỘT lớp chặn lên `globalThis.fetch` của tài liệu — điểm chung của mọi mã gọi `fetch` tự do, kể cả các bản three
+ * nằm trong các gói dựng khác nhau (FileLoader gọi `fetch(req)` mỗi lần tải). Trả hàm gỡ; `null` khi không có fetch
+ * hoặc tài liệu đã có lớp chặn (gói khác đặt trước — lớp ấy thắng).
+ */
+export function interceptPlatformFetch(interceptor: FetchInterceptor): (() => void) | null {
+  const root = globalThis as unknown as Record<symbol, unknown> & { fetch?: typeof fetch };
+  const original = root.fetch;
+  if (typeof original !== 'function' || root[INTERCEPTOR_KEY] !== undefined) return null;
+  const next = original.bind(globalThis);
+  const wrapped: typeof fetch = (input, init) => interceptor(input, init, next);
+  root.fetch = wrapped;
+  root[INTERCEPTOR_KEY] = wrapped;
+  return () => {
+    if (root.fetch === wrapped) root.fetch = original;
+    if (root[INTERCEPTOR_KEY] === wrapped) delete root[INTERCEPTOR_KEY];
+  };
+}
+
 /**
  * `navigator.sendBeacon`, đã bind, hoặc `null` khi trình duyệt không có.
  *

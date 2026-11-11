@@ -14,12 +14,13 @@
  */
 
 import { Boxes, MonitorOff } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { Skeleton } from '@/components/feedback/Skeleton';
 import type { PascalMountOptions } from '@/components/pascal/pascalMountTypes';
 import { bodyOfPascalId } from '@/lib/pascal/ids';
+import { assetRefreshStatus, subscribeAssetRefresh } from '@/lib/pascal/sceneLibrary';
 import { defaultLoadMount, type MountModule } from '@/screens/viewer/PascalViewer/usePascalViewer';
 
 import type { VisualDiffModel } from './types';
@@ -79,6 +80,8 @@ export function VersionVisualDiff({ visual }: VersionVisualDiffProps) {
   }, []);
 
   const scene = visual.scene;
+  /* Mẫu hết hạn không tải lại được sau khi gia hạn (`installAssetRefresh`): cùng câu báo với editor. */
+  const assetNotice = useSyncExternalStore(subscribeAssetRefresh, () => assetRefreshStatus().notice);
 
   /* Chạy lại khi đổi cảnh (đổi cặp phiên bản): dựng lại đúng cảnh mới, dispose cảnh cũ. */
   useEffect(() => {
@@ -191,6 +194,7 @@ export function VersionVisualDiff({ visual }: VersionVisualDiffProps) {
         <span className="block">{visual.caption}</span>
         <span className="block">{VISUAL_HINT}</span>
           {visual.libraryNotice ? <span className="block" role="status">{visual.libraryNotice}</span> : null}
+        {assetNotice ? <span className="block text-text-primary" role="alert">{assetNotice}</span> : null}
       </figcaption>
     </figure>
   );

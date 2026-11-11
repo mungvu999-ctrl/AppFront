@@ -161,23 +161,33 @@ describe('bản cũ dựng lại chỉ từ dữ liệu của phiên bản (vers
 
 const none2 = { style: undefined, additions: [], furnish: 'on', source: 'none', notice: null } as const;
 
-describe('isOldSceneVersion — "hiện tại" theo ID phiên bản, không theo tham chiếu đồ thị', () => {
-  const rows = [
-    { id: 'v2', isCurrent: true },
-    { id: 'v1', isCurrent: false },
-  ];
+describe('isOldSceneVersion — "hiện tại" chỉ khi revision KHỚP DƯƠNG TÍNH, không theo tham chiếu đồ thị', () => {
+  const summaries = new Map([
+    ['v2', { floorRevision: 7 }],
+    ['v1', { floorRevision: 3 }],
+  ]);
 
-  it('bản mới nhất có ảnh chụp: đồ thị dựng lại KHÁC tham chiếu nhưng cùng id hàng hiện tại → không phải bản cũ', () => {
+  it('bản mới nhất có ảnh chụp: đồ thị dựng lại KHÁC tham chiếu nhưng revision khớp tầng → không phải bản cũ', () => {
     const source = { layer: { walls: [], openings: [], rooms: [], furniture: [] }, dimensions: [] } as never;
     const rebuilt = graphOfVersion(current, source);
     expect(rebuilt).not.toBe(current);
-    expect(isOldSceneVersion(true, 'v2', rows)).toBe(false);
-    expect(versionSceneOptions(none2, isOldSceneVersion(true, 'v2', rows))?.note).toBeNull();
+    expect(isOldSceneVersion(true, 'v2', summaries, 7)).toBe(false);
+    expect(versionSceneOptions(none2, isOldSceneVersion(true, 'v2', summaries, 7))?.note).toBeNull();
   });
 
-  it('bản khác hàng hiện tại → bản cũ; không có ảnh chụp → mô hình hiện tại', () => {
-    expect(isOldSceneVersion(true, 'v1', rows)).toBe(true);
-    expect(isOldSceneVersion(true, 'v-la', rows)).toBe(true);
-    expect(isOldSceneVersion(false, 'v1', rows)).toBe(false);
+  it('bản khác revision tầng → bản cũ; không có ảnh chụp → mô hình hiện tại', () => {
+    expect(isOldSceneVersion(true, 'v1', summaries, 7)).toBe(true);
+    expect(isOldSceneVersion(true, 'v-la', summaries, 7)).toBe(true);
+    expect(isOldSceneVersion(false, 'v1', summaries, 7)).toBe(false);
+  });
+
+  it('Codex #6: tầng đã sửa sau bản mới nhất, hoặc không biết revision → hàng đầu KHÔNG nhận concept hôm nay', () => {
+    expect(isOldSceneVersion(true, 'v2', summaries, 8)).toBe(true); // sửa sau v2: v2 là ảnh chụp cũ
+    expect(isOldSceneVersion(true, 'v2', summaries, null)).toBe(true); // chưa biết revision tầng
+    expect(isOldSceneVersion(true, 'v2', new Map(), 7)).toBe(true); // bản tóm tắt chưa có floorRevision
+    expect(versionSceneOptions(none2, isOldSceneVersion(true, 'v2', summaries, null))).toEqual({
+      options: { furnish: 'off' },
+      note: OLD_VERSION_FURNISH_NOTE,
+    });
   });
 });

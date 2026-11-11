@@ -53,11 +53,15 @@ export const libraryReadFailed = (source: LibrarySource): boolean => source !== 
  * Giới hạn thời gian là của client HTTP chung (`REQUEST_TIMEOUT_MS.default`, `src/lib/http/timeout.ts`);
  * hết giờ thì API trả `ok:false` kind `timeout` → dự phòng có lý do. Không bao giờ ném.
  */
-export async function loadServerLibrary(api: Pick<LibraryApi, 'list'>): Promise<LibraryLoad> {
+export async function loadServerLibrary(
+  api: Pick<LibraryApi, 'list'>,
+  /** Ghi vào danh mục SAU khi phản hồi về — nơi gọi kiểm lượt đọc còn hiệu lực trước khi ghi (`sceneLibrary.ts`). */
+  register: (items: Parameters<typeof registerServerLibrary>[0]) => number = registerServerLibrary,
+): Promise<LibraryLoad> {
   try {
     const result = await api.list();
     if (!result.ok) return { count: 0, source: `fallback:${absenceOf(result.error) ?? result.error.kind}`, version: BUNDLED_LIBRARY_VERSION };
-    const count = registerServerLibrary(result.data);
+    const count = register(result.data);
     return count > 0
       ? { count, source: 'server', version: libraryVersionOf(result.data) }
       : { count, source: 'fallback:empty', version: BUNDLED_LIBRARY_VERSION };

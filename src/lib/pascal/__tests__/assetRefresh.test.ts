@@ -4,10 +4,12 @@ import { getSessionSnapshot, resetAuthState, setAuthenticatedSession } from '@/l
 
 import { isServerModel, modelSrcOf } from '../furnitureCatalog';
 import {
+  abandonAssetRefresh,
   ASSET_EXPIRED_NOTICE,
   assetRefreshStatus,
   assetLoadedOk,
   ensureSceneLibrary,
+  fetchWithAssetRefresh,
   installAssetRefresh,
   refreshAssetUrl,
   resetSceneLibraryForTests,
@@ -207,85 +209,98 @@ describe('đổi người / quá tuổi (review T2–T4)', () => {
   });
 });
 
-describe('installAssetRefresh — bản vá FileLoader (review T1)', () => {
-  type Load = (url: string, onLoad?: (d: unknown) => void, onProgress?: unknown, onError?: (e: unknown) => void) => void;
-  let proto: { load: Load };
-  let original: Load;
+describe('fetchWithAssetRefresh — lớp chặn fetch dùng chung mọi bản three (vòng 11)', () => {
   const requested: string[] = [];
   let forbid: (url: string) => boolean = () => false;
+  /** fetch giả: 403 cho URL bị chặn, 200 cho URL còn lại. */
+  const next = (async (input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    requested.push(url);
+    return new Response(forbid(url) ? 'expired' : `ok:${url}`, { status: forbid(url) ? 403 : 200 });
+  }) as typeof fetch;
+  const get = (url: string) => fetchWithAssetRefresh(url, undefined, next, undefined, noWait);
 
-  beforeEach(async () => {
-    const { FileLoader } = await import('three');
-    uninstallAssetRefreshForTests();
-    proto = FileLoader.prototype as unknown as { load: Load };
-    original = proto.load;
+  beforeEach(() => {
     requested.length = 0;
-    // Như FileLoader thật: lời gọi trùng URL đang tải dùng chung MỘT request, mọi người gọi nhận kết quả cùng nhịp.
-    const waiting = new Map<string, { onLoad: ((d: unknown) => void) | undefined; onError: ((e: unknown) => void) | undefined }[]>();
-    proto.load = (url, onLoad, _p, onError) => {
-      const queue = waiting.get(url);
-      if (queue !== undefined) {
-        queue.push({ onLoad, onError });
-        return;
-      }
-      waiting.set(url, [{ onLoad, onError }]);
-      requested.push(url);
-      setTimeout(() => {
-        const all = waiting.get(url) ?? [];
-        waiting.delete(url);
-        for (const c of all) (forbid(url) ? c.onError?.({ response: { status: 403 } }) : c.onLoad?.(`ok:${url}`));
-      }, 0);
-    };
-    const fake = proto.load;
-    await installAssetRefresh(undefined, noWait);
-    expect(proto.load).not.toBe(fake);
-  });
-  afterEach(() => {
-    uninstallAssetRefreshForTests();
-    proto.load = original;
+    forbid = () => false;
   });
 
-  const load = (url: string) =>
-    new Promise<{ ok?: unknown; err?: unknown }>((resolve) => {
-      proto.load.call({}, url, (d) => resolve({ ok: d }), undefined, (e) => resolve({ err: e }));
-    });
-
-  it('403 một lần → tải lại bằng URL mới, onLoad một lần', async () => {
+  it('403 một lần → tải lại bằng URL mới trong CÙNG lời gọi, người gọi nhận 200', async () => {
     await ensureSceneLibrary();
     const old = modelSrcOf('lib-a');
     forbid = (u) => u === old;
-    const out = await load(old);
-    expect(out.ok).toBe(`ok:${modelSrcOf('lib-a')}`);
+    const res = await get(old);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(`ok:${modelSrcOf('lib-a')}`);
     expect(requested).toEqual([old, modelSrcOf('lib-a')]);
   });
 
-  it('403 mãi → dừng ở trần, onError ĐÚNG MỘT lần', async () => {
+  it('403 mãi → dừng ở trần (gốc + 2 gia hạn), trả nguyên 403, có câu báo', async () => {
     await ensureSceneLibrary();
     forbid = () => true;
-    const onError = vi.fn();
-    proto.load.call({}, modelSrcOf('lib-a'), undefined, undefined, onError);
-    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
-    await new Promise((r) => setTimeout(r, 20));
-    expect(onError).toHaveBeenCalledTimes(1);
-    expect(requested.length).toBe(3); // gốc + 2 lần gia hạn
+    const res = await get(modelSrcOf('lib-a'));
+    expect(res.status).toBe(403);
+    expect(requested.length).toBe(3);
+    expect(list).toHaveBeenCalledTimes(3);
     expect(assetRefreshStatus().notice).toBe(ASSET_EXPIRED_NOTICE);
   });
 
-  it('hai lời gọi đồng thời cùng URL → dùng chung một lượt gia hạn, không báo exhausted sai', async () => {
+  it('Request (như FileLoader) → URL tuyệt đối khớp mẫu; giữ header/credentials khi thử lại', async () => {
     await ensureSceneLibrary();
     const old = modelSrcOf('lib-a');
     forbid = (u) => u === old;
-    const [a, b] = await Promise.all([load(old), load(old)]);
-    expect(a.ok).toBeDefined();
-    expect(b.ok).toBeDefined();
-    expect(list).toHaveBeenCalledTimes(2);
-    expect(assetRefreshStatus()).toMatchObject({ failures: [], notice: null });
+    const seen: RequestInit[] = [];
+    const spy = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init) seen.push(init);
+      return next(input, init);
+    }) as typeof fetch;
+    const res = await fetchWithAssetRefresh(new Request(old, { headers: { 'x-a': '1' }, credentials: 'include' }), undefined, spy, undefined, noWait);
+    expect(res.status).toBe(200);
+    expect(seen[0]?.credentials).toBe('include');
+    expect(new Headers(seen[0]?.headers).get('x-a')).toBe('1');
   });
 
-  it('gỡ vá → FileLoader về bản gốc', () => {
-    const patched = proto.load;
+  it('URL không phải mẫu thư viện (API 401) → không gia hạn, không đọc thư viện', async () => {
+    await ensureSceneLibrary();
+    forbid = () => true;
+    const res = await get('https://api.test/projects');
+    expect(res.status).toBe(403);
+    expect(requested.length).toBe(1);
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
+  it('rời dự án giữa chừng (abandonAssetRefresh) → kết quả bị bỏ, không tải lại, không câu báo', async () => {
+    await ensureSceneLibrary();
+    const old = modelSrcOf('lib-a');
+    forbid = (u) => u === old;
+    let release: (v: unknown) => void = () => undefined;
+    list.mockImplementationOnce(() => new Promise((r) => (release = r)));
+    const pending = get(old);
+    await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    abandonAssetRefresh();
+    release({ ok: true, data: [item('lib-a', 99)] });
+    expect((await pending).status).toBe(403);
+    expect(requested).toEqual([old]);
+    expect(modelSrcOf('lib-a')).toBe(old); // không gộp kết quả cũ
+    expect(assetRefreshStatus()).toMatchObject({ dropped: 1, failures: [], notice: null });
+  });
+
+  it('installAssetRefresh đặt MỘT lớp chặn lên globalThis.fetch; ?disable=assetrefresh thì không', () => {
     uninstallAssetRefreshForTests();
-    expect(proto.load).not.toBe(patched);
+    const before = globalThis.fetch;
+    vi.stubGlobal('location', { search: '?disable=assetrefresh', href: 'http://app.test/' });
+    installAssetRefresh(undefined, noWait);
+    expect(globalThis.fetch).toBe(before);
+    vi.stubGlobal('location', { search: '?probe=1', href: 'http://app.test/' });
+    installAssetRefresh(undefined, noWait);
+    const wrapped = globalThis.fetch;
+    expect(wrapped).not.toBe(before);
+    expect((globalThis as { __assetRefreshStatus?: unknown }).__assetRefreshStatus).toBe(assetRefreshStatus);
+    installAssetRefresh(undefined, noWait);
+    expect(globalThis.fetch).toBe(wrapped);
+    uninstallAssetRefreshForTests();
+    expect(globalThis.fetch).toBe(before);
+    vi.unstubAllGlobals();
   });
 });
 
@@ -343,5 +358,70 @@ describe('lát 4 (review N3, T3)', () => {
     off();
     expect(listener).not.toHaveBeenCalled();
     expect(assetRefreshStatus()).toMatchObject({ dropped: 1, failures: [], notice: null });
+  });
+});
+
+describe('review Codex vòng 11 (#1, #2, #3)', () => {
+  it('#1: đổi tài khoản TRONG lúc chờ lùi → stale, không đọc/nạp thư viện của người mới, không thử lại', async () => {
+    await ensureSceneLibrary();
+    const old = modelSrcOf('lib-a');
+    const switchDuringSleep = async (): Promise<void> => signIn('u2');
+    expect(await refreshAssetUrl(old, 403, undefined, switchDuringSleep)).toBeNull();
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(isServerModel('mine-u2')).toBe(false);
+    expect(modelSrcOf('lib-a')).toBe(old);
+    expect(assetRefreshStatus()).toMatchObject({ dropped: 1, failures: [] });
+  });
+
+  it('#1: đổi tài khoản trong lúc đọc lại thư viện → kết quả không nạp, mẫu cũ không nhận URL của người mới', async () => {
+    await ensureSceneLibrary();
+    const old = modelSrcOf('lib-a');
+    let release: (v: unknown) => void = () => undefined;
+    list.mockImplementationOnce(() => new Promise((r) => (release = r)));
+    const pending = refreshAssetUrl(old, 403, undefined, noWait);
+    await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    signIn('u2');
+    release({ ok: true, data: [item('lib-a', 50), item('mine-u2', 50)] });
+    expect(await pending).toBeNull();
+    expect(isServerModel('mine-u2')).toBe(false);
+    expect(modelSrcOf('lib-a')).toBe(old);
+  });
+
+  it('#2: thư viện quá tuổi + nhiều lời gọi đồng thời → MỘT request đọc lại dùng chung', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(0);
+    await ensureSceneLibrary();
+    vi.setSystemTime(SIGNED_URL_MAX_AGE_MS + 1);
+    const [a, b, c] = await Promise.all([ensureSceneLibrary(), ensureSceneLibrary(), ensureSceneLibrary()]);
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(a).toBe(b);
+    expect(b).toBe(c);
+  });
+
+  it('#2: phản hồi đọc lại của người cũ về SAU khi đổi người → không ghi vào danh mục của người mới', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(0);
+    await ensureSceneLibrary();
+    vi.setSystemTime(SIGNED_URL_MAX_AGE_MS + 1);
+    let release: (v: unknown) => void = () => undefined;
+    list.mockImplementationOnce(() => new Promise((r) => (release = r)));
+    void ensureSceneLibrary();
+    await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    signIn('u2');
+    await ensureSceneLibrary();
+    expect(isServerModel('mine-u2')).toBe(true);
+    release({ ok: true, data: [item('lib-a', 77), item('mine-u1', 77)] });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(isServerModel('mine-u1')).toBe(false);
+    expect(modelSrcOf('lib-a')).not.toContain('sig=77');
+  });
+
+  it('#3: gia hạn theo mẫu trả danh sách thiếu mẫu (mất quyền) → mẫu ấy bị gỡ khỏi danh mục', async () => {
+    await ensureSceneLibrary();
+    expect(isServerModel('mine-u1')).toBe(true);
+    list.mockResolvedValueOnce({ ok: true, data: [item('lib-a', 40)] });
+    expect(await refreshAssetUrl(modelSrcOf('lib-a'), 403, undefined, noWait)).not.toBeNull();
+    expect(isServerModel('mine-u1')).toBe(false);
+    expect(isServerModel('lib-a')).toBe(true);
   });
 });

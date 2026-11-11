@@ -79,14 +79,19 @@ export function versionSceneOptions(
 }
 
 /**
- * Cảnh đang dựng có phải bản CŨ không — theo ID phiên bản: có ảnh chụp riêng (`hasSnapshot`) và hàng của nó không phải
- * `isCurrent`. Không có ảnh chụp thì cảnh là mô hình hiện tại.
+ * Cảnh đang dựng có phải bản CŨ không — theo ID phiên bản: có ảnh chụp riêng (`hasSnapshot`) và KHÔNG chứng minh được
+ * là bản hiện tại. Hiện tại ⇔ `floorRevision` của bản BẰNG revision tầng (khớp dương tính); không biết revision (tầng
+ * hoặc bản tóm tắt) thì coi là bản cũ — không dùng mốc "hàng đầu" tạm của danh sách, để ảnh chụp cũ không nhận concept
+ * hôm nay (review Codex #6). Không có ảnh chụp thì cảnh là mô hình hiện tại.
  */
 export const isOldSceneVersion = (
   hasSnapshot: boolean,
   versionId: string | null,
-  rows: readonly { readonly id: string; readonly isCurrent: boolean }[],
-): boolean => hasSnapshot && rows.find((row) => row.id === versionId)?.isCurrent !== true;
+  summaries: ReadonlyMap<string, { readonly floorRevision?: number | null }>,
+  currentRevision: number | null,
+): boolean =>
+  hasSnapshot &&
+  !(currentRevision !== null && versionId !== null && summaries.get(versionId)?.floorRevision === currentRevision);
 
 /**
  * Đồ thị không gian thành cảnh Pascal — cảnh chuẩn `standardSceneOf` (cùng luật bày với màn 3D chính); `options` mang
