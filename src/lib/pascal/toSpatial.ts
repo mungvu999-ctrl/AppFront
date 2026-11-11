@@ -70,6 +70,7 @@ import { AUTHORED_BY_HAND, toPointMm } from '@/lib/commands/business/shared';
 import { isServerModel, serverKindOf, serverModelPath } from './furnitureCatalog';
 import { appFrontIdOf, BUILDING_NODE_ID, toPascalId } from './ids';
 import { LIBRARY_MATERIAL_IDS } from './libraryMaterialIds';
+import { libRoles2BaseIdOf } from './libraryRoles2';
 import { worldBoxOf } from './orientDetected';
 import { roofOf } from './roofs';
 import { DRESSING_OFF_MAX } from './sceneLayer';
@@ -457,7 +458,9 @@ const itemFieldsOf = (item: PascalItemNode, kind: FurnitureKind): Partial<Furnit
   const liftMm = Math.abs(liftNowMm - styleLiftMm) > 1 ? Math.max(0, Math.round(liftNowMm)) : readNumber(fields, 'liftMm');
   const slots = itemSlotsFieldOf(item);
   // Mẫu thư viện máy chủ: `src` là URL ký hết hạn — lưu đường `/items/<id>/…` cố định thay vào.
-  const server = isServerModel(item.asset.id);
+  // Đèn libroles2 (`appfront-libroles2-<id>`): mẫu thư viện, lưu đường cố định của id chuẩn, giữ tiền tố (provenance).
+  const libId = libRoles2BaseIdOf(item.asset.id);
+  const server = libId !== undefined || isServerModel(item.asset.id);
   const swapped = server || (item.asset.id !== `appfront-${kind}` && MODEL_SRC.test(item.asset.src));
 
   return {
@@ -466,7 +469,7 @@ const itemFieldsOf = (item: PascalItemNode, kind: FurnitureKind): Partial<Furnit
     ...(liftMm === null ? {} : { liftMm: millimetres(liftMm) }),
     ...(slots === null ? {} : { slots }),
     ...(swapped
-      ? { model: { id: item.asset.id.slice(0, 120), src: server ? serverModelPath(item.asset.id) : drapeSavedSrc(item.asset.src) } }
+      ? { model: { id: item.asset.id.slice(0, 120), src: server ? serverModelPath(libId ?? item.asset.id) : drapeSavedSrc(item.asset.src) } }
       : {}),
   };
 };

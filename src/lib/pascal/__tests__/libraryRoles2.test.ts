@@ -6,11 +6,12 @@ import type { Furniture, SpatialGraph } from '@/domain/spatial/types';
 
 import { fixtureF2 } from '../__fixtures__';
 import { createPascalEditCommand } from '../fromPascal';
+import { isEditedGenerated } from '../toSpatial';
 
 import { CATALOG_MODELS, clearServerLibrary, registerServerLibrary } from '../furnitureCatalog';
 import LIBRARY_QC from '../libraryQc.json';
 import POOLS from '../libraryRoles2.json';
-import { LIBROLES2_DEFAULT, LIBROLES2_POOLS, libRoles2Apply, libRoles2FlagOf, libRoles2LampOf, libRoles2PickOf, libRoles2Report, withLibRoles2 } from '../libraryRoles2';
+import { LIBROLES2_DEFAULT, LIBROLES2_MODEL_PREFIX, LIBROLES2_POOLS, libRoles2BaseIdOf, libRoles2Apply, libRoles2FlagOf, libRoles2LampOf, libRoles2PickOf, libRoles2Report, withLibRoles2 } from '../libraryRoles2';
 import { lampInteractiveOf } from '../sceneDressing';
 import { sceneStyleOf } from '../sceneStyles';
 import { toPascalScene } from '../toPascal';
@@ -162,15 +163,17 @@ describe('vòng tròn lưu (review Codex B1 #1)', () => {
   it('đèn sinh dùng mẫu máy chủ chuẩn (không id riêng), còn nguồn sáng', () => {
     const lamp = itemsOf(toPascalScene(graph, { furnish: 'on' }).scene).find((n) => /^item_DRESS-tableLamp-/.test(n.id));
     expect(lamp).toBeDefined();
-    expect(LIBROLES2_POOLS.tableLamp).toContain(lamp?.asset.id);
-    expect(lamp?.asset.src).toBe(`https://lib/${lamp?.asset.id}.glb?sig=1`);
+    const base = libRoles2BaseIdOf(lamp?.asset.id ?? '');
+    expect(lamp?.asset.id).toBe(`${LIBROLES2_MODEL_PREFIX}${base}`);
+    expect(LIBROLES2_POOLS.tableLamp).toContain(base);
+    expect(lamp?.asset.src).toBe(`https://lib/${base}.glb?sig=1`);
     expect(((lamp?.asset as { interactive?: { effects: { kind: string }[] } }).interactive?.effects ?? []).some((e) => e.kind === 'light')).toBe(true);
   });
 
   it('nhận đèn → lưu đúng mẫu + đường cố định; nạp lại giữ đúng mẫu và nguồn sáng; món chưa nhận không ghi gì', () => {
     const scene = toPascalScene(graph, { furnish: 'on' }).scene;
     const lamp = itemsOf(scene).find((n) => /^item_DRESS-tableLamp-/.test(n.id)) as PascalItemNode;
-    const pick = lamp.asset.id;
+    const pick = libRoles2BaseIdOf(lamp.asset.id) as string;
     const untouched = edit(scene, []);
     // Không sửa gì: lệnh báo "không có gì để ghi" (hoặc rỗng) — đèn sinh đã đổi mẫu không lọt vào bản lưu.
     expect(untouched.ok ? untouched.data.changes : []).toEqual([]);
@@ -180,7 +183,8 @@ describe('vòng tròn lưu (review Codex B1 #1)', () => {
     if (!result.ok) throw new Error(result.error.reasons.join(' '));
     const saved = result.data.changes.map((c) => c.after as Furniture);
     const savedLamp = saved.find((f) => f.variant === 'tableLamp');
-    expect(savedLamp?.model).toEqual({ id: pick, src: `/items/${pick}/model.glb` });
+    // Lưu: đường cố định của id chuẩn, `model.id` giữ tiền tố (provenance để đèn đã nhận còn sáng sau tải lại).
+    expect(savedLamp?.model).toEqual({ id: `${LIBROLES2_MODEL_PREFIX}${pick}`, src: `/items/${pick}/model.glb` });
     expect(savedLamp?.id.startsWith('DRESS-')).toBe(false);
     // Không món đã lưu nào mang URL ký.
     expect(saved.every((f) => f.model === undefined || /^\/items\/[a-z0-9_-]+\/model\.glb$/.test(f.model.src))).toBe(true);
@@ -188,8 +192,52 @@ describe('vòng tròn lưu (review Codex B1 #1)', () => {
     const reloaded = itemsOf(toPascalScene({ ...graph, furniture: [...graph.furniture, ...saved] }, { furnish: 'on' }).scene).find(
       (n) => n.id === `item_${savedLamp?.id}`,
     );
-    expect(reloaded?.asset.id).toBe(pick);
+    expect(reloaded?.asset.id).toBe(`${LIBROLES2_MODEL_PREFIX}${pick}`);
     expect(reloaded?.asset.src).toBe(`https://lib/${pick}.glb?sig=1`);
     expect(((reloaded?.asset as { interactive?: { effects: { kind: string }[] } }).interactive?.effects ?? []).some((e) => e.kind === 'light')).toBe(true);
+  });
+});
+
+describe('review Codex B2', () => {
+  const graph: SpatialGraph = SpatialGraphDocumentSchema.parse(fixtureF2().doc).graph;
+  const itemsOf = (scene: PascalScene): PascalItemNode[] => Object.values(scene.nodes).filter((n): n is PascalItemNode => n.type === 'item');
+  const hasLight = (n: PascalItemNode | undefined): boolean =>
+    ((n?.asset as { interactive?: { effects: { kind: string }[] } } | undefined)?.interactive?.effects ?? []).some((e) => e.kind === 'light');
+
+  it('N2: thư viện đường cố định, đèn sinh KHÔNG đổi trong changedNodeIds → không nhận phòng, 0 thay đổi', () => {
+    clearServerLibrary();
+    registerServerLibrary(
+      Object.entries(models).map(([id, m]) => ({ id, widthMm: m.mm[0], heightMm: m.mm[1], depthMm: m.mm[2], modelUrl: `/items/${id}/model.glb` })),
+    );
+    const scene = toPascalScene(graph, { furnish: 'on' }).scene;
+    const lamp = itemsOf(scene).find((n) => /^item_DRESS-tableLamp-/.test(n.id)) as PascalItemNode;
+    expect(lamp.asset.src).toMatch(/^\/items\/[a-z0-9_-]+\/model\.glb$/);
+    expect(isEditedGenerated(lamp)).toBe(false);
+    const result = createPascalEditCommand({
+      graph: normalizeSpatial(graph),
+      scene,
+      commit: { origin: 'local', changedNodeIds: [lamp.id] },
+      actorId: 'U-1',
+      idBook: new Map(),
+    });
+    expect(result.ok ? result.data.changes : []).toEqual([]);
+    if (!result.ok) expect(result.error.code).toBe('PASCAL_NO_CHANGE');
+    // Người dùng "Đổi mẫu" (id catalog chuẩn) thì vẫn là đã sửa.
+    expect(isEditedGenerated({ ...lamp, asset: { ...lamp.asset, id: 'lamp-table-glass-column', src: '/items/lamp-table-glass-column/model.glb' } })).toBe(true);
+  });
+
+  it('N3: món người dùng vai đèn bàn mang mẫu pool (không dấu libroles2) không tự có nguồn sáng', () => {
+    const host = graph.furniture[0] as Furniture;
+    const user: Furniture = {
+      ...host,
+      id: 'F-userlamp' as Furniture['id'],
+      kind: 'other',
+      variant: 'tableLamp',
+      model: { id: 'lamp-blue-ceramic-base-b', src: '/items/lamp-blue-ceramic-base-b/model.glb' },
+    };
+    expect(libRoles2LampOf(user, style)).toBeUndefined();
+    const node = itemsOf(toPascalScene({ ...graph, furniture: [...graph.furniture, user] }, { furnish: 'on' }).scene).find((n) => n.id === 'item_F-userlamp');
+    expect(node).toBeDefined();
+    expect(hasLight(node)).toBe(false);
   });
 });

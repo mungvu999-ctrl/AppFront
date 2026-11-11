@@ -41,11 +41,21 @@ export const LIBROLES2_POOLS: Readonly<Record<string, readonly string[]>> = POOL
 const FLAT_PASCAL: ReadonlySet<string> = new Set(POOLS.flatPascal);
 
 /**
- * `model` của món đổi mẫu = ĐÚNG mẫu máy chủ (`id` thư viện + đường cố định `/items/<id>/model.glb`), như mẫu người dùng
- * "Đổi mẫu": nhận món (sửa nó / cả phòng) thì `toSpatial` lưu đúng mẫu ấy (review Codex B1 #1 — id có tiền tố riêng làm
- * bản lưu mất mẫu). Provenance ở `PROV_FIELD` của node + sổ `swaps` (đầu dò), không nhúng vào id.
+ * `model.id` của món đổi mẫu = `appfront-libroles2-<id thư viện>`, `src` = đường cố định `/items/<id>/model.glb`.
+ * Tiền tố là PROVENANCE đi qua bản lưu (trường `model.id` lưu được, ≤ 120 ký tự, không đổi schema):
+ * - món sinh mang đúng mẫu luật chọn: id bắt đầu `appfront-` → `isEditedGenerated` không coi là "người dùng đổi mẫu"
+ *   (review Codex B2 N2); người dùng "Đổi mẫu" thì id thành id catalog → đã sửa;
+ * - `toSpatial` lưu đúng mẫu nhờ `libRoles2BaseIdOf` (review B1 #1), giữ nguyên tiền tố → đèn đã nhận nạp lại vẫn sáng;
+ * - món người dùng tự chọn mẫu pool (id chuẩn, không tiền tố) KHÔNG tự sáng (review B2 N3).
  */
-const POOL_SRC = /^\/items\/([a-z0-9_-]+)\/model\.glb$/;
+export const LIBROLES2_MODEL_PREFIX = 'appfront-libroles2-';
+const BASE_ID = /^[a-z0-9_-]+$/;
+/** Id thư viện chuẩn của `model.id`/`asset.id` do luật này đặt; `undefined` = không phải. */
+export const libRoles2BaseIdOf = (id: string): string | undefined => {
+  if (!id.startsWith(LIBROLES2_MODEL_PREFIX)) return undefined;
+  const base = id.slice(LIBROLES2_MODEL_PREFIX.length);
+  return BASE_ID.test(base) ? base : undefined;
+};
 
 /** FNV-1a 32 bit. */
 const fnv1a = (text: string): number => {
@@ -112,7 +122,7 @@ export const withLibRoles2 = <F extends Furniture>(f: F, style: SceneStyle, on: 
     ...f,
     boundingBox: { min: { x: cx - hw, y: cy - hd }, max: { x: cx + hw, y: cy + hd } } as F['boundingBox'],
     heightMm: Math.round(h) as F['heightMm'],
-    model: { id: pick, src: serverModelPath(pick) },
+    model: { id: `${LIBROLES2_MODEL_PREFIX}${pick}`, src: serverModelPath(pick) },
   };
 };
 
@@ -124,15 +134,15 @@ export const libRoles2Apply = <F extends Furniture>(generated: readonly F[], sty
 
 /**
  * Nguồn sáng của đèn đã đổi mẫu: của mẫu Pascal cùng vai (cường độ, màu, tầm giữ nguyên), độ cao nguồn nhân tỉ lệ chiều
- * cao mẫu mới / mẫu Pascal. `undefined` = món không mang mẫu pool của vai nó (hoặc cờ tắt).
+ * cao mẫu mới / mẫu Pascal. `undefined` = món không mang dấu `appfront-libroles2-` với mẫu pool của vai nó (hoặc cờ tắt).
  */
 export const libRoles2LampOf = (
   f: Pick<Furniture, 'variant'> & Partial<Pick<Furniture, 'model' | 'heightMm'>>,
   style: SceneStyle,
   on: boolean = LIBROLES2_ON,
 ): unknown => {
-  // Mọi món vai đèn mang mẫu trong pool (đèn sinh vừa đổi, hoặc đèn đã nhận nạp lại từ bản lưu) đều sáng như đèn Pascal.
-  const folder = POOL_SRC.exec(f.model?.src ?? '')?.[1];
+  // Chỉ món mang dấu luật này (đèn sinh vừa đổi, hoặc đèn đã nhận nạp lại từ bản lưu); mẫu người dùng tự chọn thì không.
+  const folder = f.model === undefined ? undefined : libRoles2BaseIdOf(f.model.id);
   if (!on || f.variant === undefined || folder === undefined || !(POOLS.roles[f.variant] ?? []).includes(folder)) return undefined;
   const base = VARIANT_MODEL[f.variant]?.folder;
   const baseH = base === undefined ? undefined : CATALOG_MODELS[base]?.dimensions[1];
