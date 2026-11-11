@@ -43,7 +43,8 @@ export const standardSceneOf = (
           }),
         base,
       );
-  const style: LayerStyle = { ...base, rulesOff, ...(woodTone === undefined ? {} : { woodTone }) };
+  // "Hiện dữ liệu gốc" tắt cả bộ nội thất theo phòng (`roomset`), như bốn luật lớp cảnh.
+  const style: LayerStyle = { ...base, rulesOff, ...(woodTone === undefined ? {} : { woodTone }), ...(raw ? { roomSet: false } : {}) };
 
   return { ...toPascalScene(fixed.graph, { furnish: 'on', ...sceneOptions, style, repairs: repairsById(fixed.repairs) }), repairs: fixed.repairs };
 };

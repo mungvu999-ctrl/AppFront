@@ -42,7 +42,7 @@ import { SCENE_STYLE_IDS, sceneStyleOf, type SceneStyleId } from '../sceneStyles
 import { roomSetReport, type LayerStyle } from '../sceneVariety';
 import type { PascalItemNode, PascalNode, PascalScene } from '../types';
 
-/** Dữ liệu chất lượng giả cho phần tích hợp (tệp thật đang rỗng): id → hồ sơ. */
+/** Dữ liệu chất lượng giả cho phần tích hợp (tình huống dựng tay, độc lập với tệp thật): id → hồ sơ. */
 const Q = vi.hoisted(() => new Map<string, unknown>());
 vi.mock('../libraryQuality', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -373,6 +373,14 @@ describe('roomset trong đường dựng cảnh', () => {
     const report = roomSetReport()[ROOM];
     expect(report?.anchor).toBe(BED);
     expect(report?.items.find((d) => d.id === BED)).toMatchObject({ from: oldBed, to: bed, rule: 'roomset' });
+  });
+
+  it('"Hiện dữ liệu gốc" (raw) tắt roomset: mọi asset.src y hệt ?disable=roomset + raw', () => {
+    const srcs = (scene: PascalScene): string =>
+      JSON.stringify(Object.values(scene.nodes).filter((n) => (n as { type: string }).type === 'item').map((n) => [n.id, (n as PascalItemNode).asset.src]).sort());
+    const rawOn = srcs(standardSceneOf(graphWith(), { style: ON, raw: true }).scene);
+    expect(rawOn).toBe(srcs(standardSceneOf(graphWith(), { style: OFF, raw: true }).scene));
+    expect(srcs(sceneOf(graphWith(), ON))).not.toBe(srcs(sceneOf(graphWith(), OFF)));
   });
 
   it('tải lại cho cùng kết quả; dữ liệu chất lượng đổi thì lượt sau tính lại (không cache giữa lượt)', () => {

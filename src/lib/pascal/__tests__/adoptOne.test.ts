@@ -23,7 +23,7 @@ import { sceneStyleOf } from '../sceneStyles';
 import type { LayerStyle } from '../sceneVariety';
 import type { PascalItemNode, PascalNode, PascalScene } from '../types';
 
-/** Dữ liệu chất lượng giả (tệp thật đang rỗng) để `roomset` có ứng viên. */
+/** Dữ liệu chất lượng giả (tình huống dựng tay) để `roomset` có ứng viên; Q rỗng → dữ liệu thật. */
 const Q = vi.hoisted(() => new Map<string, unknown>());
 vi.mock('../libraryQuality', async (importOriginal) => {
   const real = await importOriginal<{ qualityOf: (id: string) => unknown }>();

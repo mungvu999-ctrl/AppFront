@@ -885,7 +885,7 @@ const itemNodeOf = (
         ...(furniture.variant === undefined ? {} : { variant: furniture.variant }),
         ...(furniture.heightMm === undefined ? {} : { heightMm: furniture.heightMm }),
         ...(furniture.liftMm === undefined ? {} : { liftMm: furniture.liftMm }),
-        // Món sinh: mẫu đang dựng, để lượt về lưu đúng mẫu ấy khi món được nhận (`toSpatial` `shownModelOf`).
+        // Món sinh: mẫu đang dựng, để lượt về lưu đúng mẫu ấy khi món được nhận (`toSpatial`: `MODEL_FOLDER_FIELD` khi lưu, `SHOWN_SIZE_FIELD` trong `seenSizeM`).
         ...(fit !== null && furniture.model === undefined && furniture.id.startsWith(GENERATED_DRESS_PREFIX)
           ? { [MODEL_FOLDER_FIELD]: fit.folder, [SHOWN_SIZE_FIELD]: fit.shownM }
           : {}),
