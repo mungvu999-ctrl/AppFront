@@ -14,19 +14,36 @@
  */
 
 import { qualityOf as defaultQualityOf, type ModelQuality, type QualityPart } from './libraryQuality';
-import { fitsSpot, fnv1a } from './roomVariety';
 import { SCENE_STYLE_MATERIALS, type SceneStyle } from './sceneStyles';
 
 /** HẰNG LẬT MẶC ĐỊNH (điều phối viên lật sau QA ảnh). */
-export const ROOMSET_DEFAULT = false;
+export const ROOMSET_DEFAULT = true;
 /** Phiên bản luật, ghi vào provenance của món đổi mẫu. */
 export const ROOMSET_VERSION = 1;
 
 const listOf = (search: string, key: string): string[] => (new URLSearchParams(search).get(key) ?? '').split(',');
 export const roomSetOnOf = (search: string, defaults: boolean = ROOMSET_DEFAULT): boolean =>
   !listOf(search, 'disable').includes('roomset') && (defaults || listOf(search, 'enable').includes('roomset'));
-/** Đọc MỘT lần lúc nạp trang (như `?enable=` của `roomVariety`). */
+/** Đọc MỘT lần lúc nạp trang (như `?disable=` của lớp cảnh). */
 export const ROOMSET_ON: boolean = typeof location === 'undefined' ? ROOMSET_DEFAULT : roomSetOnOf(location.search);
+
+/** FNV-1a 32 bit (băm rút neo trong dải; `sceneVariety` băm mẫu theo phòng/món). */
+export const fnv1a = (text: string): number => {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash;
+};
+
+/** Mẫu "không to hơn chỗ": từng cạnh mặt bằng (đã sắp) ≤ cạnh hộp × chừng này. */
+export const FIT_SLACK = 1.1;
+/** Mẫu `[rộng, cao, sâu]` (m) có lọt hộp `[ngắn, dài]` (m) không. */
+export const fitsSpot = (dims: readonly [number, number, number], short: number, long: number): boolean => {
+  const [w, , d] = dims;
+  return Math.min(w, d) <= short * FIT_SLACK && Math.max(w, d) <= long * FIT_SLACK;
+};
 
 /** Vai thuộc bộ, thứ tự = ưu tiên làm neo (luật chung mọi công năng phòng). Cây/thảm/đồ `fixed`/thiết bị không vào bộ. */
 export const SET_ROLES: readonly string[] = [
@@ -149,7 +166,8 @@ const labOfHex = (hex: string): Lab | undefined => {
 };
 /** Bảng màu từ SceneStyle: sơn tường trong (vật liệu phẳng có màu) + tông gỗ của căn. Vân sàn là texture → tông gỗ thay. */
 export const paletteOf = (style: SceneStyle, woodTone: 'l' | 'd' | undefined): SetPalette => {
-  const id = style.wall.interior.replace(/^scene:/, '');
+  // Phong cách concept (AI) có thể thiếu `wall`/`wall.interior` lúc chạy dù kiểu bắt buộc → không có tường để so.
+  const id = (style.wall as Partial<SceneStyle['wall']> | undefined)?.interior?.replace(/^scene:/, '') ?? '';
   const color = SCENE_STYLE_MATERIALS.find((m) => m.id === id)?.material.properties?.color;
   const wall = typeof color === 'string' ? labOfHex(color) : undefined;
   const light = wall === undefined ? woodTone !== 'd' : wall[0] >= LIGHT_WALL_L;

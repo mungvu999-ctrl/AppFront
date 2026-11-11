@@ -19,7 +19,8 @@
 import type { Furniture, FurnitureId } from '@/domain/spatial/types';
 
 /** Tăng khi luật sinh/sửa cảnh đổi kết quả cho cùng dữ liệu (ghi vào provenance để so cảnh cũ/mới). */
-export const SCENE_LAYER_VERSION = 1;
+// 2 (vòng 12): bộ nội thất theo phòng `roomset` bật mặc định — đổi mẫu thư viện của đồ sinh/AI cho cùng dữ liệu.
+export const SCENE_LAYER_VERSION = 2;
 
 export type SceneObjectClass = 'human' | 'ai' | 'generated';
 

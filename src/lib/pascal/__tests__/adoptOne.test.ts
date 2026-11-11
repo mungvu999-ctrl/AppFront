@@ -57,8 +57,8 @@ const emptyBedroom = (usage: Room['usage'] = 'bedroom', dressingOff?: string[]):
   }) as unknown as SpatialGraph;
 
 const base = sceneStyleOf(undefined);
-const ON: LayerStyle = { ...base, roomSet: true, layout: new Set(), variety: new Set() };
-const OFF: LayerStyle = { ...base, roomSet: false, layout: new Set(), variety: new Set() };
+const ON: LayerStyle = { ...base, roomSet: true, layout: new Set() };
+const OFF: LayerStyle = { ...base, roomSet: false, layout: new Set() };
 const sceneOf = (graph: SpatialGraph, style: LayerStyle = OFF): PascalScene => standardSceneOf(graph, { style }).scene;
 const items = (scene: PascalScene): PascalItemNode[] => Object.values(scene.nodes).filter((n): n is PascalItemNode => n.type === 'item');
 const generated = (scene: PascalScene): PascalItemNode[] =>
@@ -285,8 +285,8 @@ describe('một món sinh với thư viện máy chủ (roomset bật/tắt)', (
 /* ---- REVIEW-2: catalog thật (thư viện + dữ liệu chất lượng thật), phong cách am-ap ---- */
 describe('catalog thật: nhận một tab đầu giường không đổi mẫu anh em (REVIEW-2 #1)', () => {
   const AM_AP = sceneStyleOf('am-ap');
-  const REAL_ON: LayerStyle = { ...AM_AP, roomSet: true, layout: new Set(), variety: new Set() };
-  const REAL_OFF: LayerStyle = { ...AM_AP, roomSet: false, layout: new Set(), variety: new Set() };
+  const REAL_ON: LayerStyle = { ...AM_AP, roomSet: true, layout: new Set() };
+  const REAL_OFF: LayerStyle = { ...AM_AP, roomSet: false, layout: new Set() };
   beforeAll(() => {
     Q.clear();
     const models = (QUALITY as unknown as { models: Record<string, { u: [number, number, number] }> }).models;

@@ -28,6 +28,7 @@ import {
   ROOMSET_VERSION,
   roomSetKeysOf,
   roomSetOf,
+  ROOMSET_DEFAULT,
   roomSetOnOf,
   SHOWN_TOL_M,
   type Dims,
@@ -97,11 +98,14 @@ const bedMember = (id: string, current: string, pool: string[], extra: Partial<S
   member(id, 'doubleBed', current, pool, { short: 1.6, long: 2, ...extra });
 
 describe('roomSetOf — hàm thuần', () => {
-  it('cờ: mặc định tắt, ?enable=roomset bật, ?disable thắng', () => {
-    expect(roomSetOnOf('')).toBe(false);
-    expect(roomSetOnOf('?enable=roomset')).toBe(true);
+  it('cờ: mặc định BẬT (lượt 10), ?disable=roomset tắt; cờ cũ ?enable=roomvariety,chairset,varietyai bỏ qua lặng lẽ', () => {
+    expect(ROOMSET_DEFAULT).toBe(true);
+    expect(roomSetOnOf('')).toBe(true);
+    expect(roomSetOnOf('?disable=roomset')).toBe(false);
     expect(roomSetOnOf('?enable=roomset&disable=roomset')).toBe(false);
-    expect(roomSetOnOf('', true)).toBe(true);
+    expect(roomSetOnOf('?enable=roomvariety,chairset,varietyai')).toBe(true);
+    expect(roomSetOnOf('', false)).toBe(false);
+    expect(roomSetOnOf('?enable=roomset', false)).toBe(true);
   });
 
   it('ràng buộc cứng: giường chưa hoàn chỉnh/chưa biết, mặt trước nghi, lỗi QC, thiếu phần, to/cao quá, sai vai → loại; giữ mẫu cũ', () => {
@@ -311,8 +315,8 @@ const SET_LIB_ROLES = ['doubleBed', 'nightstand', 'closet', 'dresser', 'desk', '
 const mmOf = (role: string): [number, number, number] =>
   role === 'doubleBed' ? [1600, 900, 2000] : role === 'nightstand' ? [450, 550, 400] : role === 'closet' ? [1000, 2000, 600] : [800, 800, 800];
 const base = sceneStyleOf(undefined);
-const ON: LayerStyle = { ...base, roomSet: true, layout: new Set(), variety: new Set() };
-const OFF: LayerStyle = { ...base, roomSet: false, layout: new Set(), variety: new Set() };
+const ON: LayerStyle = { ...base, roomSet: true, layout: new Set() };
+const OFF: LayerStyle = { ...base, roomSet: false, layout: new Set() };
 const sceneOf = (graph: SpatialGraph, style: LayerStyle): PascalScene => standardSceneOf(graph, { style }).scene;
 const itemsOf = (scene: PascalScene): string =>
   JSON.stringify(Object.values(scene.nodes).filter((n) => (n as { type: string }).type === 'item').sort((a, b) => (a.id < b.id ? -1 : 1)));
@@ -353,8 +357,10 @@ describe('roomset trong đường dựng cảnh', () => {
     Q.clear();
   });
 
-  it('cờ tắt: cảnh y như không có khoá roomset', () => {
-    expect(itemsOf(sceneOf(graphWith(), OFF))).toBe(itemsOf(sceneOf(graphWith(), { ...base, layout: new Set(), variety: new Set() })));
+  it('mặc định bật: cảnh không có khoá roomset = cảnh bật tường minh; tắt tường minh thì khác', () => {
+    const plain = itemsOf(sceneOf(graphWith(), { ...base, layout: new Set() }));
+    expect(plain).toBe(itemsOf(sceneOf(graphWith(), ON)));
+    expect(plain).not.toBe(itemsOf(sceneOf(graphWith(), OFF)));
   });
 
   it('cờ bật: giường trần thay bằng giường hoàn chỉnh, prov.model ghi luật + phiên bản + mẫu cũ; hai tab cùng mẫu; báo cáo', () => {
@@ -1083,5 +1089,14 @@ describe('roomset lượt 9 — cỡ hiển thị (itemFitOf)', () => {
     expect((shownOf('fit-tall') as Dims)[1]).toBeCloseTo(2.3, 6);
     const m = member('w', 'closet', 'fit-tall', ['fit-tall'], { short: 0.6, long: 1.0, ceilingM: 2.4, shownOf });
     expect(hardRejectOf(m, 'fit-tall', ctx)).toBe('chạm gần trần');
+  });
+});
+
+/* ---- Lượt 10: bật mặc định — phong cách concept thiếu `wall` không làm vỡ bảng màu ---- */
+describe('roomset lượt 10', () => {
+  it('paletteOf: phong cách thiếu wall / wall.interior (concept AI lúc chạy) → không tường, không lỗi', () => {
+    const base = sceneStyleOf('am-ap');
+    expect(paletteOf({ ...base, wall: undefined } as unknown as typeof base, 'l')).toEqual({ tone: 'l', light: true });
+    expect(paletteOf({ ...base, wall: {} } as unknown as typeof base, 'd')).toEqual({ tone: 'd', light: false });
   });
 });
