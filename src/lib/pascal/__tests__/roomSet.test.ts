@@ -631,3 +631,104 @@ describe('roomset trên dữ liệu chất lượng thật (am-ap, tông sáng)'
     expect(kept.length).toBeGreaterThan(all.length / 2);
   });
 });
+
+/* ---- Lượt 3 (Codex review 2): ràng buộc cứng của CHÍNH từng món; khoá phòng không phụ thuộc phòng khác ---- */
+
+describe('roomset lượt 3 — mỗi món chỉ nhận mẫu qua ràng buộc cứng của chính nó (dữ liệu thật)', () => {
+  const real = (id: string): ModelQuality | undefined => LIBRARY_QUALITY.models[id];
+  const am = sceneStyleOf('am-ap');
+  const wanted = am.libraryStyles ?? [];
+  const libStyles = (LIBRARY as unknown as { models: Record<string, { s: string[] }> }).models;
+  const ctx: SetContext = {
+    tierOf: (f) => {
+      const s = libStyles[f]?.s ?? [];
+      const best = Math.min(...wanted.map((c, i) => (s.includes(c) ? i : Infinity)));
+      return best !== Infinity ? best : s.length === 0 ? wanted.length : wanted.length + 1;
+    },
+    tiers: wanted.length,
+    dimsOf: (f) => {
+      const u = real(f)?.useMm;
+      return u === undefined ? undefined : [u[0] / 1000, u[1] / 1000, u[2] / 1000];
+    },
+    palette: paletteOf(am, 'l'),
+    qualityOf: real,
+  };
+  const pool = (role: string): string[] => (roles[role] ?? []).filter((id) => real(id) !== undefined);
+
+  it('hai giường cùng vai, chỗ khác cỡ, không mẫu chung nào lọt cả hai: giường đủ chăn gối không bị thay bằng giường trần', () => {
+    const lib = ['bed-drawers-greywash', 'bed-double-grey-pro'];
+    const beds: SetMember[] = [
+      { id: 'b1', role: 'doubleBed', short: 1.45, long: 1.95, current: 'bed-drawers-greywash', pool: lib, fixed: false },
+      { id: 'b2', role: 'doubleBed', short: 2.0, long: 2.2, current: 'bed-double-grey-pro', pool: lib, fixed: false },
+    ];
+    const out = roomSetOf('R', beds, new Map(), ctx);
+    expect(out.get('b2')?.to).toBe('bed-double-grey-pro');
+    expect(out.get('b2')?.rule).toBe('keep');
+    // Giường 1: mẫu đủ chăn gối không lọt chỗ 1,45 × 1,95 m → giữ mẫu cũ của chính nó.
+    expect(out.get('b1')?.to).toBe('bed-drawers-greywash');
+  });
+
+  it('bất biến trên 300 phòng sinh ngẫu nhiên (hạt cố định): món đổi mẫu qua ràng buộc cứng của nó và hơn mẫu cũ ≥ MIN_GAIN, hoặc mẫu cũ trượt', () => {
+    let seed = 12345;
+    const rand = (): number => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed / 2 ** 32;
+    };
+    const pickOf = <T>(xs: readonly T[]): T => xs[Math.floor(rand() * xs.length)] as T;
+    const ROLES = ['doubleBed', 'nightstand', 'closet', 'dresser', 'sofa', 'armchair', 'coffeeTable', 'diningTable', 'diningChair', 'bookshelf', 'desk'];
+    let swaps = 0;
+    let checked = 0;
+    for (let r = 0; r < 300; r += 1) {
+      const members: SetMember[] = [];
+      for (let i = 0, n = 2 + Math.floor(rand() * 6); i < n; i += 1) {
+        const role = pickOf(ROLES);
+        const ids = pool(role);
+        if (ids.length === 0) continue;
+        const current = pickOf(ids);
+        const [w, , d] = ctx.dimsOf(current) ?? [1, 1, 1];
+        const k = 0.8 + rand() * 0.5;
+        members.push({ id: `m${i}`, role, short: Math.min(w, d) * k, long: Math.max(w, d) * k, current, pool: ids, fixed: rand() < 0.15 });
+      }
+      for (const d of roomSetOf(`room-${r}`, members, new Map(), ctx).values()) {
+        checked += 1;
+        if (d.rule !== 'roomset') continue;
+        swaps += 1;
+        const m = members.find((x) => x.id === d.id) as SetMember;
+        expect(hardRejectOf(m, d.to as string, ctx)).toBeUndefined();
+        const oldFails = d.from === null || hardRejectOf(m, d.from, ctx) !== undefined;
+        if (!oldFails) expect((d.cost as number) <= (d.fromCost as number) - MIN_GAIN + 1e-9).toBe(true);
+      }
+    }
+    console.info(`bất biến roomset: ${checked} quyết định, ${swaps} lần đổi`);
+    expect(swaps).toBeGreaterThan(0);
+  });
+});
+
+describe('roomSetKeysOf lượt 3 — sửa phòng A không đổi khoá phòng B', () => {
+  const box = (x: number, y: number, w: number, h: number): Point[] => [
+    { x, y },
+    { x: x + w, y },
+    { x: x + w, y: y + h },
+    { x, y: y + h },
+  ];
+  const flat = (ids: readonly [string, string], level: string, dx = 0, dy = 0, widenA = 0) => [
+    { id: ids[0], levelId: level, usage: 'bedroom', outline: box(dx, dy, 5000 + widenA, 4000) },
+    { id: ids[1], levelId: level, usage: 'bedroom', outline: box(dx + 5200, dy, 5000, 4000) },
+  ];
+  const keysOf = (rooms: ReturnType<typeof flat>): string[] => {
+    const keys = roomSetKeysOf(rooms);
+    return rooms.map((r) => keys.get(r.id) as string);
+  };
+
+  it('hai phòng ngủ 5000×4000 giống hệt: khoá khác nhau; nới phòng A 50 mm → khoá phòng B giữ nguyên', () => {
+    const [a, b] = keysOf(flat(['R-a', 'R-b'], 'L-1'));
+    expect(a).not.toBe(b);
+    const [a2, b2] = keysOf(flat(['R-a', 'R-b'], 'L-1', 0, 0, 50));
+    expect(b2).toBe(b);
+    expect(a2).not.toBe(a);
+  });
+
+  it('chép cả căn sang id khác + tịnh tiến → cùng khoá', () => {
+    expect(keysOf(flat(['R-x', 'R-y'], 'L-9', 31_234, -7_777))).toEqual(keysOf(flat(['R-a', 'R-b'], 'L-1')));
+  });
+});

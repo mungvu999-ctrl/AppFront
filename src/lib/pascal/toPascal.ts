@@ -824,6 +824,13 @@ const stairNodesOf = (
 
 const SWAPPED_MODEL_SRC = /^\/items\/([a-z0-9_-]+)\/model\.glb$/;
 
+/** Bản sao món bỏ `model` (exactOptionalPropertyTypes không cho gán `undefined`). */
+const withoutModel = (f: Furniture): Furniture => {
+  const copy = { ...f };
+  delete copy.model;
+  return copy;
+};
+
 const itemNodeOf = (
   furniture: Furniture,
   levelNodeId: PascalNodeId,
@@ -944,8 +951,7 @@ const itemNodeOf = (
       // chỉ còn `stair` dùng nó làm chỗ giữ chỗ — chưa có mô hình thang (ngoài C2).
       // Mẫu máy chủ lưu đường `/items/<id>/…`; URL thật là URL ký mới của lượt mở này.
       src:
-        // Mẫu đã lưu theo thư mục catalog (`/items/<thư mục>/…`): cùng đường hoán đổi hiển thị (realism, `-uv`) như đồ sinh.
-        fit !== null && (isServerModel(fit.folder) || swappedFolder === fit.folder)
+        fit !== null && isServerModel(fit.folder)
           ? modelSrcOf(fit.folder)
           : (furniture.model?.src ?? (fit === null ? `asset://appfront/${furniture.kind}` : modelSrcOf(fit.folder))),
       dimensions: [widthM, heightM, depthM],
@@ -1357,13 +1363,27 @@ export const toPascalScene = (
   const expanded = expandKitchenRuns(orientDetectedFurniture(graph.furniture, graph.walls), builtWalls);
   const furnitureToBuild = expanded.filter((f) => !offIds.has(f.id));
   const graphFurnitureIds = graph.furniture.map((f) => f.id as string);
+  /* V4 — món sinh đã thành đồ thật RIÊNG LẺ (`dressingOff` có `DRESS-x` + đồ thật id `adoptedFurnitureIdOf(x)`): lớp
+     dẫn xuất tính như khi nó còn là đồ sinh — đồ thật ấy không chặn bày phòng, bản sinh ("twin") vẫn dự phần đăng ký
+     bộ/chủ trang trí nhưng không dựng (đồ thật dựng thay). Nhờ vậy anh em giữ chỗ và mẫu sau khi lưu. Dữ liệu cũ (cả
+     phòng đã nhận, id ngẫu nhiên) không có cặp nào: đọc y như trước. */
+  const graphIdSet = new Set<string>(graphFurnitureIds);
+  const twinIds = new Set([...offIds].filter((id) => graphIdSet.has(adoptedFurnitureIdOf(id))));
+  const adoptedIds = new Set<string>([...twinIds].map(adoptedFurnitureIdOf));
+  /** Mẫu LUẬT CHỌN của món đã nhận (`model.id` = `appfront-<loại>`, không phải mẫu người dùng đổi): thư mục, hoặc undefined. */
+  const ruleFolderOf = (f: Furniture): string | undefined => {
+    if (!adoptedIds.has(f.id) || f.model?.id !== `appfront-${f.kind}`) return undefined;
+    const folder = SWAPPED_MODEL_SRC.exec(f.model.src)?.[1];
+    return folder !== undefined && Object.prototype.hasOwnProperty.call(CATALOG_MODELS, folder) ? folder : undefined;
+  };
 
   /* Vai trò theo ngữ cảnh phòng (bồn cầu thừa → lavabo, bàn nhỏ xa giường → bàn phụ): chỉ đổi mẫu. */
   const contextUsageOf = (f: Pick<Furniture, 'roomId'>) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId));
   // `roomset` băm theo nội dung phòng, không theo id (chép sang dự án khác giữ nguyên nội thất).
   setRoomSetKeys(roomSetKeysOf(builtRooms.map((room) => ({ id: room.id, levelId: room.levelId, usage: roomUsageOf.get(room.id), outline: room.outline }))));
+  // Món đã nhận còn mẫu luật chọn: twin đại diện trong sổ bộ (như trước khi nhận), không thành đồ cố định của bảng màu.
   const contextRoles = contextRolesOf(
-    furnitureToBuild.filter((f) => f.suggested !== true),
+    furnitureToBuild.filter((f) => f.suggested !== true && ruleFolderOf(f) === undefined),
     contextUsageOf,
   );
 
@@ -1431,14 +1451,19 @@ export const toPascalScene = (
     const sinkFolder =
       sinkFolderOf(furniture, furnitureToBuild, usageOf) ??
       (contextRole === undefined ? undefined : (modelFolderOf(furniture, style, usage, contextRole) ?? undefined));
-    const node =
+    // Mẫu luật chọn của món đã nhận dựng như đồ sinh (cùng đường hoán đổi hiển thị) + ghi lại thư mục để lượt về giữ.
+    const ruleFolder = ruleFolderOf(furniture);
+    const built = ruleFolder === undefined ? furniture : withoutModel(furniture);
+    const folderFor = ruleFolder ?? sinkFolder;
+    const rawNode =
       arms === null
-        ? itemNodeOf(furniture, levelNodeId, levelHeightMm, style, usage, counterTopMmOf(furniture, furnitureToBuild, style, usageOf), sinkFolder)
+        ? itemNodeOf(built, levelNodeId, levelHeightMm, style, usage, counterTopMmOf(furniture, furnitureToBuild, style, usageOf), folderFor)
         : longArmNodeOf(
-            furniture,
+            built,
             arms.long,
-            itemNodeOf({ ...furniture, ...arms.long }, levelNodeId, levelHeightMm, style, usage, 0, sinkFolder),
+            itemNodeOf({ ...built, ...arms.long }, levelNodeId, levelHeightMm, style, usage, 0, folderFor),
           );
+    const node = ruleFolder === undefined ? rawNode : withFields(rawNode, { [MODEL_FOLDER_FIELD]: ruleFolder });
 
     /* Hộp quầy gốc vẫn phải có node (thiếu = lượt lưu đọc thành xoá) nhưng ẩn; dãy tủ thay nó là đồ sinh ra.
        Thảm lạc ngoài phòng (`isStrayRug`) cũng vậy: giữ node để lưu không xoá, chỉ không trải ra sân trống. */
@@ -1469,13 +1494,6 @@ export const toPascalScene = (
    * đồ thật. Không bao giờ được lưu (`isGeneratedNodeId`), không tính vào `skipped`: món nào
    * không dựng được thì bỏ im lặng. Chỉ chạy khi `furnish: 'on'` — mặc định cảnh không tự thêm đồ.
    */
-  /* V4 — món sinh đã thành đồ thật RIÊNG LẺ (`dressingOff` có `DRESS-x` + đồ thật id `adoptedFurnitureIdOf(x)`): lớp
-     dẫn xuất tính như khi nó còn là đồ sinh — đồ thật ấy không chặn bày phòng, bản sinh ("twin") vẫn dự phần đăng ký
-     bộ/chủ trang trí/chặn chồng nhưng không dựng (đồ thật dựng thay). Nhờ vậy anh em giữ chỗ và mẫu sau khi lưu. Dữ liệu
-     cũ (cả phòng đã nhận, id ngẫu nhiên) không có cặp nào: đọc y như trước. */
-  const builtIds = new Set<string>(builtFurniture.map((f) => f.id));
-  const twinIds = new Set([...offIds].filter((id) => builtIds.has(adoptedFurnitureIdOf(id))));
-  const adoptedIds = new Set<string>([...twinIds].map(adoptedFurnitureIdOf));
   const baseFurniture = builtFurniture.filter((f) => !adoptedIds.has(f.id));
   const usable = {
     ...graph,

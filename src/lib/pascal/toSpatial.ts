@@ -67,7 +67,7 @@ import {
 } from '@/domain/units/types';
 import { AUTHORED_BY_HAND, toPointMm } from '@/lib/commands/business/shared';
 
-import { isServerModel, namedFolderOf, serverKindOf, serverModelPath } from './furnitureCatalog';
+import { isServerModel, modelSrcOf, namedFolderOf, serverKindOf, serverModelPath } from './furnitureCatalog';
 import { appFrontIdOf, bodyOfPascalId, BUILDING_NODE_ID, toPascalId } from './ids';
 import { LIBRARY_MATERIAL_IDS } from './libraryMaterialIds';
 import { libRoles2BaseIdOf } from './libraryRoles2';
@@ -394,8 +394,9 @@ const dressingOffOf = (scene: PascalScene, fields: Fields, roomId: string, adopt
   const all = [...new Set([...readStrings(fields, 'dressingOff'), ...removed])];
   const kept = (id: string): boolean =>
     adopted.has(dressNodeIdOf(id)) || scene.nodes[toPascalId('item', adoptedFurnitureIdOf(id))] !== undefined;
+  // Mục được bảo vệ không bao giờ rơi; vượt trần thì `createPascalEditCommand` từ chối lượt nhận (không mất dữ liệu).
   const drop = new Set(all.filter((id) => !kept(id)).slice(0, Math.max(0, all.length - DRESSING_OFF_MAX)));
-  const off = all.filter((id) => !drop.has(id)).slice(-DRESSING_OFF_MAX);
+  const off = all.filter((id) => !drop.has(id));
 
   return off.length === 0 ? {} : { dressingOff: off };
 };
@@ -469,6 +470,13 @@ const itemFieldsOf = (item: PascalItemNode, kind: FurnitureKind): Partial<Furnit
   const libId = libRoles2BaseIdOf(item.asset.id);
   const server = libId !== undefined || isServerModel(item.asset.id);
   const swapped = server || (item.asset.id !== `appfront-${kind}` && MODEL_SRC.test(item.asset.src));
+  // Mẫu LUẬT CHỌN đang dựng (món sinh / món đã nhận, `MODEL_FOLDER_FIELD`), chưa ai đổi: lưu với id `appfront-<loại>` để
+  // lượt sau còn biết đây không phải mẫu người dùng ghim (`toPascal` `ruleFolderOf`).
+  const ruleFolder = readString(fields, MODEL_FOLDER_FIELD);
+  const ruleModel =
+    !swapped && ruleFolder !== null && modelSrcOf(ruleFolder) === item.asset.src && MODEL_SRC.test(serverModelPath(ruleFolder))
+      ? { id: `appfront-${kind}`, src: serverModelPath(ruleFolder) }
+      : undefined;
 
   return {
     ...(variant === null ? {} : { variant }),
@@ -477,20 +485,10 @@ const itemFieldsOf = (item: PascalItemNode, kind: FurnitureKind): Partial<Furnit
     ...(slots === null ? {} : { slots }),
     ...(swapped
       ? { model: { id: item.asset.id.slice(0, 120), src: server ? serverModelPath(libId ?? item.asset.id) : savedSrcOf(item.asset.src) } }
-      : {}),
+      : ruleModel === undefined
+        ? {}
+        : { model: ruleModel }),
   };
-};
-
-/**
- * Mẫu đang thấy của món sinh vừa nhận (lượt đi ghi `MODEL_FOLDER_FIELD`): thành `Furniture.model` để tải lại vẫn đúng
- * mẫu người dùng đã thấy và chỉnh (mẫu luật chọn giữ `asset.id` = `appfront-<loại>` nên `itemFieldsOf` không lưu).
- * Người dùng đổi mẫu thì `itemFieldsOf` ghi đè.
- */
-const shownModelOf = (item: PascalItemNode): Partial<Furniture> => {
-  const folder = readString(fieldsOf(item), MODEL_FOLDER_FIELD);
-  const src = folder === null ? '' : serverModelPath(folder);
-
-  return folder !== null && MODEL_SRC.test(src) ? { model: { id: folder.slice(0, 120), src } } : {};
 };
 
 /** Đường lưu của mẫu tại chỗ: về thư mục tên gọi — bỏ hoán đổi hiển thị `-uv` và realism (`bed-sf` → `double-bed`). */
@@ -869,7 +867,6 @@ const collectItem = (scene: PascalScene, item: PascalItemNode, levelId: LevelId,
       boundingBox: wholeBox(autoKept ? worldBoxOf(box, rotationDeg) : adoptedOne ? boxAtCentre(box, centre) : box),
       rotationDeg: autoKept ? asDegrees(0) : rotationDeg,
       ...(roomId !== null && isIdOfKind('room', roomId) ? { roomId } : {}),
-      ...(roomAdopted ? shownModelOf(item) : {}),
       ...itemFieldsOf(item, kind),
       // Món rời thành đồ thật giữ đúng mẫu và độ nâng lượt đi tự chọn (lan can, mặt bếp…), không đoán lại theo `kind`.
       ...(looseAdopted && MODEL_SRC.test(item.asset.src) ? { model: { id: item.asset.id.slice(0, 120), src: savedSrcOf(item.asset.src) } } : {}),

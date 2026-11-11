@@ -147,8 +147,10 @@ export interface SetDecision {
   readonly to: string | null;
   readonly rule: SetRule;
   readonly anchor: boolean;
-  /** Chi phí bộ (nhỏ = hợp hơn) lúc chốt món này. */
+  /** Chi phí (nhỏ = hợp hơn) của mẫu được chọn / mẫu cũ khi giữ. */
   readonly cost?: number;
+  /** Chi phí mẫu luật cũ của CHÍNH món này trong cùng ngữ cảnh; vắng = mẫu cũ trượt ràng buộc cứng. */
+  readonly fromCost?: number;
   /** Lý do giữ / chọn (tiếng Việt, cho đầu dò). */
   readonly why: string;
 }
@@ -294,12 +296,15 @@ const byId = (a: { readonly id: string }, b: { readonly id: string }): number =>
 
 /** Cỡ ô làm tròn của chữ ký phòng, mm (diện tích làm tròn 0,1 m²). */
 const KEY_GRID_MM = 100;
+/** Lưới thô của vị trí phòng trong tầng, mm: sửa phòng khác vài chục mm không đẩy tâm phòng này qua ô. */
+const KEY_SPOT_MM = 500;
 
 /**
  * Khoá băm của từng phòng theo NỘI DUNG, không theo id (id sinh lại khi chép sang dự án khác → nội thất không được
- * đổi): công năng + cạnh ngắn/dài hộp bao (làm tròn 100 mm) + diện tích (0,1 m²), rồi thứ hạng giữa các phòng trùng
- * chữ ký theo tâm hộp bao TƯƠNG ĐỐI trong tầng (góc nhỏ nhất của mọi phòng cùng tầng; sắp y rồi x, làm tròn 100 mm).
- * Hai tầng giống hệt cho cùng khoá — cùng nội dung thì cùng bộ.
+ * đổi): công năng + cạnh ngắn/dài hộp bao (làm tròn 100 mm) + diện tích (0,1 m²) + tâm hộp bao TƯƠNG ĐỐI so với góc
+ * nhỏ nhất của các phòng cùng tầng, lưới thô 500 mm. Không dùng thứ hạng giữa các phòng trùng chữ ký (lượt 3): sửa phòng
+ * A không đổi khoá phòng B. Đánh đổi: sửa làm DỜI góc nhỏ nhất của tầng (phòng ở mép trái/trên nới ra ngoài) thì khoá
+ * mọi phòng tầng ấy có thể đổi; tâm phòng nằm sát biên ô 500 mm cũng có thể nhảy ô. Tịnh tiến/chép cả căn → cùng khoá.
  */
 export const roomSetKeysOf = (
   rooms: readonly { readonly id: string; readonly levelId: string; readonly usage: string | undefined; readonly outline: readonly { readonly x: number; readonly y: number }[] }[],
@@ -323,17 +328,10 @@ export const roomSetKeysOf = (
     }, 0)) / 2;
     const [w, h] = [x1 - x0, y1 - y0];
     const sig = `${r.usage ?? ''}|${grid(Math.min(w, h))}x${grid(Math.max(w, h))}|${Math.round(area / 1e5)}`;
-    return { id: r.id, sig, at: [grid((y0 + y1) / 2 - o.y), grid((x0 + x1) / 2 - o.x)] as const };
+    const spot = (v: number): number => Math.round(v / KEY_SPOT_MM);
+    return { id: r.id, key: `${sig}#${spot((x0 + x1) / 2 - o.x)},${spot((y0 + y1) / 2 - o.y)}` };
   });
-  const keys = new Map<string, string>();
-  for (const { id, sig, at } of info) {
-    const spots = [...new Set(info.filter((r) => r.sig === sig).map((r) => r.at.join(',')))]
-      .map((s) => s.split(',').map(Number) as [number, number])
-      .sort((a, b) => a[0] - b[0] || a[1] - b[1])
-      .map((a) => a.join(','));
-    keys.set(id, `${sig}#${spots.indexOf(at.join(','))}`);
-  }
-  return keys;
+  return new Map(info.map(({ id, key }) => [id, key]));
 };
 /**
  * Bộ của một phòng. `roomKey` = khoá nội dung (`roomSetKeysOf`), chỉ dùng để băm rút neo. `decided` = món đã chốt ở
@@ -373,8 +371,18 @@ export const roomSetOf = (
   }
   let anchorWood: Lab | undefined;
   const out = new Map<string, SetDecision>();
-  const decide = (m: SetMember, to: string | null, anchor: boolean, why: string, cost?: number): void => {
-    out.set(m.id, { id: m.id, role: m.role, from: m.current, to, rule: to === m.current ? 'keep' : 'roomset', anchor, ...(cost === undefined ? {} : { cost }), why });
+  const decide = (m: SetMember, to: string | null, anchor: boolean, why: string, cost?: number, fromCost?: number): void => {
+    out.set(m.id, {
+      id: m.id,
+      role: m.role,
+      from: m.current,
+      to,
+      rule: to === m.current ? 'keep' : 'roomset',
+      anchor,
+      ...(cost === undefined || !Number.isFinite(cost) ? {} : { cost }),
+      ...(fromCost === undefined || !Number.isFinite(fromCost) ? {} : { fromCost }),
+      why,
+    });
   };
 
   for (const role of roles) {
@@ -382,7 +390,6 @@ export const roomSetOf = (
     const todo = group.filter((m) => !m.fixed && !decided.has(m.id));
     if (todo.length === 0) continue;
     const anchor = role === anchorRole;
-    const ok = (folder: string): boolean => todo.every((m) => hardRejectOf(m, folder, ctx) === undefined);
     const partner = PARTNER[role];
     const refs: ItemRefs = {
       wood: (partner === undefined ? undefined : woodByRole.get(partner)) ?? fixedWood ?? (anchor ? undefined : anchorWood) ?? toneWoodOf(ctx.palette),
@@ -390,42 +397,42 @@ export const roomSetOf = (
       anchor,
     };
     const costOf = (folder: string): number => itemCostOf(folder, role, refs, ctx, memo).total;
-    let to: string | null;
-    let why: string;
-    let cost: number | undefined;
-    // Món cùng vai đã có mẫu (ghim / đã chốt): cặp dùng chung mẫu ấy nếu nó lọt mọi chỗ.
+    const fits = (m: SetMember, folder: string): boolean => hardRejectOf(m, folder, ctx) === undefined;
+    /** Mẫu rẻ nhất cho các món `ms` (qua ràng buộc cứng của MỌI món trong `ms`); neo rút trong dải theo băm. */
+    const bestFor = (ms: readonly SetMember[]): { f: string; cost: number; band: number } | undefined => {
+      const ranked = [...new Set(ms.flatMap((m) => m.pool))]
+        .filter((f) => ms.every((m) => m.pool.includes(f) && fits(m, f)))
+        .sort()
+        .map((f) => ({ f, cost: costOf(f) }))
+        .sort((a, b) => a.cost - b.cost || a.f.localeCompare(b.f));
+      const best = ranked[0];
+      if (best === undefined) return undefined;
+      const band = anchor ? ranked.filter((r) => r.cost <= best.cost + ANCHOR_BAND) : [best];
+      return { ...(band[fnv1a(`${roomKey}|${role}`) % band.length] as { f: string; cost: number }), band: band.length };
+    };
+    // Mẫu chung của nhóm cùng vai: món cùng vai đã có mẫu (ghim / đã chốt), không thì mẫu tốt nhất lọt MỌI chỗ.
     const pinned = group.map(folderOfFixed).find((f): f is string => f !== null);
-    const current = todo[0]?.current ?? null;
-    const currentOk = current !== null && ok(current);
-    const pool = [...new Set(todo.flatMap((m) => m.pool))].filter((f) => todo.every((m) => m.pool.includes(f)));
-    const ranked = pool
-      .filter(ok)
-      .sort()
-      .map((f) => ({ f, cost: costOf(f) }))
-      .sort((a, b) => a.cost - b.cost || a.f.localeCompare(b.f));
-    if (pinned !== undefined && ok(pinned)) {
-      [to, why] = [pinned, 'cùng mẫu món cùng vai đã có'];
-    } else if (ranked.length === 0) {
-      [to, why] = [current, 'không ứng viên qua ràng buộc cứng'];
-    } else {
-      // Mẫu cũ đạt ràng buộc cứng: chỉ ứng viên rẻ hơn RÕ (≥ MIN_GAIN) mới được thay.
-      const curCost = currentOk ? costOf(current) : Infinity;
-      const better = ranked.filter((r) => r.cost <= curCost - MIN_GAIN);
-      if (better.length === 0) {
-        [to, why, cost] = [current, `mẫu mới không hơn rõ (tốt nhất ${(ranked[0] as { cost: number }).cost.toFixed(2)}, cũ ${curCost.toFixed(2)})`, curCost];
+    const shared = pinned !== undefined ? { f: pinned, cost: costOf(pinned), band: 1 } : bestFor(todo);
+    // Từng món quyết định RIÊNG (lượt 3): chỉ nhận mẫu qua ràng buộc cứng của chính nó VÀ hơn mẫu luật cũ của chính
+    // nó ≥ MIN_GAIN (hoặc mẫu cũ trượt ràng buộc cứng); không thì giữ mẫu cũ của nó. Món cùng mẫu cũ ra cùng kết quả.
+    for (const m of todo) {
+      const curOk = m.current !== null && fits(m, m.current);
+      const curCost = curOk ? costOf(m.current as string) : Infinity;
+      const pick = shared !== undefined && fits(m, shared.f) ? shared : bestFor([m]);
+      if (pick !== undefined && pick.cost <= curCost - MIN_GAIN) {
+        const via = pick === shared && pinned !== undefined ? 'cùng mẫu món cùng vai đã có' : anchor ? `neo, dải ${pick.band}` : 'hợp bộ';
+        decide(m, pick.f, anchor, `${via}; ${pick.cost.toFixed(2)} < cũ ${curOk ? curCost.toFixed(2) : 'không đạt'}`, pick.cost, curCost);
+      } else if (pick === undefined) {
+        decide(m, m.current, anchor, 'không ứng viên qua ràng buộc cứng');
       } else {
-        const best = better[0] as { f: string; cost: number };
-        // Neo: rút trong dải sát tốt nhất theo băm khoá nội dung phòng + vai (đa dạng có kiểm soát); món khác: rẻ nhất.
-        const band = anchor ? better.filter((r) => r.cost <= best.cost + ANCHOR_BAND) : [best];
-        const pick = band[fnv1a(`${roomKey}|${role}`) % band.length] as { f: string; cost: number };
-        [to, cost] = [pick.f, pick.cost];
-        why = `${anchor ? `neo, dải ${band.length}` : 'hợp bộ'}; ${pick.cost.toFixed(2)} < cũ ${currentOk ? curCost.toFixed(2) : 'không đạt'}`;
+        decide(m, m.current, anchor, `mẫu mới không hơn rõ (tốt nhất ${pick.cost.toFixed(2)}, cũ ${curOk ? curCost.toFixed(2) : 'không đạt'})`, curCost, curCost);
       }
     }
-    for (const m of todo) decide(m, to, anchor, why, cost);
-    if (to !== null) {
+    for (const m of todo) {
+      const to = out.get(m.id)?.to;
+      if (to === null || to === undefined) continue;
       const feat = featOf(to, ctx, memo);
-      if (anchor && feat.woodLab !== undefined) anchorWood = feat.woodLab;
+      if (anchor && anchorWood === undefined && feat.woodLab !== undefined) anchorWood = feat.woodLab;
       if (feat.woodLab !== undefined && !woodByRole.has(role)) woodByRole.set(role, feat.woodLab);
       families = familiesWith(families, feat.loud.map((p) => p.lab));
     }

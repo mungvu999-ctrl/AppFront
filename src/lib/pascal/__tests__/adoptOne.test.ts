@@ -12,6 +12,7 @@ import { createDerivedHistory, recordDerived, restoreDerived } from '@/pascal-pa
 
 import { createPascalEditCommand } from '../fromPascal';
 import { clearServerLibrary, registerServerLibrary, setRealismModels } from '../furnitureCatalog';
+import QUALITY from '../libraryQuality.json' with { type: 'json' };
 import type { ModelQuality } from '../libraryQuality';
 import LIBRARY from '../libraryRoles.json' with { type: 'json' };
 import { rectOfFurniture, rectsOverlap } from '../placement';
@@ -24,10 +25,11 @@ import type { PascalItemNode, PascalNode, PascalScene } from '../types';
 
 /** Dữ liệu chất lượng giả (tệp thật đang rỗng) để `roomset` có ứng viên. */
 const Q = vi.hoisted(() => new Map<string, unknown>());
-vi.mock('../libraryQuality', async (importOriginal) => ({
-  ...(await importOriginal<object>()),
-  qualityOf: (id: string) => Q.get(id),
-}));
+vi.mock('../libraryQuality', async (importOriginal) => {
+  const real = await importOriginal<{ qualityOf: (id: string) => unknown }>();
+  // Q rỗng → dữ liệu chất lượng THẬT (`libraryQuality.json`).
+  return { ...real, qualityOf: (id: string) => (Q.size > 0 ? Q.get(id) : real.qualityOf(id)) };
+});
 
 const HUMAN = { source: 'human', reviewed: true, confidence: 1 } as const;
 const ROOM = 'R-0000000ADOPT';
@@ -277,5 +279,94 @@ describe('một món sinh với thư viện máy chủ (roomset bật/tắt)', (
     expect(stored.furniture).toHaveLength(1);
     expect(stored.furniture[0]?.id).toBe(adoptedFurnitureIdOf(`DRESS-bed-${ROOM}`));
     expect(stored.rooms[0]?.dressingOff).toEqual([`DRESS-bed-${ROOM}`]);
+  });
+});
+
+/* ---- REVIEW-2: catalog thật (thư viện + dữ liệu chất lượng thật), phong cách am-ap ---- */
+describe('catalog thật: nhận một tab đầu giường không đổi mẫu anh em (REVIEW-2 #1)', () => {
+  const AM_AP = sceneStyleOf('am-ap');
+  const REAL_ON: LayerStyle = { ...AM_AP, roomSet: true, layout: new Set(), variety: new Set() };
+  const REAL_OFF: LayerStyle = { ...AM_AP, roomSet: false, layout: new Set(), variety: new Set() };
+  beforeAll(() => {
+    Q.clear();
+    const models = (QUALITY as unknown as { models: Record<string, { u: [number, number, number] }> }).models;
+    registerServerLibrary(
+      Object.entries(models).map(([id, m]) => ({ id, widthMm: m.u[0], heightMm: m.u[1], depthMm: m.u[2], modelUrl: `https://x.test/${id}.glb` })),
+    );
+  });
+  afterAll(() => clearServerLibrary());
+
+  for (const [name, style] of [['bật', REAL_ON], ['tắt', REAL_OFF]] as const) {
+    it(`roomset ${name}: dời tab 50 mm → 1 món; tải lại: giường, tab kia, ghế… cùng mẫu`, () => {
+      const graph = emptyBedroom();
+      const scene = sceneOf(graph, style);
+      const tab = scene.nodes[`item_DRESS-nightstand-${ROOM}-1`] as PascalItemNode;
+      expect(tab).toBeDefined();
+      const changes = commit(graph, withNode(scene, shifted(tab, 0.05)), [tab.id]);
+      expect(furnitureOf(changes)).toHaveLength(1);
+      const reloaded = sceneOf(apply(graph, changes), style);
+      const model = (n: PascalNode | undefined): string => (n?.type === 'item' ? n.asset.src.split('?')[0] ?? '' : 'vắng');
+      const others = generated(scene).filter((n) => n.id !== tab.id && !n.id.includes(`-${dressIdOf(tab)}`));
+      expect(others.map((n) => n.id)).toEqual(expect.arrayContaining([`item_DRESS-bed-${ROOM}`, `item_DRESS-nightstand-${ROOM}-2`]));
+      expect(others.map((n) => `${n.id}=${model(reloaded.nodes[n.id])}`)).toEqual(others.map((n) => `${n.id}=${model(n)}`));
+      expect(model(reloaded.nodes[`item_${adoptedFurnitureIdOf(dressIdOf(tab))}`])).toBe(model(tab));
+    });
+  }
+});
+
+describe('cờ tắt, dự án không có cặp nhận: mẫu đã lưu hiển thị như master (REVIEW-2 #3)', () => {
+  it('realism bật: giường người dùng lưu `/items/double-bed/model.glb` vẫn hiện `double-bed`', () => {
+    setRealismModels(true);
+    try {
+      const bed = {
+        ...HUMAN,
+        id: 'F-00000000SAVED' as Furniture['id'],
+        levelId: LVL,
+        roomId: ROOM,
+        kind: 'bed',
+        centre: { x: 2500, y: 2000 },
+        boundingBox: { min: { x: 1700, y: 1000 }, max: { x: 3300, y: 3000 } },
+        rotationDeg: 0,
+        model: { id: 'double-bed', src: '/items/double-bed/model.glb' },
+      } as unknown as Furniture;
+      const scene = sceneOf({ ...emptyBedroom(), furniture: [bed] });
+      expect((scene.nodes[`item_${bed.id}`] as PascalItemNode).asset.src).toBe('/items/double-bed/model.glb');
+    } finally {
+      setRealismModels(false);
+    }
+  });
+});
+
+describe('`dressingOff` đầy dấu đã nhận (REVIEW-2 #4)', () => {
+  it('200 cặp đã nhận: nhận món thứ 201 bị từ chối kèm lời, không dấu nào rơi; sửa đồ khác vẫn giữ đủ 200', () => {
+    const marks = Array.from({ length: DRESSING_OFF_MAX }, (_, i) => `DRESS-kept${i}-${ROOM}`);
+    const reals = marks.map(
+      (mark, i) =>
+        ({
+          ...HUMAN,
+          id: adoptedFurnitureIdOf(mark),
+          levelId: LVL,
+          roomId: ROOM,
+          kind: 'other',
+          liftMm: 1500,
+          centre: { x: 300 + (i % 20) * 200, y: 300 + Math.floor(i / 20) * 300 },
+          boundingBox: { min: { x: 250 + (i % 20) * 200, y: 250 + Math.floor(i / 20) * 300 }, max: { x: 350 + (i % 20) * 200, y: 350 + Math.floor(i / 20) * 300 } },
+          rotationDeg: 0,
+        }) as unknown as Furniture,
+    );
+    const graph: SpatialGraph = { ...emptyBedroom('bedroom', marks), furniture: reals };
+    const scene = sceneOf(graph);
+    const bed = bedOf(scene);
+    const result = createPascalEditCommand({
+      graph: normalizeSpatial(graph),
+      scene: withNode(scene, shifted(bed, -0.3)),
+      commit: { origin: 'local', changedNodeIds: [bed.id] },
+      actorId: 'U-1',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ok ? [] : result.error.reasons.join(' ')).toMatch(/chưa nhận thêm được/);
+    const real = scene.nodes[`item_${reals[0]?.id}`] as PascalItemNode;
+    const next = apply(graph, commit(graph, withNode(scene, shifted(real, 0.05)), [real.id]));
+    expect(next.rooms[0]?.dressingOff).toEqual(marks);
   });
 });

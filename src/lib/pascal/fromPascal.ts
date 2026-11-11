@@ -65,6 +65,7 @@ import { appFrontIdOf, bodyOfPascalId } from './ids';
 import { roofIdOfSegment, roofNodeIdOf } from './roofs';
 import { undoFloorTransforms } from './floorAlignment';
 import { isGeneratedNodeId } from './sceneDressing';
+import { DRESSING_OFF_MAX } from './sceneLayer';
 import {
   adoptableRoomOf,
   isEditedGenerated,
@@ -589,6 +590,19 @@ export const createPascalEditCommand = (input: PascalEditInput): PascalEditResul
       type: PASCAL_COMMAND_TYPE,
       code: 'PASCAL_NO_CHANGE',
       reasons: ['Thay đổi này không làm bản vẽ khác đi nên không có gì để ghi.'],
+    });
+  }
+
+  /* `Room.dressingOff` không rơi dấu của món đã nhận (rơi = món mọc đôi): đầy trần thì từ chối nhận thêm, giữ nguyên dữ liệu. */
+  const full = after.rooms.find((room) => (room.dressingOff ?? []).length > DRESSING_OFF_MAX);
+
+  if (full !== undefined) {
+    return err({
+      type: PASCAL_COMMAND_TYPE,
+      code: 'PASCAL_UNKNOWN_NODE',
+      reasons: [
+        `Phòng "${full.name}" đã có ${formatCount(DRESSING_OFF_MAX)} món bày sẵn được sửa hoặc xoá, chưa nhận thêm được. Món đã được đặt về như cũ.`,
+      ],
     });
   }
 

@@ -270,7 +270,8 @@ export const woodToneOf = (
   harmonySuspended = true;
   try {
     for (const { f, usage } of items) {
-      if (isGenerated(f) || f.kind === 'stair') continue;
+      // Món đã nhận còn mẫu luật chọn (`model.id` = `appfront-<loại>`): vẫn là đồ dẫn xuất với tông căn, như trước khi nhận.
+      if (isGenerated(f) || f.kind === 'stair' || f.model?.id === `appfront-${f.kind}`) continue;
       const folder = f.model === undefined ? modelFolderOf(f, style, usage) : (SAVED_FOLDER.exec(f.model.src)?.[1] ?? null);
       const t = folder === null ? undefined : LIBRARY.models[folder]?.t;
       if (t === 'l' || t === 'd') count[t] += 1;
