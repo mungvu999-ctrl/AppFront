@@ -1,0 +1,135 @@
+import { BoxGeometry, BufferGeometry, Float32BufferAttribute, Mesh, MeshStandardMaterial } from 'three';
+import { afterEach, describe, expect, it } from 'vitest';
+import { applyFabricMaterials, clearFabricMaterials, fabricMatFlag, fabricReport, roleOfKey, setFabricMat } from './fabricMat';
+import { fabricRoleOf, fabricSurfaceOf, modelKeyOf, type SurfaceFacts } from './fabricRules';
+
+const facts = (f: Partial<SurfaceFacts>): SurfaceFacts => ({ names: [], hasMap: false, hasUv: true, metalness: 0, roughness: 0.9, transparent: false, ...f });
+
+describe('fabricRules', () => {
+  it('khoá mẫu từ src (Pascal, AppFront, thư viện ký), bỏ -uv', () => {
+    expect(modelKeyOf('/items/curtain-uv/model.glb')).toBe('curtain');
+    expect(modelKeyOf('http://h:9000/appback/library/bed-white-oak-headboard/model.glb?X-Sig=1')).toBe('bed-white-oak-headboard');
+    expect(modelKeyOf('/appfront-items/pillow/model.glb')).toBe('pillow');
+    expect(modelKeyOf(undefined)).toBeNull();
+  });
+
+  it('vai: token id món sinh thắng; không có thì vai catalog; ghế/tủ không phải vai vải', () => {
+    const none = () => undefined;
+    expect(fabricRoleOf('item_DRESS-curtain-D-1-L', '/items/curtain/model.glb', none)).toBe('curtain');
+    expect(fabricRoleOf('item_DRESS-throw-F-1', null, none)).toBe('throw');
+    expect(fabricRoleOf('item_DRESS-armchair-R-1', null, () => 'sofa')).toBeNull();
+    expect(fabricRoleOf('item_F-1', '/library/x/model.glb', () => 'doubleBed')).toBe('bed');
+    expect(fabricRoleOf('item_F-1', '/library/x/model.glb', () => 'closet')).toBeNull();
+  });
+
+  it('vai catalog thật: giường/sofa thư viện, giường Pascal (cả bản swap), tủ không', () => {
+    expect(roleOfKey('bed-white-oak-headboard')).toBe('doubleBed');
+    expect(roleOfKey('sofa-grey-linen-slim')).toBe('sofa');
+    expect(roleOfKey('double-bed')).toBe('bed');
+    expect(roleOfKey('bed-sf')).toBe('bed');
+    expect(roleOfKey('storage-wardrobe-greywash')).not.toBe('bed');
+  });
+
+  it('bề mặt: ga trơn → vải; khung nhám 0,6, gỗ có ảnh, kim loại, kính, da → không', () => {
+    expect(fabricSurfaceOf(facts({ names: ['Standardmaterial'] }))).toBe('plain');
+    expect(fabricSurfaceOf(facts({ names: ['Box002__0'], roughness: 0.6 }))).toBeNull();
+    expect(fabricSurfaceOf(facts({ names: ['Standardmaterial_0'], hasMap: true }))).toBeNull();
+    expect(fabricSurfaceOf(facts({ names: ['slot_metal', 'metal'], metalness: 1, roughness: 0.3 }))).toBeNull();
+    expect(fabricSurfaceOf(facts({ names: ['legs'], roughness: 0.9 }))).toBeNull();
+    expect(fabricSurfaceOf(facts({ names: ['curtain_rod'] }))).toBeNull();
+    expect(fabricSurfaceOf(facts({ names: ['Glass'], transparent: true }))).toBeNull();
+    expect(fabricSurfaceOf(facts({ names: ['seat'], tagKind: 'leather' }))).toBeNull();
+  });
+
+  it('bề mặt: tên vải thắng; ảnh trên mesh không UV (rèm Pascal) → vải; ảnh + UV → giữ ảnh tác giả', () => {
+    expect(fabricSurfaceOf(facts({ names: ['slot_fabric', 'fabric'], hasMap: true, hasUv: false }))).toBe('named');
+    expect(fabricSurfaceOf(facts({ names: ['Elegant_Cushion'], roughness: 0.4 }))).toBe('named');
+    expect(fabricSurfaceOf(facts({ names: ['Lenestol_fabric'], hasMap: true, hasUv: true }))).toBeNull();
+    expect(fabricSurfaceOf(facts({ names: ['Material'], roughness: 0.5, tagKind: 'bedding' }))).toBe('tagged');
+  });
+
+  it('cờ: tắt mặc định, ?enable=fabricmat bật, ?disable thắng', () => {
+    expect(fabricMatFlag('')).toBe(false);
+    expect(fabricMatFlag('?enable=lamprule,fabricmat')).toBe(true);
+    expect(fabricMatFlag('?enable=fabricmat&disable=fabricmat')).toBe(false);
+    expect(fabricMatFlag('?disable=fabricmat', true)).toBe(false);
+  });
+});
+
+describe('applyFabricMaterials', () => {
+  afterEach(() => {
+    setFabricMat(false);
+    clearFabricMaterials();
+  });
+
+  const noUv = (): BufferGeometry => {
+    const g = new BufferGeometry();
+    g.setAttribute('position', new Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0], 3));
+    return g;
+  };
+  const bed = () => {
+    const sheet = new MeshStandardMaterial({ name: 'Standardmaterial', roughness: 0.9 });
+    sheet.color.setRGB(0.96, 0.96, 0.96);
+    const frame = new MeshStandardMaterial({ name: 'Box002__0', roughness: 0.6 });
+    return { sheet, frame, mesh: new Mesh(new BoxGeometry(), [sheet, frame]) };
+  };
+  const BED_SRC = 'http://h/appback/library/bed-white-oak-headboard/model.glb';
+
+  it('cờ tắt: không đổi gì', () => {
+    const { mesh, sheet } = bed();
+    applyFabricMaterials([mesh], { id: 'item_F-1', asset: { src: BED_SRC } });
+    expect((mesh.material as MeshStandardMaterial[])[0]).toBe(sheet);
+  });
+
+  it('giường (món dò): ga → vật liệu vải dùng chung, kẹp trắng, nhuộm chăn ga; khung giữ', () => {
+    setFabricMat(true);
+    const { mesh, frame } = bed();
+    applyFabricMaterials([mesh], { id: 'item_F-1', asset: { src: BED_SRC } });
+    const [s, f] = mesh.material as MeshStandardMaterial[];
+    expect(s!.userData.fabricMat).toBe(true);
+    expect(s!.color.r).toBeLessThanOrEqual(0.82);
+    expect(s!.userData.upholstery).toEqual({ kind: 'bedding', recolour: true });
+    expect(f).toBe(frame);
+    const r = fabricReport();
+    expect(r.surfacesByRole.bed).toBe(1);
+    expect(r.shaderKeys).toBe(1);
+  });
+
+  it('món không phải vải (tủ, ghế ăn) không bị đụng', () => {
+    setFabricMat(true);
+    const m = new MeshStandardMaterial({ name: 'Standardmaterial', roughness: 0.9 });
+    const mesh = new Mesh(new BoxGeometry(), m);
+    applyFabricMaterials([mesh], { id: 'item_F-2', asset: { src: 'http://h/appback/library/storage-wardrobe-greywash/model.glb' } });
+    applyFabricMaterials([mesh], { id: 'item_DRESS-chair-R-1', asset: { src: '/items/dining-chair/model.glb' } });
+    expect(mesh.material).toBe(m);
+    expect(fabricReport().items).toBe(0);
+  });
+
+  it('rèm sinh không UV: vải có ảnh → vải dùng chung (bỏ ảnh), thanh kim loại giữ; dùng lại cùng vật liệu', () => {
+    setFabricMat(true);
+    const cloth = new MeshStandardMaterial({ name: 'fabric-linen|fabric', roughness: 0.95 });
+    cloth.map = {} as never;
+    cloth.userData.upholstery = { kind: 'fabric', recolour: true };
+    const rod = new MeshStandardMaterial({ name: 'slot_metal', metalness: 1, roughness: 0.3 });
+    const a = new Mesh(noUv(), [cloth, rod]);
+    const b = new Mesh(noUv(), [cloth, rod]);
+    applyFabricMaterials([a], { id: 'item_DRESS-curtain-D-1-L', asset: { src: '/items/curtain/model.glb' } });
+    applyFabricMaterials([b], { id: 'item_DRESS-curtain-D-1-R', asset: { src: '/items/curtain/model.glb' } });
+    const [ca, ra] = a.material as MeshStandardMaterial[];
+    expect(ca!.userData.fabricMat).toBe(true);
+    expect(ca!.map ?? null).toBeNull();
+    expect(ca!.userData.upholstery).toEqual({ kind: 'fabric', recolour: true });
+    expect(ra).toBe(rod);
+    expect((b.material as MeshStandardMaterial[])[0]).toBe(ca);
+    expect(fabricReport().generatedItems).toBe(2);
+  });
+
+  it('khe người dùng gán vật liệu trên món không sinh: giữ', () => {
+    setFabricMat(true);
+    const m = new MeshStandardMaterial({ name: 'slot_fabric', roughness: 0.9 });
+    const mesh = new Mesh(new BoxGeometry(), m);
+    mesh.userData.pascalItemMaterialCapture = { authoredMaterials: m, slotIds: 'fabric' };
+    applyFabricMaterials([mesh], { id: 'item_F-3', asset: { src: '/items/sofa/model.glb' }, slots: { fabric: 'library:leather-calf' } });
+    expect(mesh.material).toBe(m);
+  });
+});

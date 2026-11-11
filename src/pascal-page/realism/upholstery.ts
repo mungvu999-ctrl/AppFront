@@ -11,6 +11,7 @@ import { UPHOLSTERY_PALETTE } from '@/lib/pascal/scenePalette';
 import { sceneRegistry } from '@pascal-app/core';
 import { CURTAIN_FOLDER, DRAPE_WOVEN, drapeOn, isGeneratedCurtainId } from '@/lib/pascal/sceneDressingDrape';
 import { DEFAULT_SCENE_STYLE, readSceneStyle, SCENE_STYLE_IDS, SCENE_STYLES, type SceneStyleId } from '@/lib/pascal/sceneStyles';
+import { applyFabricMaterials, exposeFabricProbe, type FabricItem } from './fabricMat';
 import type { MaterialKind } from './itemLook';
 import { useRealism } from './store';
 
@@ -214,9 +215,14 @@ export function isGeneratedCurtainItem(mesh: Object3D | undefined, nodes: Readon
   return false;
 }
 
-/** Nhuộm vật liệu vải lớn nhất của một món đồ (danh sách mesh của món). */
-export function applyUpholstery(meshes: readonly Mesh[], textures: boolean): void {
+/**
+ * Nhuộm vật liệu vải lớn nhất của một món đồ (danh sách mesh của món). `item` (vòng 11 b3, luật r10-fabric truyền node):
+ * `?enable=fabricmat` thay bề mặt vải bằng vật liệu vải dùng chung TRƯỚC khi chọn/nhuộm (`fabricMat.ts`).
+ */
+export function applyUpholstery(meshes: readonly Mesh[], textures: boolean, item?: FabricItem): void {
   if (!textures || !useRealism.getState().flags.materials) return;
+  applyFabricMaterials(meshes, item);
+  exposeFabricProbe();
   const areas = new Map<Material, AreaEntry>();
   const add = (mat: Material | undefined, area: number) => {
     if (!mat) return;
