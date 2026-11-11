@@ -277,7 +277,7 @@ describe('review Codex B3', () => {
         id: 'F-adoptedlamp' as Furniture['id'],
         kind: 'other',
         variant: 'tableLamp',
-        heightMm: 500 as Furniture['heightMm'],
+        heightMm: 500 as NonNullable<Furniture['heightMm']>,
         model: { id: `${LIBROLES2_MODEL_PREFIX}${gone}`, src: `/items/${gone}/model.glb` },
       };
       const user: Furniture = { ...saved, id: 'F-userlamp2' as Furniture['id'], model: { id: gone, src: `/items/${gone}/model.glb` } };
