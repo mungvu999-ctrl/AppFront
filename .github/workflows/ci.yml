@@ -135,7 +135,7 @@ jobs:
         env:
           COVERAGE_SHARD: '1'
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: ${{ !cancelled() }}
         with:
           name: vitest-blob-${{ matrix.shard }}
           path: .vitest-reports/
@@ -145,7 +145,7 @@ jobs:
 
   unit:
     needs: unit-shard
-    if: always()
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:

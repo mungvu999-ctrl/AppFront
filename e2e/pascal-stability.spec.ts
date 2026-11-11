@@ -30,7 +30,7 @@ const VIEWPORT = { width: 1440, height: 900 } as const;
 /** Như `pascal-perf.spec.ts`: gói Pascal lớn, máy bận thì "đã dựng xong" tới muộn. */
 const READY_TIMEOUT_MS = 150_000;
 /** Mỗi ca mở trang 2 lần (đối chứng + biến thể). */
-const TEST_TIMEOUT_MS = 240_000;
+const TEST_TIMEOUT_MS = 330_000;
 const SLOW_MS = 4_000;
 /** Trùng `LIBRARY_FALLBACK_NOTICE` (`src/lib/pascal/serverLibrary.ts`) — phần đầu, đủ phân biệt. */
 const LIBRARY_NOTICE = 'Chưa tải được thư viện nội thất';
