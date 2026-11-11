@@ -6,8 +6,10 @@
  * Gọi từ vendor `nodes/src/item/renderer.tsx` (luật scripts/realism/r10-fabric.mjs) sau vòng gán vật liệu.
  */
 import { Color, SRGBColorSpace, Triangle } from 'three';
-import type { BufferGeometry, Material, Mesh, Texture } from 'three';
+import type { BufferGeometry, Material, Mesh, Object3D, Texture } from 'three';
 import { UPHOLSTERY_PALETTE } from '@/lib/pascal/scenePalette';
+import { sceneRegistry } from '@pascal-app/core';
+import { CURTAIN_FOLDER, DRAPE_WOVEN, drapeOn, isGeneratedCurtainId } from '@/lib/pascal/sceneDressingDrape';
 import { DEFAULT_SCENE_STYLE, readSceneStyle, SCENE_STYLE_IDS, SCENE_STYLES, type SceneStyleId } from '@/lib/pascal/sceneStyles';
 import type { MaterialKind } from './itemLook';
 import { useRealism } from './store';
@@ -40,6 +42,8 @@ export interface UpholsteryTag {
   kind: MaterialKind;
   /** false = ref thư viện người dùng chọn (không phải vải của phong cách) hoặc thảm → giữ màu. */
   recolour: boolean;
+  /** `?drape=light`: vật liệu của mẫu rèm; chỉ món rèm FE tự sinh mới nhuộm màu chăn ga (`applyUpholstery`). */
+  drape?: true;
 }
 
 export interface AreaEntry {
@@ -80,10 +84,13 @@ function currentStyle(): SceneStyleId {
 /** Gọi từ `tuneItemMaterial` khi tạo bản clone: ghi loại + quyền nhuộm vào userData. */
 export function tagUpholstery(mat: Material, kind: MaterialKind | null, ref: string | null | undefined, folder: string | null): void {
   if (!kind || !UPHOLSTERY_KINDS.has(kind)) return;
+  // `?drape=light`: vật liệu mẫu rèm mang dấu `drape`; món nào là rèm sinh thì `applyUpholstery` mới nhuộm màu chăn ga.
+  // Ref vải dệt rèm sinh dùng (lanh = họ vải của ấm áp) không được coi là "phong cách hiện tại" → khỏi nhuộm nhầm cả cảnh.
+  const drape = (folder === CURTAIN_FOLDER || folder === `${CURTAIN_FOLDER}-uv`) && drapeOn('light');
   const style = ref ? styleOfFabricRef(ref) : null;
-  if (style) lastStyle = style;
+  if (style && !(drape && DRAPE_WOVEN.has(ref!))) lastStyle = style;
   const auto = !ref || style != null || CURATED_DEFAULT.test(ref);
-  const tag: UpholsteryTag = { kind, recolour: !(folder && RUG_FOLDER.test(folder)) && auto };
+  const tag: UpholsteryTag = { kind, recolour: !(folder && RUG_FOLDER.test(folder)) && auto, ...(drape ? { drape: true } : {}) };
   mat.userData.upholstery = tag;
 }
 
@@ -197,6 +204,16 @@ function recolour(mat: Colourable, hex: string, tries = 0): void {
   mat.userData.upholsteryHex = hex;
 }
 
+/** Mesh thuộc món rèm FE tự sinh: tổ tiên của nó là object đăng ký dưới id `…DRESS-curtain-…` (sceneRegistry). */
+export function isGeneratedCurtainItem(mesh: Object3D | undefined, nodes: ReadonlyMap<string, Object3D> = sceneRegistry.nodes): boolean {
+  if (!mesh) return false;
+  for (const [id, obj] of nodes) {
+    if (!isGeneratedCurtainId(id)) continue;
+    for (let o: Object3D | null = mesh; o; o = o.parent) if (o === obj) return true;
+  }
+  return false;
+}
+
 /** Nhuộm vật liệu vải lớn nhất của một món đồ (danh sách mesh của món). */
 export function applyUpholstery(meshes: readonly Mesh[], textures: boolean): void {
   if (!textures || !useRealism.getState().flags.materials) return;
@@ -221,6 +238,7 @@ export function applyUpholstery(meshes: readonly Mesh[], textures: boolean): voi
   const pick = pickUpholstery(areas) as Colourable | null;
   if (!pick) return;
   const palette = STYLE_UPHOLSTERY[currentStyle()];
-  const kind = (pick.userData.upholstery as UpholsteryTag).kind;
-  recolour(pick, kind === 'bedding' ? palette.bedding : palette.upholstery);
+  const tag = pick.userData.upholstery as UpholsteryTag;
+  const bedding = tag.kind === 'bedding' || (tag.drape === true && isGeneratedCurtainItem(meshes[0]));
+  recolour(pick, bedding ? palette.bedding : palette.upholstery);
 }

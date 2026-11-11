@@ -11,7 +11,7 @@ import draco3d from 'draco3dgltf';
 import { describe, expect, it } from 'vitest';
 
 import { APPFRONT_MODELS } from '../../src/lib/pascal/furnitureCatalog';
-import { OUT_DIR, POLYHAVEN, PROCEDURAL } from '../gen-decor-models.mjs';
+import { OUT_DIR, POLYHAVEN, PROCEDURAL, UV_FOLDERS } from '../gen-decor-models.mjs';
 import { CABINETS } from '../realism-assets/cabinets.mjs';
 
 const io = new NodeIO()
@@ -33,6 +33,7 @@ describe('gen-decor-models', () => {
     ...Object.values(POLYHAVEN).map((p) => p.folder),
     ...REALISM_ASSETS,
     ...Object.keys(CABINETS),
+    ...UV_FOLDERS.map((f) => `${f}-uv`),
   ];
 
   it('mỗi mẫu sinh ra / chuyển đổi đều có dòng catalog AppFront và ngược lại', () => {
@@ -50,7 +51,8 @@ describe('gen-decor-models', () => {
     expect(Math.abs(min[2] + max[2])).toBeLessThan(0.004);
     const thumb = readFileSync(join(OUT_DIR, folder, 'thumbnail.webp'));
     expect(thumb.subarray(8, 12).toString()).toBe('WEBP');
-    if (SLOTS[folder]) expect(doc.getRoot().listMaterials().map((m) => m.getName()).sort()).toEqual(SLOTS[folder]);
+    const slots = SLOTS[folder] ?? SLOTS[folder.replace(/-uv$/, '')];
+    if (slots) expect(doc.getRoot().listMaterials().map((m) => m.getName()).sort()).toEqual(slots);
   });
 
   // CSP (connect-src không có blob:): ảnh nhúng trong GLB bị GLTFLoader biến thành blob: URL rồi fetch -> vi phạm.

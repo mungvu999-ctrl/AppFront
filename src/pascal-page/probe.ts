@@ -55,3 +55,40 @@ if (window.__pascalProbe) {
     libraryQc: () => ({ rev: libraryQc.rev, excluded: Object.keys(libraryQc.excluded), swaps: Object.fromEntries(libraryQcSwaps()) }),
   });
 }
+
+// Luật cắt đồ (vòng 10, `cutSync.ts`): id món → { kind: whole|capped|plain, reason, bottom, top, whole, capped, src }.
+// Nạp động để khối này tách khỏi phần import (cutSync vốn đã trong cùng gói, không thêm chunk).
+if (window.__pascalProbe) {
+  void import('./realism/cutSync').then(({ itemCutReport }) => {
+    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { itemCut: itemCutReport });
+  });
+}
+
+// E-WINVIEW (vòng 10, `winView.ts`): phông HDRI qua kính — { mode, gain, scope, loaded, active }.
+if (window.__pascalProbe) {
+  void import('./realism/winView').then(({ winViewReport }) => {
+    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { winView: winViewReport });
+  });
+}
+
+// Rèm/vải sinh (vòng 10, `?drape=light,tall,uv`, sceneDressingDrape.ts): { flags, curtains: [{ id, heightMm, fabric, color }] }.
+if (window.__pascalProbe) {
+  void import('@/lib/pascal/sceneDressingDrape').then(({ drapeReport }) => {
+    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { drape: drapeReport });
+  });
+}
+
+// Phối đồ (vòng 10, `?layout=toneall|hue`, `sceneHarmony.ts`): phòng → { usage, anchor{id,folder,h}, accent, items[{id,role,folder,accent,reason}] }.
+// Rỗng khi không cờ `hue`. Nạp động để khối tách khỏi phần import (sceneVariety vốn đã trong gói).
+if (window.__pascalProbe) {
+  void import('@/lib/pascal/sceneVariety').then(({ harmonyReport }) => {
+    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { harmony: harmonyReport });
+  });
+}
+
+// Gia hạn URL ký mẫu thư viện (vòng 10, `sceneLibrary.ts`): trạng thái số lần gia hạn / hết lượt.
+if (window.__pascalProbe) {
+  void import('@/lib/pascal/sceneLibrary').then(({ assetRefreshStatus }) => {
+    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { assetRefresh: assetRefreshStatus });
+  });
+}

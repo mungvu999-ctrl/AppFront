@@ -145,17 +145,28 @@ const curtainParts = () => {
   const back = grid(60, 12, (u, v) => at(u, v, -1), true);
   const edge = (u, flip) => grid(1, 12, (s, v) => at(u, v, s * 2 - 1), flip);
   const hem = (v, flip) => grid(60, 1, (u, s) => at(u, v, s * 2 - 1), flip);
+  // UV (uv run): u = arc length along the pleat at that height, v = y -> texels follow the folds, 1 UV unit = 1 m.
+  const arc = (x, y) => {
+    const v = (y - bottom) / (top - bottom);
+    const u1 = Math.min(1, Math.max(0, x / w + 0.5));
+    const n = Math.max(1, Math.round(u1 * 120));
+    let len = 0;
+    for (let k = 1; k <= n; k++) len += Math.hypot(w * u1 / n, z((u1 * k) / n, v) - z((u1 * (k - 1)) / n, v));
+    return len;
+  };
   return {
     fabric: merge(front, back, edge(0, false), edge(1, true), hem(0, true), hem(1, false)),
+    uv: { fabric: (x, y) => [arc(x, y), y] },
     metal: cylinder('x', 0.012, -w / 2 - 0.05, w / 2 + 0.05, top + 0.02, 0),
   };
 };
 
-const pillowParts = () => ({ fabric: roundedBox(0.225, 0.225, 0.075, [0, 0.225, 0], 0.35) });
+const pillowParts = () => ({ fabric: roundedBox(0.225, 0.225, 0.075, [0, 0.225, 0], 0.35), uv: { fabric: (x, y) => [x, y] } });
 
 /** Folded throw: flat-ish slab 1.2 x 0.05 x 0.5, ends sag 2 cm (draped). */
 const throwParts = () => ({
   fabric: roundedBox(0.6, 0.02, 0.25, [0, 0.03, 0], 0.15, (x) => -0.02 * (x / 0.6) ** 2 + 0.0),
+  uv: { fabric: (x, _y, z) => [x, z] },
 });
 
 /** Wall sconce: back plate on the wall (-z), short arm, fabric shade. Light source sits in the shade. */
@@ -174,7 +185,10 @@ export const PROCEDURAL = {
 /** Base colours only matter when no style slot overrides them. */
 const BASE_COLOUR = { fabric: [0.78, 0.74, 0.68, 1], metal: [0.35, 0.33, 0.3, 1], shade: [0.93, 0.9, 0.84, 1] };
 
-const docOf = (parts) => {
+/** `uv` run: same models + TEXCOORD_0 in metres (planar per part, curtain along the pleats) -> `<folder>-uv`. */
+export const UV_FOLDERS = ['curtain', 'pillow', 'throw-blanket'];
+
+const docOf = ({ uv, ...parts }, withUv = false) => {
   const doc = new Document();
   doc.getRoot().getAsset().generator = 'AppFront gen-decor-models';
   const buffer = doc.createBuffer();
@@ -192,6 +206,12 @@ const docOf = (parts) => {
       .setAttribute('NORMAL', doc.createAccessor().setType('VEC3').setArray(normalsOf(part)).setBuffer(buffer))
       .setIndices(doc.createAccessor().setType('SCALAR').setArray(Uint32Array.from(part.idx)).setBuffer(buffer))
       .setMaterial(material);
+    const uvOf = withUv ? uv?.[slot] : undefined;
+    if (uvOf) {
+      const t = [];
+      for (let i = 0; i < part.pos.length; i += 3) t.push(...uvOf(part.pos[i], part.pos[i + 1], part.pos[i + 2]));
+      prim.setAttribute('TEXCOORD_0', doc.createAccessor().setType('VEC2').setArray(round(t)).setBuffer(buffer));
+    }
     mesh.addPrimitive(prim);
   }
   const node = doc.createNode('decor').setMesh(mesh);
@@ -332,7 +352,11 @@ const main = async () => {
   const at = process.argv.indexOf('--polyhaven');
   const arg = (flag) => (process.argv.includes(flag) ? process.argv[process.argv.indexOf(flag) + 1] : undefined);
   if (at > -1) return convertPolyHaven(io, process.argv[at + 1], arg('--glb'), arg('--only')?.split(','));
-  for (const [folder, { parts, label }] of Object.entries(PROCEDURAL)) await writeModel(io, folder, docOf(parts()), label);
+  const uvOnly = process.argv.includes('--uv-only');
+  for (const [folder, { parts, label }] of Object.entries(PROCEDURAL)) {
+    if (!uvOnly) await writeModel(io, folder, docOf(parts()), label);
+    if (UV_FOLDERS.includes(folder)) await writeModel(io, `${folder}-uv`, docOf(parts(), true), label, { keepAttributes: true });
+  }
 };
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) await main();

@@ -184,3 +184,37 @@ jobs:
       - run: pnpm build
       # Ngân sách gzip, đọc từ `dist/` mà bước trên vừa dựng.
       - run: pnpm size
+
+  # Độ ổn định trang 3D Pascal (thư viện/concept về chậm, lỗi, đổi tầng, không ghi ngoài ý muốn) bằng máy chủ giả.
+  # Bắt buộc như các cổng khác. KHÔNG đặt `E2E_SKIP_PASCAL`: biến đó bỏ lượt dựng vách ngăn Pascal
+  # (`public/assets/pascal`), mà `/editor3d.html` cần nó. `scripts/run-playwright.mjs` tự dựng vách ngăn + Vite.
+  #
+  # `playwright.config.ts` đặt `channel: 'chrome'` (Chrome thật), nên cài `chrome` chứ không `chromium`; cờ GPU không
+  # đặt thêm: trang dùng WebGPURenderer có dự phòng WebGL2, headless Linux chạy SwiftShader (không có GPU/WebGPU thật).
+  # `--retries=1` (config mặc định 2 retry × test 8 phút vượt hạn job); hạn 25 phút, upload chạy cả khi job đỏ.
+  e2e-stability:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chrome
+      - run: pnpm e2e e2e/pascal-stability.spec.ts --workers=1 --retries=1
+        env:
+          E2E_PORT: '5191'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 3

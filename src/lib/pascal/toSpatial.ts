@@ -73,6 +73,7 @@ import { LIBRARY_MATERIAL_IDS } from './libraryMaterialIds';
 import { worldBoxOf } from './orientDetected';
 import { roofOf } from './roofs';
 import { DRESSING_OFF_MAX } from './sceneLayer';
+import { drapeSavedSrc } from './sceneDressingDrape';
 import {
   CEILING_DEFAULT,
   dressNodeIdOf,
@@ -465,7 +466,7 @@ const itemFieldsOf = (item: PascalItemNode, kind: FurnitureKind): Partial<Furnit
     ...(liftMm === null ? {} : { liftMm: millimetres(liftMm) }),
     ...(slots === null ? {} : { slots }),
     ...(swapped
-      ? { model: { id: item.asset.id.slice(0, 120), src: server ? serverModelPath(item.asset.id) : item.asset.src } }
+      ? { model: { id: item.asset.id.slice(0, 120), src: server ? serverModelPath(item.asset.id) : drapeSavedSrc(item.asset.src) } }
       : {}),
   };
 };
@@ -841,7 +842,7 @@ const collectItem = (scene: PascalScene, item: PascalItemNode, levelId: LevelId,
       ...(roomId !== null && isIdOfKind('room', roomId) ? { roomId } : {}),
       ...itemFieldsOf(item, kind),
       // Món rời thành đồ thật giữ đúng mẫu và độ nâng lượt đi tự chọn (lan can, mặt bếp…), không đoán lại theo `kind`.
-      ...(looseAdopted && MODEL_SRC.test(item.asset.src) ? { model: { id: item.asset.id.slice(0, 120), src: item.asset.src } } : {}),
+      ...(looseAdopted && MODEL_SRC.test(item.asset.src) ? { model: { id: item.asset.id.slice(0, 120), src: drapeSavedSrc(item.asset.src) } } : {}),
       ...(looseAdopted && item.position[1] > 0.001 ? { liftMm: millimetres(Math.round(millimetresOf(item.position[1]))) } : {}),
     });
   }

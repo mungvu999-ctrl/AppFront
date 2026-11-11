@@ -23,13 +23,14 @@ import type { Browser, Page } from '@playwright/test';
 import { fixtureF1, fixtureF5 } from '../src/lib/pascal/__fixtures__';
 
 import { installFakeApi, type WireGraphDocument } from './fixtures/fakeApi';
+import { CONCEPT_FOLDER, conceptState, DEFAULT_CLOSET_FILE, richLibraryBody } from './fixtures/stabilityLibrary';
 
 const PROJECT_ID = 'P-FIXTURE0001';
 const VIEWPORT = { width: 1440, height: 900 } as const;
 /** Như `pascal-perf.spec.ts`: gói Pascal lớn, máy bận thì "đã dựng xong" tới muộn. */
 const READY_TIMEOUT_MS = 150_000;
 /** Mỗi ca mở trang 2 lần (đối chứng + biến thể). */
-const TEST_TIMEOUT_MS = 480_000;
+const TEST_TIMEOUT_MS = 330_000;
 const SLOW_MS = 4_000;
 /** Trùng `LIBRARY_FALLBACK_NOTICE` (`src/lib/pascal/serverLibrary.ts`) — phần đầu, đủ phân biệt. */
 const LIBRARY_NOTICE = 'Chưa tải được thư viện nội thất';
@@ -80,12 +81,19 @@ const libraryBody = (requestUrl: string): unknown[] => [
   },
 ];
 
-interface LibraryMode { readonly delayMs?: number; readonly status?: 200 | 403 | 404 | 500 }
+interface LibraryMode {
+  readonly delayMs?: number;
+  readonly status?: 200 | 403 | 404 | 500;
+  /** Thư viện nhiều mẫu (24, đủ 9 nhóm) thay cho một mẫu duy nhất. */
+  readonly rich?: boolean;
+}
 
 interface OpenOptions {
   readonly graphDoc: WireGraphDocument;
   readonly library?: LibraryMode;
   readonly conceptDelayMs?: number;
+  /** Concept `done` thật (phong cách + mẫu theo vai); vắng = máy chủ giả trả 404 (không concept). */
+  readonly concept?: boolean;
 }
 
 interface Opened {
@@ -106,7 +114,7 @@ const delay = (ms: number) =>
   });
 
 /** Mở trang 3D trong một ngữ cảnh mới (cache lạnh), gắn máy chủ giả + các tuyến trễ/lỗi. Chưa chờ dựng. */
-async function open(browser: Browser, { graphDoc, library = {}, conceptDelayMs = 0 }: OpenOptions): Promise<Opened> {
+async function open(browser: Browser, { graphDoc, library = {}, conceptDelayMs = 0, concept = false }: OpenOptions): Promise<Opened> {
   const page = await browser.newPage({ viewport: VIEWPORT });
   await installFakeApi(page, { projectId: PROJECT_ID, graphDoc });
   const writes: string[] = [];
@@ -128,11 +136,17 @@ async function open(browser: Browser, { graphDoc, library = {}, conceptDelayMs =
       const status = library.status ?? 200;
       await route.fulfill(
         status === 200
-          ? { status, json: libraryBody(route.request().url()) }
+          ? { status, json: library.rich === true ? richLibraryBody(route.request().url()) : libraryBody(route.request().url()) }
           : { status, json: { code: status === 500 ? 'INTERNAL' : status === 403 ? 'FORBIDDEN' : 'NOT_FOUND', requestId: 'req-e2e' } },
       );
     },
   );
+  if (concept) {
+    await page.route(
+      (url) => url.pathname.endsWith('/design-concept'),
+      (route) => route.fulfill({ status: 200, json: conceptState() }),
+    );
+  }
   const conceptDelayed = { count: 0 };
   if (conceptDelayMs > 0) {
     await page.route(
@@ -218,6 +232,7 @@ const baselineManifest = (browser: Browser): Promise<Manifest> => {
 };
 
 const f1 = fixtureF1({ ext: false }).doc as unknown as WireGraphDocument;
+const f1Ext = fixtureF1({ ext: true }).doc as unknown as WireGraphDocument;
 
 test.describe('Ổn định trang 3D Pascal', () => {
   test.describe.configure({ timeout: TEST_TIMEOUT_MS });
@@ -231,7 +246,7 @@ test.describe('Ổn định trang 3D Pascal', () => {
     try {
       await waitBuilt(page);
       console.log(`đối chứng: ${base.nItems} món · ${base.library} · ${base.libraryVersion} · concept ${base.concept} · ready lúc thư viện còn treo = ${readyBeforeLibrary.value}`);
-      expect(readyBeforeLibrary.value, 'ready() phải chưa true khi thư viện còn treo').not.toBe(true);
+      expect(readyBeforeLibrary.value, 'ready() phải chưa true khi thư viện còn treo').toBe(false);
       expect(await manifestOf(page)).toEqual(base);
       expect(writes).toEqual([]);
     } finally {
@@ -296,7 +311,8 @@ test.describe('Ổn định trang 3D Pascal', () => {
       await button(levelNames[1]!).click({ timeout: READY_TIMEOUT_MS });
       const sequence = [2, 0, 3, 1, 2, 3].map((index) => levelNames[index % levelNames.length]!);
       for (const name of sequence) {
-        await button(name).click({ timeout: 10_000 });
+        // Máy CI không GPU: luồng chính bận dựng tầng hơn 10 giây nên nút chưa "ổn định" để bấm; trần rộng, không đổi điều kiểm.
+        await button(name).click({ timeout: 90_000 });
         await page.waitForTimeout(150);
       }
       const last = sequence.at(-1)!;
@@ -339,6 +355,45 @@ test.describe('Ổn định trang 3D Pascal', () => {
       }
     } finally {
       await page.context().close();
+    }
+  });
+
+  test('concept thật + thư viện nhiều mẫu: concept áp (done), mẫu theo vai của concept có mặt trong cảnh', async ({ browser }) => {
+    const { page, writes } = await open(browser, { graphDoc: f1Ext, library: { rich: true }, concept: true });
+    try {
+      await waitBuilt(page);
+      const manifest = await manifestOf(page);
+      console.log(`concept thật: ${manifest.nItems} món · ${manifest.library} · concept ${manifest.concept}`);
+      expect(manifest.library).toBe('server');
+      expect(manifest.concept).toBe('done');
+      const folders = new Set(manifest.itemSrc.map((entry) => /\/items\/([^/]+)\/model\.glb/u.exec(entry)?.[1]));
+      // Vai tủ áo: mục thư viện concept chọn thay tệp mặc định của vai (hai tủ áo của F1).
+      expect(folders.has(CONCEPT_FOLDER), JSON.stringify([...folders])).toBe(true);
+      expect(folders.has(DEFAULT_CLOSET_FILE), JSON.stringify([...folders])).toBe(false);
+      expect(writes).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test('concept thật + thư viện về chậm: cảnh không đổi mẫu âm thầm (manifest như lần không trễ)', async ({ browser }) => {
+    const fast = await open(browser, { graphDoc: f1Ext, library: { rich: true }, concept: true });
+    let base: Manifest;
+    try {
+      await waitBuilt(fast.page);
+      base = await manifestOf(fast.page);
+    } finally {
+      await fast.page.context().close();
+    }
+    const slow = await open(browser, { graphDoc: f1Ext, library: { rich: true, delayMs: SLOW_MS }, concept: true, conceptDelayMs: 1_500 });
+    try {
+      await waitBuilt(slow.page);
+      expect(slow.conceptDelayed.count, 'trang phải đọc design-concept').toBeGreaterThan(0);
+      expect(slow.readyBeforeLibrary.value, 'ready() phải chưa true khi thư viện còn treo').toBe(false);
+      expect(await manifestOf(slow.page)).toEqual(base);
+      expect(slow.writes).toEqual([]);
+    } finally {
+      await slow.page.context().close();
     }
   });
 });

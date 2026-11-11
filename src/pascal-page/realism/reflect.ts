@@ -10,6 +10,7 @@
  *   liệu bóng; ra ngoài nhà trả lại môi trường chung. Mức Thấp không chụp.
  */
 import {
+  Box3,
   DataTexture,
   EquirectangularReflectionMapping,
   FloatType,
@@ -34,6 +35,7 @@ import { glassTwinParams, isGlossy, isLambertGlass, pmremWithoutMrt, probeStep, 
 import { useRealism } from './store';
 import { currentTier } from './tiers';
 import { isFirstLoad } from './warm';
+import { insideRoomBox, levelBoxes, type RoomBox, winApplies, type WinScope, winViewState } from './winView';
 
 pmremWithoutMrt(PMREMGenerator.prototype as unknown as Record<string, unknown>);
 
@@ -45,7 +47,17 @@ placeholder.generateMipmaps = false;
 placeholder.needsUpdate = true;
 const skyTex = texture(placeholder);
 const skyWeight = uniform(0);
+/** Mép dưới (dir.y) của HDRI trên phông: 0 = cắt ở chân trời (như cũ); `?winview` hạ xuống `WIN_FLOOR`. */
+const skyFloor = uniform(0);
+/** Trời của CHỦ ĐỀ (cũng là nền probe phản chiếu). Phông cửa sổ `?winview` để riêng, không vào probe. */
 let skyHdri: Texture | null = null;
+let winSky: Texture | null = null;
+let winScope: WinScope = 'inside';
+let winFloor = 0;
+let camInside = false;
+/** Yêu cầu tải phông cửa sổ đang chờ (tải lười): gọi một lần khi camera vào nhà / scope all, sau lần tải đầu. */
+let winRequest: (() => void) | null = null;
+let winRequestScope: WinScope = 'inside';
 
 /**
  * Số đo probe, đọc qua `__pascalProbe.reflect()` (`?probe=1`). `lastMs` = thời gian CPU của `fromScene`;
@@ -69,18 +81,41 @@ export function makeSkyTexture(raw: Float32Array, width: number, height: number,
   return t;
 }
 
+/** Chọn ảnh phông: cửa sổ (`?winview`, khi áp) thắng trời chủ đề; không có gì → gradient. Đổi uniform, không biên dịch lại. */
+function applySky(): void {
+  const win = winSky && winApplies(winScope, camInside) ? winSky : null;
+  const tex = win ?? skyHdri;
+  skyTex.value = tex ?? placeholder;
+  skyWeight.value = tex ? 1 : 0;
+  skyFloor.value = win ? winFloor : 0;
+  winViewState.active = !!win;
+}
+
 /** `installHdri` gọi khi HDRI nạp xong (null = gỡ). */
 export function setHdriSky(tex: Texture | null): void {
   skyHdri = tex;
-  skyTex.value = tex ?? placeholder;
-  skyWeight.value = tex ? 1 : 0;
+  applySky();
+}
+
+/** `installWinView` đăng ký (null = huỷ) hàm tải phông; `syncWinInside` gọi đúng một lần khi tới lúc. */
+export function requestWinSky(fn: (() => void) | null, scope: WinScope = 'inside'): void {
+  winRequest = fn;
+  winRequestScope = scope;
+}
+
+/** `installWinView` gọi khi phông cửa sổ nạp xong (null = gỡ). `floor` = mép dưới dir.y của HDRI. */
+export function setWinSky(tex: Texture | null, scope: WinScope = 'inside', floor = 0): void {
+  winSky = tex;
+  winScope = scope;
+  winFloor = floor;
+  applySky();
 }
 
 /** Phông trời: HDRI ngay trên chân trời (đủ 3,4°: tầm mắt qua cửa sổ thấy mây), dưới giữ gradient. Mức Thấp giữ gradient (không thêm lượt đọc ảnh). */
 export function hdriBackdrop(worldDir: Node<'vec3'>, gradient: Node<'vec3'>): Node<'vec3'> {
   if (currentTier() === 'low') return gradient;
   const sky = skyTex.sample(equirectUV(worldDir)).rgb;
-  return mix(gradient, sky, skyWeight.mul(smoothstep(0, 0.06, worldDir.y)));
+  return mix(gradient, sky, skyWeight.mul(smoothstep(skyFloor, skyFloor.add(0.06), worldDir.y)));
 }
 
 interface RegistryLike {
@@ -201,7 +236,7 @@ async function warm(r: WebGPURenderer, scene: Scene, p: Vector3, inside: boolean
       cubeCam.up.set(0, y === 0 ? 1 : 0, y === 0 ? 0 : 1);
       cubeCam.lookAt(p.x + x, p.y + y, p.z + z);
       cubeCam.updateMatrixWorld();
-      if (skyHdri && skyWeight.value > 0) scene.background = skyHdri;
+      if (skyHdri) scene.background = skyHdri;
       r.setRenderTarget(probeRT); // compileAsync đọc đích ngay lúc gọi (đồng bộ) → trả lại đích cũ liền
       const job = r.compileAsync(scene, cubeCam);
       r.setRenderTarget(old);
@@ -224,7 +259,7 @@ function finish(renderer: unknown, scene: Scene, p: Vector3, inside: boolean) {
   pmrem ??= new PMREMGenerator(renderer as WebGPURenderer);
   const bg = scene.background;
   // Cửa sổ trong ảnh chụp thấy trời HDRI thay màu nền phẳng.
-  if (skyHdri && skyWeight.value > 0) scene.background = skyHdri;
+  if (skyHdri) scene.background = skyHdri;
   probeRT = pmrem.fromScene(scene, 0, 0.05, 60, { size: 256, position: p, renderTarget: probeRT });
   scene.background = bg;
   reflectStats.lastMs = performance.now() - t0;
@@ -246,12 +281,61 @@ function finish(renderer: unknown, scene: Scene, p: Vector3, inside: boolean) {
   reflectStats.maxFinishMs = Math.max(reflectStats.maxFinishMs, reflectStats.finishMs);
 }
 
+const wallBox = new Box3();
+let roomBoxes: RoomBox[] = [];
+let roomBoxesCount = -1;
+let roomBoxesAge = 0;
+
+/** Hộp trong-nhà mỗi tầng từ tường + trần của registry (gom theo tổ tiên là node `level`). */
+function collectRoomBoxes(registry: RegistryLike): RoomBox[] {
+  const levels = new Set([...(registry.byType.level ?? [])].map((id) => registry.nodes.get(id)).filter(Boolean) as Object3D[]);
+  const items: { level: string; kind: 'wall' | 'ceiling'; box: RoomBox }[] = [];
+  for (const kind of ['wall', 'ceiling'] as const) {
+    for (const id of registry.byType[kind] ?? []) {
+      const obj = registry.nodes.get(id);
+      if (!obj) continue;
+      let lv: Object3D | null = obj.parent;
+      while (lv && !levels.has(lv)) lv = lv.parent;
+      wallBox.setFromObject(obj);
+      if (wallBox.isEmpty()) continue;
+      const { min, max } = wallBox;
+      items.push({ level: lv?.uuid ?? '', kind, box: { minX: min.x, minY: min.y, minZ: min.z, maxX: max.x, maxY: max.y, maxZ: max.z } });
+    }
+  }
+  return levelBoxes(items);
+}
+
+/**
+ * Tín hiệu trong-nhà cho phông cửa sổ: mỗi khung (chỉ khi phông đã nạp hoặc đang chờ tải), độc lập probe phản chiếu.
+ * Hộp tính lại khi số node đổi hoặc mỗi 60 khung (tường kéo/sửa). Xuất cho test.
+ */
+export function syncWinInside(p: Vector3, registry: RegistryLike): void {
+  if (!winSky && !winRequest) return;
+  if (registry.nodes.size !== roomBoxesCount || ++roomBoxesAge >= 60) {
+    roomBoxes = collectRoomBoxes(registry);
+    roomBoxesCount = registry.nodes.size;
+    roomBoxesAge = 0;
+  }
+  const inside = insideRoomBox(p, roomBoxes);
+  winViewState.inside = inside;
+  if (winRequest && !isFirstLoad() && winApplies(winRequestScope, inside)) {
+    const load = winRequest;
+    winRequest = null;
+    load();
+  }
+  if (inside !== camInside) {
+    camInside = inside;
+    applySky();
+  }
+}
+
 /**
  * Gọi mỗi khung từ `Lights` (vendor). Rẻ khi không chụp: so vị trí camera + đếm node.
  * Khi camera đứng yên và đã đi > 1,5 m / cảnh thêm node: biên dịch trước (`warm`) rồi chụp ở khung sau (`probeStep`).
  */
 export function syncReflectionProbe(renderer: unknown, scene: Scene, camera: PerspectiveCamera, registry: RegistryLike): void {
   const p = camera.position;
+  syncWinInside(p, registry);
   const moving = p.distanceToSquared(prev) > 1e-6;
   prev.copy(p);
   const { tier, backend, flags } = useRealism.getState();

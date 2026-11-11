@@ -8,6 +8,7 @@ Thumbnails are neutral icon cards with the item name (sharp, no 3D render).
 | Folder | Source | License |
 |---|---|---|
 | curtain, pillow, throw-blanket, wall-sconce | procedural, `scripts/gen-decor-models.mjs` (AppFront) | project code |
+| curtain-uv, pillow-uv, throw-blanket-uv | same generator with UV (`--uv-only`), used by `?drape=uv` | project code |
 | ceramic-vase | https://polyhaven.com/a/ceramic_vase_01 | CC0 1.0 (Poly Haven) |
 | ceramic-vase-slim | https://polyhaven.com/a/ceramic_vase_03 | CC0 1.0 (Poly Haven) |
 | fancy-picture-frame | https://polyhaven.com/a/fancy_picture_frame_01 | CC0 1.0 (Poly Haven) |

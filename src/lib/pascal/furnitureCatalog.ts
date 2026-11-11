@@ -3,6 +3,7 @@
 import type { FurnitureKind } from '@/domain/spatial/types';
 
 import { SCENE_PALETTE } from './scenePalette';
+import { drapeFileFolderOf } from './sceneDressingDrape';
 import SURFACE_TOPS from './surfaceTops.json' with { type: 'json' };
 
 export interface CatalogModel {
@@ -378,6 +379,10 @@ export const APPFRONT_MODELS: Readonly<Record<string, CatalogModel>> = {
   curtain: { folder: 'curtain', dimensions: [0.8, 2.272, 0.102], offset: [0, 0, 0], rotation: [0, 0, 0] },
   pillow: { folder: 'pillow', dimensions: [0.45, 0.45, 0.15], offset: [0, 0, 0], rotation: [0, 0, 0] },
   'throw-blanket': { folder: 'throw-blanket', dimensions: [1.2, 0.057, 0.5], offset: [0, 0, 0], rotation: [0, 0, 0] },
+  // Bản có UV (`?drape=uv`, gen-decor-models.mjs --uv-only): cùng kích thước bản gốc.
+  'curtain-uv': { folder: 'curtain-uv', dimensions: [0.8, 2.272, 0.102], offset: [0, 0, 0], rotation: [0, 0, 0] },
+  'pillow-uv': { folder: 'pillow-uv', dimensions: [0.45, 0.45, 0.15], offset: [0, 0, 0], rotation: [0, 0, 0] },
+  'throw-blanket-uv': { folder: 'throw-blanket-uv', dimensions: [1.2, 0.057, 0.5], offset: [0, 0, 0], rotation: [0, 0, 0] },
   'wall-sconce': {
     folder: 'wall-sconce',
     dimensions: [0.15, 0.23, 0.15],
@@ -556,7 +561,8 @@ const realismModels = { on: false };
 export const setRealismModels = (on: boolean): void => {
   realismModels.on = on;
 };
-const fileFolderOf = (folder: string): string => (realismModels.on ? REALISM_MODEL_SWAP[folder] : undefined) ?? folder;
+const fileFolderOf = (folder: string): string =>
+  drapeFileFolderOf(folder) ?? (realismModels.on ? REALISM_MODEL_SWAP[folder] : undefined) ?? folder;
 
 /**
  * GLB không có material `slot_*` (bài kiểm quét GLB thật). Mẫu thế chỉ nhận "cả món một màu" (khe `a`, vá
@@ -679,6 +685,16 @@ export const clearServerLibrary = (): void => {
     else target[id] = prior;
   }
   SERVER_FILES.clear();
+};
+
+/**
+ * Id mẫu máy chủ đang giữ URL `url` (so phần trước `?`: chữ ký đổi mỗi lượt ký). `undefined` = không phải mẫu thư viện
+ * đang nạp — kể cả URL của người dùng trước khi đã đổi phiên (`clearServerLibrary`).
+ */
+export const serverModelIdOfUrl = (url: string): string | undefined => {
+  const bare = url.split('?')[0];
+  for (const [id, file] of SERVER_FILES) if (file.model.split('?')[0] === bare) return id;
+  return undefined;
 };
 
 /** true khi thư mục đến từ thư viện máy chủ. */

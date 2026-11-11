@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Color, CompressedTexture, DataTexture, Mesh, MeshPhysicalMaterial, MeshStandardMaterial, PlaneGeometry, Texture } from 'three';
+import { Color, CompressedTexture, DataTexture, Group, Mesh, MeshPhysicalMaterial, MeshStandardMaterial, PlaneGeometry, Texture } from 'three';
 import { UPHOLSTERY_PALETTE } from '@/lib/pascal/scenePalette';
 import { clearItemMaterialCache, tuneItemMaterial } from './itemMaterials';
 import { useRealism } from './store';
@@ -7,6 +7,7 @@ import {
   applyUpholstery,
   compensate,
   geometryArea,
+  isGeneratedCurtainItem,
   MAX_GAIN,
   meanLinear,
   pickUpholstery,
@@ -103,5 +104,38 @@ describe('sheen vải', () => {
     expect(fabric.userData.upholstery).toEqual({ kind: 'fabric', recolour: true });
     const wood = tuneItemMaterial(new MeshStandardMaterial({ roughness: 0.5 }), { ...ctx, src: '/items/dining-table/model.glb', ref: 'library:wood-oak' });
     expect(wood).not.toBeInstanceOf(MeshPhysicalMaterial);
+  });
+});
+
+describe('upholstery — ?drape=light (vòng 10)', () => {
+  it('mẫu rèm: dấu drape khi bật cờ; chỉ món đăng ký id DRESS-curtain-* là rèm sinh', async () => {
+    const { setDrapeFlags } = await import('@/lib/pascal/sceneDressingDrape');
+    const mat = new MeshStandardMaterial();
+    tagUpholstery(mat, 'fabric', 'library:fabric-linen', 'curtain');
+    expect(mat.userData.upholstery).toEqual({ kind: 'fabric', recolour: true });
+    setDrapeFlags(['light']);
+    try {
+      const m2 = new MeshStandardMaterial();
+      tagUpholstery(m2, 'fabric', 'library:fabric-linen', 'curtain');
+      expect(m2.userData.upholstery).toEqual({ kind: 'fabric', recolour: true, drape: true });
+      // Rèm người dùng chọn vải riêng: không nhuộm (recolour false), như không cờ.
+      const m3 = new MeshStandardMaterial();
+      tagUpholstery(m3, 'fabric', 'library:fabric-velvet', 'curtain');
+      expect(m3.userData.upholstery).toMatchObject({ recolour: false });
+      const gen = new Group();
+      const user = new Group();
+      const genMesh = new Mesh(new PlaneGeometry());
+      const userMesh = new Mesh(new PlaneGeometry());
+      gen.add(genMesh);
+      user.add(userMesh);
+      const nodes = new Map<string, Group>([
+        ['item_DRESS-curtain-O-w-L', gen],
+        ['item_F-curtain-1', user],
+      ]);
+      expect(isGeneratedCurtainItem(genMesh, nodes)).toBe(true);
+      expect(isGeneratedCurtainItem(userMesh, nodes)).toBe(false);
+    } finally {
+      setDrapeFlags([]);
+    }
   });
 });

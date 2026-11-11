@@ -13,7 +13,9 @@ import type {
 
 import { setRealismModels } from '../furnitureCatalog';
 import { doorSwingRects, rectInsidePolygon, rectOfFurniture, rectsOverlap } from '../placement';
+import { drapeReport, setDrapeFlags } from '../sceneDressingDrape';
 import { dressingOf as allDressingOf } from '../sceneDressingRules';
+import { UPHOLSTERY_PALETTE } from '../scenePalette';
 import { sceneStyleOf, type SceneStyle } from '../sceneStyles';
 
 /** Đồ trang trí AppFront (D): các ca J10 cũ chỉ xét 4 quy tắc đầu. */
@@ -385,6 +387,26 @@ describe('dressingOf — đồ trang trí AppFront (FE3D-FIX-004 D)', () => {
     expect(rectOfFurniture(shifted.find((i) => i.id.endsWith('-L'))!).cx).toBe(1900);
     const swings = doorSwingRects(graphOf([living], [], [wall], [door]), LEVEL);
     for (const item of shifted) expect(swings.some((sw) => rectsOverlap(rectOfFurniture(item), sw))).toBe(false);
+  });
+
+  it('?drape=light,tall: rèm lanh màu chăn ga, cao = tầng − 100; không cờ y như cũ (vòng 10)', () => {
+    const graph = graphOf([living], [], [wallAt('n', 4100, 5000)], [opening('w', 'n', 'window', 2000, 1200)]);
+    const goAm = sceneStyleOf('go-am');
+    const curtainsOf = () => allDressingOf(graph, goAm).filter((i) => i.id.startsWith('DRESS-curtain-'));
+    expect(curtainsOf()[0]).toMatchObject({ heightMm: 2272, slots: { fabric: goAm.families.fabric } });
+    setDrapeFlags(['light', 'tall']);
+    try {
+      const items = curtainsOf();
+      expect(items).toHaveLength(2);
+      expect(items[0]).toMatchObject({ heightMm: 2900, slots: { fabric: 'library:fabric-linen', metal: goAm.families.metal } });
+      expect(drapeReport().curtains.find((c) => c.id === items[0]?.id)).toMatchObject({
+        heightMm: 2900,
+        fabric: 'library:fabric-linen',
+        color: UPHOLSTERY_PALETTE.goAmBedding,
+      });
+    } finally {
+      setDrapeFlags([]);
+    }
   });
 
   it('phòng tắm có cửa sổ: không rèm; cùng đầu vào đảo thứ tự: cùng kết quả', () => {

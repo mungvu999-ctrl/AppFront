@@ -29,6 +29,7 @@ describe('nextWarmLevel', () => {
 describe('warmBudgetMs', () => {
   it('cả khung ấm dưới ngưỡng tác vụ dài, có sàn tối thiểu', () => {
     expect(warmBudgetMs(20)).toBe(LONG_TASK_MS - 20);
+    expect(warmBudgetMs(45)).toBe(LONG_TASK_MS - 45);
     expect(warmBudgetMs(80)).toBe(MIN_WARM_MS);
   });
 });

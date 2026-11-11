@@ -161,13 +161,13 @@ describe('nắp cắt cho đồ cao (U62) — theo từng mesh, trạng thái th
     expect(mesh.material).toBe(cutCapVariant(wood));
   });
 
-  it('rèm đứng sàn cao tới trần vẫn cắt cùng tường (không giữ nguyên khối)', () => {
+  it('rèm đứng sàn cao tới trần vẫn cắt cùng tường (tấm mỏng theo kích thước node, không theo tên mẫu)', () => {
     const cloth = new MeshStandardMaterial();
     const mesh = item(level(), cloth, 2.6);
-    capItemMeshesForCut([mesh], '/items/curtain/model.glb');
+    capItemMeshesForCut([mesh], '/items/curtain/model.glb', { asset: { dimensions: [0.8, 2.272, 0.102] } });
     expect(mesh.material).toBe(cutCapVariant(cloth));
     mesh.material = cloth;
-    capItemMeshesForCut([mesh], '/items/storage-wardrobe-greywash/model.glb');
+    capItemMeshesForCut([mesh], '/items/curtain/model.glb', { asset: { dimensions: [1, 2.1, 0.6] } });
     expect(mesh.material).toBe(cutWholeVariant(cloth));
   });
 });

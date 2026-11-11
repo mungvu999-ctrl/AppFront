@@ -159,6 +159,7 @@ const SLOT_FAMILY: Readonly<Record<string, Readonly<Record<string, SlotFamily | 
   closet: { body: 'wood' },
   // Đồ trang trí AppFront (gen-decor-models.mjs): vải + kim loại theo phong cách.
   curtain: { fabric: 'fabric', metal: 'metal' },
+  'curtain-uv': { fabric: 'fabric', metal: 'metal' },
   'coffee-table': { top: 'wood' },
   'dining-chair': { legs: 'wood', seat: 'fabric', headrest: 'fabric' },
   'dining-table': { top: 'wood' },
@@ -173,6 +174,7 @@ const SLOT_FAMILY: Readonly<Record<string, Readonly<Record<string, SlotFamily | 
   'livingroom-chair': { pillow: 'fabric', cushion: 'fabric' },
   'office-table': { cabinet: 'wood', handle: 'metal' },
   pillow: { fabric: 'fabric' },
+  'pillow-uv': { fabric: 'fabric' },
   palm: { trunk: 'bark' },
   // Tranh: vải dệt treo tường — sứ/đá phẳng làm tranh thành tấm trắng trơn.
   picture: { picture: 'rug' },
@@ -184,6 +186,7 @@ const SLOT_FAMILY: Readonly<Record<string, Readonly<Record<string, SlotFamily | 
   sofa: { pillow: 'fabric', cushion: 'fabric' },
   toilet: { toilet: 'ceramic' },
   'throw-blanket': { fabric: 'fabric' },
+  'throw-blanket-uv': { fabric: 'fabric' },
   'tv-stand': { body: 'wood' },
   // Chân đèn cây GLB `preset-espresso` đen → kim loại của phong cách (bench-3d P5); chao be giữ nguyên.
   'floor-lamp': { legs: 'metal' },

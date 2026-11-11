@@ -54,27 +54,39 @@ export interface SceneConversion {
 /** Chưa có gì để dựng, và cũng chưa có gì hỏng. */
 export const NO_SCENE: SceneConversion = Object.freeze({ scene: null, failed: false });
 
-/** Chú thích khi bản cũ không khớp phòng của concept AI (concept chỉ có bản hiện hành, dựng cho phòng hiện tại). */
+/**
+ * Chú thích của bản CŨ. Ảnh chụp phiên bản (N18 `{ layer, dimensions }`) chỉ mang tường/cửa/phòng (kể cả hoàn thiện,
+ * vật liệu sàn) và đồ đã lưu; máy chủ KHÔNG lưu concept AI (phong cách, mẫu AI chọn, đồ AI bổ sung) theo phiên bản.
+ */
 export const OLD_VERSION_FURNISH_NOTE =
-  'Bản cũ có phòng khác mô hình hiện tại: nội thất được tự bày theo phong cách gợi ý hiện hành, không phải đồ AI đã chọn.';
+  'Bản cũ được dựng lại chỉ từ dữ liệu đã lưu của phiên bản (tường, cửa, phòng và đồ đã lưu). Phiên bản không lưu phong cách thiết kế AI nên cảnh dùng vật liệu mặc định, không có đồ AI bổ sung và không tự bày thêm đồ.';
 
 /**
- * Tuỳ chọn dựng cảnh của một bản: concept AI hiện hành như editor; riêng bản CŨ có phòng không có trong mô hình hiện tại
- * (id phòng khác → concept không bày, đồ AI không vào) thì tự bày như khi không có concept, giữ phong cách gợi ý, kèm
- * chú thích — thay vì phòng trống dễ hiểu nhầm.
+ * Tuỳ chọn dựng cảnh của một bản.
+ * - Bản HIỆN TẠI: concept AI hiện hành như editor (`concept` `null` = chưa đọc xong → `null`, nơi gọi chờ).
+ * - Bản CŨ: KHÔNG bơm concept/phong cách hiện tại vào — "bản tái dựng" chỉ từ dữ liệu của phiên bản: không phong cách
+ *   concept, không đồ AI bổ sung, không tự bày (`furnish: 'off'`; đồ đã lưu trong ảnh chụp vẫn dựng), kèm chú thích.
+ *   Không cần chờ concept. Câu báo lỗi đọc concept chỉ đi với bản hiện tại (bản cũ không dùng concept).
+ * `isOldVersion` xác định theo ID phiên bản (hàng `isCurrent` của lịch sử), KHÔNG so tham chiếu đồ thị:
+ * `graphOfVersion` luôn tạo đối tượng mới kể cả cho bản trùng trạng thái hiện tại.
  */
 export function versionSceneOptions(
-  concept: SceneConcept,
-  version: NormalizedSpatial | null,
-  current: NormalizedSpatial | null,
-): { readonly options: ReturnType<typeof conceptSceneOptions>; readonly note: string | null } {
-  const options = conceptSceneOptions(concept);
-  if (version === null || version === current || options.furnish === 'on') return { options, note: null };
-  const currentRooms = new Set<string>(current?.byKind.room ?? []);
-  const mismatch = (version.byKind.room ?? []).some((id) => !currentRooms.has(id));
-  if (!mismatch) return { options, note: null };
-  return { options: { ...(options.style === undefined ? {} : { style: options.style }), furnish: 'on' }, note: OLD_VERSION_FURNISH_NOTE };
+  concept: SceneConcept | null,
+  isOldVersion: boolean,
+): { readonly options: ReturnType<typeof conceptSceneOptions>; readonly note: string | null } | null {
+  if (isOldVersion) return { options: { furnish: 'off' }, note: OLD_VERSION_FURNISH_NOTE };
+  return concept === null ? null : { options: conceptSceneOptions(concept), note: concept.notice };
 }
+
+/**
+ * Cảnh đang dựng có phải bản CŨ không — theo ID phiên bản: có ảnh chụp riêng (`hasSnapshot`) và hàng của nó không phải
+ * `isCurrent`. Không có ảnh chụp thì cảnh là mô hình hiện tại.
+ */
+export const isOldSceneVersion = (
+  hasSnapshot: boolean,
+  versionId: string | null,
+  rows: readonly { readonly id: string; readonly isCurrent: boolean }[],
+): boolean => hasSnapshot && rows.find((row) => row.id === versionId)?.isCurrent !== true;
 
 /**
  * Đồ thị không gian thành cảnh Pascal — cảnh chuẩn `standardSceneOf` (cùng luật bày với màn 3D chính); `options` mang

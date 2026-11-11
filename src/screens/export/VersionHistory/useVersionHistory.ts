@@ -87,7 +87,15 @@ import {
   unsavedEditsNotice,
 } from './versionHistoryModel';
 import { buildPlanDiffModel, entityCountsOf, togglePinned } from './versionHistoryPlan';
-import { buildVisualModel, convertScene, graphOfVersion, isEmptySource, NO_SCENE, versionSceneOptions } from './versionHistoryScene';
+import {
+  buildVisualModel,
+  convertScene,
+  graphOfVersion,
+  isEmptySource,
+  isOldSceneVersion,
+  NO_SCENE,
+  versionSceneOptions,
+} from './versionHistoryScene';
 
 /** Lượt N18 cùng lúc. */
 export const SNAPSHOT_CONCURRENCY = 2;
@@ -377,8 +385,10 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
     };
   }, [library]);
   /* Concept AI (N47) của dự án — cùng quy tắc với editor (`loadSceneConcept`): chờ kết quả, 403/404 im lặng, lỗi có
-     câu báo. N47 chỉ có concept HIỆN HÀNH (không có lịch sử concept), nên bản cũ cũng dựng với concept hiện hành; đồ AI bổ
-     sung chỉ vào phòng có trong bản ấy (`toPascalScene` lọc theo phòng đã dựng). Kết quả của dự án cũ bị bỏ (`live`). */
+     câu báo. N47 chỉ có concept HIỆN HÀNH (không có lịch sử concept) nên chỉ bản hiện tại dùng nó; bản cũ dựng lại từ
+     dữ liệu của chính phiên bản (`versionSceneOptions`). Kết quả của dự án cũ bị bỏ (`live`). */
+  /* Gia hạn URL ký (`refreshAssetUrl`) KHÔNG phủ màn này: GLB ở đây do gói pascal-mount tải bằng bản three riêng
+     (`src/components/pascal/pascalMount.tsx`), bản vá FileLoader của SPA không chạm tới — nên không nối câu báo ở đây. */
   const [concept, setConcept] = useState<{ readonly projectId: string; readonly value: SceneConcept } | null>(null);
   useEffect(() => {
     let live = true;
@@ -388,10 +398,13 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
     };
   }, [projectId]);
   const sceneConcept = concept?.projectId === projectId ? concept.value : null;
-  // Bản cũ có phòng khác concept → tự bày + chú thích (`versionSceneOptions`).
+  // Bản cũ: chỉ dữ liệu của phiên bản + chú thích; bản hiện tại: concept hiện hành (`versionSceneOptions`).
+  // "Hiện tại" theo ID phiên bản (hàng `isCurrent`), không so tham chiếu đồ thị (`graphOfVersion` luôn tạo mới).
+  const sceneVersionId = sceneFromRight ? rightVersionId : leftVersionId;
+  const sceneIsOld = isOldSceneVersion(sceneSource !== undefined, sceneVersionId, rows);
   const versionScene = useMemo(
-    () => (sceneConcept === null ? null : versionSceneOptions(sceneConcept, sceneGraph, graph)),
-    [sceneConcept, sceneGraph, graph],
+    () => versionSceneOptions(sceneConcept, sceneIsOld),
+    [sceneConcept, sceneIsOld],
   );
   const scene = useMemo(
     () => (library === null || versionScene === null ? NO_SCENE : convertScene(sceneGraph, versionScene.options)),
@@ -425,8 +438,8 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
         hoveredEntityId,
         isFetchingDiff: pairFetching,
         // Chờ cả thư viện lẫn concept: không dựng bằng mẫu đóng gói/phong cách mặc định rồi đổi sau.
-        libraryPending: library === null || sceneConcept === null,
-        libraryNotice: [library?.notice, sceneConcept?.notice, versionScene?.note].filter(Boolean).join(' ') || null,
+        libraryPending: library === null || versionScene === null,
+        libraryNotice: [library?.notice, versionScene?.note].filter(Boolean).join(' ') || null,
       }),
     [
       gateway.capabilities,
@@ -434,7 +447,6 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
       sceneGraph,
       scene,
       library,
-      sceneConcept,
       versionScene,
       diff,
       builds,
