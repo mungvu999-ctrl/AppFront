@@ -105,14 +105,14 @@ export function ensureSceneLibrary(getApi: LibraryApiSource = defaultApi): Promi
   if (shared !== null) return shared;
   /** Người của phiên mà lượt đọc này dùng (chốt sau khi có client — phiên có thể còn `unknown` lúc gọi). */
   let reqOwner: string | null = null;
-  const mine = getApi()
-    .then((api) => {
+  const mine: Promise<SceneLibrary> = getApi()
+    .then((api): Promise<LibraryLoad> | LibraryLoad => {
       reqOwner = currentOwner();
       return api === null
         ? { count: 0, source: 'fallback:no-session' as const, version: BUNDLED_LIBRARY_VERSION }
         : // Ghi danh mục chỉ khi lượt đọc này còn hiệu lực (chưa bị quên vì đổi người, chưa bị lượt mới thay): phản
           // hồi cũ về muộn không ghi đè URL mới / danh mục của người sau. Ghi = THAY cả thư viện (mẫu bị gỡ quyền rơi ra).
-          loadServerLibrary(api, (items) =>
+          loadServerLibrary(api, (items): number =>
             shared === mine && currentOwner() === reqOwner ? replaceServerLibrary(items) : items.length,
           );
     })
