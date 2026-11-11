@@ -93,6 +93,6 @@ export const insideRoomBox = (p: { x: number; y: number; z: number }, boxes: rea
   boxes.some((b) => p.x >= b.minX && p.x <= b.maxX && p.z >= b.minZ && p.z <= b.maxZ && p.y > b.minY && p.y < b.maxY);
 
 /** Trạng thái cho `__pascalProbe.winView()`; `lighting-hdri.ts` + `reflect.ts` ghi. */
-export const winViewState = { mode: 'off' as WinMode | 'off', gain: 0, scope: 'inside' as WinScope, loaded: false, active: false, inside: false };
+export const winViewState = { mode: 'off' as WinMode | 'off', gain: 0, scope: 'inside' as WinScope, loaded: false, requested: false, active: false, inside: false };
 
 export const winViewReport = () => ({ ...winViewState });

@@ -16,7 +16,7 @@ import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { pmremTexture } from 'three/tsl';
 
 import { HDRI_SCALE, HDRI_TIMEOUT_MS, HDRI_VARIANT, type HdriVariant, hdriAutoScale, hdriUrlFor, mixGradient, shouldLoadHdri } from './lighting';
-import { makeSkyTexture, setHdriSky, setWinSky } from './reflect';
+import { makeSkyTexture, requestWinSky, setHdriSky, setWinSky } from './reflect';
 import { useRealism } from './store';
 import { parseWinView, WIN_FLOOR, WIN_URL, winViewState } from './winView';
 
@@ -82,40 +82,92 @@ export function installHdri(scene: Scene, appearance: string, themeId = ''): () 
  * E-WINVIEW (`winView.ts`): HDRI có cảnh CHỈ cho phông qua kính — không đụng `envNode`, probe phản chiếu hay tone.
  * Chạy cả chủ đề tối (lý do chính: "Buổi tối" vốn không có HDRI → cửa sổ là mảng xám) và độc lập với `?hdri=off`.
  */
+/** Phông cửa sổ đã giải mã, theo `url|gain` — giữ qua các lần effect cài lại. Lỗi → null, KHÔNG thử lại trong phiên. */
+const winSkies = new Map<string, Promise<Texture | null>>();
+let winRelease: ReturnType<typeof setTimeout> | null = null;
+
+function decodeWinSky(url: string, gain: number): Promise<Texture | null> {
+  const warn = (error: unknown) => {
+    console.warn('[pascal-realism] phông cửa sổ không tải được, giữ phông cũ', error);
+    return null;
+  };
+  return bytesOf(url).then(
+    (buffer) =>
+      new Promise<Texture | null>((resolve) => {
+        const blob = URL.createObjectURL(new Blob([buffer]));
+        new HDRLoader().setDataType(FloatType).load(
+          blob,
+          (texture) => {
+            URL.revokeObjectURL(blob);
+            const { data, width, height } = texture.image as { data: Float32Array; width: number; height: number };
+            // Cùng chuẩn hoá với trời chủ đề, nhân gain; ảnh thuần. Ảnh của loader chưa lên GPU → bỏ, không dispose.
+            resolve(makeSkyTexture(data, width, height, hdriAutoScale(data, width, height) * gain));
+          },
+          undefined,
+          (error) => {
+            URL.revokeObjectURL(blob);
+            resolve(warn(error));
+          },
+        );
+      }),
+    warn,
+  );
+}
+
+/** Giải phóng mọi phông cửa sổ trừ `keep` (rời trang / đổi chế độ). */
+function releaseWinSkies(keep = ''): void {
+  for (const [key, pending] of winSkies) {
+    if (key === keep) continue;
+    winSkies.delete(key);
+    void pending.then((t) => t?.dispose());
+  }
+}
+
+/**
+ * E-WINVIEW (`winView.ts`): HDRI có cảnh CHỈ cho phông qua kính — không đụng `envNode`, probe phản chiếu hay tone.
+ * Chạy cả chủ đề tối và độc lập với `?hdri=off`. TẢI LƯỜI (review N2): chỉ tải + giải mã khi camera lần đầu vào nhà
+ * (`winscope=all`: khung đầu) và đã qua lần tải đầu của cảnh — `reflect.ts` gọi yêu cầu. Kết quả cache theo url|gain:
+ * effect cài lại (cleanup rồi cài đồng bộ) dùng lại; không ai cài lại trong lượt đó (rời trang / đổi chế độ) → giải phóng.
+ */
 function installWinView(appearance: string): () => void {
   const view = typeof location === 'undefined' ? null : parseWinView(location.search, appearance);
   const { backend, tier } = useRealism.getState();
-  if (!view || backend !== 'webgpu' || tier === 'low') return () => {};
-  Object.assign(winViewState, view, { loaded: false });
+  if (winRelease) clearTimeout(winRelease);
+  winRelease = null;
+  if (!view || backend !== 'webgpu' || tier === 'low') {
+    releaseWinSkies();
+    return () => {};
+  }
+  const url = WIN_URL[view.mode];
+  const key = `${url}|${view.gain}`;
+  releaseWinSkies(key);
+  Object.assign(winViewState, view, { loaded: false, requested: winSkies.has(key) });
   let done = false;
-  let sky: Texture | null = null;
-  const warn = (error: unknown) => console.warn('[pascal-realism] phông cửa sổ không tải được, giữ phông cũ', error);
-  bytesOf(WIN_URL[view.mode]).then((buffer) => {
-    if (done) return;
-    const url = URL.createObjectURL(new Blob([buffer]));
-    new HDRLoader().setDataType(FloatType).load(
-      url,
-      (texture) => {
-        URL.revokeObjectURL(url);
-        if (done) return;
-        const { data, width, height } = texture.image as { data: Float32Array; width: number; height: number };
-        // Cùng chuẩn hoá với trời chủ đề, nhân gain; ảnh thuần (không pha gradient). Ảnh tải về chưa lên GPU → bỏ, không dispose.
-        sky = makeSkyTexture(data, width, height, hdriAutoScale(data, width, height) * view.gain);
-        winViewState.loaded = true;
-        setWinSky(sky, view.scope, WIN_FLOOR);
-      },
-      undefined,
-      (error) => {
-        URL.revokeObjectURL(url);
-        warn(error);
-      },
-    );
-  }, warn);
+  const apply = (pending: Promise<Texture | null>) =>
+    void pending.then((sky) => {
+      if (done || !sky) return;
+      winViewState.loaded = true;
+      setWinSky(sky, view.scope, WIN_FLOOR);
+    });
+  const cached = winSkies.get(key);
+  if (cached) apply(cached);
+  else
+    requestWinSky(() => {
+      if (done) return;
+      const pending = decodeWinSky(url, view.gain);
+      winSkies.set(key, pending);
+      winViewState.requested = true;
+      apply(pending);
+    }, view.scope);
   return () => {
     done = true;
     winViewState.loaded = false;
-    if (sky) setWinSky(null);
-    sky?.dispose();
+    requestWinSky(null);
+    setWinSky(null);
+    winRelease = setTimeout(() => {
+      winRelease = null;
+      releaseWinSkies();
+    }, 0);
   };
 }
 

@@ -55,6 +55,9 @@ let winSky: Texture | null = null;
 let winScope: WinScope = 'inside';
 let winFloor = 0;
 let camInside = false;
+/** Yêu cầu tải phông cửa sổ đang chờ (tải lười): gọi một lần khi camera vào nhà / scope all, sau lần tải đầu. */
+let winRequest: (() => void) | null = null;
+let winRequestScope: WinScope = 'inside';
 
 /**
  * Số đo probe, đọc qua `__pascalProbe.reflect()` (`?probe=1`). `lastMs` = thời gian CPU của `fromScene`;
@@ -92,6 +95,12 @@ function applySky(): void {
 export function setHdriSky(tex: Texture | null): void {
   skyHdri = tex;
   applySky();
+}
+
+/** `installWinView` đăng ký (null = huỷ) hàm tải phông; `syncWinInside` gọi đúng một lần khi tới lúc. */
+export function requestWinSky(fn: (() => void) | null, scope: WinScope = 'inside'): void {
+  winRequest = fn;
+  winRequestScope = scope;
 }
 
 /** `installWinView` gọi khi phông cửa sổ nạp xong (null = gỡ). `floor` = mép dưới dir.y của HDRI. */
@@ -280,7 +289,7 @@ let roomBoxesAge = 0;
 /** Hộp trong-nhà mỗi tầng từ tường + trần của registry (gom theo tổ tiên là node `level`). */
 function collectRoomBoxes(registry: RegistryLike): RoomBox[] {
   const levels = new Set([...(registry.byType.level ?? [])].map((id) => registry.nodes.get(id)).filter(Boolean) as Object3D[]);
-  const items: Parameters<typeof levelBoxes>[0] = [];
+  const items: { level: string; kind: 'wall' | 'ceiling'; box: RoomBox }[] = [];
   for (const kind of ['wall', 'ceiling'] as const) {
     for (const id of registry.byType[kind] ?? []) {
       const obj = registry.nodes.get(id);
@@ -297,11 +306,11 @@ function collectRoomBoxes(registry: RegistryLike): RoomBox[] {
 }
 
 /**
- * Tín hiệu trong-nhà cho phông cửa sổ: mỗi khung (chỉ khi phông `?winview` đã nạp), độc lập probe phản chiếu.
- * Hộp tính lại khi số node đổi hoặc mỗi 60 khung (tường kéo/sửa).
+ * Tín hiệu trong-nhà cho phông cửa sổ: mỗi khung (chỉ khi phông đã nạp hoặc đang chờ tải), độc lập probe phản chiếu.
+ * Hộp tính lại khi số node đổi hoặc mỗi 60 khung (tường kéo/sửa). Xuất cho test.
  */
-function syncWinInside(p: Vector3, registry: RegistryLike): void {
-  if (!winSky) return;
+export function syncWinInside(p: Vector3, registry: RegistryLike): void {
+  if (!winSky && !winRequest) return;
   if (registry.nodes.size !== roomBoxesCount || ++roomBoxesAge >= 60) {
     roomBoxes = collectRoomBoxes(registry);
     roomBoxesCount = registry.nodes.size;
@@ -309,6 +318,11 @@ function syncWinInside(p: Vector3, registry: RegistryLike): void {
   }
   const inside = insideRoomBox(p, roomBoxes);
   winViewState.inside = inside;
+  if (winRequest && !isFirstLoad() && winApplies(winRequestScope, inside)) {
+    const load = winRequest;
+    winRequest = null;
+    load();
+  }
   if (inside !== camInside) {
     camInside = inside;
     applySky();
