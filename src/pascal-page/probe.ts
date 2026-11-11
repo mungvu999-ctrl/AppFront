@@ -92,3 +92,19 @@ if (window.__pascalProbe) {
     if (window.__pascalProbe) Object.assign(window.__pascalProbe, { assetRefresh: assetRefreshStatus });
   });
 }
+
+// Đèn có nguồn + bóng trong phòng (vòng 11 b4, `?enable=lamprule`, `?enable=roomshadow`, `lampRule.ts`):
+// { habitableWithSource, habitableTotal, fixtures, rooms[{name, anchors[{source, ref}]}], shadow{casters, mapSize, updates, lastUpdateMs, room} }.
+if (window.__pascalProbe) {
+  void import('./realism/lampRule').then(({ lampRuleReport }) => {
+    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { lampRule: lampRuleReport });
+  });
+}
+
+// Vai thư viện mở rộng (vòng 11 b2, `?enable=libroles2`, `libraryRoles2.ts`):
+// { on, default, pools, loaded, swaps{id→{variant, from, to}}, flat{before, after} — số món sinh dùng mẫu Pascal 0 texture theo vai }.
+if (window.__pascalProbe) {
+  void import('@/lib/pascal/libraryRoles2').then(({ libRoles2Report }) => {
+    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { libroles2: () => libRoles2Report(Object.values(useScene.getState().nodes)) });
+  });
+}
