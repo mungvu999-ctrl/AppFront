@@ -1,13 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import type { Furniture } from '@/domain/spatial/types';
+import { SpatialGraphDocumentSchema } from '@/api/schemas/spatialGraph';
+import { normalizeSpatial } from '@/domain/spatial/normalize';
+import type { Furniture, SpatialGraph } from '@/domain/spatial/types';
+
+import { fixtureF2 } from '../__fixtures__';
+import { createPascalEditCommand } from '../fromPascal';
 
 import { CATALOG_MODELS, clearServerLibrary, registerServerLibrary } from '../furnitureCatalog';
 import LIBRARY_QC from '../libraryQc.json';
 import POOLS from '../libraryRoles2.json';
-import { LIBROLES2_POOLS, libRoles2Apply, libRoles2FlagOf, libRoles2LampOf, libRoles2PickOf, libRoles2Report, withLibRoles2 } from '../libraryRoles2';
+import { LIBROLES2_DEFAULT, LIBROLES2_POOLS, libRoles2Apply, libRoles2FlagOf, libRoles2LampOf, libRoles2PickOf, libRoles2Report, withLibRoles2 } from '../libraryRoles2';
 import { lampInteractiveOf } from '../sceneDressing';
 import { sceneStyleOf } from '../sceneStyles';
+import { toPascalScene } from '../toPascal';
+import type { PascalItemNode, PascalScene } from '../types';
 
 const style = sceneStyleOf('scandinavian');
 interface Model {
@@ -64,6 +71,7 @@ describe('pool libroles2 (ngưỡng)', () => {
   });
 
   it('cờ: bật mặc định (QA ảnh 6 căn, vòng 11), ?enable bật, ?disable thắng', () => {
+    expect(LIBROLES2_DEFAULT).toBe(true);
     expect(libRoles2FlagOf('')).toBe(true);
     expect(libRoles2FlagOf('?disable=libroles2')).toBe(false);
     expect(libRoles2FlagOf('?enable=x,libroles2')).toBe(true);
@@ -142,5 +150,46 @@ describe('nguồn sáng + đầu dò', () => {
     expect(Object.keys(report.swaps)).toEqual(['DRESS-floorLamp-R1']);
     expect(report.flat.after).toEqual({ tableLamp: 1, curtain: 1 });
     expect(report.flat.before).toEqual({ tableLamp: 1, curtain: 1, floorLamp: 1 });
+  });
+});
+
+describe('vòng tròn lưu (review Codex B1 #1)', () => {
+  const graph: SpatialGraph = SpatialGraphDocumentSchema.parse(fixtureF2().doc).graph;
+  const itemsOf = (scene: PascalScene): PascalItemNode[] => Object.values(scene.nodes).filter((n): n is PascalItemNode => n.type === 'item');
+  const edit = (scene: PascalScene, changed: readonly string[]) =>
+    createPascalEditCommand({ graph: normalizeSpatial(graph), scene, commit: { origin: 'local', changedNodeIds: [...changed] }, actorId: 'U-1', idBook: new Map() });
+
+  it('đèn sinh dùng mẫu máy chủ chuẩn (không id riêng), còn nguồn sáng', () => {
+    const lamp = itemsOf(toPascalScene(graph, { furnish: 'on' }).scene).find((n) => /^item_DRESS-tableLamp-/.test(n.id));
+    expect(lamp).toBeDefined();
+    expect(LIBROLES2_POOLS.tableLamp).toContain(lamp?.asset.id);
+    expect(lamp?.asset.src).toBe(`https://lib/${lamp?.asset.id}.glb?sig=1`);
+    expect(((lamp?.asset as { interactive?: { effects: { kind: string }[] } }).interactive?.effects ?? []).some((e) => e.kind === 'light')).toBe(true);
+  });
+
+  it('nhận đèn → lưu đúng mẫu + đường cố định; nạp lại giữ đúng mẫu và nguồn sáng; món chưa nhận không ghi gì', () => {
+    const scene = toPascalScene(graph, { furnish: 'on' }).scene;
+    const lamp = itemsOf(scene).find((n) => /^item_DRESS-tableLamp-/.test(n.id)) as PascalItemNode;
+    const pick = lamp.asset.id;
+    const untouched = edit(scene, []);
+    // Không sửa gì: lệnh báo "không có gì để ghi" (hoặc rỗng) — đèn sinh đã đổi mẫu không lọt vào bản lưu.
+    expect(untouched.ok ? untouched.data.changes : []).toEqual([]);
+
+    const moved: PascalItemNode = { ...lamp, position: [lamp.position[0] + 0.05, lamp.position[1], lamp.position[2]] };
+    const result = edit({ ...scene, nodes: { ...scene.nodes, [moved.id]: moved } }, [moved.id]);
+    if (!result.ok) throw new Error(result.error.reasons.join(' '));
+    const saved = result.data.changes.map((c) => c.after as Furniture);
+    const savedLamp = saved.find((f) => f.variant === 'tableLamp');
+    expect(savedLamp?.model).toEqual({ id: pick, src: `/items/${pick}/model.glb` });
+    expect(savedLamp?.id.startsWith('DRESS-')).toBe(false);
+    // Không món đã lưu nào mang URL ký.
+    expect(saved.every((f) => f.model === undefined || /^\/items\/[a-z0-9_-]+\/model\.glb$/.test(f.model.src))).toBe(true);
+
+    const reloaded = itemsOf(toPascalScene({ ...graph, furniture: [...graph.furniture, ...saved] }, { furnish: 'on' }).scene).find(
+      (n) => n.id === `item_${savedLamp?.id}`,
+    );
+    expect(reloaded?.asset.id).toBe(pick);
+    expect(reloaded?.asset.src).toBe(`https://lib/${pick}.glb?sig=1`);
+    expect(((reloaded?.asset as { interactive?: { effects: { kind: string }[] } }).interactive?.effects ?? []).some((e) => e.kind === 'light')).toBe(true);
   });
 });

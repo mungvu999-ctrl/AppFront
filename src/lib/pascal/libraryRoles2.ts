@@ -40,8 +40,12 @@ const POOLS = POOLS_JSON as {
 export const LIBROLES2_POOLS: Readonly<Record<string, readonly string[]>> = POOLS.roles;
 const FLAT_PASCAL: ReadonlySet<string> = new Set(POOLS.flatPascal);
 
-/** `model.id` của món đã đổi mẫu — đánh dấu cho nguồn sáng + đầu dò. */
-export const LIBROLES2_MODEL_PREFIX = 'appfront-libroles2-';
+/**
+ * `model` của món đổi mẫu = ĐÚNG mẫu máy chủ (`id` thư viện + đường cố định `/items/<id>/model.glb`), như mẫu người dùng
+ * "Đổi mẫu": nhận món (sửa nó / cả phòng) thì `toSpatial` lưu đúng mẫu ấy (review Codex B1 #1 — id có tiền tố riêng làm
+ * bản lưu mất mẫu). Provenance ở `PROV_FIELD` của node + sổ `swaps` (đầu dò), không nhúng vào id.
+ */
+const POOL_SRC = /^\/items\/([a-z0-9_-]+)\/model\.glb$/;
 
 /** FNV-1a 32 bit. */
 const fnv1a = (text: string): number => {
@@ -108,7 +112,7 @@ export const withLibRoles2 = <F extends Furniture>(f: F, style: SceneStyle, on: 
     ...f,
     boundingBox: { min: { x: cx - hw, y: cy - hd }, max: { x: cx + hw, y: cy + hd } } as F['boundingBox'],
     heightMm: Math.round(h) as F['heightMm'],
-    model: { id: `${LIBROLES2_MODEL_PREFIX}${pick}`, src: serverModelPath(pick) },
+    model: { id: pick, src: serverModelPath(pick) },
   };
 };
 
@@ -120,10 +124,16 @@ export const libRoles2Apply = <F extends Furniture>(generated: readonly F[], sty
 
 /**
  * Nguồn sáng của đèn đã đổi mẫu: của mẫu Pascal cùng vai (cường độ, màu, tầm giữ nguyên), độ cao nguồn nhân tỉ lệ chiều
- * cao mẫu mới / mẫu Pascal. `undefined` = món không do luật này đổi.
+ * cao mẫu mới / mẫu Pascal. `undefined` = món không mang mẫu pool của vai nó (hoặc cờ tắt).
  */
-export const libRoles2LampOf = (f: Pick<Furniture, 'variant'> & Partial<Pick<Furniture, 'model' | 'heightMm'>>, style: SceneStyle): unknown => {
-  if (f.model?.id.startsWith(LIBROLES2_MODEL_PREFIX) !== true || f.variant === undefined) return undefined;
+export const libRoles2LampOf = (
+  f: Pick<Furniture, 'variant'> & Partial<Pick<Furniture, 'model' | 'heightMm'>>,
+  style: SceneStyle,
+  on: boolean = LIBROLES2_ON,
+): unknown => {
+  // Mọi món vai đèn mang mẫu trong pool (đèn sinh vừa đổi, hoặc đèn đã nhận nạp lại từ bản lưu) đều sáng như đèn Pascal.
+  const folder = POOL_SRC.exec(f.model?.src ?? '')?.[1];
+  if (!on || f.variant === undefined || folder === undefined || !(POOLS.roles[f.variant] ?? []).includes(folder)) return undefined;
   const base = VARIANT_MODEL[f.variant]?.folder;
   const baseH = base === undefined ? undefined : CATALOG_MODELS[base]?.dimensions[1];
   const lamp = base === undefined ? undefined : (structuredClone(lampInteractiveOf(base, style)) as { effects?: { kind: string; offset?: number[] }[] } | undefined);
