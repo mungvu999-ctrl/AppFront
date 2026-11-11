@@ -99,4 +99,18 @@ describe('phông cửa sổ tải lười (review N2)', () => {
     expect(decodes.n).toBe(0);
     undo();
   });
+
+  it('đang yêu cầu rồi đổi sang chủ đề sáng → báo cáo phông cửa sổ được đặt lại', async () => {
+    const reg = registry();
+    let undo = installHdri(new Scene(), 'dark', 'night');
+    syncWinInside(new Vector3(5, 1.6, 4), reg);
+    await flush();
+    await flush();
+    expect(winViewReport()).toMatchObject({ mode: 'sunset', requested: true });
+    undo();
+    undo = installHdri(new Scene(), 'light', 'studio');
+    expect(winViewReport()).toMatchObject({ mode: 'off', gain: 0, requested: false, loaded: false, inside: false });
+    undo();
+    await flush();
+  });
 });
