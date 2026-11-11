@@ -89,7 +89,10 @@ function fabricNodes(): Nodes {
   const r1 = cross(sy, normalView);
   const r2 = cross(normalView, sx);
   const det = dot(sx, r1).mul(face);
-  const grad = r1.mul(dFdx(height)).add(r2.mul(dFdy(height))).mul(sign(det));
+  // Kiểu của three chỉ khai dFdx/dFdy cho vec2/vec3; lúc chạy nhận cả float.
+  const dhx = dFdx(height as unknown as Node<'vec3'>) as unknown as Node<'float'>;
+  const dhy = dFdy(height as unknown as Node<'vec3'>) as unknown as Node<'float'>;
+  const grad = r1.mul(dhx).add(r2.mul(dhy)).mul(sign(det));
   const normal = normalize(normalView.mul(abs(det)).sub(grad)) as unknown as Node<'vec3'>;
   const base = (materialColor as unknown as Node<'vec4'>).rgb;
   const shade = grain.mul(L.grainAlbedo).add(fold.mul(L.foldAlbedo)).add(1);
