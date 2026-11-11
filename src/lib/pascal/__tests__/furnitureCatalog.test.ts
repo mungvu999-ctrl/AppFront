@@ -14,6 +14,7 @@ import {
   thumbnailOf,
 } from '../furnitureCatalog';
 import { itemSlotsOf, lampInteractiveOf } from '../sceneDressing';
+import { setDrapeFlags } from '../sceneDressingDrape';
 
 const ROOT = resolve(__dirname, '../../../..');
 const CATALOG_TSX = readFileSync(
@@ -113,6 +114,20 @@ describe('furnitureCatalog', () => {
   it('modelSrcOf / thumbnailOf', () => {
     expect(modelSrcOf('sofa')).toBe('/items/sofa/model.glb');
     expect(thumbnailOf('sofa')).toBe('/items/sofa/thumbnail.webp');
+  });
+
+  it('?drape=uv: rèm/gối/chăn trỏ sang thư mục -uv; không cờ thì y như cũ', () => {
+    for (const f of ['curtain', 'pillow', 'throw-blanket']) {
+      expect(modelSrcOf(f)).toBe(`/items/${f}/model.glb`);
+      expect(CATALOG_MODELS[`${f}-uv`]?.dimensions).toEqual(CATALOG_MODELS[f]?.dimensions);
+    }
+    setDrapeFlags(['uv']);
+    try {
+      for (const f of ['curtain', 'pillow', 'throw-blanket']) expect(modelSrcOf(f)).toBe(`/items/${f}-uv/model.glb`);
+      expect(modelSrcOf('sofa')).toBe('/items/sofa/model.glb');
+    } finally {
+      setDrapeFlags([]);
+    }
   });
 
   it('mọi khe đè vật liệu (itemSlotsOf) có thật trong GLB của mô hình (slot_<khe>) hoặc mẫu realism thay nó', () => {
