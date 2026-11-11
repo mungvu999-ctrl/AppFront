@@ -55,3 +55,11 @@ if (window.__pascalProbe) {
     libraryQc: () => ({ rev: libraryQc.rev, excluded: Object.keys(libraryQc.excluded), swaps: Object.fromEntries(libraryQcSwaps()) }),
   });
 }
+
+// Luật cắt đồ (vòng 10, `cutSync.ts`): id món → { kind: whole|capped|plain, reason, bottom, top, whole, capped, src }.
+// Nạp động để khối này tách khỏi phần import (cutSync vốn đã trong cùng gói, không thêm chunk).
+if (window.__pascalProbe) {
+  void import('./realism/cutSync').then(({ itemCutReport }) => {
+    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { itemCut: itemCutReport });
+  });
+}
