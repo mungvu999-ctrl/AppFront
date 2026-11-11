@@ -12,6 +12,7 @@
  * trên Lab theo diện tích) nên một vật liệu có thể ra nhiều phần. `kind`/`material` là luật chung theo tên, PBR, vị trí
  * hình học, `materials` của profiles — không theo id.
  */
+import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
