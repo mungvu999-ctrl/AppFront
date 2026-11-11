@@ -79,6 +79,7 @@ describe('libraryQuality.json', () => {
         expect(p.lab[0], id).toBeGreaterThanOrEqual(0);
         expect(p.lab[0], id).toBeLessThanOrEqual(100);
         expect(p.kindBy).toBe('i');
+        expect([undefined, 'mirror'], id).toContain(p.finish);
       }
       expect(sum, id).toBeLessThanOrEqual(1.01);
     }
@@ -115,6 +116,30 @@ describe('parts không phải trung bình texture', () => {
     expect(dE(parts?.[0]?.lab ?? [0, 0, 0], red)).toBeLessThan(2);
     expect(m.imageMean).not.toBeNull();
     expect(dE(parts?.[0]?.lab ?? [0, 0, 0], m.imageMean ?? [0, 0, 0])).toBeGreaterThan(30);
+  });
+
+  it('gương (metallic ≥ 0,9, roughness ≤ 0,15) thành phần riêng, không gộp với kim loại mờ cùng màu', async () => {
+    const { measureDocument, partsOf } = await gen();
+    const doc = new Document();
+    const buf = doc.createBuffer();
+    const scene = doc.createScene();
+    const quad = (x0: number, w: number, rough: number) => {
+      const pos = doc.createAccessor().setType('VEC3').setBuffer(buf).setArray(new Float32Array([x0, 0, 0, x0 + w, 0, 0, x0 + w, 1, 0, x0, 1, 0]));
+      const idx = doc.createAccessor().setType('SCALAR').setBuffer(buf).setArray(new Uint16Array([0, 1, 2, 0, 2, 3]));
+      const mat = doc.createMaterial().setBaseColorFactor([0.8, 0.8, 0.8, 1]).setMetallicFactor(1).setRoughnessFactor(rough);
+      scene.addChild(doc.createNode().setMesh(doc.createMesh().addPrimitive(doc.createPrimitive().setAttribute('POSITION', pos).setIndices(idx).setMaterial(mat))));
+    };
+    quad(0, 3, 0.5);
+    quad(3, 1, 0.05);
+    const parts = partsOf(await measureDocument(doc), {}) as unknown as { share: number; finish?: string }[];
+    expect(parts.map((p) => [p.share, p.finish])).toEqual([
+      [0.75, undefined],
+      [0.25, 'mirror'],
+    ]);
+  });
+
+  it('mẫu có phần gương: share > 0', () => {
+    for (const [id, q] of models) for (const p of q.parts ?? []) if (p.finish === 'mirror') expect(p.share, id).toBeGreaterThan(0);
   });
 
   // Mẫu thật chọn TỰ ĐỘNG lúc sinh (một ảnh base, phần chính ≥ 50 %, ΔE lớn nhất với trung bình ảnh); chỉ chạy khi có GLB gốc.

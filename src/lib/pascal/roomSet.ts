@@ -37,6 +37,24 @@ const BED_ROLES: ReadonlySet<string> = new Set(['doubleBed', 'singleBed']);
 
 /** Cao mẫu mới ≤ cao mẫu cũ × chừng này. */
 export const HEIGHT_GROW_MAX = 1.15;
+/** Món cao (mẫu cũ ≥ chừng này, m: tủ áo, kệ): ứng viên không cao hơn mẫu cũ — chấm mù lượt 4: tủ thay "chạm gần trần". */
+export const TALL_M = 2.0;
+/** Khoảng hở tối thiểu tới trần phòng (m) khi đầu vào có `ceilingM`. */
+export const CEILING_GAP_M = 0.3;
+/**
+ * Vai có sàn kích thước theo phân vị của chính pool vai (lượt 7): cạnh ngắn ứng viên ≥ phân vị SIZE_FLOOR_PCT của pool.
+ * Pool armchair (72 mẫu) có mẫu đặt tên ghế ăn (`chair-dining-wood-woven` 541 mm, `chair-dining-grey-arm` 559 mm) mà
+ * libraryQuality vẫn ghi vai armchair; cạnh ngắn ghế bành p10 = 614 mm, ghế ăn p90 = 584 mm → p10 tách hai nhóm.
+ */
+export const SIZE_FLOOR_PCT = 0.1;
+const SIZE_FLOOR_ROLES: ReadonlySet<string> = new Set(['armchair', 'sofa']);
+/**
+ * Gương (`QualityPart.finish === 'mirror'`, làn Q: metallic ≥ 0,9, roughness ≤ 0,15): bộ dựng hình web CHƯA phản chiếu nên
+ * gương hiện thành tấm trắng phẳng "như chưa gán vật liệu" (chấm mù lượt 4). Phạt MIRROR_PENALTY × tỉ phần: 15 % gương
+ * = 0,30, 20 % = 0,40 → tủ gương không thay được tủ gỗ cùng tông chi phí ≤ 0,55 với biên MIN_GAIN 0,25.
+ * GỠ khi bộ dựng hình có phản chiếu.
+ */
+export const MIRROR_PENALTY = 2;
 /** Dải neo: ứng viên có chi phí ≤ tốt nhất + chừng này được rút (băm phòng + vai). */
 export const ANCHOR_BAND = 0.08;
 /**
@@ -64,13 +82,17 @@ export const WOOD_LAB: Readonly<Record<'l' | 'd', Lab>> = { l: [67, 5, 22], d: [
 /** Bảng màu SÁNG khi tường trong có L* từ chừng này (4/5 phong cách ≥ 86; sang-trong-toi 50). */
 export const LIGHT_WALL_L = 70;
 /** Dải L* của phần bọc (upholstery/bedding) theo bảng màu sáng/tối; lệch dải /SOFT_L_REF × tỉ phần. */
-export const SOFT_L: Readonly<Record<'light' | 'dark', readonly [number, number]>> = { light: [45, 95], dark: [20, 85] };
+export const SOFT_L: Readonly<Record<'light' | 'dark', readonly [number, number]>> = { light: [45, 95], dark: [20, 75] };
 export const SOFT_L_REF = 25;
 /** Tối đậm: L* dưới chừng này. Phòng sáng: món NGỒI tối đậm ≥ DARK_SEAT_SHARE bề mặt phạt DARK_SEAT; món khác phạt theo tỉ phần. */
 export const DARK_L = 25;
 export const DARK_SEAT_SHARE = 0.5;
 export const DARK_SEAT = 1;
 export const DARK_SURF = 1;
+/** Phòng TỐI (lượt 6, sang-trong-toi tường L* 50): bề mặt rất sáng (L* > BRIGHT_L) phạt BRIGHT_SURF × tỉ phần — trước đó
+ *  giường L*84, tủ trắng L*91 được chọn với chi phí 0. */
+export const BRIGHT_L = 80;
+export const BRIGHT_SURF = 1;
 /** Màu: C* tới chừng này là trung tính (be/kem đo 11–12); trần độ rực; phần nhỏ hơn tỉ phần này không thành họ nhấn. */
 export const NEUTRAL_C = 14;
 export const CHROMA_CAP = 25;
@@ -78,6 +100,17 @@ export const ACCENT_HUE_SPAN = 30;
 export const ACCENT_MIN_SHARE = 0.15;
 /** Món NHẤN (phần màu ≥ 0,3 bề mặt) mà là NEO (món lớn nhất phòng): SceneStyle không có trường cho phép → luôn phạt. */
 export const ACCENT_ANCHOR = 0.5;
+/**
+ * Lớp vải (lượt 6): giường có MỘT cụm màu vải (trắng trên trắng — chăn và ga gộp một cụm khi đo) đọc như ga trơn trong
+ * cảnh. Cụm = phần không phải tông gỗ, kind bedding/upholstery/other, tỉ phần ≥ LAYER_MIN_SHARE; hai cụm khác nhau khi
+ * ΔE ≥ LAYER_DE. Đúng một cụm → phạt SINGLE_LAYER; không cụm nào (nhãn kind sai, vd sọc ghi "metal") = chưa biết, không phạt.
+ * SINGLE_LAYER 0,4 > MIN_GAIN + chênh 0,06 giữa bed-white-oak-headboard (0,10) và bed-double-oak-pro (0,04) — số ở diag3.
+ */
+export const LAYER_MIN_SHARE = 0.08;
+export const LAYER_DE = 15;
+export const SINGLE_LAYER = 0.4;
+const LAYER_ROLES: ReadonlySet<string> = new Set(['doubleBed', 'singleBed']);
+const LAYER_KINDS: ReadonlySet<string> = new Set(['bedding', 'upholstery', 'other']);
 /** Trọng số: phong cách, gỗ, vải/màu. */
 export const W_STYLE = 1;
 export const W_WOOD = 1;
@@ -135,6 +168,8 @@ export interface SetMember {
   readonly pool: readonly string[];
   /** Ngoài phạm vi (người dùng ghim/đã chỉnh): không đổi, làm chuẩn. */
   readonly fixed: boolean;
+  /** Chiều cao trần phòng (m) nếu bên gọi biết; vắng = không kiểm khoảng hở trần. */
+  readonly ceilingM?: number;
 }
 
 export interface SetContext {
@@ -190,9 +225,23 @@ export const hardRejectOf = (m: SetMember, folder: string, ctx: SetContext): str
   if (q.parts === undefined || q.parts.length === 0) return 'thiếu dữ liệu phần';
   if (BED_ROLES.has(m.role) && q.completeness?.v !== 'full') return 'giường chưa hoàn chỉnh';
   const dims = ctx.dimsOf(folder);
-  if (dims === undefined || !fitsSpot(dims, m.short, m.long)) return 'không lọt chỗ';
   const ref = m.current === null ? undefined : ctx.dimsOf(m.current);
-  if (ref === undefined || dims[1] > ref[1] * HEIGHT_GROW_MAX) return 'cao hơn mẫu cũ';
+  // Lượt 6: mẫu đang dùng đã bị CO vào hộp (hộp giường AI dò 1,30 × 1,94 m, mẫu 1,71 × 2,14 m) → ứng viên được co tới
+  // cùng mức trên từng trục (chỗ = max(hộp, mặt bằng mẫu cũ)), không hơn — co thêm thì sai tỉ lệ.
+  const refShort = ref === undefined ? 0 : Math.min(ref[0], ref[2]);
+  const refLong = ref === undefined ? 0 : Math.max(ref[0], ref[2]);
+  if (dims === undefined || !fitsSpot(dims, Math.max(m.short, refShort), Math.max(m.long, refLong))) return 'không lọt chỗ';
+  if (ref === undefined || dims[1] > ref[1] * (ref[1] >= TALL_M ? 1 : HEIGHT_GROW_MAX)) return 'cao hơn mẫu cũ';
+  if (m.ceilingM !== undefined && dims[1] > m.ceilingM - CEILING_GAP_M) return 'chạm gần trần';
+  if (SIZE_FLOOR_ROLES.has(m.role)) {
+    const shorts = m.pool.flatMap((x) => {
+      const d = ctx.dimsOf(x);
+      return d === undefined ? [] : [Math.min(d[0], d[2])];
+    });
+    shorts.sort((a, b) => a - b);
+    const floor = shorts[Math.floor(SIZE_FLOOR_PCT * (shorts.length - 1))];
+    if (floor !== undefined && Math.min(dims[0], dims[2]) < floor) return 'nhỏ hơn cỡ vai';
+  }
   return undefined;
 };
 /**
@@ -222,11 +271,25 @@ interface Feat {
   readonly other: readonly QualityPart[];
   /** Tổng tỉ phần bề mặt tối đậm (L* < DARK_L). */
   readonly dark: number;
+  /** Tổng tỉ phần bề mặt rất sáng (L* > BRIGHT_L). */
+  readonly bright: number;
+  /** Tổng tỉ phần bề mặt gương (`finish: 'mirror'`, trường tuỳ chọn của làn Q; vắng = 0). */
+  readonly mirror: number;
+  /** Số cụm màu vải tương phản (`LAYER_*`); vắng = không đo được (không có phần vải). */
+  readonly layers?: number;
   /** Lab gỗ trung bình theo tỉ phần (tham chiếu cho món khác); vắng = không có gỗ. */
   readonly woodLab?: Lab;
 }
 type Memo = Map<string, Feat>;
 const isWoodTone = (p: QualityPart): boolean => p.material === 'wood' && chromaOf(p.lab) >= WOOD_MIN_C;
+/** Cụm màu vải tương phản của một mẫu (gom tham lam theo tỉ phần giảm dần). */
+export const layersOf = (parts: readonly QualityPart[]): { layers?: number } => {
+  const soft = parts.filter((p) => p.share >= LAYER_MIN_SHARE && !isWoodTone(p) && LAYER_KINDS.has(p.kind)).sort((a, b) => b.share - a.share);
+  if (soft.length === 0) return {};
+  const reps: Lab[] = [];
+  for (const p of soft) if (!reps.some((r) => Math.hypot(r[0] - p.lab[0], r[1] - p.lab[1], r[2] - p.lab[2]) < LAYER_DE)) reps.push(p.lab);
+  return { layers: reps.length };
+};
 const featOf = (folder: string, ctx: SetContext, memo: Memo): Feat => {
   const hit = memo.get(folder);
   if (hit !== undefined) return hit;
@@ -245,6 +308,9 @@ const featOf = (folder: string, ctx: SetContext, memo: Memo): Feat => {
     loud: other.filter((p) => chromaOf(p.lab) > NEUTRAL_C && p.share >= ACCENT_MIN_SHARE),
     other,
     dark: parts.reduce((s, p) => s + (p.lab[0] < DARK_L ? p.share : 0), 0),
+    bright: parts.reduce((s, p) => s + (p.lab[0] > BRIGHT_L ? p.share : 0), 0),
+    mirror: parts.reduce((s, p) => s + ((p as QualityPart & { readonly finish?: string }).finish === 'mirror' ? p.share : 0), 0),
+    ...layersOf(parts),
     ...(woodLab === undefined ? {} : { woodLab }),
   };
   memo.set(folder, feat);
@@ -265,6 +331,8 @@ export interface ItemCost {
   readonly dark: number;
   readonly chroma: number;
   readonly accent: number;
+  readonly layer: number;
+  readonly mirror: number;
   readonly total: number;
 }
 
@@ -295,13 +363,16 @@ export const itemCostOf = (folder: string, role: string, refs: ItemRefs, ctx: Se
   const wood = W_WOOD * f.wood.reduce((s, p) => s + (p.share * Math.max(0, woodDeltaOf(p.lab, refs.wood) - WOOD_TOL)) / WOOD_DE_REF, 0);
   const [lo, hi] = SOFT_L[light ? 'light' : 'dark'];
   const soft = f.soft.reduce((s, p) => s + (p.share * Math.max(0, lo - p.lab[0], p.lab[0] - hi)) / SOFT_L_REF, 0);
-  const dark = !light ? 0 : SEAT_ROLES.has(role) && f.dark >= DARK_SEAT_SHARE ? DARK_SEAT : DARK_SURF * f.dark;
+  // Lệch bảng màu: phòng sáng phạt bề mặt tối đậm (món ngồi nặng hơn), phòng tối phạt bề mặt rất sáng.
+  const dark = !light ? BRIGHT_SURF * f.bright : SEAT_ROLES.has(role) && f.dark >= DARK_SEAT_SHARE ? DARK_SEAT : DARK_SURF * f.dark;
   const chroma = f.other.reduce((s, p) => s + (p.share * Math.max(0, chromaOf(p.lab) - CHROMA_CAP)) / CHROMA_CAP, 0);
   const added = familiesWith(refs.families, f.loud.map((p) => p.lab)).length - refs.families.length;
   const loudShare = f.loud.reduce((s, p) => s + p.share, 0);
   const accent = Math.max(0, added - (refs.families.length === 0 ? 1 : 0)) + (refs.anchor && loudShare >= 0.3 ? ACCENT_ANCHOR : 0);
   const fabric = W_FABRIC * (chroma + accent);
-  return { style, wood, soft, dark, chroma: W_FABRIC * chroma, accent: W_FABRIC * accent, total: style + wood + soft + dark + fabric };
+  const layer = LAYER_ROLES.has(role) && f.layers === 1 ? SINGLE_LAYER : 0;
+  const mirror = MIRROR_PENALTY * f.mirror;
+  return { style, wood, soft, dark, chroma: W_FABRIC * chroma, accent: W_FABRIC * accent, layer, mirror, total: style + wood + soft + dark + fabric + layer + mirror };
 };
 
 /** Gỗ tham chiếu theo tông: tông của căn, vắng thì theo sáng/tối của bảng màu. */

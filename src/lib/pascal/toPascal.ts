@@ -1382,7 +1382,14 @@ export const toPascalScene = (
   /* Vai trò theo ngữ cảnh phòng (bồn cầu thừa → lavabo, bàn nhỏ xa giường → bàn phụ): chỉ đổi mẫu. */
   const contextUsageOf = (f: Pick<Furniture, 'roomId'>) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId));
   // `roomset` băm theo nội dung phòng, không theo id (chép sang dự án khác giữ nguyên nội thất).
-  setRoomSetKeys(roomSetKeysOf(builtRooms.map((room) => ({ id: room.id, levelId: room.levelId, usage: roomUsageOf.get(room.id), outline: room.outline }))));
+  // Trần phòng = chiều cao tầng dựng tường (`roomset` chừa hở trần cho món cao).
+  setRoomSetKeys(
+    roomSetKeysOf(builtRooms.map((room) => ({ id: room.id, levelId: room.levelId, usage: roomUsageOf.get(room.id), outline: room.outline }))),
+    new Map(builtRooms.flatMap((room) => {
+      const mm = levelHeightMmOf.get(room.levelId);
+      return mm === undefined ? [] : [[room.id as string, mm / 1000] as const];
+    })),
+  );
   // Món đã nhận còn mẫu luật chọn: twin đại diện trong sổ bộ (như trước khi nhận), không thành đồ cố định của bảng màu.
   const contextRoles = contextRolesOf(
     furnitureToBuild.filter((f) => f.suggested !== true && ruleFolderOf(f) === undefined),

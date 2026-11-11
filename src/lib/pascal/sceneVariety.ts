@@ -926,9 +926,12 @@ interface SetRoom {
 const SET_ROOMS = new Map<string, SetRoom>();
 /** Id phòng → khoá nội dung (`roomSetKeysOf`) của lượt dựng; vắng thì băm theo id. */
 let SET_ROOM_KEYS: ReadonlyMap<string, string> = new Map();
-/** toPascal: khoá nội dung các phòng của lượt dựng, gọi trước vòng chọn mẫu. */
-export const setRoomSetKeys = (keys: ReadonlyMap<string, string>): void => {
+/** Id phòng → chiều cao trần (m) của lượt dựng (chiều cao tầng mà toPascal dựng tường); vắng = không kiểm hở trần. */
+let SET_ROOM_CEILINGS: ReadonlyMap<string, number> = new Map();
+/** toPascal: khoá nội dung + chiều cao trần các phòng của lượt dựng, gọi trước vòng chọn mẫu. */
+export const setRoomSetKeys = (keys: ReadonlyMap<string, string>, ceilings: ReadonlyMap<string, number> = new Map()): void => {
   SET_ROOM_KEYS = keys;
+  SET_ROOM_CEILINGS = ceilings;
 };
 /** Quyết định đã chốt trong lượt dựng theo đối tượng phong cách (mỗi lượt một đối tượng); `contextRolesOf` làm mới. */
 let setPlans = new WeakMap<SceneStyle, Map<string, SetDecision>>();
@@ -970,6 +973,7 @@ const setPoolOf = (f: SetInput, role: FurnitureRole, style: SceneStyle): readonl
 
 const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: ReadonlyMap<string, SetDecision>): Map<string, SetDecision> => {
   const wanted = style.libraryStyles ?? [];
+  const ceilingM = SET_ROOM_CEILINGS.get(roomId);
   const members: SetMember[] = [...room.members.values()].map(({ f, role, override }) => {
     const scoped = inSetScope(f);
     const saved = f.model === undefined ? undefined : (SAVED_FOLDER.exec(f.model.src)?.[1] ?? null);
@@ -982,6 +986,7 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
       current: saved !== undefined ? saved : baseFolderOf(f, style, room.usage, override),
       pool: scoped ? setPoolOf(f, role, style) : [],
       fixed: !scoped,
+      ...(ceilingM === undefined ? {} : { ceilingM }),
     };
   });
   const tone = rulesOffOf(style).has('tone') ? undefined : (style as LayerStyle).woodTone;

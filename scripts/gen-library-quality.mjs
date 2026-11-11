@@ -44,6 +44,8 @@ export const GLB_DIRS = [
 export const TIER_RULE = 'light: tris<=20000 & kb<=512; heavy: tris>60000 | kb>1024; còn lại medium';
 const tierOf = (tris, kb) => (tris > 60000 || kb > 1024 ? 'heavy' : tris <= 20000 && kb <= 512 ? 'light' : 'medium');
 const MIN_SHARE = 0.05;
+const MIRROR_METAL = 0.9;
+const MIRROR_ROUGH = 0.15;
 const MAX_PARTS = 4;
 
 // ---------- màu ----------
@@ -192,7 +194,9 @@ export async function measureDocument(doc) {
           ro *= tm[1] / 255; me *= tm[2] / 255;
         }
         if (col) { const k = col.k, ca = col.a; r *= w0 * ca[i0 * k] + w1 * ca[i1 * k] + w2 * ca[i2 * k]; gg *= w0 * ca[i0 * k + 1] + w1 * ca[i1 * k + 1] + w2 * ca[i2 * k + 1]; bb *= w0 * ca[i0 * k + 2] + w1 * ca[i1 * k + 2] + w2 * ca[i2 * k + 2]; }
-        const key = (toSrgb8(r) >> 3) << 10 | (toSrgb8(gg) >> 3) << 5 | toSrgb8(bb) >> 3;
+        // Gương: kim loại ≥ 0,9 và nhám ≤ 0,15 (factor × texture metallicRoughness tại điểm lấy mẫu).
+        const mirrorBit = me >= MIRROR_METAL && ro <= MIRROR_ROUGH ? 1 : 0;
+        const key = mirrorBit << 15 | (toSrgb8(r) >> 3) << 10 | (toSrgb8(gg) >> 3) << 5 | toSrgb8(bb) >> 3;
         let bin = g.bins.get(key);
         if (!bin) { bin = new Float64Array(NB); g.bins.set(key, bin); }
         bin[0] += sw; bin[1] += r * sw; bin[2] += gg * sw; bin[3] += bb * sw; bin[4] += me * sw; bin[5] += ro * sw; bin[6] += al * sw;
@@ -211,7 +215,17 @@ export async function measureDocument(doc) {
   let maxTex = 0;
   for (const t of textures) { const im = imgCache.get(t) ?? (await decodeImage(t)); if (im.ktx2) ktx2 = true; else maxTex = Math.max(maxTex, im.size); }
   const clusters = [];
-  for (const g of mats.values()) for (const cl of clusterBins(g.bins)) clusters.push({ ...cl, names: tokens(g.info.name, ...g.names), transmission: g.info.transmission, blend: g.info.blend, share: cl.area / (totalArea || 1) });
+  // Tách theo vật liệu × cờ gương (bit 15 của khoá ngăn) TRƯỚC khi k-means, để phần gương không bị gộp vào phần khác.
+  for (const g of mats.values()) {
+    for (const bit of [0, 1]) {
+      const sub = new Map([...g.bins].filter(([k]) => k >> 15 === bit));
+      for (const cl of clusterBins(sub)) {
+        // Kính / trong suốt (transmission, alpha thấp) không tính là gương.
+        const mirror = bit === 1 && g.info.transmission <= 0.3 && cl.alpha > 0.9;
+        clusters.push({ ...cl, ...(mirror ? { finish: 'mirror' } : {}), names: tokens(g.info.name, ...g.names), transmission: g.info.transmission, blend: g.info.blend, share: cl.area / (totalArea || 1) });
+      }
+    }
+  }
   clusters.sort((x, y) => y.area - x.area);
   return { size, tris, totalArea, clusters, ktx2, imageMean, nMats: mats.size, textures: textures.length, maxTex };
 }
@@ -329,7 +343,7 @@ export function partsOf(measure, ctx) {
   const cls = measure.clusters.map((cl, i) => { const lab = linToLab(cl.lin); const c = { ...cl, lab }; return { ...c, ...classify(c, ctx, i) }; });
   const merged = [];
   for (const c of cls) {
-    const m = merged.find((x) => x.kind === c.kind && x.material === c.material && dE(x.lab, c.lab) < 12);
+    const m = merged.find((x) => x.kind === c.kind && x.material === c.material && x.finish === c.finish && dE(x.lab, c.lab) < 12);
     if (!m) { merged.push({ ...c }); continue; }
     const w = m.share + c.share;
     m.lin = m.lin.map((v, k) => (v * m.share + c.lin[k] * c.share) / w);
@@ -337,7 +351,7 @@ export function partsOf(measure, ctx) {
   }
   merged.sort((x, y) => y.share - x.share);
   const parts = merged.filter((x) => x.share >= MIN_SHARE).slice(0, MAX_PARTS).map((x) => ({
-    kind: x.kind, share: Math.min(1, +x.share.toFixed(2)), lab: x.lab.map((v) => Math.round(v)), ...(x.material ? { material: x.material } : {}), kindBy: 'i',
+    kind: x.kind, share: Math.min(1, +x.share.toFixed(2)), lab: x.lab.map((v) => Math.round(v)), ...(x.material ? { material: x.material } : {}), kindBy: 'i', ...(x.finish ? { finish: x.finish } : {}),
   }));
   return parts.length ? parts : undefined;
 }
@@ -383,7 +397,8 @@ function compact(models) {
     if (q.role) row.r = q.role;
     if (q.front.check !== 'ok') row.f = 1;
     if (q.completeness) row.c = q.completeness.v[0] + q.completeness.by;
-    if (q.parts) row.p = q.parts.map((p) => [KIND_CODES.indexOf(p.kind), Math.round(p.share * 100), ...p.lab, ...(p.material ? [MAT_CODES.indexOf(p.material)] : [])]);
+    // Hàng phần: [kind, share%, L, a, b, material?, finish?]; material = -1 khi vắng mà có finish; finish 1 = mirror.
+    if (q.parts) row.p = q.parts.map((p) => [KIND_CODES.indexOf(p.kind), Math.round(p.share * 100), ...p.lab, ...(p.material || p.finish ? [p.material ? MAT_CODES.indexOf(p.material) : -1] : []), ...(p.finish ? [1] : [])]);
     if (q.styles?.length) row.s = q.styles;
     if (q.author) row.a = ix(auth, q.author);
     if (q.issues?.length) row.q = q.issues;
@@ -439,7 +454,7 @@ async function main() {
     };
     all[id] = q;
     const main0 = parts?.[0];
-    features.push({ id, role, file, ktx2: ms.ktx2, imageMean: ms.imageMean?.map((v) => +v.toFixed(1)), mainLab: main0?.lab, mainShare: main0?.share, dEmainVsImage: ms.imageMean && main0 ? +dE(ms.imageMean, main0.lab).toFixed(1) : null, nClusters: ms.clusters.length, nMats: ms.nMats, bedNames: BED_SIGNAL_NAME.test(ms.clusters.map((c) => c.names).join(' ')), bedding: parts?.filter((p) => p.kind === 'bedding').reduce((s, p) => s + p.share, 0) ?? null, nBedding: parts?.filter((p) => p.kind === 'bedding').length ?? null, clusters: ms.clusters.slice(0, 8).map((c) => ({ s: +c.share.toFixed(3), lab: linToLab(c.lin).map(Math.round), m: +c.metal.toFixed(2), r: +c.rough.toFixed(2), y: +c.y.toFixed(2), z: +c.z.toFixed(2), up: +c.up.toFixed(2), names: c.names.slice(0, 60) })) });
+    features.push({ id, role, file, ktx2: ms.ktx2, imageMean: ms.imageMean?.map((v) => +v.toFixed(1)), mainLab: main0?.lab, mainShare: main0?.share, dEmainVsImage: ms.imageMean && main0 ? +dE(ms.imageMean, main0.lab).toFixed(1) : null, nClusters: ms.clusters.length, nMats: ms.nMats, bedNames: BED_SIGNAL_NAME.test(ms.clusters.map((c) => c.names).join(' ')), bedding: parts?.filter((p) => p.kind === 'bedding').reduce((s, p) => s + p.share, 0) ?? null, nBedding: parts?.filter((p) => p.kind === 'bedding').length ?? null, clusters: ms.clusters.slice(0, 8).map((c) => ({ s: +c.share.toFixed(3), lab: linToLab(c.lin).map(Math.round), m: +c.metal.toFixed(2), r: +c.rough.toFixed(2), y: +c.y.toFixed(2), z: +c.z.toFixed(2), up: +c.up.toFixed(2), ...(c.finish ? { finish: c.finish } : {}), names: c.names.slice(0, 60) })) });
     if (++n % 100 === 0) console.log(n, `${((Date.now() - t0) / 1000).toFixed(0)} s`);
   }
   const inputs = {
@@ -451,7 +466,7 @@ async function main() {
     [SRC.tags]: existsSync(SRC.tags) ? `rows=${tagRows.length} sha=${sha(readFileSync(SRC.tags)).slice(0, 12)}` : 'absent',
   };
   for (const d of GLB_DIRS) inputs[d] = `glb=${dirHash[d]?.length ?? 0} sha=${sha((dirHash[d] ?? []).sort().join('')).slice(0, 12)}`;
-  const rules = { tier: TIER_RULE, parts: `area-weighted UV samples, k-means per material, merge same kind+material dE<12, drop share<${MIN_SHARE}, max ${MAX_PARTS}`, completeness: 'visual-tags: drop unsure; value with >=2 votes and no rival with >=2' };
+  const rules = { tier: TIER_RULE, parts: `area-weighted UV samples, split by material x mirror flag (metal>=${MIRROR_METAL} & rough<=${MIRROR_ROUGH} per sample, not transmissive) then k-means, merge same kind+material dE<12, drop share<${MIN_SHARE}, max ${MAX_PARTS}`, completeness: 'visual-tags: drop unsure; value with >=2 votes and no rival with >=2' };
   const head = (models) => ({ schema: 1, rev: sha(stable(models)).slice(0, 16), generatedBy: 'scripts/gen-library-quality.mjs', inputs, rules });
   const bundleModels = Object.fromEntries(Object.entries(all).filter(([id]) => roleOf.has(id)).sort(([x], [y]) => (x < y ? -1 : 1)));
   writeFileSync(join(outDir, 'libraryQuality-all.json'), JSON.stringify({ ...head(all), models: all }));

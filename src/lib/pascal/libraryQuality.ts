@@ -29,6 +29,8 @@ export interface QualityPart {
   readonly material?: PartMaterial;
   /** Nguồn của `kind`. */
   readonly kindBy: QualityBy;
+  /** Bề mặt gương (đo): metallic ≥ 0,9 và roughness ≤ 0,15 trên vùng UV dùng, không trong suốt; vắng = không phải gương. */
+  readonly finish?: 'mirror';
 }
 
 export interface ModelQuality {
@@ -100,9 +102,17 @@ const expandRow = (dict: CompactFile['dict'], x: CompactRow): ModelQuality => {
     ...(comp ? { completeness: { v: comp, by: x.c?.[1] === 'm' ? 'm' : 'i' } } : {}),
     ...(x.p
       ? {
-          parts: x.p.map(([k = 6, s = 0, L = 0, A = 0, B = 0, m]) => {
-            const material = m === undefined ? undefined : dict.material[m];
-            return { kind: dict.kind[k] ?? 'other', share: s / 100, lab: [L, A, B] as const, ...(material ? { material } : {}), kindBy: 'i' as const };
+          // Hàng phần: [kind, share%, L, a, b, material?, finish?]; material -1 = vắng; finish 1 = mirror.
+          parts: x.p.map(([k = 6, s = 0, L = 0, A = 0, B = 0, m, f]) => {
+            const material = m === undefined || m < 0 ? undefined : dict.material[m];
+            return {
+              kind: dict.kind[k] ?? 'other',
+              share: s / 100,
+              lab: [L, A, B] as const,
+              ...(material ? { material } : {}),
+              kindBy: 'i' as const,
+              ...(f === 1 ? { finish: 'mirror' as const } : {}),
+            };
           }),
         }
       : {}),
