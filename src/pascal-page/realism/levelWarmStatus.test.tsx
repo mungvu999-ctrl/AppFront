@@ -23,8 +23,7 @@ vi.mock('./levelWarm', () => ({
 const { LevelWarmStatus } = await import('./levelWarmStatus');
 const frame = () => act(() => [...listeners].forEach((f) => f()));
 const label = () => screen.getByTestId('level-warm-status').textContent;
-const stallEl = () => screen.queryByTestId('level-warm-stalled');
-const stallNote = () => ({ textContent: stallEl()?.textContent ?? '', getAttribute: (n: string) => stallEl()?.getAttribute(n) ?? null });
+const stallNote = () => screen.getByTestId('level-warm-stalled');
 
 afterEach(() => {
   ready.clear();
@@ -44,30 +43,15 @@ describe('LevelWarmStatus', () => {
     ready.set('L2', true);
     frame();
     expect(label()).toBe('');
-    expect(listeners.size).toBe(1); // nghe thụ động tiếp để khớp đầu dò;
+    expect(listeners.size).toBe(0);
     expect(noteReady).toHaveBeenCalledWith('L2');
-  });
-
-  it('đã sẵn sàng rồi lại chưa sẵn sàng liền REPEND_FRAMES khung → nhãn hiện lại (khớp đầu dò); dao động ngắn thì không', async () => {
-    const { REPEND_FRAMES } = await import('./levelWarmReady');
-    ready.set('L2', true);
-    render(<LevelWarmStatus levelId="L2" />);
-    ready.set('L2', false);
-    for (let i = 0; i < REPEND_FRAMES - 2; i++) frame();
-    expect(label()).toBe('');
-    ready.set('L2', true);
-    frame();
-    ready.set('L2', false);
-    for (let i = 0; i < REPEND_FRAMES; i++) frame();
-    expect(label()).toBe('Đang chuẩn bị tầng…');
-    expect(screen.queryByTestId('level-warm-stalled')).toBeNull(); // không kẹt → phần tử báo kẹt không có trong DOM
   });
 
   it('tầng đã sẵn sàng → không hiện', () => {
     ready.set('L1', true);
     render(<LevelWarmStatus levelId="L1" />);
     expect(label()).toBe('');
-    expect(listeners.size).toBe(1);
+    expect(listeners.size).toBe(0);
   });
 
   it('đổi nhanh nhiều tầng → trạng thái theo tầng cuối', () => {
@@ -76,7 +60,7 @@ describe('LevelWarmStatus', () => {
     rerender(<LevelWarmStatus levelId="L3" />);
     rerender(<LevelWarmStatus levelId="L1" />);
     expect(label()).toBe('');
-    expect(listeners.size).toBe(1);
+    expect(listeners.size).toBe(0);
     rerender(<LevelWarmStatus levelId="L3" />);
     expect(label()).toBe('Đang chuẩn bị tầng…');
     ready.set('L2', true); // tầng cũ xong: không tắt nhãn của tầng đang chọn
@@ -134,7 +118,7 @@ describe('LevelWarmStatus', () => {
     ready.set('L2', true);
     frame();
     expect(stallNote().textContent).toBe('');
-    expect(listeners.size).toBe(1);
+    expect(listeners.size).toBe(0);
     expect(noteReady).toHaveBeenCalledWith('L2');
   });
 

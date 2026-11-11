@@ -9,18 +9,13 @@ const STATUS_OFF = DISABLED.includes('levelstatus');
 const STALL_UI_OFF = DISABLED.includes('levelstall');
 /** Thông báo "tầng chuẩn bị lâu" tự tắt sau ngần này (ms) — không để chữ treo mãi; tầng vẫn dùng được suốt. */
 export const STALL_NOTICE_MS = 10_000;
-/**
- * Sau khi đã sẵn sàng, nhãn vẫn theo dõi (đọc thụ động, không ép vẽ) để khớp đầu dò: tầng lại chưa sẵn sàng liền
- * ngần này khung (khoá mới thật, không phải dao động một khung) thì nhãn hiện lại.
- */
-export const REPEND_FRAMES = 20;
 
 /**
  * Tầng chưa có trong sổ (vừa thêm, chưa vẽ) coi như sẵn sàng: không có gì để chờ. `stalled` (số chờ không giảm qua
  * `STALL_FRAMES` khung) = thôi chờ: KHÔNG ghi là sẵn sàng (`noteLevelReady`).
  */
-const stateOf = (levelId: string, passive = false): 'ready' | 'stalled' | 'pending' => {
-  const l = levelReadiness({ passive }).find((r) => r.levelId === levelId);
+const stateOf = (levelId: string): 'ready' | 'stalled' | 'pending' => {
+  const l = levelReadiness().find((r) => r.levelId === levelId);
   return !l || l.ready ? 'ready' : l.stalled ? 'stalled' : 'pending';
 };
 
@@ -38,19 +33,14 @@ export function useLevelWarmState(levelId: string | null | undefined, off = STAT
     noteLevelSelected(levelId);
     let timer: ReturnType<typeof setTimeout> | undefined;
     let noticed = false;
-    let wasReady = false;
-    let repend = 0;
     /** `true` = thôi nghe khung. */
     const step = (): boolean => {
-      const s = stateOf(levelId, wasReady);
+      const s = stateOf(levelId);
       if (s === 'ready') {
         noteLevelReady(levelId);
         setUi(null);
-        wasReady = true;
-        repend = 0;
-        return false; // nghe tiếp (thụ động) để nhãn khớp đầu dò
+        return true;
       }
-      if (wasReady && s === 'pending' && ++repend < REPEND_FRAMES) return false;
       if (s === 'pending') {
         if (!noticed) setUi({ id: levelId, s: 'pending' });
         return false;
