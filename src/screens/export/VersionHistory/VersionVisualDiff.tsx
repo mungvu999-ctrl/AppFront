@@ -48,13 +48,21 @@ function highlightIdsOf(visual: VisualDiffModel): readonly string[] {
     return [];
   }
 
-  const wanted = new Set(visual.changedEntityIds);
+  const nodes = visual.scene.nodes;
+  const nodeIds = Object.keys(nodes);
+  const changed = new Set(visual.changedEntityIds);
+  const wallIds = nodeIds.filter((nodeId) => (nodes[nodeId] as { type?: string } | undefined)?.type === 'wall');
+  // Mọi tường (≥ 2) đều đổi — vd. bản gốc rỗng nên "thêm" toàn bộ: tô hết không phân biệt được gì, mà viền chọn của
+  // Pascal còn vẽ cạnh KHUẤT (vàng) của mọi tường bên trong xuyên qua mặt ngoài → mảng loang trên tường ngoài (làn a3,
+  // vòng 11). Khi ấy chỉ tô hàng đang trỏ.
+  const everyWallChanged = wallIds.length > 1 && wallIds.every((nodeId) => changed.has(bodyOfPascalId(nodeId)));
+  const wanted = everyWallChanged ? new Set<string>() : changed;
 
   if (visual.hoveredEntityId !== null) {
     wanted.add(visual.hoveredEntityId);
   }
 
-  return Object.keys(visual.scene.nodes).filter((nodeId) => wanted.has(bodyOfPascalId(nodeId)));
+  return nodeIds.filter((nodeId) => wanted.has(bodyOfPascalId(nodeId)));
 }
 
 export interface VersionVisualDiffProps {

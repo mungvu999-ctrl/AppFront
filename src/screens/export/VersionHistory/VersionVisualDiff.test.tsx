@@ -92,3 +92,36 @@ describe('câu báo dự phòng thư viện', () => {
     expect(screen.getByText('Chưa tải được thư viện nội thất')).toBeTruthy();
   });
 });
+
+describe('tô sáng khi MỌI tường đều đổi (vòng 11, làn a3: viền chọn xuyên tường ngoài)', () => {
+  const WALLS = {
+    nodes: {
+      wall_wall1: { id: 'wall_wall1', type: 'wall' },
+      wall_wall2: { id: 'wall_wall2', type: 'wall' },
+      door_door1: { id: 'door_door1', type: 'door' },
+    },
+    rootNodeIds: ['wall_wall1'],
+  } as unknown as PascalScene;
+
+  const highlightOf = async (patch: Partial<VisualDiffModel>): Promise<unknown> => {
+    const setHighlight = vi.fn();
+    const mount = vi.fn(() => ({ dispose: vi.fn(), setHighlight }));
+    loadMount.mockResolvedValue({ mount });
+    render(<VersionVisualDiff visual={visual({ scene: WALLS, ...patch })} />);
+    await waitFor(() => expect(mount).toHaveBeenCalledTimes(1));
+    ((mount.mock.calls[0] as unknown as [HTMLElement, { onReadyChange: (r: boolean) => void }])[1]).onReadyChange(true);
+    return setHighlight.mock.lastCall?.[0];
+  };
+
+  it('mọi tường trong tập đổi → không tô cả tập', async () => {
+    expect(await highlightOf({ changedEntityIds: ['wall1', 'wall2', 'door1'] })).toEqual([]);
+  });
+
+  it('mọi tường đổi + đang trỏ một hàng → chỉ tô hàng ấy', async () => {
+    expect(await highlightOf({ changedEntityIds: ['wall1', 'wall2'], hoveredEntityId: 'wall2' })).toEqual(['wall_wall2']);
+  });
+
+  it('chỉ một phần tường đổi → tô như cũ', async () => {
+    expect(await highlightOf({ changedEntityIds: ['wall1', 'door1'] })).toEqual(['wall_wall1', 'door_door1']);
+  });
+});
