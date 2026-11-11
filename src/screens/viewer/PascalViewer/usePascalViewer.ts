@@ -497,6 +497,17 @@ export function usePascalViewer({
        đổi từ nguồn ngoài đi qua `setScene` ở hiệu ứng dưới. */
   }, [shouldMount, mountKey, loadMount, attempt, mode, readOnly, explodeLevels, initialTool]);
 
+  /* Rời màn (gỡ hẳn hook): lượt gia hạn URL mẫu đang chạy bị bỏ — không gia hạn/thử lại cho cảnh đã gỡ. Chỉ khi gỡ
+     hẳn, không khi dựng lại khung (lượt tải của khung mới có thể đang dùng chung request). */
+  useEffect(
+    () => () => {
+      void import('@/lib/pascal/sceneLibrary')
+        .then((m) => m.abandonAssetRefresh())
+        .catch(() => undefined);
+    },
+    [],
+  );
+
   /* Cảnh đổi từ nguồn ngoài (người khác sửa, khôi phục phiên bản…) → nạp vào
      editor đang chạy. Tiếng vọng của lượt lưu của chính editor thì bỏ qua. */
   useEffect(() => {

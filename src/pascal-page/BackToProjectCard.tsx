@@ -175,12 +175,12 @@ function Toast({
  * từng chỉ nằm trong `SaveStatusCard` nên người xem không bao giờ thấy).
  */
 function useAssetNotice(): { readonly text: string | null; readonly dismiss: () => void } {
-  const failures = useSyncExternalStore(subscribeAssetRefresh, () => assetRefreshStatus().failures.length);
+  // Theo dõi theo số lỗi TĂNG DẦN (`failureId`), không theo độ dài danh sách: đóng câu báo rồi đổi người (danh sách về
+  // 0) thì lỗi đầu tiên của người mới vẫn hiện (review Codex-2 #7, Claude-A #12).
+  const failureId = useSyncExternalStore(subscribeAssetRefresh, () => assetRefreshStatus().failureId);
   const text = useSyncExternalStore(subscribeAssetRefresh, () => assetRefreshStatus().notice);
-  const [dismissedAt, setDismissedAt] = useState(0);
-  // Danh sách lỗi đã bị xoá (đổi người) rồi đầy lại: số đã đóng cũ không còn nghĩa.
-  const dismissed = dismissedAt <= failures ? dismissedAt : 0;
-  return { text: failures > dismissed ? text : null, dismiss: () => setDismissedAt(failures) };
+  const [dismissedId, setDismissedId] = useState(0);
+  return { text: failureId > dismissedId ? text : null, dismiss: () => setDismissedId(failureId) };
 }
 
 function AssetNoticeToast({ text, onClose }: { readonly text: string; readonly onClose: () => void }) {

@@ -41,8 +41,17 @@ export const absenceOf = (error: ApiError): 'forbidden' | 'notFound' | undefined
   return undefined;
 };
 
-/** Nguồn dự phòng không cần báo: thư viện trống, chưa có phiên, không được phép, không có. */
-const QUIET_FALLBACKS: ReadonlySet<string> = new Set(['fallback:empty', 'fallback:no-session', 'fallback:forbidden', 'fallback:notFound']);
+/** Lượt đọc mất hiệu lực trước khi ghi (đổi người/bị lượt khác thay): không ghi danh mục, không phải lỗi tải. */
+export const STALE_SOURCE = 'fallback:stale' as const;
+
+/** Nguồn dự phòng không cần báo: thư viện trống, chưa có phiên, không được phép, không có, lượt đọc mất hiệu lực. */
+const QUIET_FALLBACKS: ReadonlySet<string> = new Set([
+  'fallback:empty',
+  'fallback:no-session',
+  'fallback:forbidden',
+  'fallback:notFound',
+  STALE_SOURCE,
+]);
 
 /** Dự phòng vì lượt đọc hỏng (người dùng cần biết). */
 export const libraryReadFailed = (source: LibrarySource): boolean => source !== 'server' && !QUIET_FALLBACKS.has(source);
@@ -55,13 +64,17 @@ export const libraryReadFailed = (source: LibrarySource): boolean => source !== 
  */
 export async function loadServerLibrary(
   api: Pick<LibraryApi, 'list'>,
-  /** Ghi vào danh mục SAU khi phản hồi về — nơi gọi kiểm lượt đọc còn hiệu lực trước khi ghi (`sceneLibrary.ts`). */
-  register: (items: Parameters<typeof registerServerLibrary>[0]) => number = registerServerLibrary,
+  /**
+   * Ghi vào danh mục SAU khi phản hồi về — nơi gọi kiểm lượt đọc còn hiệu lực trước khi ghi (`sceneLibrary.ts`);
+   * `null` = lượt đọc mất hiệu lực, không ghi → nguồn `fallback:stale` (không giả `server` với danh mục rỗng).
+   */
+  register: (items: Parameters<typeof registerServerLibrary>[0]) => number | null = registerServerLibrary,
 ): Promise<LibraryLoad> {
   try {
     const result = await api.list();
     if (!result.ok) return { count: 0, source: `fallback:${absenceOf(result.error) ?? result.error.kind}`, version: BUNDLED_LIBRARY_VERSION };
     const count = register(result.data);
+    if (count === null) return { count: 0, source: STALE_SOURCE, version: BUNDLED_LIBRARY_VERSION };
     return count > 0
       ? { count, source: 'server', version: libraryVersionOf(result.data) }
       : { count, source: 'fallback:empty', version: BUNDLED_LIBRARY_VERSION };

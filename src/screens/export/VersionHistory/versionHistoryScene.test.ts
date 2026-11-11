@@ -183,11 +183,10 @@ describe('isOldSceneVersion — "hiện tại" chỉ khi revision KHỚP DƯƠNG
 
   it('Codex #6: tầng đã sửa sau bản mới nhất, hoặc không biết revision → hàng đầu KHÔNG nhận concept hôm nay', () => {
     expect(isOldSceneVersion(true, 'v2', summaries, 8)).toBe(true); // sửa sau v2: v2 là ảnh chụp cũ
-    expect(isOldSceneVersion(true, 'v2', summaries, null)).toBe(true); // chưa biết revision tầng
+    expect(isOldSceneVersion(true, 'v2', summaries, null)).toBeNull(); // chưa biết revision tầng → chờ (Claude-A #4)
     expect(isOldSceneVersion(true, 'v2', new Map(), 7)).toBe(true); // bản tóm tắt chưa có floorRevision
-    expect(versionSceneOptions(none2, isOldSceneVersion(true, 'v2', summaries, null))).toEqual({
-      options: { furnish: 'off' },
-      note: OLD_VERSION_FURNISH_NOTE,
-    });
+    // Chờ: không gắn "Bản cũ", không bơm concept — cảnh chưa dựng tới khi biết revision.
+    expect(versionSceneOptions(none2, isOldSceneVersion(true, 'v2', summaries, null))).toBeNull();
+    expect(isOldSceneVersion(false, 'v2', summaries, null)).toBe(false);
   });
 });

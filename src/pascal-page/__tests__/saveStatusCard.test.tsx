@@ -240,4 +240,27 @@ describe('SaveStatusCard — mẫu thư viện hết hạn không tải lại đ
     act(() => resetSceneLibraryForTests());
     clearServerLibrary();
   });
+
+  it('Codex-2 #7: đóng câu báo, danh sách lỗi về 0 (đổi người) → lỗi đầu tiên sau đó VẪN hiện', async () => {
+    vi.useRealTimers();
+    const { registerServerLibrary, clearServerLibrary } = await import('@/lib/pascal/furnitureCatalog');
+    const { refreshAssetUrl, resetSceneLibraryForTests } = await import('@/lib/pascal/sceneLibrary');
+    const forbidden = async () => ({ list: async () => ({ ok: false, error: { kind: 'forbidden' } }) }) as never;
+    const failOnce = async (id: string): Promise<void> => {
+      registerServerLibrary([{ id, widthMm: 900, heightMm: 800, depthMm: 500, modelUrl: `https://minio.test/${id}.glb?sig=1` }]);
+      await act(async () => {
+        await refreshAssetUrl(`https://minio.test/${id}.glb?sig=1`, 403, forbidden, async () => undefined);
+      });
+    };
+    resetSceneLibraryForTests();
+    render(<BackToProjectCard href="/projects/p1/floors" projectName="Nhà mẫu" />);
+    await failOnce('lib-z1');
+    fireEvent.click(screen.getByRole('button', { name: /đóng/i }));
+    expect(screen.queryByTestId('asset-expired-notice')).toBeNull();
+    act(() => resetSceneLibraryForTests()); // như forget khi đổi người: danh sách lỗi về 0
+    await failOnce('lib-z2');
+    expect(screen.getByTestId('asset-expired-notice')).toBeInTheDocument();
+    act(() => resetSceneLibraryForTests());
+    clearServerLibrary();
+  });
 });

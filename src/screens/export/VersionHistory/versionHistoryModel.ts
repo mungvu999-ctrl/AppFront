@@ -178,6 +178,14 @@ export interface BuildRowsContext {
   readonly loadingIds?: ReadonlySet<string>;
 }
 
+/**
+ * Quyết định "bản hiện tại" DÙNG CHUNG cho hàng danh sách và cảnh 3D (review Claude-A #4): `true`/`false` khi so được
+ * (`floorRevision` của bản BẰNG revision tầng), `null` khi chưa biết revision. Hàng danh sách khi `null` dùng mốc trình
+ * bày "hàng đầu"; cảnh 3D khi `null` thì CHỜ (không gắn "Bản cũ", không bơm concept).
+ */
+export const currentnessOf = (floorRevision: number | null | undefined, currentRevision: number | null): boolean | null =>
+  currentRevision === null || floorRevision == null ? null : floorRevision === currentRevision;
+
 /** Đã đủ dữ kiện để so revision: biết revision của tầng và ít nhất một bản có `floorRevision`. */
 function hasKnownRevisions(
   history: readonly VersionHistoryEntry[],
@@ -275,7 +283,7 @@ export function buildVersionRows(context: BuildRowsContext): readonly VersionRow
         isCountsLoading,
         ...(isCountsUnknown ? { countsUnavailableLabel: COUNTS_UNAVAILABLE_LABEL } : {}),
         // HOP-DONG-MOI §5: hiện tại ⇔ `floorRevision` bằng `revision` của tầng, không phải "hàng đầu".
-        isCurrent: revisionsKnown ? summary?.floorRevision === currentRevision : index === 0,
+        isCurrent: revisionsKnown ? currentnessOf(summary?.floorRevision, currentRevision) === true : index === 0,
         tagLabel: summary?.label ?? null,
         isMetadataOnly,
         retentionNotice: isMetadataOnly ? RETENTION_NOTICE : null,

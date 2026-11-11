@@ -20,7 +20,7 @@ import type { PascalScene } from '@/lib/pascal/types';
 import type { VersionDiff } from '@/lib/versioning/diff';
 
 import type { VersionHistoryCapabilities, VisualDiffModel } from './types';
-import { changedEntityIdsOf } from './versionHistoryModel';
+import { changedEntityIdsOf, currentnessOf } from './versionHistoryModel';
 import { planEntityIdOf } from './versionHistoryPlan';
 import type { VersionSnapshotSource } from './versionSnapshotAdapter';
 
@@ -72,26 +72,31 @@ export const OLD_VERSION_FURNISH_NOTE =
  */
 export function versionSceneOptions(
   concept: SceneConcept | null,
-  isOldVersion: boolean,
+  isOldVersion: boolean | null,
 ): { readonly options: ReturnType<typeof conceptSceneOptions>; readonly note: string | null } | null {
+  // Chưa biết bản cũ hay hiện tại (chưa có revision tầng): chờ, không đoán.
+  if (isOldVersion === null) return null;
   if (isOldVersion) return { options: { furnish: 'off' }, note: OLD_VERSION_FURNISH_NOTE };
   return concept === null ? null : { options: conceptSceneOptions(concept), note: concept.notice };
 }
 
 /**
- * Cảnh đang dựng có phải bản CŨ không — theo ID phiên bản: có ảnh chụp riêng (`hasSnapshot`) và KHÔNG chứng minh được
- * là bản hiện tại. Hiện tại ⇔ `floorRevision` của bản BẰNG revision tầng (khớp dương tính); không biết revision (tầng
- * hoặc bản tóm tắt) thì coi là bản cũ — không dùng mốc "hàng đầu" tạm của danh sách, để ảnh chụp cũ không nhận concept
- * hôm nay (review Codex #6). Không có ảnh chụp thì cảnh là mô hình hiện tại.
+ * Cảnh đang dựng có phải bản CŨ không — theo ID phiên bản: có ảnh chụp riêng (`hasSnapshot`) và `currentnessOf` (dùng
+ * chung với hàng danh sách) nói không phải bản hiện tại. Không có ảnh chụp thì cảnh là mô hình hiện tại (`false`).
+ * `null` = chưa biết revision → nơi gọi CHỜ (không dùng mốc "hàng đầu" để bơm concept hôm nay vào ảnh chụp cũ — review
+ * Codex #6 — cũng không gắn nhãn "Bản cũ" cho bản mới nhất — review Claude-A #4). Bản tóm tắt vắng (id lạ) = bản cũ.
  */
 export const isOldSceneVersion = (
   hasSnapshot: boolean,
   versionId: string | null,
   summaries: ReadonlyMap<string, { readonly floorRevision?: number | null }>,
   currentRevision: number | null,
-): boolean =>
-  hasSnapshot &&
-  !(currentRevision !== null && versionId !== null && summaries.get(versionId)?.floorRevision === currentRevision);
+): boolean | null => {
+  if (!hasSnapshot) return false;
+  if (currentRevision === null) return null;
+  const current = versionId === null ? false : currentnessOf(summaries.get(versionId)?.floorRevision, currentRevision);
+  return current === null ? true : !current;
+};
 
 /**
  * Đồ thị không gian thành cảnh Pascal — cảnh chuẩn `standardSceneOf` (cùng luật bày với màn 3D chính); `options` mang

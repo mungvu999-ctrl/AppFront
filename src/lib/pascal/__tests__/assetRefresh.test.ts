@@ -6,6 +6,7 @@ import { isServerModel, modelSrcOf } from '../furnitureCatalog';
 import {
   abandonAssetRefresh,
   ASSET_EXPIRED_NOTICE,
+  assetRefreshStatusAll,
   assetRefreshStatus,
   assetLoadedOk,
   ensureSceneLibrary,
@@ -51,7 +52,7 @@ describe('refreshAssetUrl — URL ký hết hạn', () => {
     expect(fresh).not.toBe(old);
     expect(fresh).toBe(modelSrcOf('lib-a'));
     expect(list).toHaveBeenCalledTimes(2);
-    expect(assetRefreshStatus()).toEqual({ refreshed: 1, retriedSame: 0, dropped: 0, failures: [], notice: null });
+    expect(assetRefreshStatus()).toEqual({ refreshed: 1, retriedSame: 0, dropped: 0, failures: [], failureId: 0, notice: null });
   });
 
   it('máy chủ trả URL y hệt (ký theo mốc giờ): thử lại ĐÚNG MỘT lần URL cũ; 403 mãi → dừng ở trần, báo', async () => {
@@ -245,19 +246,62 @@ describe('fetchWithAssetRefresh — lớp chặn fetch dùng chung mọi bản t
     expect(assetRefreshStatus().notice).toBe(ASSET_EXPIRED_NOTICE);
   });
 
-  it('Request (như FileLoader) → URL tuyệt đối khớp mẫu; giữ header/credentials khi thử lại', async () => {
+  it('Request (như FileLoader) → thử lại GIỮ NGUYÊN mọi tuỳ chọn (Codex-2 #2: mode/redirect/cache/credentials/headers)', async () => {
     await ensureSceneLibrary();
     const old = modelSrcOf('lib-a');
     forbid = (u) => u === old;
-    const seen: RequestInit[] = [];
+    const seen: Request[] = [];
     const spy = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (init) seen.push(init);
+      if (typeof input === 'object' && !(input instanceof URL)) seen.push(input);
       return next(input, init);
     }) as typeof fetch;
-    const res = await fetchWithAssetRefresh(new Request(old, { headers: { 'x-a': '1' }, credentials: 'include' }), undefined, spy, undefined, noWait);
+    const req = new Request(old, { headers: { 'x-a': '1' }, credentials: 'include', mode: 'same-origin', redirect: 'manual', cache: 'no-store' });
+    const res = await fetchWithAssetRefresh(req, undefined, spy, undefined, noWait);
     expect(res.status).toBe(200);
-    expect(seen[0]?.credentials).toBe('include');
-    expect(new Headers(seen[0]?.headers).get('x-a')).toBe('1');
+    const retry = seen[1];
+    expect(retry?.url).toBe(modelSrcOf('lib-a'));
+    expect([retry?.credentials, retry?.mode, retry?.redirect, retry?.cache]).toEqual(['include', 'same-origin', 'manual', 'no-store']);
+    expect(retry?.headers.get('x-a')).toBe('1');
+  });
+
+  it('Codex-2 #2: POST/thân request → không gia hạn, không thử lại (đi thẳng)', async () => {
+    await ensureSceneLibrary();
+    forbid = () => true;
+    const res = await fetchWithAssetRefresh(modelSrcOf('lib-a'), { method: 'POST', body: 'x' }, next, undefined, noWait);
+    expect(res.status).toBe(403);
+    expect(requested.length).toBe(1);
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
+  it('Codex-2 #3: rời dự án khi phản hồi ĐẦU còn treo → 403 về sau không gia hạn/thử lại', async () => {
+    await ensureSceneLibrary();
+    const old = modelSrcOf('lib-a');
+    let answer: (r: Response) => void = () => undefined;
+    const slow = ((input: RequestInfo | URL) => {
+      requested.push(String(input));
+      return requested.length === 1 ? new Promise<Response>((r) => (answer = r)) : Promise.resolve(new Response('ok'));
+    }) as typeof fetch;
+    const pending = fetchWithAssetRefresh(old, undefined, slow, undefined, noWait);
+    abandonAssetRefresh();
+    answer(new Response('expired', { status: 403 }));
+    expect((await pending).status).toBe(403);
+    expect(requested.length).toBe(1);
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(assetRefreshStatus()).toMatchObject({ dropped: 1, failures: [] });
+  });
+
+  it('Codex-2 #3: signal huỷ trong lúc chờ lùi → người gọi nhận ngay, không thử lại', async () => {
+    await ensureSceneLibrary();
+    forbid = () => true;
+    const ctl = new AbortController();
+    let sleeping: () => void = () => undefined;
+    const sleep = () => new Promise<void>((r) => (sleeping = r));
+    const pending = fetchWithAssetRefresh(modelSrcOf('lib-a'), { signal: ctl.signal }, next, undefined, sleep);
+    await vi.waitFor(() => expect(requested.length).toBe(1));
+    ctl.abort();
+    expect((await pending).status).toBe(403);
+    sleeping();
+    expect(requested.length).toBe(1);
   });
 
   it('URL không phải mẫu thư viện (API 401) → không gia hạn, không đọc thư viện', async () => {
@@ -295,7 +339,7 @@ describe('fetchWithAssetRefresh — lớp chặn fetch dùng chung mọi bản t
     installAssetRefresh(undefined, noWait);
     const wrapped = globalThis.fetch;
     expect(wrapped).not.toBe(before);
-    expect((globalThis as { __assetRefreshStatus?: unknown }).__assetRefreshStatus).toBe(assetRefreshStatus);
+    expect((globalThis as { __assetRefreshStatus?: unknown }).__assetRefreshStatus).toBe(assetRefreshStatusAll);
     installAssetRefresh(undefined, noWait);
     expect(globalThis.fetch).toBe(wrapped);
     uninstallAssetRefreshForTests();
@@ -423,5 +467,89 @@ describe('review Codex vòng 11 (#1, #2, #3)', () => {
     expect(await refreshAssetUrl(modelSrcOf('lib-a'), 403, undefined, noWait)).not.toBeNull();
     expect(isServerModel('mine-u1')).toBe(false);
     expect(isServerModel('lib-a')).toBe(true);
+  });
+});
+
+describe('review Codex-2 / Claude-A (lát 2)', () => {
+  it('Codex-2 #1: đọc theo tuổi CŨ về sau lượt gia hạn mới hơn → không ghi đè danh mục mới hơn', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(0);
+    await ensureSceneLibrary();
+    vi.setSystemTime(SIGNED_URL_MAX_AGE_MS + 1);
+    let releaseAge: (v: unknown) => void = () => undefined;
+    list.mockImplementationOnce(() => new Promise((r) => (releaseAge = r)));
+    const age = ensureSceneLibrary();
+    await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    list.mockResolvedValueOnce({ ok: true, data: [item('lib-a', 300)] });
+    expect(await refreshAssetUrl(modelSrcOf('lib-a'), 403, undefined, noWait)).toContain('sig=300');
+    releaseAge({ ok: true, data: [item('lib-a', 200), item('mine-u1', 200)] });
+    await age;
+    expect(modelSrcOf('lib-a')).toContain('sig=300');
+    expect(isServerModel('mine-u1')).toBe(false); // không khôi phục mẫu lượt mới hơn đã gỡ
+  });
+
+  it('Codex-2 #1 (ngược lại): gia hạn CŨ về sau đọc theo tuổi mới hơn → giữ danh mục mới hơn', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(0);
+    await ensureSceneLibrary();
+    let releaseRefresh: (v: unknown) => void = () => undefined;
+    list.mockImplementationOnce(() => new Promise((r) => (releaseRefresh = r)));
+    const refresh = refreshAssetUrl(modelSrcOf('lib-a'), 403, undefined, noWait);
+    await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    vi.setSystemTime(SIGNED_URL_MAX_AGE_MS + 1);
+    list.mockResolvedValueOnce({ ok: true, data: [item('lib-a', 500)] });
+    await ensureSceneLibrary();
+    releaseRefresh({ ok: true, data: [item('lib-a', 400), item('mine-u1', 400)] });
+    expect(await refresh).toContain('sig=500');
+    expect(isServerModel('mine-u1')).toBe(false);
+  });
+
+  it('Claude-A #11: đổi tài khoản giữa lượt đọc → nguồn fallback:stale (không giả server), không câu báo', async () => {
+    let release: (v: unknown) => void = () => undefined;
+    list.mockImplementationOnce(() => new Promise((r) => (release = r)));
+    const first = ensureSceneLibrary();
+    await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+    signIn('u2');
+    release({ ok: true, data: [item('lib-a', 9), item('mine-u1', 9)] });
+    const lib = await first;
+    expect(lib).toMatchObject({ source: 'fallback:stale', notice: null });
+    expect(isServerModel('mine-u1')).toBe(false);
+    expect((await ensureSceneLibrary()).source).toBe('server'); // lượt sau đọc lại cho u2
+    expect(isServerModel('mine-u2')).toBe(true);
+  });
+
+  it('Codex-2 #5: hai bó cùng tài liệu → MỘT lớp chặn, request giao cho bó sở hữu URL, đầu dò gộp', async () => {
+    uninstallAssetRefreshForTests();
+    const before = globalThis.fetch;
+    vi.stubGlobal('location', { search: '?probe=1', href: 'http://app.test/' });
+    const other = { owns: (u: string) => u.startsWith('https://other.test/'), handle: vi.fn(async () => new Response('b')), status: () => ({ refreshed: 2, retriedSame: 0, dropped: 0, failures: [{ modelId: 'x', reason: 'exhausted' as const }], failureId: 1, notice: ASSET_EXPIRED_NOTICE }) };
+    const hubKey = Symbol.for('appfront.assetRefresh.hub');
+    installAssetRefresh(undefined, noWait);
+    (globalThis as unknown as Record<symbol, { bundles: unknown[] }>)[hubKey]!.bundles.push(other);
+    expect(globalThis.fetch).not.toBe(before);
+    await globalThis.fetch('https://other.test/m.glb');
+    expect(other.handle).toHaveBeenCalledTimes(1);
+    const probe = (globalThis as { __assetRefreshStatus?: () => { refreshed: number; failures: unknown[]; notice: string | null } }).__assetRefreshStatus!();
+    expect(probe.refreshed).toBe(2);
+    expect(probe.notice).toBe(ASSET_EXPIRED_NOTICE);
+    const bundles = (globalThis as unknown as Record<symbol, { bundles: unknown[] }>)[hubKey]!.bundles;
+    bundles.splice(bundles.indexOf(other), 1);
+    uninstallAssetRefreshForTests();
+    expect(globalThis.fetch).toBe(before);
+    vi.unstubAllGlobals();
+  });
+
+  it('Codex-2 #7 / Claude-A #12: failureId tăng dần, không đặt lại khi đổi người', async () => {
+    await ensureSceneLibrary();
+    list.mockResolvedValueOnce({ ok: false, error: { kind: 'forbidden' } });
+    await refreshAssetUrl(modelSrcOf('lib-a'), 403, undefined, noWait);
+    const firstId = assetRefreshStatus().failureId;
+    expect(firstId).toBeGreaterThan(0);
+    signIn('u2');
+    await ensureSceneLibrary();
+    expect(assetRefreshStatus().failures).toEqual([]);
+    list.mockResolvedValueOnce({ ok: false, error: { kind: 'forbidden' } });
+    await refreshAssetUrl(modelSrcOf('lib-a'), 403, undefined, noWait);
+    expect(assetRefreshStatus().failureId).toBeGreaterThan(firstId);
   });
 });

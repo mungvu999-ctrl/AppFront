@@ -8,6 +8,7 @@ import {
   absoluteUrl,
   CATALOG_MODELS,
   clearServerLibrary,
+  isServerModel,
   modelSrcOf,
   replaceServerLibrary,
   serverModelIdOfUrl,
@@ -19,6 +20,7 @@ import {
   LIBRARY_FALLBACK_NOTICE,
   libraryReadFailed,
   loadServerLibrary,
+  STALE_SOURCE,
   type LibraryLoad,
 } from './serverLibrary';
 import type { PascalScene } from './types';
@@ -62,6 +64,22 @@ let settledOwner: string | null = null;
 let settledAt = 0;
 /** Tăng mỗi lần quên lượt đọc (đổi người/đổi phiên): lượt gia hạn bắt đầu ở thế hệ cũ bị bỏ. */
 let generation = 0;
+/**
+ * MỘT thứ tự cho MỌI đường ghi danh mục (đọc theo tuổi `ensureSceneLibrary` + đọc lại theo mẫu `refreshLibrary`):
+ * mỗi request lấy số khi BẮT ĐẦU; chỉ ghi khi số ≥ số đã ghi gần nhất → phản hồi cũ về muộn không ghi đè danh mục mới
+ * hơn, không khôi phục mẫu đã gỡ (review Codex-2 #1).
+ */
+let writeSeq = 0;
+let acceptedSeq = 0;
+const nextWriteSeq = (): number => {
+  writeSeq += 1;
+  return writeSeq;
+};
+const acceptWrite = (seq: number): boolean => {
+  if (seq < acceptedSeq) return false;
+  acceptedSeq = seq;
+  return true;
+};
 
 const currentOwner = (): string | null => getSessionSnapshot().user?.id ?? null;
 
@@ -105,6 +123,7 @@ export function ensureSceneLibrary(getApi: LibraryApiSource = defaultApi): Promi
   if (shared !== null) return shared;
   /** Người của phiên mà lượt đọc này dùng (chốt sau khi có client — phiên có thể còn `unknown` lúc gọi). */
   let reqOwner: string | null = null;
+  const seq = nextWriteSeq();
   const mine: Promise<SceneLibrary> = getApi()
     .then((api): Promise<LibraryLoad> | LibraryLoad => {
       reqOwner = currentOwner();
@@ -112,17 +131,27 @@ export function ensureSceneLibrary(getApi: LibraryApiSource = defaultApi): Promi
         ? { count: 0, source: 'fallback:no-session' as const, version: BUNDLED_LIBRARY_VERSION }
         : // Ghi danh mục chỉ khi lượt đọc này còn hiệu lực (chưa bị quên vì đổi người, chưa bị lượt mới thay): phản
           // hồi cũ về muộn không ghi đè URL mới / danh mục của người sau. Ghi = THAY cả thư viện (mẫu bị gỡ quyền rơi ra).
-          loadServerLibrary(api, (items): number =>
-            shared === mine && currentOwner() === reqOwner ? replaceServerLibrary(items) : items.length,
-          );
+          // Thứ tự chung với lượt gia hạn theo mẫu (`acceptWrite`): phản hồi CŨ HƠN lượt đã ghi thì không ghi đè.
+          loadServerLibrary(api, (items): number | null => {
+            if (shared !== mine || currentOwner() !== reqOwner) return null;
+            return acceptWrite(seq) ? replaceServerLibrary(items) : items.length;
+          });
     })
     .catch((): LibraryLoad => ({ count: 0, source: 'fallback:threw', version: BUNDLED_LIBRARY_VERSION }))
     .then((load) => {
+      // Lượt đọc đã mất hiệu lực (đổi người/bị quên): không ghi gì, không chốt; lượt sau đọc lại.
+      if (load.source === STALE_SOURCE) {
+        if (shared === mine) {
+          shared = null;
+          sharedPending = false;
+        }
+        return withNotice(load);
+      }
       // Đọc lại vì quá tuổi mà hỏng: giữ thư viện cũ (URL cũ vẫn gia hạn được từng mẫu), lượt dựng sau thử lại.
       // Danh sách rỗng/403/404 là câu trả lời HỢP LỆ (không phải lỗi mạng): nhận nó và gỡ thư viện cũ.
       const result = keep !== null && libraryReadFailed(load.source) ? keep : withNotice(load);
       if (keep !== null && result !== keep && shared === mine) {
-        if (load.source !== 'server') clearServerLibrary();
+        if (load.source !== 'server' && acceptWrite(seq)) clearServerLibrary();
         // Lượt đọc mới thành công: trần lượt gia hạn từng mẫu tính lại từ đầu.
         assetAttempts.clear();
         sameUrlRetried.clear();
@@ -175,7 +204,8 @@ interface AssetFailure {
 }
 
 /** Số liệu gia hạn (đề nghị nối `__pascalProbe.assetRefresh()` vào `assetRefreshStatus`). */
-const assetLog: { refreshed: number; retriedSame: number; dropped: number; readonly failures: AssetFailure[] } = {
+const assetLog: { refreshed: number; retriedSame: number; dropped: number; failureId: number; readonly failures: AssetFailure[] } = {
+  failureId: 0,
   refreshed: 0,
   retriedSame: 0,
   dropped: 0,
@@ -187,8 +217,6 @@ const sameUrlRetried = new Set<string>();
 /** Gia hạn đang chạy theo mẫu: nhiều lời gọi cùng mẫu (FileLoader gọi onError của TỪNG người gọi) dùng chung một lượt. */
 const inflight = new Map<string, Promise<string | null>>();
 let refreshing: Promise<AssetRefreshFailure | null> | null = null;
-/** Id mẫu có trong lượt đọc lại gần nhất (mẫu vắng = người dùng đã mất quyền với nó). */
-let refreshedIds: ReadonlySet<string> = new Set();
 const listeners = new Set<() => void>();
 
 export interface AssetRefreshStatus {
@@ -199,6 +227,8 @@ export interface AssetRefreshStatus {
   /** Lượt gia hạn bị bỏ vì phiên/người đã đổi (`stale`) — có chủ ý, KHÔNG tính là lỗi mẫu, không vào `failures`. */
   readonly dropped: number;
   readonly failures: readonly AssetFailure[];
+  /** Số thứ tự TĂNG DẦN của lỗi mẫu gần nhất (không đặt lại khi xoá danh sách): câu báo đã đóng theo dõi theo số này. */
+  readonly failureId: number;
   /** `ASSET_EXPIRED_NOTICE` khi có mẫu hỏng hẳn. */
   readonly notice: string | null;
 }
@@ -208,6 +238,7 @@ export const assetRefreshStatus = (): AssetRefreshStatus => ({
   retriedSame: assetLog.retriedSame,
   dropped: assetLog.dropped,
   failures: [...assetLog.failures],
+  failureId: assetLog.failureId,
   notice: assetLog.failures.length > 0 ? ASSET_EXPIRED_NOTICE : null,
 });
 
@@ -228,6 +259,7 @@ const fail = (modelId: string, reason: AssetRefreshFailure): null => {
     return null;
   }
   assetLog.failures.push({ modelId, reason });
+  assetLog.failureId += 1;
   notify();
   return null;
 };
@@ -240,6 +272,7 @@ const refreshLibrary = (getApi: LibraryApiSource): Promise<AssetRefreshFailure |
   // thì lượt này là stale — không nạp thư viện của người mới vào danh mục của người cũ (Codex #1).
   const owner = settledOwner;
   const isStale = (): boolean => gen !== generation || currentOwner() !== owner;
+  const seq = nextWriteSeq();
   const mine = (async (): Promise<AssetRefreshFailure | null> => {
     if (isStale()) return 'stale';
     const api = await getApi().catch(() => null);
@@ -249,9 +282,11 @@ const refreshLibrary = (getApi: LibraryApiSource): Promise<AssetRefreshFailure |
     if (isStale()) return 'stale';
     if (result === null) return 'failed';
     if (!result.ok) return absenceOf(result.error) === undefined ? 'failed' : 'no-permission';
-    replaceServerLibrary(result.data);
-    refreshedIds = new Set(result.data.map((i) => i.id));
-    settledAt = Date.now();
+    // Có lượt ghi mới hơn đã về (đọc theo tuổi bắt đầu sau): giữ danh mục mới hơn, URL lấy từ đó.
+    if (acceptWrite(seq)) {
+      replaceServerLibrary(result.data);
+      settledAt = Date.now();
+    }
     return null;
   })().finally(() => {
     if (refreshing === mine) refreshing = null;
@@ -307,8 +342,8 @@ async function refreshOnce(
   const failure = await refreshLibrary(getApi);
   if (failure === null && isStale()) return fail(modelId, 'stale');
   if (failure !== null) return fail(modelId, failure);
-  // Lượt đọc mới không còn mẫu này = người dùng mất quyền với nó.
-  if (!refreshedIds.has(modelId)) return fail(modelId, 'no-permission');
+  // Danh mục (đã THAY bằng lượt đọc mới nhất) không còn mẫu này = người dùng mất quyền với nó.
+  if (!isServerModel(modelId)) return fail(modelId, 'no-permission');
   const fresh = modelSrcOf(modelId);
   if (absoluteUrl(fresh) === absoluteUrl(url)) {
     // URL y hệt: thử lại ĐÚNG MỘT lần URL cũ (403 thoáng qua/proxy), vẫn trong trần lượt của mẫu; lần sau thì dừng.
@@ -346,21 +381,37 @@ export const assetLoadedOk = (url: string): void => {
 };
 
 let installed = false;
-let restore: (() => void) | null = null;
 
+const isRequest = (input: RequestInfo | URL): input is Request => typeof input === 'object' && !(input instanceof URL);
 const urlOfRequest = (input: RequestInfo | URL): string =>
-  typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  typeof input === 'string' ? input : isRequest(input) ? input.url : input.href;
 
-/** Request lặp lại với URL mới: giữ header/credentials/signal của request gốc (FileLoader truyền `Request`). */
-const initOf = (input: RequestInfo | URL, init: RequestInit | undefined): RequestInit | undefined =>
-  typeof input === 'string' || input instanceof URL
-    ? init
-    : { method: input.method, headers: input.headers, credentials: input.credentials, signal: input.signal, ...init };
+/**
+ * Chỉ gia hạn request tải mẫu: GET/HEAD không thân (FileLoader). Request khác đi thẳng — thử lại một POST/thân stream
+ * là đổi nghĩa request (review Codex-2 #2).
+ */
+const refreshable = (input: RequestInfo | URL, init: RequestInit | undefined): boolean => {
+  const method = (init?.method ?? (isRequest(input) ? input.method : 'GET')).toUpperCase();
+  return (method === 'GET' || method === 'HEAD') && init?.body == null;
+};
+
+/** Request lặp lại với URL mới, GIỮ NGUYÊN mọi tuỳ chọn (mode/redirect/cache/integrity/credentials/headers/signal…). */
+const retryInputOf = (input: RequestInfo | URL, fresh: string): RequestInfo => (isRequest(input) ? new Request(fresh, input) : fresh);
+
+/** Promise về `null` khi `signal` huỷ — người gọi đã huỷ không phải chờ lượt gia hạn (chờ lùi tới 2 s). */
+const unlessAborted = <T>(work: Promise<T>, signal: AbortSignal | null | undefined): Promise<T | null> =>
+  signal == null
+    ? work
+    : signal.aborted
+      ? Promise.resolve(null)
+      : Promise.race([work, new Promise<null>((resolve) => signal.addEventListener('abort', () => resolve(null), { once: true }))]);
 
 /**
  * Lớp chặn fetch: 401/403 của URL mẫu thư viện → `refreshAssetUrl` → tải lại bằng URL mới NGAY TRONG lời gọi fetch ấy
  * (người gọi — FileLoader của bất kỳ bản three nào — chỉ thấy phản hồi cuối). Hết lượt/không phải mẫu → trả nguyên phản
  * hồi lỗi: Pascal hiện hình thay thế + `assetRefreshStatus().notice`. Vòng lặp hữu hạn nhờ trần của `refreshAssetUrl`.
+ * Vòng đời chụp LÚC VÀO fetch: rời dự án (`abandonAssetRefresh`) hoặc huỷ `signal` trong lúc chờ phản hồi đầu/gia hạn
+ * → trả phản hồi đang có, không gia hạn/thử lại cho cảnh đã gỡ (review Codex-2 #3).
  */
 export async function fetchWithAssetRefresh(
   input: RequestInfo | URL,
@@ -369,24 +420,73 @@ export async function fetchWithAssetRefresh(
   getApi: LibraryApiSource = defaultApi,
   sleep: (ms: number) => Promise<void> = defaultSleep,
 ): Promise<Response> {
+  if (!refreshable(input, init)) return next(input, init);
+  const gen = generation;
+  const signal = init?.signal ?? (isRequest(input) ? input.signal : undefined);
+  const gone = (): boolean => gen !== generation || signal?.aborted === true;
   let url = urlOfRequest(input);
   let response = await next(input, init);
   while (response.status === 401 || response.status === 403) {
-    const fresh = await refreshAssetUrl(url, response.status, getApi, sleep);
+    if (serverModelIdOfUrl(url) === undefined) return response;
+    if (gone()) {
+      assetLog.dropped += 1;
+      return response;
+    }
+    const fresh = await unlessAborted(refreshAssetUrl(url, response.status, getApi, sleep), signal);
     if (fresh === null) return response;
+    if (gone()) {
+      assetLog.dropped += 1;
+      return response;
+    }
     url = fresh;
-    response = await next(fresh, initOf(input, init));
+    response = await next(retryInputOf(input, fresh), init);
   }
   if (response.ok) assetLoadedOk(url);
   return response;
 }
 
 /**
+ * Trạng thái dùng chung MỌI bó JS trên cùng tài liệu (SPA + pascal-mount, khoá `Symbol.for`): MỘT lớp chặn fetch, mỗi
+ * bó đăng ký phần của mình (danh mục, vòng đời, bộ đếm). Lớp chặn giao request cho bó có danh mục chứa URL ấy; đầu dò
+ * gộp số liệu của mọi bó — bó nạp sau không còn bị "đã cài" mà không hoạt động (review Codex-2 #5).
+ */
+interface AssetRefreshBundle {
+  readonly owns: (url: string) => boolean;
+  readonly handle: (input: RequestInfo | URL, init: RequestInit | undefined, next: typeof fetch) => Promise<Response>;
+  readonly status: () => AssetRefreshStatus;
+}
+interface AssetRefreshHub {
+  readonly bundles: AssetRefreshBundle[];
+  restore: (() => void) | null;
+}
+const HUB_KEY = Symbol.for('appfront.assetRefresh.hub');
+const hub = (): AssetRefreshHub => {
+  const root = globalThis as unknown as Record<symbol, AssetRefreshHub | undefined>;
+  root[HUB_KEY] ??= { bundles: [], restore: null };
+  return root[HUB_KEY];
+};
+
+/** Số liệu gộp của mọi bó trên tài liệu (đầu dò `?probe=1`). */
+export const assetRefreshStatusAll = (): AssetRefreshStatus => {
+  const all = hub().bundles.map((b) => b.status());
+  const failures = all.flatMap((x) => x.failures);
+  return {
+    refreshed: all.reduce((n, x) => n + x.refreshed, 0),
+    retriedSame: all.reduce((n, x) => n + x.retriedSame, 0),
+    dropped: all.reduce((n, x) => n + x.dropped, 0),
+    failures,
+    failureId: all.reduce((n, x) => n + x.failureId, 0),
+    notice: failures.length > 0 ? ASSET_EXPIRED_NOTICE : null,
+  };
+};
+
+let bundle: AssetRefreshBundle | null = null;
+
+/**
  * Nối gia hạn vào `fetch` của tài liệu (`interceptPlatformFetch`): mọi bản three — gói editor3d, gói pascal-mount mà
  * lịch sử phiên bản/viewer SPA nạp, three của SPA — tải GLB qua `FileLoader` → `fetch(req)` tự do, nên một lớp chặn phủ
- * hết, không vá prototype từng bản, không vá mã vendor. Gói nào gọi trước thì lớp của gói ấy thắng (SPA gọi
- * `ensureSceneLibrary` trước khi nạp pascal-mount, nên danh mục/phiên dùng là của SPA).
- * Tắt: `?disable=assetrefresh`. `?probe=1` → `window.__assetRefreshStatus()` để đo ở trang không có `__pascalProbe`.
+ * hết, không vá prototype từng bản, không vá mã vendor. Mỗi bó đăng ký vào trạng thái dùng chung (`hub`).
+ * Tắt: `?disable=assetrefresh`. `?probe=1` → `window.__assetRefreshStatus()` (gộp mọi bó).
  */
 export function installAssetRefresh(
   getApi: LibraryApiSource = defaultApi,
@@ -396,16 +496,33 @@ export function installAssetRefresh(
   const params = new URLSearchParams(globalThis.location?.search ?? '');
   if (params.getAll('disable').some((v) => v.split(',').includes('assetrefresh'))) return;
   installed = true;
-  restore = interceptPlatformFetch((input, init, next) => fetchWithAssetRefresh(input, init, next, getApi, sleep));
+  const shared = hub();
+  bundle = {
+    owns: (url) => serverModelIdOfUrl(url) !== undefined,
+    handle: (input, init, next) => fetchWithAssetRefresh(input, init, next, getApi, sleep),
+    status: assetRefreshStatus,
+  };
+  shared.bundles.push(bundle);
+  shared.restore ??= interceptPlatformFetch((input, init, next) => {
+    const url = urlOfRequest(input);
+    const owner = hub().bundles.find((b) => b.owns(url));
+    return owner === undefined ? next(input, init) : owner.handle(input, init, next);
+  });
   if (params.get('probe') === '1') {
-    (globalThis as { __assetRefreshStatus?: () => AssetRefreshStatus }).__assetRefreshStatus = assetRefreshStatus;
+    (globalThis as { __assetRefreshStatus?: () => AssetRefreshStatus }).__assetRefreshStatus = assetRefreshStatusAll;
   }
 }
 
-/** Gỡ lớp chặn fetch (test; bản dựng không gọi). */
+/** Gỡ phần của bó này; bó cuối cùng gỡ lớp chặn fetch (test; bản dựng không gọi). */
 export const uninstallAssetRefreshForTests = (): void => {
-  restore?.();
-  restore = null;
+  const shared = hub();
+  const at = bundle === null ? -1 : shared.bundles.indexOf(bundle);
+  if (at >= 0) shared.bundles.splice(at, 1);
+  bundle = null;
+  if (shared.bundles.length === 0) {
+    shared.restore?.();
+    shared.restore = null;
+  }
   installed = false;
 };
 
