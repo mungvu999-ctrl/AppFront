@@ -135,7 +135,7 @@ jobs:
         env:
           COVERAGE_SHARD: '1'
       - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
+        if: always()
         with:
           name: vitest-blob-${{ matrix.shard }}
           path: .vitest-reports/
@@ -145,7 +145,7 @@ jobs:
 
   unit:
     needs: unit-shard
-    if: ${{ !cancelled() }}
+    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -191,10 +191,10 @@ jobs:
   #
   # `playwright.config.ts` đặt `channel: 'chrome'` (Chrome thật), nên cài `chrome` chứ không `chromium`; cờ GPU không
   # đặt thêm: trang dùng WebGPURenderer có dự phòng WebGL2, headless Linux chạy SwiftShader (không có GPU/WebGPU thật).
-  # Config đặt `retries: 2`, `workers: 1` khi có `CI`.
+  # `--retries=1` (config mặc định 2 retry × test 8 phút vượt hạn job); hạn 25 phút, upload chạy cả khi job đỏ.
   e2e-stability:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -206,11 +206,11 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chrome
-      - run: pnpm e2e e2e/pascal-stability.spec.ts --workers=1
+      - run: pnpm e2e e2e/pascal-stability.spec.ts --workers=1 --retries=1
         env:
           E2E_PORT: '5191'
       - uses: actions/upload-artifact@v4
-        if: ${{ failure() }}
+        if: always()
         with:
           name: playwright-report
           path: |

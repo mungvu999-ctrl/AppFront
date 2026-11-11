@@ -23,14 +23,14 @@ import type { Browser, Page } from '@playwright/test';
 import { fixtureF1, fixtureF5 } from '../src/lib/pascal/__fixtures__';
 
 import { installFakeApi, type WireGraphDocument } from './fixtures/fakeApi';
-import { CONCEPT_FOLDERS, conceptState, richLibraryBody } from './fixtures/stabilityLibrary';
+import { CONCEPT_FOLDER, conceptState, DEFAULT_CLOSET_FOLDER, richLibraryBody } from './fixtures/stabilityLibrary';
 
 const PROJECT_ID = 'P-FIXTURE0001';
 const VIEWPORT = { width: 1440, height: 900 } as const;
 /** Như `pascal-perf.spec.ts`: gói Pascal lớn, máy bận thì "đã dựng xong" tới muộn. */
 const READY_TIMEOUT_MS = 150_000;
 /** Mỗi ca mở trang 2 lần (đối chứng + biến thể). */
-const TEST_TIMEOUT_MS = 480_000;
+const TEST_TIMEOUT_MS = 240_000;
 const SLOW_MS = 4_000;
 /** Trùng `LIBRARY_FALLBACK_NOTICE` (`src/lib/pascal/serverLibrary.ts`) — phần đầu, đủ phân biệt. */
 const LIBRARY_NOTICE = 'Chưa tải được thư viện nội thất';
@@ -246,7 +246,7 @@ test.describe('Ổn định trang 3D Pascal', () => {
     try {
       await waitBuilt(page);
       console.log(`đối chứng: ${base.nItems} món · ${base.library} · ${base.libraryVersion} · concept ${base.concept} · ready lúc thư viện còn treo = ${readyBeforeLibrary.value}`);
-      expect(readyBeforeLibrary.value, 'ready() phải chưa true khi thư viện còn treo').not.toBe(true);
+      expect(readyBeforeLibrary.value, 'ready() phải chưa true khi thư viện còn treo').toBe(false);
       expect(await manifestOf(page)).toEqual(base);
       expect(writes).toEqual([]);
     } finally {
@@ -367,7 +367,8 @@ test.describe('Ổn định trang 3D Pascal', () => {
       expect(manifest.concept).toBe('done');
       const folders = new Set(manifest.itemSrc.map((entry) => /\/pascal\/items\/([^/]+)\//u.exec(entry)?.[1]));
       // Ít nhất một mẫu concept chọn theo vai phải hiện trong cảnh.
-      expect(CONCEPT_FOLDERS.some((folder) => folders.has(folder)), JSON.stringify([...folders])).toBe(true);
+      expect(folders.has(CONCEPT_FOLDER), JSON.stringify([...folders])).toBe(true);
+      expect(folders.has(DEFAULT_CLOSET_FOLDER), JSON.stringify([...folders])).toBe(false);
       expect(writes).toEqual([]);
     } finally {
       await page.context().close();
@@ -386,7 +387,8 @@ test.describe('Ổn định trang 3D Pascal', () => {
     const slow = await open(browser, { graphDoc: f1Ext, library: { rich: true, delayMs: SLOW_MS }, concept: true, conceptDelayMs: 1_500 });
     try {
       await waitBuilt(slow.page);
-      expect(slow.readyBeforeLibrary.value, 'ready() phải chưa true khi thư viện còn treo').not.toBe(true);
+      expect(slow.conceptDelayed.count, 'trang phải đọc design-concept').toBeGreaterThan(0);
+      expect(slow.readyBeforeLibrary.value, 'ready() phải chưa true khi thư viện còn treo').toBe(false);
       expect(await manifestOf(slow.page)).toEqual(base);
       expect(slow.writes).toEqual([]);
     } finally {

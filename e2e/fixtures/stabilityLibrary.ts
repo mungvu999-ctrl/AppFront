@@ -14,7 +14,7 @@ const MODELS: readonly (readonly [string, Group])[] = [
   ['sofa', 'sofa'], ['armchair-ph', 'sofa'],
   ['closet', 'storage'], ['bookshelf', 'storage'], ['bookshelf-ph', 'storage'],
   ['bathroom-sink', 'sanitary'], ['bathtub', 'sanitary'],
-  ['coffee-machine', 'kitchen'], ['closet-gen', 'kitchen'],
+  ['coffee-machine', 'kitchen'], ['ball', 'kitchen'],
   ['ac-block', 'technical'], ['air-conditioning', 'technical'], ['ceiling-fan', 'technical'], ['alarm-keypad', 'technical'],
   ['cactus', 'decor'], ['bush', 'decor'], ['ceramic-vase', 'decor'], ['books', 'decor'],
 ];
@@ -35,12 +35,14 @@ export const richLibraryBody = (requestUrl: string): unknown[] =>
 
 /** Mẫu concept chọn theo vai (id thư mục đóng gói có trong danh mục). */
 const ROLE_MODELS = {
-  doubleBed: 'bed-sf', singleBed: 'bed-sf', closet: 'closet', dresser: 'closet', bookshelf: 'bookshelf', diningChair: 'armchair-ph',
+  doubleBed: 'bed-sf', singleBed: 'bed-sf', closet: 'closet-gen', dresser: 'closet-gen', bookshelf: 'bookshelf', diningChair: 'armchair-ph',
   armchair: 'armchair-ph', sofa: 'sofa', nightstand: 'bedside-table', coffeeTable: 'coffee-table', desk: 'coffee-table',
-  diningTable: 'coffee-table', fridge: 'closet', counter: 'closet', toilet: 'bathroom-sink', bathtub: 'bathtub', shower: 'bathtub',
-  basin: 'bathroom-sink', washer: 'closet', plant: 'bush', smallPlant: 'cactus', rug: 'books', roundRug: 'books',
+  diningTable: 'coffee-table', fridge: 'closet-gen', counter: 'closet-gen', toilet: 'bathroom-sink', bathtub: 'bathtub', shower: 'bathtub',
+  basin: 'bathroom-sink', washer: 'closet-gen', plant: 'bush', smallPlant: 'cactus', rug: 'books', roundRug: 'books',
 } as const;
-export const CONCEPT_FOLDERS: readonly string[] = ['bed-sf', 'closet', 'sofa'];
+export const CONCEPT_FOLDER = 'closet-gen';
+/** Mẫu mặc định của vai tủ (kind wardrobe): concept đã đổi sang CONCEPT_FOLDER, nên không được xuất hiện. */
+export const DEFAULT_CLOSET_FOLDER = 'closet';
 
 const STAMP = '2026-11-01T00:00:00.000Z';
 
