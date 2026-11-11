@@ -120,8 +120,6 @@ export function isLevelReady(l: { pendingAssets: number; warmed: boolean; shown:
  * về nghỉ), tắt nhãn "đang chuẩn bị"; đầu dò ghi `stalled`. Số chờ giảm lại thì tự hết kẹt.
  */
 export const STALL_FRAMES = 600;
-/** Tầng đang hiện kẹt → tự thử lại (`levelWarmFrame`, xoá theo dõi tiến triển) tối đa ngần này lần mỗi tầng mỗi cảnh; hết thì báo kẹt. */
-export const MAX_STALL_RETRIES = 2;
 export interface Progress {
   best: number;
   flat: number;
@@ -209,13 +207,11 @@ const phaseStats = {
   fastSkips: 0,
   /** Vật tầng ấm đã sẵn sàng nên không gọi vẽ trong khung ấm. */
   readySkips: 0,
-  stallRetries: 0,
 };
 /** Trong lời gọi vẽ của một vật tầng ấm (bộ đo bind/pipeline/texture chỉ ghi lúc này). */
 let inWarmObj = false;
 /** Khung ấm có vật bị dời không tra khoá → không được kết luận "xong" ở khung đó. */
 let uncounted = false;
-const stallRetries = new Map<string, number>();
 const stats = {
   installCalls: 0,
   installed: false,
@@ -307,7 +303,6 @@ function refreshRoots(scene: unknown): void {
     progress.clear();
     stalledShown.clear();
     stalledWarm.clear();
-    stallRetries.clear();
   }
   rootIds = next;
 }
@@ -444,10 +439,8 @@ export function levelWarmFrame(scene: unknown, draw: () => void): void {
         state.warmed.add(id);
         stalledWarm.delete(id);
       }
-      // Kẹt → tự thử lại tại đây (một chỗ, không phụ thuộc UI còn nghe hay không); hết lượt mới ghi `stalled`.
-      if (trackProgress(progress, id, work)) {
-        if (!retryStalled(id)) stalledShown.add(id);
-      } else stalledShown.delete(id);
+      if (trackProgress(progress, id, work)) stalledShown.add(id);
+      else stalledShown.delete(id);
     }
   }
   sampling = false;
@@ -633,24 +626,6 @@ export function installLevelWarm(renderer: unknown, off = URL_OFF): void {
   }
 }
 
-/**
- * Tầng kẹt → thử lại: xoá theo dõi tiến triển + cờ kẹt của tầng (tầng ẩn được chọn làm ấm lại, tầng hiện được nhường lại),
- * tối đa `MAX_STALL_RETRIES` lần mỗi tầng mỗi cảnh. `false` = hết lượt (UI báo kẹt; chuyển tầng theo đường thường: W2 dựng
- * khi vật được vẽ).
- */
-export function retryStalled(levelId: string): boolean {
-  const n = stallRetries.get(levelId) ?? 0;
-  if (n >= MAX_STALL_RETRIES) return false;
-  stallRetries.set(levelId, n + 1);
-  phaseStats.stallRetries++;
-  progress.delete(levelId);
-  progress.delete(`warm:${levelId}`);
-  stalledShown.delete(levelId);
-  stalledWarm.delete(levelId);
-  markDirty('level-retry');
-  return true;
-}
-
 export interface LevelReadiness {
   levelId: string;
   shown: boolean;
@@ -666,8 +641,8 @@ export interface LevelReadiness {
   /** = không còn đồ GLB chờ VÀ `compiled` (tầng chưa ấm thêm: W2/W1 hết việc). Nhãn UI và đầu dò dùng đúng trường này. */
   ready: boolean;
   /**
-   * Số việc chờ không giảm qua `STALL_FRAMES` khung lấy mẫu, SAU `MAX_STALL_RETRIES` lần tự thử lại: không sẵn sàng, thôi
-   * chờ. Tầng đang hiện chỉ xét kẹt khi hiện (kẹt lúc làm ấm ẩn không tính).
+   * Số việc chờ không giảm qua `STALL_FRAMES` khung lấy mẫu liên tiếp: không sẵn sàng, thôi chờ (không có "thử lại": xoá
+   * bộ đếm không làm three dựng lại gì, chỉ hoãn thông báo). Tầng đang hiện chỉ xét kẹt khi hiện.
    */
   stalled: boolean;
   /**
@@ -690,12 +665,14 @@ export function levelReadiness(sample = true): LevelReadiness[] {
   }
   const items = unsettledItems();
   const busy = w2Busy();
+  const nodes = useScene.getState().nodes as Record<string, { visible?: boolean } | undefined>;
   return [...rootIds].map(([o, levelId]) => {
     const pendingAssets = items.get(levelId) ?? 0;
     const pendingDraws = lastPending.get(levelId) ?? null;
     const warmed = state.warmed.has(levelId);
     const touchedLastFrame = lastTouch.get(levelId) === lastSampleFrame;
-    const ready = isLevelReady({ pendingAssets, warmed, shown: o.visible, touchedLastFrame, pendingDraws, w2Busy: busy });
+    // Tác giả tắt mắt tầng và nó không vẽ: không có gì để chuẩn bị (nếu không: pending mãi, nhãn treo + ép vẽ).
+    const ready = (!o.visible && nodes[levelId]?.visible === false) || isLevelReady({ pendingAssets, warmed, shown: o.visible, touchedLastFrame, pendingDraws, w2Busy: busy });
     const stalled = !ready && (o.visible ? stalledShown : stalledWarm).has(levelId);
     const compiled = touchedLastFrame ? pendingDraws === 0 : warmed;
     const status = ready ? 'ready' : stalled ? 'stalled' : 'pending';
@@ -714,6 +691,9 @@ export function onLevelWarmFrame(f: () => void): () => void {
  * mẫu khi này dù tầng đã sẵn sàng; W2 rảnh thì không có gì mới để chuẩn bị nên khỏi lấy mẫu (vòng vẽ được nghỉ).
  */
 export const levelWorkActive = (): boolean => w2Busy() && !w2Stalled;
+
+/** Số thứ tự khung lấy mẫu gần nhất: đổi = có số đo mới (nhãn đọc lại ngay; không đổi thì đọc thưa). */
+export const levelSampleSeq = (): number => lastSampleFrame;
 
 /** Luật w3 đã áp và khung sống đang chạy qua `levelWarmFrame` (chẩn đoán; nhãn KHÔNG dựa vào nó — vẫn nghe khung). */
 export const levelWarmActive = (): boolean => stats.frameCalls > 0;

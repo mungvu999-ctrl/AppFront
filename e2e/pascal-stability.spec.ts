@@ -333,6 +333,32 @@ test.describe('Ổn định trang 3D Pascal', () => {
       // Nhãn "Đang chuẩn bị tầng…" (nếu có) phải tự tắt.
       const status = page.getByTestId('level-warm-status');
       if ((await status.count()) > 0) await expect(status).toHaveText('', { timeout: LEVEL_READY_CEILING_MS });
+      // Bất biến (review A #3/#7, Codex 6): tầng ĐANG CHỌN (`levelWarmStats().switch.levelId` — đúng tầng nhãn theo) chưa
+      // sẵn sàng thì nhãn hoặc thông báo kẹt phải hiện. Mỗi lần đọc chờ 2 rAF + một nhịp cho React commit; chỉ kết luận im
+      // lặng khi kéo dài qua 3 lần đọc liên tiếp (vài khung). Quan sát tới khi sẵn sàng + 3 s; vi phạm đầu tiên được trả về
+      // và khẳng định tường minh (không bị nuốt nếu sau đó tầng sẵn sàng).
+      const silence = await page.evaluate(async (ceilingMs) => {
+        const probe = (window as unknown as { __pascalProbe?: { levelReadiness(): LevelReadiness[] | null; levelWarmStats(): { switch?: { levelId?: string | null } } | null } }).__pascalProbe;
+        const text = (id: string) => document.querySelector(`[data-testid="${id}"]`)?.textContent?.trim() ?? '';
+        const commit = () => new Promise((f) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(f, 0))));
+        const t0 = performance.now();
+        let readyAt: number | null = null;
+        let silent = 0;
+        while (performance.now() - t0 < ceilingMs && (readyAt === null || performance.now() - readyAt < 3_000)) {
+          const id = probe?.levelWarmStats()?.switch?.levelId;
+          const row = id ? probe?.levelReadiness()?.find((r) => r.levelId === id) : undefined;
+          await commit();
+          const again = id ? probe?.levelReadiness()?.find((r) => r.levelId === id) : undefined;
+          if (row && again && !row.ready && !again.ready && text('level-warm-status') === '' && text('level-warm-stalled') === '') {
+            if (++silent >= 3) return `IM LẶNG: ${JSON.stringify(again)}`;
+          } else silent = 0;
+          if (again?.ready) readyAt ??= performance.now();
+          else readyAt = null;
+          await new Promise((f) => setTimeout(f, 100));
+        }
+        return 'ok';
+      }, LEVEL_READY_CEILING_MS);
+      expect(silence, 'tầng đang chọn ready:false mà nhãn và thông báo kẹt đều trống').toBe('ok');
       // Mọi tầng đang hiện báo sẵn sàng (luật w3 phải đã nạp: `null` = chưa áp → đỏ).
       await expect
         .poll(
@@ -341,24 +367,11 @@ test.describe('Ổn định trang 3D Pascal', () => {
               const rows = (window as unknown as ProbeWindow).__pascalProbe?.levelReadiness();
               if (!rows) return 'chưa có levelReadiness';
               const shown = rows.filter((row) => row.shown);
-              // Bất biến: tầng đang hiện chưa sẵn sàng thì phải có nhãn hoặc thông báo kẹt — UI không được im lặng.
-              const text = (id: string) => document.querySelector(`[data-testid="${id}"]`)?.textContent?.trim() ?? '';
-              if (shown.some((row) => !row.ready) && text('level-warm-status') === '' && text('level-warm-stalled') === '') {
-                const again = (window as unknown as ProbeWindow).__pascalProbe?.levelReadiness()?.filter((row) => row.shown) ?? [];
-                if (again.some((row) => !row.ready)) return `IM LẶNG: ${JSON.stringify(again)}`;
-              }
-              return shown.length > 0 && shown.every((row) => row.ready) ? 'ready' : 'pending';
+              return shown.length > 0 && shown.every((row) => row.ready) ? 'ready' : JSON.stringify(shown);
             }),
           { timeout: LEVEL_READY_CEILING_MS },
         )
-        .not.toBe('pending');
-      // Kết thúc poll ở 'ready'; chuỗi "IM LẶNG…" làm đỏ ngay với dòng trạng thái kèm theo.
-      expect(
-        await page.evaluate(() => {
-          const shown = (window as unknown as ProbeWindow).__pascalProbe?.levelReadiness()?.filter((row) => row.shown) ?? [];
-          return shown.length > 0 && shown.every((row) => row.ready) ? 'ready' : JSON.stringify(shown);
-        }),
-      ).toBe('ready');
+        .toBe('ready');
 
       // Số món theo tầng: đúng như một lần mở KHÔNG đổi tầng, và tầng cuối không ít hơn đồ của bộ mẫu.
       const perLevel = await itemsPerLevel(page);

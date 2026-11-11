@@ -8,12 +8,15 @@ const noteSelected = vi.fn();
 const noteReady = vi.fn();
 const sampled = vi.fn();
 let work = false;
+let seq = 0;
+let holdSeq = false;
 vi.mock('./levelWarm', () => ({
   levelReadiness: (sample = true) => {
     sampled(sample);
     return [...rows].map(([levelId, r]) => ({ levelId, shown: true, fresh: true, ...r }));
   },
   levelWorkActive: () => work,
+  levelSampleSeq: () => seq,
   noteLevelSelected: (id: string) => noteSelected(id),
   noteLevelReady: (id: string) => noteReady(id),
   onLevelWarmFrame: (f: () => void) => {
@@ -23,7 +26,11 @@ vi.mock('./levelWarm', () => ({
 }));
 
 const { LevelWarmStatus } = await import('./levelWarmStatus');
-const frame = () => act(() => [...listeners].forEach((f) => f()));
+const frame = () =>
+  act(() => {
+    if (!holdSeq) seq++; // mặc định mỗi khung có mẫu mới
+    [...listeners].forEach((f) => f());
+  });
 const label = () => screen.getByTestId('level-warm-status').textContent;
 const stallNote = () => screen.getByTestId('level-warm-stalled').textContent;
 const set = (id: string, status: Status, extra: { shown?: boolean; fresh?: boolean } = {}) => rows.set(id, { status, ...extra });
@@ -34,6 +41,8 @@ afterEach(() => {
   noteSelected.mockClear();
   noteReady.mockClear();
   sampled.mockClear();
+  work = false;
+  holdSeq = false;
 });
 
 describe('LevelWarmStatus — nhãn = levelReadiness().status, không bao giờ ready:false mà im lặng', () => {
@@ -154,6 +163,45 @@ describe('LevelWarmStatus — nhãn = levelReadiness().status, không bao giờ 
     set('L2', 'pending');
     frame();
     expect(stallNote()).toBe('');
+    expect(label()).toBe('Đang chuẩn bị tầng…');
+  });
+
+  it('Review A #1: tầng chọn đã kẹt → KHÔNG xin mẫu (tầng khác còn hiện không kéo vòng vẽ chạy mãi)', () => {
+    set('L2', 'stalled');
+    set('L1', 'pending'); // tầng khác đang hiện (bóng / chế độ chồng), chưa kẹt
+    render(<LevelWarmStatus levelId="L2" />);
+    sampled.mockClear();
+    frame();
+    frame();
+    expect(sampled).toHaveBeenCalled();
+    expect(sampled).not.toHaveBeenCalledWith(true);
+    expect(stallNote()).not.toBe('');
+  });
+
+  it('Review A #8: sẵn sàng, không mẫu mới → đọc thưa (mỗi IDLE_READ_EVERY khung), có mẫu mới → đọc ngay', async () => {
+    const { IDLE_READ_EVERY } = await import('./levelWarmReady');
+    set('L2', 'ready');
+    render(<LevelWarmStatus levelId="L2" />);
+    frame();
+    holdSeq = true;
+    sampled.mockClear();
+    for (let i = 0; i < IDLE_READ_EVERY * 2; i++) frame();
+    expect(sampled).toHaveBeenCalledTimes(2);
+    set('L2', 'pending'); // đồ GLB mới về: thấy chậm nhất IDLE_READ_EVERY khung
+    for (let i = 0; i < IDLE_READ_EVERY; i++) frame();
+    expect(label()).toBe('Đang chuẩn bị tầng…');
+    set('L2', 'ready');
+    holdSeq = false;
+    frame(); // pending → xin mẫu mỗi khung; mẫu mới báo ready
+    expect(label()).toBe('');
+  });
+
+  it('Review A #6: đổi tầng → nhãn đúng ngay ở lần render đầu (useLayoutEffect, không có lần vẽ trống)', () => {
+    set('L1', 'ready');
+    set('L2', 'pending');
+    const { rerender } = render(<LevelWarmStatus levelId="L1" />);
+    expect(label()).toBe('');
+    rerender(<LevelWarmStatus levelId="L2" />);
     expect(label()).toBe('Đang chuẩn bị tầng…');
   });
 
