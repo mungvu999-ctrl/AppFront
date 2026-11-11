@@ -7,8 +7,18 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Furniture, RoomUsage } from '@/domain/spatial/types';
 
 import { clearServerLibrary, registerServerLibrary } from '../furnitureCatalog';
+import COLORS from '../libraryColors.json' with { type: 'json' };
 import LIBRARY from '../libraryRoles.json' with { type: 'json' };
-import { chairSetFolderOf, fitsSpot, roomVarietyPickOf, varietyFlagsOf, workChairsOf, type VarietyFlag } from '../roomVariety';
+import {
+  chairSetFolderOf,
+  fitsSpot,
+  guardRejectOf,
+  roomVarietyPickOf,
+  varietyFlagsOf,
+  workChairsOf,
+  type Swatch,
+  type VarietyFlag,
+} from '../roomVariety';
 import { sceneStyleOf } from '../sceneStyles';
 import { contextRolesOf, modelFolderOf, roomVarietyReport, type LayerStyle } from '../sceneVariety';
 
@@ -150,5 +160,35 @@ describe('roomVariety — chọn mẫu', () => {
     const kept = picks(chairs, ['chairset'], all, 'kitchen');
     expect(kept).toEqual(picks(chairs, [], all, 'kitchen'));
     expect(roomVarietyReport().tables['F-tbl']?.chairs).toBe(4);
+  });
+});
+
+/* Lát 2 — luật chặn với dữ liệu màu thật (`libraryColors.json` từ hồ sơ ảnh) của 4 ca QA ảnh đã thấy xấu đi. */
+describe('roomVariety — luật chặn (dữ liệu thật)', () => {
+  const colors = (COLORS as unknown as { colors: Record<string, Swatch[]> }).colors;
+  // Cỡ (m) đo từ GLB trong hồ sơ (`sizeMm`): [rộng, cao, sâu].
+  const g = (id: string, dims?: [number, number, number]) => ({ colors: colors[id], dims });
+
+  it('(b) 2tang khách / ch10 bếp 2: tủ thấp hoạ tiết → tủ cao gỗ đỏ nâu bị loại (cao 1,98 / 1,17 > 1,25)', () => {
+    expect(guardRejectOf(g('storage-display-walnut-tall', [0.66, 1.98, 0.42]), g('storage-sideboard-geo-doors', [1.01, 1.17, 0.4]), true)).toBe('size');
+  });
+
+  it('(a) cùng cỡ thì vẫn loại vì màu trội lệch tông gỗ (ΔE > 15)', () => {
+    expect(guardRejectOf(g('storage-display-walnut-tall'), g('storage-sideboard-geo-doors'), true)).toBe('color');
+  });
+
+  it('(c) 2tang ghế bàn học: ghế vỏ vàng nghệ ngoài bảng màu (ghế cũ + trung tính); ghế xoay xám đạt', () => {
+    expect(guardRejectOf(g('chair-desk-shell-black'), g('chair-dining-wishbone-white'), false)).toBe('fabric');
+    expect(guardRejectOf(g('chair-grey-swivel-quilted-b'), g('chair-dining-wishbone-white'), false)).toBeUndefined();
+  });
+
+  it('(c) cn03/ch10/2tang giường: chăn xanh 32 % (họ "grey" theo màu trội) bị loại; giường trơn kem đạt', () => {
+    expect(guardRejectOf(g('bed-double-oak-pro'), g('bed-white-oak-headboard'), true)).toBe('fabric');
+    expect(guardRejectOf(g('bed-tufted-upholstered-cream-a71'), g('bed-white-oak-headboard'), true)).toBeUndefined();
+  });
+
+  it('(d) thiếu dữ liệu màu → loại (giữ mẫu cũ); mẫu cũ so với chính nó luôn đạt', () => {
+    expect(guardRejectOf({ colors: undefined }, g('bed-white-oak-headboard'), true)).toBe('nodata');
+    expect(guardRejectOf(g('bed-white-oak-headboard'), g('bed-white-oak-headboard'), true)).toBeUndefined();
   });
 });

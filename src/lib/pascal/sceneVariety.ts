@@ -15,10 +15,14 @@ import { CATALOG_MODELS, isServerModel, VARIANT_MODEL } from './furnitureCatalog
 import LIBRARY_QC_JSON from './libraryQc.json' with { type: 'json' };
 import LIBRARY_ROLES_JSON from './libraryRoles.json' with { type: 'json' };
 import { rectOfFurniture, rectsOverlap } from './placement';
+import LIBRARY_COLORS_JSON from './libraryColors.json' with { type: 'json' };
 import {
   chairSetFolderOf,
   fitsSpot,
   fnv1a,
+  guardRejectOf,
+  type GuardRule,
+  type Swatch,
   roomVarietyPickOf,
   VARIETY_FLAGS_ON,
   workChairsOf,
@@ -318,6 +322,25 @@ interface VarietyEntry {
   readonly role: string;
   readonly folder: string | null;
 }
+/** Màu đo từ ảnh của mẫu thư viện (lát 2): id → [[L, a, b, tỉ phần]]. */
+const LIBRARY_COLORS = (LIBRARY_COLORS_JSON as unknown as { readonly colors: Readonly<Record<string, readonly Swatch[]>> }).colors;
+/** Vai món lớn (luật (a): gần màu trội của mẫu đang thay + trần độ rực). */
+const LARGE_ROLES: ReadonlySet<FurnitureRole> = new Set([
+  'doubleBed', 'singleBed', 'closet', 'dresser', 'cabinet', 'bookshelf', 'desk', 'diningTable', 'coffeeTable', 'nightstand', 'bench',
+]);
+/** Đếm ứng viên bị loại theo luật trong lượt dựng (+ `kept` = không ứng viên đạt, giữ mẫu cũ). */
+const GUARD_REJECTS = new Map<GuardRule | 'kept', number>();
+const bump = (key: GuardRule | 'kept'): void => {
+  GUARD_REJECTS.set(key, (GUARD_REJECTS.get(key) ?? 0) + 1);
+};
+/** Ứng viên `folder` có đạt luật chặn so với mẫu đang thay `ref` không (đếm lý do loại). Chính `ref` luôn đạt. */
+const guardOk = (folder: string, ref: string, role: FurnitureRole): boolean => {
+  if (folder === ref) return true;
+  const input = (id: string) => ({ colors: LIBRARY_COLORS[id], dims: CATALOG_MODELS[id]?.dimensions });
+  const why = guardRejectOf(input(folder), input(ref), LARGE_ROLES.has(role));
+  if (why !== undefined) bump(why);
+  return why === undefined;
+};
 /** Mẫu cuối của mọi món trong lượt dựng (kể cả khi không cờ — số đo trước/sau). */
 const VARIETY_LOG = new Map<string, VarietyEntry>();
 type VarietyRule = 'room' | 'deskchair' | 'chairset';
@@ -367,11 +390,13 @@ const styleTierOf = (folder: string, wanted: readonly string[]): number => {
 const libraryModelOf = (f: Shaped & Pick<Furniture, 'id'> & Partial<Pick<Furniture, 'roomId'>>, role: FurnitureRole, style: SceneStyle): string | null => {
   const flags = varietyOf(style);
   // `roomvariety`: ghế bàn học rút trong mẫu ghế làm việc (khi pool có), không dùng ghế ăn.
-  const work =
-    role === 'diningChair' && flags.has('roomvariety') && !harmonySuspended && isDeskChair(f) && inVarietyScope(f, flags)
-      ? WORK_CHAIRS.filter(isServerModel)
-      : [];
-  const all = work.length > 0 ? work : libraryFoldersOf(role, f.variant).filter(isServerModel);
+  const normal = libraryFoldersOf(role, f.variant).filter(isServerModel);
+  const wantWork = role === 'diningChair' && flags.has('roomvariety') && !harmonySuspended && isDeskChair(f) && inVarietyScope(f, flags);
+  // Ghế làm việc cũng qua luật chặn, so với ghế luật cũ chọn; không mẫu nào đạt → đường ghế thường (giữ mẫu cũ).
+  const ref = wantWork ? rankedLibraryPickOf(f, role, plainStyleOf(style), normal) : null;
+  const work = ref === null ? [] : WORK_CHAIRS.filter((folder) => isServerModel(folder) && guardOk(folder, ref, role));
+  if (wantWork && work.length === 0) bump('kept');
+  const all = work.length > 0 ? work : normal;
   const pick = rankedLibraryPickOf(f, role, style, all);
   if (pick === null || !QC_EXCLUDED.has(pick)) return pick;
   // Mẫu bị loại (libraryQc.json): xếp hạng lại trên phần còn lại; cả vai hết mẫu hợp lệ thì giữ hành vi cũ.
@@ -438,8 +463,10 @@ const rankedLibraryPickOf = (
   const flags = varietyOf(style);
   const [short, long] = footprintOf(f);
   const roomId = f.roomId;
+  const varietyOn =
+    first !== null && roomId !== undefined && flags.has('roomvariety') && !harmonySuspended && !PER_ITEM_ROLES.has(role) && inVarietyScope(f, flags);
   const eligible =
-    first !== null && roomId !== undefined && flags.has('roomvariety') && !harmonySuspended && !PER_ITEM_ROLES.has(role) && inVarietyScope(f, flags)
+    varietyOn && first !== null
       ? ranked.filter((r) => {
           const dims = CATALOG_MODELS[r.folder]?.dimensions;
           return (
@@ -449,10 +476,12 @@ const rankedLibraryPickOf = (
             r.hue[0] === head.hue[0] &&
             !QC_EXCLUDED.has(r.folder) &&
             dims !== undefined &&
-            fitsSpot(dims, short, long)
+            fitsSpot(dims, short, long) &&
+            guardOk(r.folder, first, role)
           );
         })
       : [];
+  if (varietyOn && eligible.every((r) => r.folder === first)) bump('kept');
   const houseTone = rulesOffOf(style).has('tone') ? undefined : (style as LayerStyle).woodTone;
   const desk = isDeskChair(f);
   const varied =
@@ -736,6 +765,7 @@ export const contextRolesOf = (
   QC_SWAPS.clear();
   VARIETY_LOG.clear();
   VARIETY_CHANGES.clear();
+  GUARD_REJECTS.clear();
   const roles = new Map<string, FurnitureRole>();
   const toiletsOf = new Map<string, Placed[]>();
   const beds = items.filter((f) => f.kind === 'bed');
@@ -800,6 +830,8 @@ interface VarietyReport {
   >;
   /** Bàn ăn thật → số ghế, số mẫu ghế, các mẫu. */
   readonly tables: Record<string, { readonly chairs: number; readonly models: number; readonly folders: readonly (string | null)[] }>;
+  /** Ứng viên bị loại theo luật chặn (nodata/size/color/chroma/fabric) + `kept` = lượt chỉ còn mẫu cũ. */
+  readonly guard: Record<string, number>;
   /** Món đổi mẫu do luật (provenance): id → { from, to, rule: room|deskchair|chairset }. */
   readonly changes: Record<string, { readonly from: string | null; readonly to: string | null; readonly rule: VarietyRule }>;
 }
@@ -837,6 +869,7 @@ export const roomVarietyReport = (): VarietyReport => {
       ]),
     ),
     tables,
+    guard: Object.fromEntries(GUARD_REJECTS),
     changes: Object.fromEntries(VARIETY_CHANGES),
   };
 };

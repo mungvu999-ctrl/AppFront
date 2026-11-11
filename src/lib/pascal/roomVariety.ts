@@ -111,3 +111,55 @@ export const chairSetFolderOf = (members: readonly ChairMember[]): string | null
   const top = Math.max(...count.values());
   return fixed.find((m) => count.get(m.folder as string) === top)?.folder ?? null;
 };
+
+/* ---- Luật chặn "xấu đi" (lát 2): ứng viên so với MẪU ĐANG THAY (mẫu luật cũ chọn), dữ liệu màu = hồ sơ ảnh (Lab, tỉ phần). ---- */
+
+/** Một màu đo từ ảnh mẫu: [L, a, b, tỉ phần]. */
+export type Swatch = readonly [number, number, number, number];
+export interface GuardInput {
+  /** Màu đo (`libraryColors.json`); thiếu = không phán được màu. */
+  readonly colors?: readonly Swatch[] | undefined;
+  /** [rộng, cao, sâu] (m). */
+  readonly dims?: readonly [number, number, number] | undefined;
+}
+/** Màu tính là "đáng kể" từ tỉ phần này (chăn, nệm ghế…), không chỉ màu trội. */
+export const SIGNIFICANT_SHARE = 0.15;
+/** (a) món lớn: ΔE76 màu trội tới màu trội của mẫu đang thay. */
+export const LARGE_DE_MAX = 15;
+/** (a) món lớn: trần độ rực màu trội (hoặc không quá mẫu đang thay). */
+export const LARGE_C_MAX = 16;
+/** (b) tăng tối đa so với mẫu đang thay: chiều cao, khối tích. */
+export const GROW_H_MAX = 1.25;
+export const GROW_V_MAX = 1.5;
+/** (c) màu có độ rực tới chừng này là trung tính (xám/be/trắng/đen). */
+export const NEAR_GREY_C = 6;
+/** (c) màu nổi phải gần (ΔE76) một màu đáng kể của mẫu đang thay — bảng màu mặc định = mẫu cũ + trung tính. */
+export const FABRIC_DE_MAX = 12;
+
+export type GuardRule = 'nodata' | 'size' | 'color' | 'chroma' | 'fabric';
+
+const chromaOf = (s: Swatch): number => Math.hypot(s[1], s[2]);
+const deltaE = (x: Swatch, y: Swatch): number => Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
+const dominantOf = (colors: readonly Swatch[]): Swatch | undefined => [...colors].sort((x, y) => y[3] - x[3])[0];
+const significantOf = (colors: readonly Swatch[]): readonly Swatch[] => colors.filter((s) => s[3] >= SIGNIFICANT_SHARE);
+
+/**
+ * Lý do loại ứng viên so với mẫu đang thay; `undefined` = đạt. Thứ tự: thiếu dữ liệu màu, (b) cao/khối, (a) món lớn
+ * lệch màu trội hoặc rực quá trần, (c) có màu nổi đáng kể ngoài bảng màu (mẫu cũ + trung tính).
+ */
+export const guardRejectOf = (cand: GuardInput, ref: GuardInput, large: boolean): GuardRule | undefined => {
+  if (cand.colors === undefined || ref.colors === undefined || cand.colors.length === 0 || ref.colors.length === 0) return 'nodata';
+  if (cand.dims !== undefined && ref.dims !== undefined) {
+    const [cw, ch, cd] = cand.dims;
+    const [rw, rh, rd] = ref.dims;
+    if (ch > rh * GROW_H_MAX || cw * ch * cd > rw * rh * rd * GROW_V_MAX) return 'size';
+  }
+  const cDom = dominantOf(cand.colors) as Swatch;
+  const rDom = dominantOf(ref.colors) as Swatch;
+  if (large && deltaE(cDom, rDom) > LARGE_DE_MAX) return 'color';
+  if (large && chromaOf(cDom) > Math.max(LARGE_C_MAX, chromaOf(rDom))) return 'chroma';
+  const palette = significantOf(ref.colors);
+  const loud = significantOf(cand.colors).filter((s) => chromaOf(s) > NEAR_GREY_C);
+  if (loud.some((s) => !palette.some((p) => deltaE(s, p) <= FABRIC_DE_MAX))) return 'fabric';
+  return undefined;
+};
