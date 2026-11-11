@@ -944,7 +944,8 @@ const itemNodeOf = (
       // chỉ còn `stair` dùng nó làm chỗ giữ chỗ — chưa có mô hình thang (ngoài C2).
       // Mẫu máy chủ lưu đường `/items/<id>/…`; URL thật là URL ký mới của lượt mở này.
       src:
-        fit !== null && isServerModel(fit.folder)
+        // Mẫu đã lưu theo thư mục catalog (`/items/<thư mục>/…`): cùng đường hoán đổi hiển thị (realism, `-uv`) như đồ sinh.
+        fit !== null && (isServerModel(fit.folder) || swappedFolder === fit.folder)
           ? modelSrcOf(fit.folder)
           : (furniture.model?.src ?? (fit === null ? `asset://appfront/${furniture.kind}` : modelSrcOf(fit.folder))),
       dimensions: [widthM, heightM, depthM],
@@ -1488,7 +1489,22 @@ export const toPascalScene = (
   const notOff = (furniture: Furniture): boolean => !offIds.has(furniture.id);
   const inLayer = (furniture: Furniture): boolean => notOff(furniture) || twinIds.has(furniture.id);
   const furnishedAll = furnish === 'on' ? furnishEmptyRooms(usable, style) : [];
-  const furnished = furnishedAll.filter(inLayer);
+  const builtById = new Map<string, Furniture>(builtFurniture.map((f) => [f.id, f]));
+  /* Twin đứng ở chỗ/góc của đồ thật (giữ cỡ gốc: chữ ký bộ không đổi) → chăn, thảm, đèn trên mặt đi theo món đã dời/xoay. */
+  const atAdopted = (f: Furniture): Furniture => {
+    const real = twinIds.has(f.id) ? builtById.get(adoptedFurnitureIdOf(f.id)) : undefined;
+    if (real === undefined) return f;
+    const dx = real.centre.x - f.centre.x;
+    const dy = real.centre.y - f.centre.y;
+    const { min, max } = f.boundingBox;
+    return {
+      ...f,
+      centre: real.centre,
+      rotationDeg: real.rotationDeg,
+      boundingBox: { min: { x: min.x + dx, y: min.y + dy }, max: { x: max.x + dx, y: max.y + dy } },
+    };
+  };
+  const furnished = furnishedAll.filter(inLayer).map(atAdopted);
   // `roomset`: đồ bày phòng trống vào sổ bộ của phòng trước lớp trang trí (đèn bàn/chăn đọc mẫu món chủ).
   addRoomSetMembers(furnished, (f) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId)));
   const dressedAll = furnish === 'on' ? dressingOf({ ...usable, furniture: [...baseFurniture, ...furnished] }, style) : [];
@@ -1511,10 +1527,15 @@ export const toPascalScene = (
         : provenanceOf(`dress:${roleInId(f.id)}`, hostIn(f.id, hostPool));
   const dressIdsOf = new Map<string, string[]>();
   // AI (designAdditionsOf) đặt thảm theo tâm nó tự chọn và thảm không bị chặn chồng: tâm ngoài phòng → bỏ.
+  /* Chặn chồng: twin không dự (đồ thật dựng thay; anh em giữ nguyên dù người dùng dời món sát chúng). Món đã nhận mà
+     twin không còn sinh (đổi công năng phòng…) là đồ thật thường: đồ sinh mới không được chồng lên nó. */
+  // Twin còn được sinh ở đâu đó lượt này: lớp dẫn xuất hoặc dãy tủ tách từ quầy (`expanded`).
+  const layerIds = new Set<string>([...furnished, ...dressed, ...aiAdded, ...expanded].map((f) => f.id));
+  const orphans = builtFurniture.filter((f) => adoptedIds.has(f.id) && ![...twinIds].some((id) => layerIds.has(id) && adoptedFurnitureIdOf(id) === f.id));
   const generatedAll = withoutOverlaps(
-    [...furnished, ...dressed, ...aiAdded].filter((f) => !isStrayRug(f, builtRooms)),
-    baseFurniture,
-  ).filter(notOff);
+    [...furnished, ...dressed, ...aiAdded].filter((f) => notOff(f) && !isStrayRug(f, builtRooms)),
+    [...baseFurniture, ...orphans],
+  );
   /* Chậu/mặt bếp sinh ra nằm trên mặt đá dãy tủ sinh ra (hoặc thật), như đường đồ thật ở trên. */
   const counterPool = [...builtFurniture, ...generatedAll];
   const usageOfGenerated = (f: Furniture) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId));

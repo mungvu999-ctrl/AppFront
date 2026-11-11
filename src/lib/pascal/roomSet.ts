@@ -6,8 +6,9 @@
  *
  * Ở đây: một món NEO (vai ưu tiên cao nhất có mặt; món ghim thuộc vai đó thì nó là neo), các món còn lại chấm theo độ
  * hợp với neo và với nhau; món cùng vai trong phòng dùng một mẫu. Ràng buộc CỨNG loại trước (dữ liệu chất lượng v1,
- * `libraryQuality.ts`: thiếu = chưa biết = loại), rồi điểm mềm: hạng phong cách + ΔE gỗ giữa phần CÙNG LOẠI + vải
- * (trung tính, tối đa một họ nhấn, trần độ rực). Bộ mới không hơn bộ cũ một biên → giữ bộ cũ. Tất định.
+ * `libraryQuality.ts`: thiếu = chưa biết = loại), rồi điểm mềm từng món so với BẢNG MÀU PHÒNG (tường, tông gỗ của căn,
+ * đồ cố định, neo): hạng phong cách, ΔE gỗ tới gỗ tham chiếu, độ sáng phần bọc, món ngồi tối đậm, độ rực, họ nhấn
+ * (`itemCostOf`). Lượt 2 (chấm ảnh mù 9 căn): mẫu cũ thắng trừ khi mẫu mới hơn RÕ (`MIN_GAIN`). Tất định.
  *
  * Cờ `?enable=roomset` / `?disable=roomset`; `ROOMSET_DEFAULT` là hằng duy nhất để lật mặc định.
  */
@@ -38,28 +39,55 @@ const BED_ROLES: ReadonlySet<string> = new Set(['doubleBed', 'singleBed']);
 export const HEIGHT_GROW_MAX = 1.15;
 /** Dải neo: ứng viên có chi phí ≤ tốt nhất + chừng này được rút (băm phòng + vai). */
 export const ANCHOR_BAND = 0.08;
-/** Bộ mới phải rẻ hơn bộ cũ ít nhất chừng này, không thì giữ bộ cũ. */
-export const MIN_GAIN = 0.05;
-/** ΔE76 gỗ quy về 1 điểm phạt. */
+/**
+ * Mẫu cũ (qua ràng buộc cứng) thắng trừ khi mẫu mới rẻ hơn ÍT NHẤT chừng này trên CHÍNH món đó. Lượt 1 = 0,05 nằm trong
+ * nhiễu của dữ liệu suy luận: các lần đổi bị chê thắng với biên 0,05–0,2 (`F:/runs/m12/s2/diag.txt`); lần đổi được khen
+ * (tủ greywash → mirror) hơn 0,28 theo công thức mới.
+ */
+export const MIN_GAIN = 0.25;
+/** Gỗ: ΔE (L* tối hơn tham chiếu tính đủ, sáng hơn tính nửa) trong dung sai này coi là cùng tông; vượt thì /WOOD_DE_REF. */
+export const WOOD_TOL = 15;
 export const WOOD_DE_REF = 20;
-/** Lệch L* gỗ so với tông của phong cách quy về 1 điểm phạt; L* đích của tông sáng/tối. */
-export const WOOD_L_REF = 40;
-export const WOOD_L: Readonly<Record<'l' | 'd', number>> = { l: 65, d: 35 };
-/** Vải: C* tới chừng này là trung tính; trần độ rực; hai màu nhấn khác họ khi lệch góc màu quá chừng này (độ). */
-export const NEUTRAL_C = 10;
+export const WOOD_LIGHTER_L = 0.5;
+/** Phần gỗ có C* dưới chừng này (sơn trắng/đen, nhãn "gỗ" sai) không tính là tông gỗ — chấm như bề mặt trung tính. */
+export const WOOD_MIN_C = 8;
+/** Gỗ tham chiếu theo tông của căn khi phòng không có đồ cố định/neo có gỗ: Lab đo của sồi sáng / óc chó trong thư viện. */
+export const WOOD_LAB: Readonly<Record<'l' | 'd', Lab>> = { l: [67, 5, 22], d: [35, 10, 18] };
+/** Bảng màu SÁNG khi tường trong có L* từ chừng này (4/5 phong cách ≥ 86; sang-trong-toi 50). */
+export const LIGHT_WALL_L = 70;
+/** Dải L* của phần bọc (upholstery/bedding) theo bảng màu sáng/tối; lệch dải /SOFT_L_REF × tỉ phần. */
+export const SOFT_L: Readonly<Record<'light' | 'dark', readonly [number, number]>> = { light: [45, 95], dark: [20, 85] };
+export const SOFT_L_REF = 25;
+/** Tối đậm: L* dưới chừng này. Phòng sáng: món NGỒI tối đậm ≥ DARK_SEAT_SHARE bề mặt phạt DARK_SEAT; món khác phạt theo tỉ phần. */
+export const DARK_L = 25;
+export const DARK_SEAT_SHARE = 0.5;
+export const DARK_SEAT = 1;
+export const DARK_SURF = 1;
+/** Màu: C* tới chừng này là trung tính (be/kem đo 11–12); trần độ rực; phần nhỏ hơn tỉ phần này không thành họ nhấn. */
+export const NEUTRAL_C = 14;
 export const CHROMA_CAP = 25;
 export const ACCENT_HUE_SPAN = 30;
-/** Trọng số: phong cách, gỗ, vải. */
+export const ACCENT_MIN_SHARE = 0.15;
+/** Món NHẤN (phần màu ≥ 0,3 bề mặt) mà là NEO (món lớn nhất phòng): SceneStyle không có trường cho phép → luôn phạt. */
+export const ACCENT_ANCHOR = 0.5;
+/** Trọng số: phong cách, gỗ, vải/màu. */
 export const W_STYLE = 1;
 export const W_WOOD = 1;
 export const W_FABRIC = 1;
+const SEAT_ROLES: ReadonlySet<string> = new Set(['sofa', 'armchair', 'diningChair', 'bench']);
+/** Món chấm gỗ theo món "cặp" của nó trước (ghế ăn ↔ bàn ăn). */
+const PARTNER: Readonly<Record<string, string>> = { diningChair: 'diningTable' };
 
 type Lab = readonly [number, number, number];
 export type Dims = readonly [number, number, number];
 
-/** Bảng màu so được của phong cách: màu tường (Lab) + L* gỗ đích theo tông của căn. */
+/** Bảng màu so được của phòng: màu tường (Lab), tông gỗ của căn, sáng/tối. */
 export interface SetPalette {
   readonly wall?: Lab;
+  readonly tone?: 'l' | 'd';
+  /** Tường sáng (L* ≥ LIGHT_WALL_L); vắng tường thì theo tông gỗ. */
+  readonly light?: boolean;
+  /** L* của gỗ tham chiếu theo tông (đọc thêm cho đầu dò). */
   readonly woodL?: number;
 }
 
@@ -78,13 +106,13 @@ export const labOfHex = (hex: string): Lab | undefined => {
   const z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
   return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
 };
-
-/** Bảng màu từ SceneStyle: sơn tường trong (vật liệu phẳng có màu) + tông gỗ của căn. Vân sàn là texture → không so. */
+/** Bảng màu từ SceneStyle: sơn tường trong (vật liệu phẳng có màu) + tông gỗ của căn. Vân sàn là texture → tông gỗ thay. */
 export const paletteOf = (style: SceneStyle, woodTone: 'l' | 'd' | undefined): SetPalette => {
   const id = style.wall.interior.replace(/^scene:/, '');
   const color = SCENE_STYLE_MATERIALS.find((m) => m.id === id)?.material.properties?.color;
   const wall = typeof color === 'string' ? labOfHex(color) : undefined;
-  return { ...(wall === undefined ? {} : { wall }), ...(woodTone === undefined ? {} : { woodL: WOOD_L[woodTone] }) };
+  const light = wall === undefined ? woodTone !== 'd' : wall[0] >= LIGHT_WALL_L;
+  return { ...(wall === undefined ? {} : { wall }), ...(woodTone === undefined ? {} : { tone: woodTone, woodL: WOOD_LAB[woodTone][0] }), light };
 };
 
 export interface SetMember {
@@ -124,10 +152,8 @@ export interface SetDecision {
   /** Lý do giữ / chọn (tiếng Việt, cho đầu dò). */
   readonly why: string;
 }
-
 const chromaOf = (lab: Lab): number => Math.hypot(lab[1], lab[2]);
 const hueOf = (lab: Lab): number => (Math.atan2(lab[2], lab[1]) * 180) / Math.PI;
-const deltaE = (x: Lab, y: Lab): number => Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
 const hueGap = (a: number, b: number): number => {
   const d = Math.abs(a - b) % 360;
   return d > 180 ? 360 - d : d;
@@ -148,80 +174,120 @@ export const hardRejectOf = (m: SetMember, folder: string, ctx: SetContext): str
   if (ref === undefined || dims[1] > ref[1] * HEIGHT_GROW_MAX) return 'cao hơn mẫu cũ';
   return undefined;
 };
-
-/** Đặc trưng màu của một mẫu (tính một lần mỗi lượt `roomSetOf`). */
+/** Đặc trưng màu của một mẫu (tính một lần mỗi lượt `roomSetOf`), chỉ từ Lab ĐO + tỉ phần; nhãn chất liệu chỉ dùng để nhận gỗ. */
 interface Feat {
   readonly tier: number;
-  /** Lab phần gỗ theo loại (`frame`, `top`). */
-  readonly wood: readonly (Lab | undefined)[];
-  /** Phần vải (upholstery/bedding). */
-  readonly fabrics: readonly QualityPart[];
+  /** Phần tông gỗ (material wood, C* ≥ WOOD_MIN_C). */
+  readonly wood: readonly QualityPart[];
+  /** Phần bọc (upholstery/bedding, mọi chất liệu — da ghi nhầm vải vẫn chấm theo Lab). */
+  readonly soft: readonly QualityPart[];
+  /** Phần màu đủ lớn để thành họ nhấn (không phải tông gỗ, C* > NEUTRAL_C, tỉ phần ≥ ACCENT_MIN_SHARE). */
+  readonly loud: readonly QualityPart[];
+  /** Mọi phần không phải tông gỗ (trần độ rực). */
+  readonly other: readonly QualityPart[];
+  /** Tổng tỉ phần bề mặt tối đậm (L* < DARK_L). */
+  readonly dark: number;
+  /** Lab gỗ trung bình theo tỉ phần (tham chiếu cho món khác); vắng = không có gỗ. */
+  readonly woodLab?: Lab;
 }
-const WOOD_KINDS: readonly QualityPart['kind'][] = ['frame', 'top'];
-const featOf = (folder: string, ctx: SetContext, memo: Map<string, Feat>): Feat => {
+type Memo = Map<string, Feat>;
+const isWoodTone = (p: QualityPart): boolean => p.material === 'wood' && chromaOf(p.lab) >= WOOD_MIN_C;
+const featOf = (folder: string, ctx: SetContext, memo: Memo): Feat => {
   const hit = memo.get(folder);
   if (hit !== undefined) return hit;
   const parts = (ctx.qualityOf ?? defaultQualityOf)(folder)?.parts ?? [];
+  const wood = parts.filter(isWoodTone);
+  const other = parts.filter((p) => !isWoodTone(p));
+  const share = wood.reduce((s, p) => s + p.share, 0);
+  const woodLab: Lab | undefined =
+    share === 0
+      ? undefined
+      : ([0, 1, 2].map((i) => wood.reduce((s, p) => s + (p.lab[i] as number) * p.share, 0) / share) as unknown as Lab);
   const feat: Feat = {
     tier: ctx.tierOf(folder),
-    wood: WOOD_KINDS.map((kind) => parts.find((p) => p.kind === kind && p.material === 'wood')?.lab),
-    fabrics: parts.filter((p) => p.kind === 'upholstery' || p.kind === 'bedding'),
+    wood,
+    soft: parts.filter((p) => p.kind === 'upholstery' || p.kind === 'bedding'),
+    loud: other.filter((p) => chromaOf(p.lab) > NEUTRAL_C && p.share >= ACCENT_MIN_SHARE),
+    other,
+    dark: parts.reduce((s, p) => s + (p.lab[0] < DARK_L ? p.share : 0), 0),
+    ...(woodLab === undefined ? {} : { woodLab }),
   };
   memo.set(folder, feat);
   return feat;
 };
 
+/** ΔE gỗ: L* tối hơn tham chiếu tính đủ, sáng hơn tính WOOD_LIGHTER_L (gỗ sáng trong phòng sáng ít "lạc" hơn gỗ tối). */
+const woodDeltaOf = (lab: Lab, ref: Lab): number => {
+  const dl = lab[0] - ref[0];
+  return Math.hypot(dl < 0 ? dl : dl * WOOD_LIGHTER_L, lab[1] - ref[1], lab[2] - ref[2]);
+};
+
+/** Thành phần chi phí của một món trong phòng (nhỏ = hợp hơn) — đầu dò/diag đọc. */
+export interface ItemCost {
+  readonly style: number;
+  readonly wood: number;
+  readonly soft: number;
+  readonly dark: number;
+  readonly chroma: number;
+  readonly accent: number;
+  readonly total: number;
+}
+
+/** Ngữ cảnh chấm một món: gỗ tham chiếu + họ nhấn đã có trong phòng (tường, đồ cố định, món đã chọn). */
+export interface ItemRefs {
+  readonly wood: Lab;
+  readonly families: readonly number[];
+  readonly anchor: boolean;
+}
+
+const familiesWith = (families: readonly number[], labs: readonly Lab[]): number[] => {
+  const out = [...families];
+  for (const lab of labs) if (!out.some((h) => hueGap(h, hueOf(lab)) <= ACCENT_HUE_SPAN)) out.push(hueOf(lab));
+  return out;
+};
+
 /**
- * Chi phí một bộ mẫu (nhỏ = hợp hơn) = W_STYLE × hạng TB chuẩn hoá + W_WOOD × (ΔE TB giữa phần gỗ CÙNG LOẠI frame/top
- * của mọi cặp món / WOOD_DE_REF + |L* gỗ − L* đích| TB / WOOD_L_REF) + W_FABRIC × (số họ nhấn thừa + phần vượt trần độ rực).
- * Họ nhấn: phần vải C* > NEUTRAL_C (và tường nếu tường có màu); hai họ khác nhau khi lệch góc màu > ACCENT_HUE_SPAN.
- * `memo`: đặc trưng mẫu trong MỘT lượt chọn (không giữ qua lượt).
+ * Chi phí một món = W_STYLE × hạng/(số mã+1)
+ *   + W_WOOD × Σ tỉ phần × max(0, ΔE_gỗ(phần, gỗ tham chiếu) − WOOD_TOL)/WOOD_DE_REF
+ *   + Σ tỉ phần bọc × khoảng cách L* tới dải SOFT_L / SOFT_L_REF
+ *   + (phòng sáng) món ngồi tối đậm ≥ DARK_SEAT_SHARE → DARK_SEAT, còn lại DARK_SURF × tỉ phần tối đậm
+ *   + W_FABRIC × (Σ tỉ phần × vượt CHROMA_CAP/CHROMA_CAP + số họ nhấn MỚI thêm vào phòng + ACCENT_ANCHOR nếu neo là món nhấn).
  */
-export const setCostOf = (folders: readonly string[], ctx: SetContext, memo: Map<string, Feat> = new Map()): number => {
-  if (folders.length === 0) return 0;
-  const feats = folders.map((f) => featOf(f, ctx, memo));
-  let tiers = 0;
-  for (const f of feats) tiers += f.tier;
-  const style = tiers / feats.length / (ctx.tiers + 1);
+export const itemCostOf = (folder: string, role: string, refs: ItemRefs, ctx: SetContext, memo: Memo = new Map()): ItemCost => {
+  const f = featOf(folder, ctx, memo);
+  const light = ctx.palette.light !== false;
+  const style = W_STYLE * (f.tier / (ctx.tiers + 1));
+  const wood = W_WOOD * f.wood.reduce((s, p) => s + (p.share * Math.max(0, woodDeltaOf(p.lab, refs.wood) - WOOD_TOL)) / WOOD_DE_REF, 0);
+  const [lo, hi] = SOFT_L[light ? 'light' : 'dark'];
+  const soft = f.soft.reduce((s, p) => s + (p.share * Math.max(0, lo - p.lab[0], p.lab[0] - hi)) / SOFT_L_REF, 0);
+  const dark = !light ? 0 : SEAT_ROLES.has(role) && f.dark >= DARK_SEAT_SHARE ? DARK_SEAT : DARK_SURF * f.dark;
+  const chroma = f.other.reduce((s, p) => s + (p.share * Math.max(0, chromaOf(p.lab) - CHROMA_CAP)) / CHROMA_CAP, 0);
+  const added = familiesWith(refs.families, f.loud.map((p) => p.lab)).length - refs.families.length;
+  const loudShare = f.loud.reduce((s, p) => s + p.share, 0);
+  const accent = Math.max(0, added - (refs.families.length === 0 ? 1 : 0)) + (refs.anchor && loudShare >= 0.3 ? ACCENT_ANCHOR : 0);
+  const fabric = W_FABRIC * (chroma + accent);
+  return { style, wood, soft, dark, chroma: W_FABRIC * chroma, accent: W_FABRIC * accent, total: style + wood + soft + dark + fabric };
+};
 
-  let pairSum = 0;
-  let pairs = 0;
-  let lSum = 0;
-  let woods = 0;
-  for (let k = 0; k < WOOD_KINDS.length; k += 1) {
-    for (let i = 0; i < feats.length; i += 1) {
-      const a = (feats[i] as Feat).wood[k];
-      if (a === undefined) continue;
-      for (let j = i + 1; j < feats.length; j += 1) {
-        const b = (feats[j] as Feat).wood[k];
-        if (b === undefined) continue;
-        pairSum += deltaE(a, b);
-        pairs += 1;
-      }
-      if (ctx.palette.woodL !== undefined) {
-        lSum += Math.abs(a[0] - ctx.palette.woodL);
-        woods += 1;
-      }
-    }
+/** Gỗ tham chiếu theo tông: tông của căn, vắng thì theo sáng/tối của bảng màu. */
+const toneWoodOf = (palette: SetPalette): Lab => WOOD_LAB[palette.tone ?? (palette.light === false ? 'd' : 'l')];
+/** Họ nhấn của tường (tường có màu) — điểm xuất phát của họ nhấn phòng. */
+const wallFamiliesOf = (palette: SetPalette): number[] =>
+  palette.wall !== undefined && chromaOf(palette.wall) > NEUTRAL_C ? [hueOf(palette.wall)] : [];
+
+/**
+ * Tổng chi phí một bộ mẫu (đầu dò/test): gỗ tham chiếu = gỗ của món đầu có gỗ (không có thì tông của căn); họ nhấn cộng
+ * dồn theo thứ tự; món đầu là neo.
+ */
+export const setCostOf = (folders: readonly string[], ctx: SetContext, memo: Memo = new Map()): number => {
+  const ref = folders.map((f) => featOf(f, ctx, memo).woodLab).find((l) => l !== undefined) ?? toneWoodOf(ctx.palette);
+  let families = wallFamiliesOf(ctx.palette);
+  let total = 0;
+  for (const [i, folder] of folders.entries()) {
+    total += itemCostOf(folder, '', { wood: ref, families, anchor: i === 0 }, ctx, memo).total;
+    families = familiesWith(families, featOf(folder, ctx, memo).loud.map((p) => p.lab));
   }
-  const wood = (pairs === 0 ? 0 : pairSum / pairs / WOOD_DE_REF) + (woods === 0 ? 0 : lSum / woods / WOOD_L_REF);
-
-  let over = 0;
-  const loud: QualityPart[] = [];
-  for (const f of feats)
-    for (const p of f.fabrics) {
-      const c = chromaOf(p.lab);
-      over += Math.max(0, c - CHROMA_CAP) / CHROMA_CAP;
-      if (c > NEUTRAL_C) loud.push(p);
-    }
-  loud.sort((a, b) => b.share - a.share);
-  const wall = ctx.palette.wall !== undefined && chromaOf(ctx.palette.wall) > NEUTRAL_C ? [ctx.palette.wall] : [];
-  const families: number[] = [];
-  for (const lab of [...wall, ...loud.map((p) => p.lab)])
-    if (!families.some((h) => hueGap(h, hueOf(lab)) <= ACCENT_HUE_SPAN)) families.push(hueOf(lab));
-  const fabric = Math.max(0, families.length - 1) + over;
-
-  return W_STYLE * style + W_WOOD * wood + W_FABRIC * fabric;
+  return total;
 };
 
 const byId = (a: { readonly id: string }, b: { readonly id: string }): number => a.id.localeCompare(b.id);
@@ -269,11 +335,13 @@ export const roomSetKeysOf = (
   }
   return keys;
 };
-
 /**
  * Bộ của một phòng. `roomKey` = khoá nội dung (`roomSetKeysOf`), chỉ dùng để băm rút neo. `decided` = món đã chốt ở
  * lượt trước trong cùng lượt dựng (giữ nguyên, làm ngữ cảnh). Trả quyết định cho mọi món trong phạm vi chưa chốt.
  * Thứ tự xử lý: vai neo, rồi `SET_ROLES`; trong vai theo id.
+ *
+ * Gỗ tham chiếu của món: món cặp (ghế ăn ↔ bàn ăn) → gỗ đồ CỐ ĐỊNH trong phòng → gỗ của neo (món phụ) → tông của căn.
+ * Mẫu cũ qua ràng buộc cứng thắng trừ khi mẫu mới rẻ hơn ≥ MIN_GAIN trên chính món đó.
  */
 export const roomSetOf = (
   roomKey: string,
@@ -284,71 +352,83 @@ export const roomSetOf = (
   const inSet = members.filter((m) => SET_ROLES.includes(m.role)).sort(byId);
   const roles = SET_ROLES.filter((role) => inSet.some((m) => m.role === role));
   const anchorRole = roles[0];
+  const memo: Memo = new Map();
   const folderOfFixed = (m: SetMember): string | null => (m.fixed ? m.current : (decided.get(m.id)?.to ?? null));
-  const context: string[] = inSet.flatMap((m) => {
+  // Bảng màu phòng: tường + đồ cố định/đã chốt (gỗ trung bình theo tỉ phần, họ nhấn).
+  const fixedFolders = inSet.flatMap((m) => {
     const f = folderOfFixed(m);
     return f === null ? [] : [f];
   });
+  const fixedWoods = fixedFolders.map((f) => featOf(f, ctx, memo)).filter((x) => x.woodLab !== undefined);
+  const fixedWood: Lab | undefined =
+    fixedWoods.length === 0
+      ? undefined
+      : ([0, 1, 2].map((i) => fixedWoods.reduce((s, x) => s + ((x.woodLab as Lab)[i] as number), 0) / fixedWoods.length) as unknown as Lab);
+  let families = familiesWith(wallFamiliesOf(ctx.palette), fixedFolders.flatMap((f) => featOf(f, ctx, memo).loud.map((p) => p.lab)));
+  const woodByRole = new Map<string, Lab>();
+  for (const m of inSet) {
+    const f = folderOfFixed(m);
+    const lab = f === null ? undefined : featOf(f, ctx, memo).woodLab;
+    if (lab !== undefined && !woodByRole.has(m.role)) woodByRole.set(m.role, lab);
+  }
+  let anchorWood: Lab | undefined;
   const out = new Map<string, SetDecision>();
-  const memo = new Map<string, Feat>();
-  const chosen: { m: SetMember; to: string | null; anchor: boolean; cost?: number; why: string }[] = [];
+  const decide = (m: SetMember, to: string | null, anchor: boolean, why: string, cost?: number): void => {
+    out.set(m.id, { id: m.id, role: m.role, from: m.current, to, rule: to === m.current ? 'keep' : 'roomset', anchor, ...(cost === undefined ? {} : { cost }), why });
+  };
 
   for (const role of roles) {
     const group = inSet.filter((m) => m.role === role);
     const todo = group.filter((m) => !m.fixed && !decided.has(m.id));
     if (todo.length === 0) continue;
     const anchor = role === anchorRole;
-    const keepAll = (why: string): void => {
-      for (const m of todo) chosen.push({ m, to: m.current, anchor, why });
-    };
     const ok = (folder: string): boolean => todo.every((m) => hardRejectOf(m, folder, ctx) === undefined);
+    const partner = PARTNER[role];
+    const refs: ItemRefs = {
+      wood: (partner === undefined ? undefined : woodByRole.get(partner)) ?? fixedWood ?? (anchor ? undefined : anchorWood) ?? toneWoodOf(ctx.palette),
+      families,
+      anchor,
+    };
+    const costOf = (folder: string): number => itemCostOf(folder, role, refs, ctx, memo).total;
+    let to: string | null;
+    let why: string;
+    let cost: number | undefined;
     // Món cùng vai đã có mẫu (ghim / đã chốt): cặp dùng chung mẫu ấy nếu nó lọt mọi chỗ.
     const pinned = group.map(folderOfFixed).find((f): f is string => f !== null);
-    if (pinned !== undefined && ok(pinned)) {
-      for (const m of todo) chosen.push({ m, to: pinned, anchor, why: 'cùng mẫu món cùng vai đã có' });
-      context.push(pinned);
-      continue;
-    }
+    const current = todo[0]?.current ?? null;
+    const currentOk = current !== null && ok(current);
     const pool = [...new Set(todo.flatMap((m) => m.pool))].filter((f) => todo.every((m) => m.pool.includes(f)));
-    const cands = pool.filter(ok).sort();
-    if (cands.length === 0) {
-      keepAll('không ứng viên qua ràng buộc cứng');
-      continue;
-    }
-    // Neo chấm một mình (phong cách + bảng màu): nhận/ghim món phụ không làm đổi neo.
-    const ranked = cands
-      .map((f) => ({ f, cost: setCostOf(anchor ? [f] : [...context, f], ctx, memo) }))
+    const ranked = pool
+      .filter(ok)
+      .sort()
+      .map((f) => ({ f, cost: costOf(f) }))
       .sort((a, b) => a.cost - b.cost || a.f.localeCompare(b.f));
-    const best = ranked[0] as { f: string; cost: number };
-    // Neo: rút trong dải sát tốt nhất theo băm khoá nội dung phòng + vai (đa dạng có kiểm soát); món khác: rẻ nhất.
-    const band = anchor ? ranked.filter((r) => r.cost <= best.cost + ANCHOR_BAND) : [best];
-    const pick = band[fnv1a(`${roomKey}|${role}`) % band.length] as { f: string; cost: number };
-    for (const m of todo) chosen.push({ m, to: pick.f, anchor, cost: pick.cost, why: anchor ? `neo, dải ${band.length}` : 'hợp neo' });
-    context.push(pick.f);
-  }
-
-  // Biên tối thiểu: bộ cũ qua mọi ràng buộc cứng và bộ mới không rẻ hơn ≥ MIN_GAIN → giữ cả bộ cũ.
-  const fixedCtx = inSet.flatMap((m) => {
-    const f = m.fixed || decided.has(m.id) ? folderOfFixed(m) : null;
-    return f === null ? [] : [f];
-  });
-  const oldOk = chosen.every((c) => c.m.current !== null && hardRejectOf(c.m, c.m.current, ctx) === undefined);
-  const oldCost = setCostOf([...fixedCtx, ...chosen.flatMap((c) => (c.m.current === null ? [] : [c.m.current]))], ctx, memo);
-  const newCost = setCostOf([...fixedCtx, ...chosen.flatMap((c) => (c.to === null ? [] : [c.to]))], ctx, memo);
-  const keepOld = oldOk && chosen.some((c) => c.to !== c.m.current) && newCost > oldCost - MIN_GAIN;
-
-  for (const c of chosen) {
-    const to = keepOld ? c.m.current : c.to;
-    out.set(c.m.id, {
-      id: c.m.id,
-      role: c.m.role,
-      from: c.m.current,
-      to,
-      rule: to === c.m.current ? 'keep' : 'roomset',
-      anchor: c.anchor,
-      cost: keepOld ? oldCost : newCost,
-      why: keepOld ? 'bộ mới không hơn bộ cũ ≥ biên' : c.why,
-    });
+    if (pinned !== undefined && ok(pinned)) {
+      [to, why] = [pinned, 'cùng mẫu món cùng vai đã có'];
+    } else if (ranked.length === 0) {
+      [to, why] = [current, 'không ứng viên qua ràng buộc cứng'];
+    } else {
+      // Mẫu cũ đạt ràng buộc cứng: chỉ ứng viên rẻ hơn RÕ (≥ MIN_GAIN) mới được thay.
+      const curCost = currentOk ? costOf(current) : Infinity;
+      const better = ranked.filter((r) => r.cost <= curCost - MIN_GAIN);
+      if (better.length === 0) {
+        [to, why, cost] = [current, `mẫu mới không hơn rõ (tốt nhất ${(ranked[0] as { cost: number }).cost.toFixed(2)}, cũ ${curCost.toFixed(2)})`, curCost];
+      } else {
+        const best = better[0] as { f: string; cost: number };
+        // Neo: rút trong dải sát tốt nhất theo băm khoá nội dung phòng + vai (đa dạng có kiểm soát); món khác: rẻ nhất.
+        const band = anchor ? better.filter((r) => r.cost <= best.cost + ANCHOR_BAND) : [best];
+        const pick = band[fnv1a(`${roomKey}|${role}`) % band.length] as { f: string; cost: number };
+        [to, cost] = [pick.f, pick.cost];
+        why = `${anchor ? `neo, dải ${band.length}` : 'hợp bộ'}; ${pick.cost.toFixed(2)} < cũ ${currentOk ? curCost.toFixed(2) : 'không đạt'}`;
+      }
+    }
+    for (const m of todo) decide(m, to, anchor, why, cost);
+    if (to !== null) {
+      const feat = featOf(to, ctx, memo);
+      if (anchor && feat.woodLab !== undefined) anchorWood = feat.woodLab;
+      if (feat.woodLab !== undefined && !woodByRole.has(role)) woodByRole.set(role, feat.woodLab);
+      families = familiesWith(families, feat.loud.map((p) => p.lab));
+    }
   }
   return out;
 };

@@ -61,10 +61,12 @@ describe('lớp cảnh v1 — không nhân đôi sau khi nhận một món', () 
   it('nạp lại sau khi nhận giường: anh em vẫn là món sinh, giường chỉ còn bản đồ thật, số món giữ nguyên', () => {
     const saved = adoptBedroom();
     const reloaded = toPascalScene(saved, { furnish: 'on' }).scene;
-    const dressedIn = (of: PascalScene) => inRoom(of, bedroomId).filter((node) => bodyOfPascalId(node.id).startsWith('DRESS-'));
+    // Đồ đặt trên/dưới giường dựng lại theo chỗ mới của giường (có thể không còn chỗ đặt); còn lại giữ nguyên.
+    const offBed = (node: PascalItemNode): boolean => !node.id.includes(`-DRESS-bed-${bedroomId}`);
+    const dressedIn = (of: PascalScene) => inRoom(of, bedroomId).filter((node) => bodyOfPascalId(node.id).startsWith('DRESS-') && offBed(node));
 
     expect(dressedIn(reloaded).map((node) => node.id)).toEqual(dressedIn(scene).map((node) => node.id).filter((id) => id !== toPascalId('item', `DRESS-bed-${bedroomId}`)));
-    expect(inRoom(reloaded, bedroomId)).toHaveLength(inRoom(scene, bedroomId).length);
+    expect(inRoom(reloaded, bedroomId).filter(offBed)).toHaveLength(inRoom(scene, bedroomId).filter(offBed).length);
   });
 
   it('tải lại hai lần: cùng tập id sinh', () => {

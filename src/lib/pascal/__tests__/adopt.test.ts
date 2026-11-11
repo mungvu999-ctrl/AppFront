@@ -104,11 +104,14 @@ describe('nhận nuôi đồ bày biện sinh ra', () => {
     ).scene;
     const spots = (of: PascalItemNode[]): string[] =>
       of.map((node) => `${node.position[0].toFixed(3)},${node.position[2].toFixed(3)}`).sort();
+    // Đồ trang trí đặt trên/cạnh một món (chủ là đồ, không phải phòng) dựng lại theo chỗ mới của món đã nhận — có thể
+    // dịch hoặc hết chỗ đặt (chăn trên giường sát dãy tủ vừa dời); món bày theo phòng và đồ thật giữ nguyên chỗ.
+    const onTarget = (node: PascalItemNode): boolean => /^item_DRESS-[A-Za-z]+-(DRESS|F)-/.test(node.id);
     const inRoom = (of: PascalScene): PascalItemNode[] =>
-      items(of).filter((node) => node.metadata?.appfront?.fields?.['roomId'] === roomId);
+      items(of).filter((node) => node.metadata?.appfront?.fields?.['roomId'] === roomId && !onTarget(node));
 
     expect(spots(inRoom(reloaded))).toEqual(spots(inRoom(editedScene)));
-    expect(dressOf(reloaded, roomId)).toHaveLength(dressOf(scene, roomId).length - 1);
+    expect(dressOf(reloaded, roomId).filter((node) => !onTarget(node))).toHaveLength(dressOf(scene, roomId).filter((node) => !onTarget(node)).length - 1);
     expect(reloaded.nodes[target.id]).toBeUndefined();
   });
 

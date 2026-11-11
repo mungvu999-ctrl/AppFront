@@ -67,7 +67,7 @@ import {
 } from '@/domain/units/types';
 import { AUTHORED_BY_HAND, toPointMm } from '@/lib/commands/business/shared';
 
-import { isServerModel, serverKindOf, serverModelPath } from './furnitureCatalog';
+import { isServerModel, namedFolderOf, serverKindOf, serverModelPath } from './furnitureCatalog';
 import { appFrontIdOf, bodyOfPascalId, BUILDING_NODE_ID, toPascalId } from './ids';
 import { LIBRARY_MATERIAL_IDS } from './libraryMaterialIds';
 import { libRoles2BaseIdOf } from './libraryRoles2';
@@ -389,8 +389,13 @@ const dressingOffOf = (scene: PascalScene, fields: Fields, roomId: string, adopt
 
     return !isGeneratedLightId(nodeId) || scene.nodes[toPascalId('ceiling', roomId)] !== undefined;
   });
-  // Trần lược đồ: tràn thì giữ những món bỏ mới nhất (món cũ nhất có thể hiện lại) thay vì cả lượt lưu bị từ chối.
-  const off = [...new Set([...readStrings(fields, 'dressingOff'), ...removed])].slice(-DRESSING_OFF_MAX);
+  /* Trần lược đồ: tràn thì rơi mục "đã xoá" cũ nhất trước (món ấy có thể hiện lại) thay vì cả lượt lưu bị từ chối. Mục
+     của cặp "đã nhận" (đồ thật `adoptedFurnitureIdOf` còn trong cảnh hoặc vừa nhận) giữ: rơi nó là nhân đôi món. */
+  const all = [...new Set([...readStrings(fields, 'dressingOff'), ...removed])];
+  const kept = (id: string): boolean =>
+    adopted.has(dressNodeIdOf(id)) || scene.nodes[toPascalId('item', adoptedFurnitureIdOf(id))] !== undefined;
+  const drop = new Set(all.filter((id) => !kept(id)).slice(0, Math.max(0, all.length - DRESSING_OFF_MAX)));
+  const off = all.filter((id) => !drop.has(id)).slice(-DRESSING_OFF_MAX);
 
   return off.length === 0 ? {} : { dressingOff: off };
 };
@@ -471,7 +476,7 @@ const itemFieldsOf = (item: PascalItemNode, kind: FurnitureKind): Partial<Furnit
     ...(liftMm === null ? {} : { liftMm: millimetres(liftMm) }),
     ...(slots === null ? {} : { slots }),
     ...(swapped
-      ? { model: { id: item.asset.id.slice(0, 120), src: server ? serverModelPath(libId ?? item.asset.id) : drapeSavedSrc(item.asset.src) } }
+      ? { model: { id: item.asset.id.slice(0, 120), src: server ? serverModelPath(libId ?? item.asset.id) : savedSrcOf(item.asset.src) } }
       : {}),
   };
 };
@@ -487,6 +492,10 @@ const shownModelOf = (item: PascalItemNode): Partial<Furniture> => {
 
   return folder !== null && MODEL_SRC.test(src) ? { model: { id: folder.slice(0, 120), src } } : {};
 };
+
+/** Đường lưu của mẫu tại chỗ: về thư mục tên gọi — bỏ hoán đổi hiển thị `-uv` và realism (`bed-sf` → `double-bed`). */
+const savedSrcOf = (src: string): string =>
+  drapeSavedSrc(src).replace(/^\/items\/([a-z0-9_-]+)\//, (_all, folder: string) => `/items/${namedFolderOf(folder)}/`);
 
 const readCorner = (fields: Fields, corner: 'min' | 'max'): Point | null => {
   const box = fields['boundingBox'];
@@ -755,7 +764,8 @@ export const isEditedGenerated = (node: PascalNode | undefined): boolean => {
     Math.abs(millimetresOf(node.position[1]) - (readNumber(fields, 'styleLiftMm') ?? 0)) > 1 ||
     itemSlotsFieldOf(node) !== null ||
     // F-02: "Đổi mẫu" đặt `asset.id` sang id catalog (mẫu AppFront chọn luôn là `appfront-…`).
-    (!node.asset.id.startsWith('appfront-') && saveableModelSrc(node.asset.src)) ||
+    // Mẫu thư viện máy chủ mang URL ký (không phải `/items/…`): nhận ra theo id (`itemFieldsOf` lưu đường cố định).
+    (!node.asset.id.startsWith('appfront-') && (saveableModelSrc(node.asset.src) || isServerModel(node.asset.id))) ||
     (rotationDeg !== null && planDegreesOf(node.rotation[1]) !== normaliseDegrees(asDegrees(rotationDeg)))
   );
 };
@@ -862,7 +872,7 @@ const collectItem = (scene: PascalScene, item: PascalItemNode, levelId: LevelId,
       ...(roomAdopted ? shownModelOf(item) : {}),
       ...itemFieldsOf(item, kind),
       // Món rời thành đồ thật giữ đúng mẫu và độ nâng lượt đi tự chọn (lan can, mặt bếp…), không đoán lại theo `kind`.
-      ...(looseAdopted && MODEL_SRC.test(item.asset.src) ? { model: { id: item.asset.id.slice(0, 120), src: drapeSavedSrc(item.asset.src) } } : {}),
+      ...(looseAdopted && MODEL_SRC.test(item.asset.src) ? { model: { id: item.asset.id.slice(0, 120), src: savedSrcOf(item.asset.src) } } : {}),
       ...(looseAdopted && item.position[1] > 0.001 ? { liftMm: millimetres(Math.round(millimetresOf(item.position[1]))) } : {}),
     });
   }

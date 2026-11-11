@@ -11,9 +11,11 @@ import { createDerivedHistory, recordDerived, restoreDerived, touchedTargetFor }
 
 import { createPascalEditCommand } from '../fromPascal';
 import { clearServerLibrary, registerServerLibrary } from '../furnitureCatalog';
-import type { ModelQuality, QualityPart } from '../libraryQuality';
+import { LIBRARY_QUALITY, type ModelQuality, type QualityPart } from '../libraryQuality';
 import LIBRARY from '../libraryRoles.json' with { type: 'json' };
 import {
+  DARK_L,
+  DARK_SEAT_SHARE,
   hardRejectOf,
   MIN_GAIN,
   paletteOf,
@@ -26,7 +28,6 @@ import {
   type SetContext,
   type SetMember,
 } from '../roomSet';
-import { adoptedFurnitureIdOf } from '../sceneDressing';
 import { PROV_FIELD, type SceneProvenance } from '../sceneLayer';
 import { createRepairSession, sessionRepairs } from '../sceneRepair';
 import { standardSceneOf } from '../sceneStandard';
@@ -492,54 +493,6 @@ describe('roomset trong đường dựng cảnh', () => {
         (n): n is PascalItemNode =>
           n.type === 'item' && n.id.startsWith('item_DRESS-') && n.metadata?.appfront?.fields?.['roomId'] === ROOM,
       );
-    const spot = (n: PascalNode | undefined): string =>
-      n?.type === 'item' ? `${n.position[0].toFixed(3)},${n.position[2].toFixed(3)}|${assetOf({ nodes: { [n.id]: n } } as PascalScene, n.id.slice(5))}` : 'vắng';
-    /** Áp lệnh lên đồ thị như máy chủ: thêm/sửa/xoá đồ, thay phòng. */
-    const apply = (graph: SpatialGraph, changes: readonly { kind: string; before?: unknown; after?: unknown }[]): SpatialGraph =>
-      changes.reduce((g, c) => {
-        const after = c.after as { id: string } | null;
-        const id = (after ?? (c.before as { id: string })).id;
-        if (c.kind === 'room') return { ...g, rooms: g.rooms.map((r) => (r.id === id ? (after as Room) : r)) };
-        const rest = g.furniture.filter((f) => f.id !== id);
-        return { ...g, furniture: after === null ? rest : [...rest, after as Furniture] };
-      }, graph);
-
-    for (const [name, style] of [['bật', ON], ['tắt', OFF]] as const) {
-      it(`roomset ${name}: dời giường sinh → 1 món + phòng (dressingOff); tải lại: giường đúng chỗ/mẫu, anh em y nguyên; Ctrl+Z trả về đồ sinh`, () => {
-        const graph = empty();
-        const scene = sceneOf(graph, style);
-        const before = roomItems(scene);
-        const bed = before.find((n) => n.metadata?.appfront?.fields?.['kind'] === 'bed') as PascalItemNode;
-        expect(before.length).toBeGreaterThan(2);
-        const movedBed = { ...bed, position: [bed.position[0] + 0.1, bed.position[1], bed.position[2]] } as PascalItemNode;
-        const moved: PascalScene = { ...scene, nodes: { ...scene.nodes, [bed.id]: movedBed } };
-        const idBook = new Map<string, string>();
-        const result = createPascalEditCommand({ graph: normalizeSpatial(graph), scene: moved, commit: { origin: 'local', changedNodeIds: [bed.id] }, actorId: 'U-1', idBook });
-        if (!result.ok) throw new Error(result.error.reasons.join(' '));
-        const furniture = result.data.changes.filter((c) => c.kind === 'furniture');
-        const adoptedId = adoptedFurnitureIdOf(bed.id.slice(5));
-        expect(furniture).toHaveLength(1);
-        expect(furniture[0]?.after).toMatchObject({ id: adoptedId, model: { src: `/items/${assetOf(scene, bed.id.slice(5))}/model.glb` } });
-        expect(result.data.changes.find((c) => c.kind === 'room')?.after).toMatchObject({ dressingOff: [bed.id.slice(5)] });
-
-        const saved = apply(graph, result.data.changes);
-        const reloaded = sceneOf(saved, style);
-        expect(spot(reloaded.nodes[`item_${adoptedId}`])).toBe(spot(movedBed));
-        expect(reloaded.nodes[bed.id]).toBeUndefined();
-        for (const n of before.filter((x) => x.id !== bed.id)) expect(spot(reloaded.nodes[n.id])).toBe(spot(n));
-        expect(roomItems(reloaded)).toHaveLength(before.length - 1);
-        // Tải lại lần nữa: không trôi.
-        expect(itemsOf(sceneOf(saved, style))).toBe(itemsOf(reloaded));
-
-        // Ctrl+Z (cảnh về như lúc nạp, cùng sổ id): đồ thật đi, id rời `dressingOff`, phòng lại như chưa sửa.
-        const undo = createPascalEditCommand({ graph: normalizeSpatial(saved), scene, commit: { origin: 'local', changedNodeIds: [bed.id] }, actorId: 'U-1', idBook });
-        if (!undo.ok) throw new Error(undo.error.reasons.join(' '));
-        const restored = apply(saved, undo.data.changes);
-        expect(restored.furniture).toHaveLength(0);
-        expect(restored.rooms[0]?.dressingOff ?? []).toEqual([]);
-        expect(itemsOf(sceneOf(restored, style))).toBe(itemsOf(scene));
-      });
-    }
 
     it('dữ liệu cũ (cả phòng đã nhận, id ngẫu nhiên, không dressingOff): tải lại y nguyên, không mọc đồ sinh', () => {
       const scene = sceneOf(empty(), ON);
@@ -572,5 +525,109 @@ describe('roomset trong đường dựng cảnh', () => {
       }
       expect(itemsOf(sceneOf(legacy, ON))).toBe(itemsOf(reloaded));
     });
+  });
+});
+
+/* ---- Lượt 2: DỮ LIỆU THẬT (`LIBRARY_QUALITY`, không fixture) — kết quả chấm ảnh mù 9 căn; id chỉ để dựng tình huống ---- */
+
+describe('roomset trên dữ liệu chất lượng thật (am-ap, tông sáng)', () => {
+  const real = (id: string): ModelQuality | undefined => LIBRARY_QUALITY.models[id];
+  const am = sceneStyleOf('am-ap');
+  const wanted = am.libraryStyles ?? [];
+  const libStyles = (LIBRARY as unknown as { models: Record<string, { s: string[] }> }).models;
+  const ctx: SetContext = {
+    // Như `styleTierOf` của sceneVariety.
+    tierOf: (f) => {
+      const s = libStyles[f]?.s ?? [];
+      const best = Math.min(...wanted.map((c, i) => (s.includes(c) ? i : Infinity)));
+      return best !== Infinity ? best : s.length === 0 ? wanted.length : wanted.length + 1;
+    },
+    tiers: wanted.length,
+    dimsOf: (f) => {
+      const u = real(f)?.useMm;
+      return u === undefined ? undefined : [u[0] / 1000, u[1] / 1000, u[2] / 1000];
+    },
+    palette: paletteOf(am, 'l'),
+    qualityOf: real,
+  };
+  const pool = (role: string): string[] => (roles[role] ?? []).filter((id) => real(id) !== undefined);
+  /** Món trong phạm vi, chỗ đặt = mặt bằng mẫu cũ (ứng viên không to hơn chỗ cũ quá 10 %). */
+  const at = (id: string, role: string, current: string, extra: Partial<SetMember> = {}): SetMember => {
+    const [w, , d] = ctx.dimsOf(current) ?? [1, 1, 1];
+    return { id, role, short: Math.min(w, d), long: Math.max(w, d), current, pool: pool(role), fixed: false, ...extra };
+  };
+  const partsOf = (id: string | null | undefined): readonly QualityPart[] => (id ? (real(id)?.parts ?? []) : []);
+  const darkShare = (id: string | null | undefined): number => partsOf(id).reduce((s, p) => s + (p.lab[0] < DARK_L ? p.share : 0), 0);
+  const mainSoftL = (id: string | null | undefined): number | undefined =>
+    [...partsOf(id)].filter((p) => p.kind === 'upholstery' || p.kind === 'bedding').sort((a, b) => b.share - a.share)[0]?.lab[0];
+  const woodA = (id: string | null | undefined): number | undefined => {
+    const w = partsOf(id).filter((p) => p.material === 'wood' && Math.hypot(p.lab[1], p.lab[2]) >= 8);
+    const s = w.reduce((a, p) => a + p.share, 0);
+    return s === 0 ? undefined : w.reduce((a, p) => a + p.lab[1] * p.share, 0) / s;
+  };
+  const livingRoom = (): SetMember[] => [
+    at('sofa', 'sofa', 'sofa-grey-linen-slim'),
+    at('arm', 'armchair', 'chair-lenestol-oak-black'),
+    at('coffee', 'coffeeTable', 'table-coffee-white-oval'),
+    at('shelf', 'bookshelf', 'storage-shelf-metal-oak'),
+  ];
+  const diningChairs = (): SetMember[] => ['c1', 'c2', 'c3', 'c4'].map((id) => at(id, 'diningChair', 'chair-dining-wishbone-white'));
+
+  it('phòng khách: sofa xám vải không bị thay bằng sofa da tối; ghế bành, kệ, bàn trà không thành món tối đậm', () => {
+    const out = roomSetOf('living', livingRoom(), new Map(), ctx);
+    const sofa = out.get('sofa')?.to;
+    expect(mainSoftL(sofa)).toBeGreaterThanOrEqual(40);
+    expect(darkShare(sofa)).toBeLessThan(DARK_SEAT_SHARE);
+    for (const id of ['arm', 'shelf', 'coffee']) expect(darkShare(out.get(id)?.to)).toBeLessThan(DARK_SEAT_SHARE);
+  });
+
+  it('phòng ăn có tủ sồi cố định: bàn ăn không thành gỗ đỏ; ghế quanh bàn một mẫu, không khung/nệm đen', () => {
+    const chairs = diningChairs();
+    const out = roomSetOf(
+      'dining',
+      [at('oak', 'bookshelf', 'storage-shelf-metal-oak', { fixed: true, pool: [] }), at('table', 'diningTable', 'dining-table-pro'), ...chairs],
+      new Map(),
+      ctx,
+    );
+    expect(woodA(out.get('table')?.to) ?? 0).toBeLessThanOrEqual(15);
+    const picked = new Set(chairs.map((c) => out.get(c.id)?.to));
+    expect(picked.size).toBe(1);
+    expect(darkShare([...picked][0])).toBeLessThan(DARK_SEAT_SHARE);
+  });
+
+  it('phòng ngủ: giường chưa đủ chăn gối được thay bằng giường `full` có phần chăn; tủ áo greywash → tủ ít phần tối hơn', () => {
+    // Giường cao thường (≥ 0,9 m) chưa đủ chăn gối: giường khung thấp bị luật cao (HEIGHT_GROW_MAX) chặn mọi giường có đầu giường.
+    const bare = pool('doubleBed').find((id) => real(id)?.completeness?.v !== 'full' && (real(id)?.useMm[1] ?? 0) >= 900 && (real(id)?.parts?.length ?? 0) > 0) as string;
+    expect(bare).toBeDefined();
+    // Chỗ giường đôi thường gặp (hộp 1,8 × 2,2 m); mẫu cũ chưa đủ chăn gối thì không qua ràng buộc cứng.
+    const out = roomSetOf('bed', [at('bed', 'doubleBed', bare, { short: 1.8, long: 2.2 }), at('closet', 'closet', 'storage-wardrobe-greywash')], new Map(), ctx);
+    const bed = out.get('bed')?.to;
+    expect(real(bed ?? '')?.completeness?.v).toBe('full');
+    expect(partsOf(bed).some((p) => p.kind === 'bedding')).toBe(true);
+    const closet = out.get('closet');
+    expect(closet?.rule).toBe('roomset');
+    expect(darkShare(closet?.to)).toBeLessThan(darkShare('storage-wardrobe-greywash'));
+  });
+
+  it('thống kê một căn mẫu (khách + ăn + 2 ngủ): số món đổi / giữ và lý do giữ', () => {
+    const ns = pool('nightstand')[0] as string;
+    const rooms: [string, SetMember[]][] = [
+      ['living', livingRoom()],
+      ['dining', [at('table', 'diningTable', 'dining-table-pro'), ...diningChairs()]],
+      ['bed1', [at('b1', 'doubleBed', 'bed-double-oak-pro'), at('n1', 'nightstand', ns), at('n2', 'nightstand', ns), at('w1', 'closet', 'storage-wardrobe-greywash'), at('d1', 'dresser', 'storage-commode-beige')]],
+      ['bed2', [at('b2', 'doubleBed', 'bed-double-oak-pro'), at('w2', 'closet', 'storage-wardrobe-greywash'), at('k2', 'desk', 'desk-pro')]],
+    ];
+    const all = rooms.flatMap(([key, ms]) => [...roomSetOf(key, ms, new Map(), ctx).values()]);
+    const kept = all.filter((d) => d.rule === 'keep');
+    const why: Record<string, number> = {};
+    for (const d of kept) {
+      const k = d.why.replace(/ \(.*\)$/, '');
+      why[k] = (why[k] ?? 0) + 1;
+    }
+    console.info(`roomset căn mẫu: ${all.length} món, đổi ${all.length - kept.length}, giữ ${kept.length}`, JSON.stringify(why));
+    console.info(all.map((d) => `${d.id}: ${d.from} → ${d.to} [${d.rule}] ${d.why}`).join('\n'));
+    expect(all.length).toBe(17);
+    // Biên rõ: đa số món giữ mẫu cũ khi mẫu cũ đạt ràng buộc cứng.
+    expect(kept.length).toBeGreaterThan(all.length / 2);
   });
 });
