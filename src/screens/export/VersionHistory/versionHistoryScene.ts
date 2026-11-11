@@ -61,6 +61,10 @@ export const NO_SCENE: SceneConversion = Object.freeze({ scene: null, failed: fa
 export const OLD_VERSION_FURNISH_NOTE =
   'Bản cũ được dựng lại chỉ từ dữ liệu đã lưu của phiên bản (tường, cửa, phòng và đồ đã lưu). Phiên bản không lưu phong cách thiết kế AI nên cảnh dùng vật liệu mặc định, không có đồ AI bổ sung và không tự bày thêm đồ.';
 
+/** Chú thích khi chưa xác định được bản đang dựng là bản hiện tại hay bản cũ (chưa có revision tầng). */
+export const UNKNOWN_VERSION_NOTE =
+  'Chưa xác định được đây là bản hiện tại hay bản cũ, nên cảnh tạm dựng chỉ từ dữ liệu đã lưu của phiên bản (không có phong cách thiết kế AI).';
+
 /**
  * Tuỳ chọn dựng cảnh của một bản.
  * - Bản HIỆN TẠI: concept AI hiện hành như editor (`concept` `null` = chưa đọc xong → `null`, nơi gọi chờ).
@@ -74,8 +78,9 @@ export function versionSceneOptions(
   concept: SceneConcept | null,
   isOldVersion: boolean | null,
 ): { readonly options: ReturnType<typeof conceptSceneOptions>; readonly note: string | null } | null {
-  // Chưa biết bản cũ hay hiện tại (chưa có revision tầng): chờ, không đoán.
-  if (isOldVersion === null) return null;
+  // Chưa biết bản cũ hay hiện tại (chưa có revision tầng): dựng CHỈ từ ảnh chụp (không concept), câu trung tính — không
+  // khẳng định "Bản cũ", không tải mãi; revision về thì `isOldVersion` đổi và cảnh dựng lại đúng (review Codex-3 N2).
+  if (isOldVersion === null) return { options: { furnish: 'off' }, note: UNKNOWN_VERSION_NOTE };
   if (isOldVersion) return { options: { furnish: 'off' }, note: OLD_VERSION_FURNISH_NOTE };
   return concept === null ? null : { options: conceptSceneOptions(concept), note: concept.notice };
 }

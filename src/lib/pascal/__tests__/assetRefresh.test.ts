@@ -6,7 +6,6 @@ import { isServerModel, modelSrcOf } from '../furnitureCatalog';
 import {
   abandonAssetRefresh,
   ASSET_EXPIRED_NOTICE,
-  assetRefreshStatusAll,
   assetRefreshStatus,
   assetLoadedOk,
   ensureSceneLibrary,
@@ -14,6 +13,7 @@ import {
   installAssetRefresh,
   refreshAssetUrl,
   resetSceneLibraryForTests,
+  sceneLibraryNow,
   SIGNED_URL_MAX_AGE_MS,
   subscribeAssetRefresh,
   uninstallAssetRefreshForTests,
@@ -339,7 +339,7 @@ describe('fetchWithAssetRefresh — lớp chặn fetch dùng chung mọi bản t
     installAssetRefresh(undefined, noWait);
     const wrapped = globalThis.fetch;
     expect(wrapped).not.toBe(before);
-    expect((globalThis as { __assetRefreshStatus?: unknown }).__assetRefreshStatus).toBe(assetRefreshStatusAll);
+    expect((globalThis as { __assetRefreshStatus?: unknown }).__assetRefreshStatus).toBe(assetRefreshStatus);
     installAssetRefresh(undefined, noWait);
     expect(globalThis.fetch).toBe(wrapped);
     uninstallAssetRefreshForTests();
@@ -522,7 +522,7 @@ describe('review Codex-2 / Claude-A (lát 2)', () => {
     uninstallAssetRefreshForTests();
     const before = globalThis.fetch;
     vi.stubGlobal('location', { search: '?probe=1', href: 'http://app.test/' });
-    const other = { owns: (u: string) => u.startsWith('https://other.test/'), handle: vi.fn(async () => new Response('b')), status: () => ({ refreshed: 2, retriedSame: 0, dropped: 0, failures: [{ modelId: 'x', reason: 'exhausted' as const }], failureId: 1, notice: ASSET_EXPIRED_NOTICE }) };
+    const other = { abandon: vi.fn(), owns: (u: string) => u.startsWith('https://other.test/'), handle: vi.fn(async () => new Response('b')), status: () => ({ refreshed: 2, retriedSame: 0, dropped: 0, failures: [{ modelId: 'x', reason: 'exhausted' as const }], failureId: 1, notice: ASSET_EXPIRED_NOTICE }) };
     const hubKey = Symbol.for('appfront.assetRefresh.hub');
     installAssetRefresh(undefined, noWait);
     (globalThis as unknown as Record<symbol, { bundles: unknown[] }>)[hubKey]!.bundles.push(other);
@@ -551,5 +551,85 @@ describe('review Codex-2 / Claude-A (lát 2)', () => {
     list.mockResolvedValueOnce({ ok: false, error: { kind: 'forbidden' } });
     await refreshAssetUrl(modelSrcOf('lib-a'), 403, undefined, noWait);
     expect(assetRefreshStatus().failureId).toBeGreaterThan(firstId);
+  });
+});
+
+describe('review Codex-3 (lát 3)', () => {
+  const hubKey = Symbol.for('appfront.assetRefresh.hub');
+  interface HubLike { bundles: unknown[]; listeners: Set<() => void> }
+  const hubOf = (): HubLike => (globalThis as unknown as Record<symbol, HubLike>)[hubKey]!;
+
+  it('#5: hai bó CÙNG có một mẫu, bó A xử lý → abandon từ bó B vô hiệu A; câu báo của A tới người nghe của B', async () => {
+    await ensureSceneLibrary(); // bó này (B) đã đăng ký
+    const url = modelSrcOf('lib-a');
+    let aFailures: { modelId: string; reason: 'exhausted' }[] = [];
+    const a = {
+      owns: (u: string) => u.split('?')[0] === url.split('?')[0],
+      handle: vi.fn(async () => new Response('a')),
+      status: () => ({ refreshed: 0, retriedSame: 0, dropped: 0, failures: aFailures, failureId: aFailures.length, notice: null }),
+      abandon: vi.fn(),
+    };
+    hubOf().bundles.unshift(a); // A đăng ký TRƯỚC → lớp chặn giao request cho A
+    try {
+      await globalThis.fetch(url);
+      expect(a.handle).toHaveBeenCalledTimes(1);
+      abandonAssetRefresh();
+      expect(a.abandon).toHaveBeenCalledTimes(1);
+      const heard = vi.fn();
+      const off = subscribeAssetRefresh(heard);
+      aFailures = [{ modelId: 'lib-a', reason: 'exhausted' }];
+      hubOf().listeners.forEach((l) => l()); // A gọi notify của nó = người nghe chung
+      off();
+      expect(heard).toHaveBeenCalled();
+      expect(assetRefreshStatus()).toMatchObject({ failures: [{ modelId: 'lib-a', reason: 'exhausted' }], notice: ASSET_EXPIRED_NOTICE });
+    } finally {
+      hubOf().bundles.splice(hubOf().bundles.indexOf(a), 1);
+    }
+  });
+
+  it('#3/#10: huỷ signal trong lúc chờ lùi → không gọi API, không ghi danh mục sau đó', async () => {
+    await ensureSceneLibrary();
+    const old = modelSrcOf('lib-a');
+    const ctl = new AbortController();
+    let wake: () => void = () => undefined;
+    const sleep = () => new Promise<void>((r) => (wake = r));
+    const pending = refreshAssetUrl(old, 403, undefined, sleep, ctl.signal);
+    ctl.abort();
+    wake();
+    expect(await pending).toBeNull();
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(modelSrcOf('lib-a')).toBe(old);
+    expect(assetRefreshStatus().failures).toEqual([]);
+  });
+
+  it('N3: gia hạn thành công → gỡ người nghe abort khỏi signal', async () => {
+    await ensureSceneLibrary();
+    const old = modelSrcOf('lib-a');
+    const ctl = new AbortController();
+    const removed = vi.spyOn(ctl.signal, 'removeEventListener');
+    const next = (async (input: RequestInfo | URL) =>
+      new Response('x', { status: String(input) === old ? 403 : 200 })) as typeof fetch;
+    const res = await fetchWithAssetRefresh(old, { signal: ctl.signal }, next, undefined, noWait);
+    expect(res.status).toBe(200);
+    expect(removed).toHaveBeenCalledWith('abort', expect.any(Function));
+  });
+
+  it('N4: đọc theo tuổi CŨ (rỗng) về sau lượt gia hạn mới hơn → không chốt nguồn/giờ cũ, danh mục giữ', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(0);
+    const first = await ensureSceneLibrary();
+    vi.setSystemTime(SIGNED_URL_MAX_AGE_MS + 1);
+    let releaseAge: (v: unknown) => void = () => undefined;
+    list.mockImplementationOnce(() => new Promise((r) => (releaseAge = r)));
+    const age = ensureSceneLibrary();
+    await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    list.mockResolvedValueOnce({ ok: true, data: [item('lib-a', 300)] });
+    await refreshAssetUrl(modelSrcOf('lib-a'), 403, undefined, noWait);
+    releaseAge({ ok: true, data: [] });
+    expect(await age).toBe(first);
+    expect(sceneLibraryNow()?.source).toBe('server');
+    expect(isServerModel('lib-a')).toBe(true);
+    expect(await ensureSceneLibrary()).toBe(first); // không đọc lại vô cớ
+    expect(list).toHaveBeenCalledTimes(3);
   });
 });

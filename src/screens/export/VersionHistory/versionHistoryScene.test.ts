@@ -11,6 +11,7 @@ import {
   isEmptySource,
   isOldSceneVersion,
   OLD_VERSION_FURNISH_NOTE,
+  UNKNOWN_VERSION_NOTE,
   versionSceneOptions,
 } from './versionHistoryScene';
 
@@ -185,8 +186,13 @@ describe('isOldSceneVersion — "hiện tại" chỉ khi revision KHỚP DƯƠNG
     expect(isOldSceneVersion(true, 'v2', summaries, 8)).toBe(true); // sửa sau v2: v2 là ảnh chụp cũ
     expect(isOldSceneVersion(true, 'v2', summaries, null)).toBeNull(); // chưa biết revision tầng → chờ (Claude-A #4)
     expect(isOldSceneVersion(true, 'v2', new Map(), 7)).toBe(true); // bản tóm tắt chưa có floorRevision
-    // Chờ: không gắn "Bản cũ", không bơm concept — cảnh chưa dựng tới khi biết revision.
-    expect(versionSceneOptions(none2, isOldSceneVersion(true, 'v2', summaries, null))).toBeNull();
+    // Codex-3 N2: không tải mãi — dựng chỉ từ ảnh chụp, câu trung tính (không "Bản cũ"), không bơm concept.
+    expect(versionSceneOptions(none2, isOldSceneVersion(true, 'v2', summaries, null))).toEqual({
+      options: { furnish: 'off' },
+      note: UNKNOWN_VERSION_NOTE,
+    });
+    // Revision về → tự chuyển đúng.
+    expect(versionSceneOptions(none2, isOldSceneVersion(true, 'v2', summaries, 7))?.note).toBeNull();
     expect(isOldSceneVersion(false, 'v2', summaries, null)).toBe(false);
   });
 });
