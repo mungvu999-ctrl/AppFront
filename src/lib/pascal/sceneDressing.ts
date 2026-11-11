@@ -260,12 +260,21 @@ export const adoptedFurnitureIdOf = (dressId: string): FurnitureId => {
 export const ruleAdoptedIdsOf = (
   rooms: readonly Pick<Room, 'id' | 'dressingOff'>[],
   furniture: readonly Pick<Furniture, 'id' | 'roomId' | 'kind' | 'model'>[],
-): Set<string> => {
+): Set<string> =>
+  new Set(furniture.filter((f) => adoptedPairOf(rooms)(f) && f.model?.id === `appfront-${f.kind}`).map((f) => f.id as string));
+
+/** Món là cặp nhận chắc chắn (id suy từ một `DRESS-` trong `dressingOff` của chính phòng nó), mẫu nào cũng vậy. */
+export const adoptedPairOf = (
+  rooms: readonly Pick<Room, 'id' | 'dressingOff'>[],
+): ((f: Pick<Furniture, 'id' | 'roomId'>) => boolean) => {
   const paired = new Map(rooms.flatMap((room) => (room.dressingOff ?? []).map((d) => [adoptedFurnitureIdOf(d) as string, room.id as string] as const)));
-  return new Set(
-    furniture.filter((f) => paired.get(f.id) === f.roomId && f.model?.id === `appfront-${f.kind}`).map((f) => f.id as string),
-  );
+  return (f) => f.roomId !== undefined && paired.get(f.id) === f.roomId;
 };
+
+/** Cỡ NHÌN THẤY của mẫu lúc dựng [rộng, cao, sâu] m (sau khi khớp hộp bao): lượt về lưu đúng cỡ người dùng thấy. */
+export const SHOWN_SIZE_FIELD = 'shownSizeM';
+/** Node đồ thật của cặp nhận: dựng KHỚP ĐÚNG hộp bao (không chặn lệch trục) — hộp đã là cỡ nhìn thấy lúc lưu. */
+export const ADOPTED_FIT_FIELD = 'adoptedFit';
 
 /** Trường siêu dữ liệu của node món sinh: thư mục mẫu đang dựng (lượt về lưu khi món được nhận). */
 export const MODEL_FOLDER_FIELD = 'modelFolder';

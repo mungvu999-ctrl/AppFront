@@ -14,6 +14,7 @@ import { degrees, millimetres, millimetresToMetres } from '@/domain/units/types'
 import { CATALOG_MODELS, isServerModel, VARIANT_MODEL } from './furnitureCatalog';
 import LIBRARY_QC_JSON from './libraryQc.json' with { type: 'json' };
 import LIBRARY_ROLES_JSON from './libraryRoles.json' with { type: 'json' };
+import { itemFitOf } from './itemFit';
 import { rectOfFurniture, rectsOverlap } from './placement';
 import { paletteOf, ROOMSET_ON, roomSetOf, SET_ROLES, type SetDecision, type SetMember } from './roomSet';
 import LIBRARY_COLORS_JSON from './libraryColors.json' with { type: 'json' };
@@ -986,7 +987,14 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
       current: saved !== undefined ? saved : baseFolderOf(f, style, room.usage, override),
       pool: scoped ? setPoolOf(f, role, style) : [],
       fixed: !scoped,
-      ...(ceilingM === undefined ? {} : { ceilingM }),
+      ...(ceilingM === undefined
+        ? {}
+        : {
+            ceilingM,
+            // Cỡ hiển thị = đúng phép co dựng cảnh (`itemFitOf`) trong hộp của món, trần tầng làm chặn cao.
+            shownOf: (x: string) =>
+              itemFitOf(x, metresOf(f.boundingBox.max.x - f.boundingBox.min.x), metresOf(f.boundingBox.max.y - f.boundingBox.min.y), f.heightMm, ceilingM * 1000)?.shownM,
+          }),
     };
   });
   const tone = rulesOffOf(style).has('tone') ? undefined : (style as LayerStyle).woodTone;

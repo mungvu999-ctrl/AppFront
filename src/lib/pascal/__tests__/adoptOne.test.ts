@@ -11,7 +11,7 @@ import type { Furniture, Point, Room, SpatialGraph, Wall } from '@/domain/spatia
 import { createDerivedHistory, recordDerived, restoreDerived } from '@/pascal-page/bridge/derivedHistory';
 
 import { createPascalEditCommand } from '../fromPascal';
-import { clearServerLibrary, registerServerLibrary, setRealismModels } from '../furnitureCatalog';
+import { CATALOG_MODELS, clearServerLibrary, registerServerLibrary, setRealismModels } from '../furnitureCatalog';
 import QUALITY from '../libraryQuality.json' with { type: 'json' };
 import type { ModelQuality } from '../libraryQuality';
 import LIBRARY from '../libraryRoles.json' with { type: 'json' };
@@ -311,6 +311,46 @@ describe('catalog thật: nhận một tab đầu giường không đổi mẫu 
       expect(others.map((n) => `${n.id}=${model(reloaded.nodes[n.id])}`)).toEqual(others.map((n) => `${n.id}=${model(n)}`));
       expect(model(reloaded.nodes[`item_${adoptedFurnitureIdOf(dressIdOf(tab))}`])).toBe(model(tab));
     });
+  }
+
+  /** Cỡ nhìn thấy của node, mm: cỡ catalog × `asset.scale` (bỏ scale riêng của catalog) × `node.scale`. */
+  const seenMm = (n: PascalItemNode): number[] => {
+    const folder = (n.metadata?.appfront?.fields?.['modelFolder'] as string | undefined) ?? n.asset.id;
+    const catalog = CATALOG_MODELS[folder];
+    if (catalog === undefined) throw new Error(`không có mẫu ${folder}`);
+    const k = catalog.scale ?? [1, 1, 1];
+    return [0, 1, 2].map((i) => Math.round((catalog.dimensions[i] as number) * ((n.asset.scale?.[i] ?? 1) / (k[i] as number)) * (n.scale[i] as number) * 1000));
+  };
+  const near = (a: number[], b: number[]): void => a.forEach((v, i) => expect(Math.abs(v - (b[i] as number)), `trục ${i}: ${a.join('×')} ≠ ${b.join('×')}`).toBeLessThanOrEqual(1));
+
+  for (const [name, style] of [['bật', REAL_ON], ['tắt', REAL_OFF]] as const) {
+    for (const [what, scale, yaw, swap] of [
+      ['kéo rộng ×2', [2, 1, 1], 0, false],
+      ['kéo cao ×1,3', [1, 1.3, 1], 0, false],
+      ['xoay 90° + kéo rộng ×1,5', [1.5, 1, 1], Math.PI / 2, false],
+      ['đổi mẫu + kéo sâu ×1,4', [1, 1, 1.4], 0, true],
+    ] as const) {
+      it(`REVIEW-4 #2 — roomset ${name}, tủ áo sinh ${what}: cỡ nhìn thấy sau tải lại = lúc lưu (±1 mm)`, () => {
+        const graph = emptyBedroom();
+        const scene = sceneOf(graph, style);
+        const wardrobe = scene.nodes[`item_DRESS-wardrobe-${ROOM}`] as PascalItemNode;
+        expect(wardrobe).toBeDefined();
+        const current = (wardrobe.metadata?.appfront?.fields?.['modelFolder'] as string) ?? '';
+        const other = swap ? (LIBRARY.roles as Record<string, string[]>)['closet']?.find((id) => id !== current && CATALOG_MODELS[id] !== undefined) : undefined;
+        const tile = other === undefined ? wardrobe.asset : { ...wardrobe.asset, id: other, src: `https://x.test/${other}.glb`, dimensions: [...(CATALOG_MODELS[other]?.dimensions ?? [1, 1, 1])] as [number, number, number], scale: [1, 1, 1] as [number, number, number], offset: [0, 0, 0] as [number, number, number], rotation: [0, 0, 0] as [number, number, number] };
+        const edited = { ...shifted(wardrobe, 0, 0, yaw), asset: tile, scale: [...scale] } as PascalItemNode;
+        const before = seenMm(other === undefined ? edited : { ...edited, metadata: { ...edited.metadata, appfront: { ...edited.metadata?.appfront, fields: {} } } } as PascalItemNode);
+        const changes = commit(graph, withNode(scene, edited), [wardrobe.id]);
+        expect(furnitureOf(changes)).toHaveLength(1);
+        const reloaded = sceneOf(apply(graph, changes), style);
+        const real = reloaded.nodes[`item_${adoptedFurnitureIdOf(dressIdOf(wardrobe))}`] as PascalItemNode;
+        near(seenMm(real), before);
+        expect(real.rotation[1]).toBeCloseTo(edited.rotation[1], 6);
+        // Lưu lại đồ thật vừa tải (dời nhẹ): cỡ không trôi.
+        const again = apply(apply(graph, changes), commit(apply(graph, changes), withNode(reloaded, shifted(real, 0.01)), [real.id]));
+        near(seenMm(sceneOf(again, style).nodes[real.id] as PascalItemNode), before);
+      });
+    }
   }
 
   it('REVIEW-3 #1 — cờ tắt, không cặp nhận: sofa tối đã lưu `appfront-sofa` vẫn tính vào tông căn (như mẫu id catalog)', () => {

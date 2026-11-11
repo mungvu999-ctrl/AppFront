@@ -80,6 +80,8 @@ import {
   CEILING_DEFAULT,
   dressNodeIdOf,
   MODEL_FOLDER_FIELD,
+  ADOPTED_FIT_FIELD,
+  SHOWN_SIZE_FIELD,
   isGeneratedLightId,
   OUTLINE_PAINT_SLOT,
   isGeneratedNodeId,
@@ -768,6 +770,18 @@ export const isEditedGenerated = (node: PascalNode | undefined): boolean => {
   );
 };
 
+/**
+ * Cỡ mẫu nhìn thấy trước co giãn của người dùng, m: cỡ khớp lượt đi ghi (`SHOWN_SIZE_FIELD`) khi mẫu vẫn là mẫu lượt đi
+ * dựng; đã đổi mẫu (ô bảng đồ) hay đồ thật của cặp nhận (dựng khớp đúng hộp) thì `asset.dimensions` chính là cỡ ấy.
+ */
+const seenSizeM = (item: PascalItemNode): PascalVec3 => {
+  const fields = fieldsOf(item);
+  const folder = readString(fields, MODEL_FOLDER_FIELD);
+  const shown = fields[SHOWN_SIZE_FIELD];
+  const valid = Array.isArray(shown) && shown.length === 3 && shown.every((v) => typeof v === 'number' && v > 0);
+  return folder !== null && valid && modelSrcOf(folder) === item.asset.src ? (shown as unknown as PascalVec3) : item.asset.dimensions;
+};
+
 /** Cùng cỡ, đặt quanh tâm: hộp lượt đi của món rời có thể ở khung riêng (lan can quanh gốc toạ độ); màn 2D đọc hộp thế giới. */
 const boxAtCentre = ({ min, max }: BoundingBox, centre: Point): BoundingBox => {
   const halfX = (max.x - min.x) / 2;
@@ -857,6 +871,8 @@ const collectItem = (scene: PascalScene, item: PascalItemNode, levelId: LevelId,
     // không thành "đã sửa" chỉ vì cách hiển thị. Xoay rồi thì góc mới là của người dùng.
     const shownDeg = readNumber(fields, 'rotationDeg');
     const autoKept = fields['autoFacing'] === true && shownDeg !== null && rotationDeg === normaliseDegrees(asDegrees(shownDeg));
+    // Món sinh vừa nhận / đồ thật của cặp nhận: lưu CỠ NHÌN THẤY (mẫu × khớp × co giãn của người dùng) cả ba trục.
+    const seen = roomAdopted || fields[ADOPTED_FIT_FIELD] === true ? seenSizeM(item) : null;
 
     collector.furniture.push({
       ...reviewOf(item, knownId !== null),
@@ -864,10 +880,13 @@ const collectItem = (scene: PascalScene, item: PascalItemNode, levelId: LevelId,
       levelId,
       kind,
       centre,
-      boundingBox: wholeBox(autoKept ? worldBoxOf(box, rotationDeg) : adoptedOne ? boxAtCentre(box, centre) : box),
+      boundingBox: wholeBox(
+        seen !== null ? boxAround(centre, seen, item.scale) : autoKept ? worldBoxOf(box, rotationDeg) : adoptedOne ? boxAtCentre(box, centre) : box,
+      ),
       rotationDeg: autoKept ? asDegrees(0) : rotationDeg,
       ...(roomId !== null && isIdOfKind('room', roomId) ? { roomId } : {}),
       ...itemFieldsOf(item, kind),
+      ...(seen === null ? {} : { heightMm: millimetres(Math.max(1, Math.round(millimetresOf(seen[1]) * item.scale[1]))) }),
       // Món rời thành đồ thật giữ đúng mẫu và độ nâng lượt đi tự chọn (lan can, mặt bếp…), không đoán lại theo `kind`.
       ...(looseAdopted && MODEL_SRC.test(item.asset.src) ? { model: { id: item.asset.id.slice(0, 120), src: savedSrcOf(item.asset.src) } } : {}),
       ...(looseAdopted && item.position[1] > 0.001 ? { liftMm: millimetres(Math.round(millimetresOf(item.position[1]))) } : {}),

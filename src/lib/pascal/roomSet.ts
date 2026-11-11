@@ -41,6 +41,8 @@ export const HEIGHT_GROW_MAX = 1.15;
 export const TALL_M = 2.0;
 /** Khoảng hở tối thiểu tới trần phòng (m) khi đầu vào có `ceilingM`. */
 export const CEILING_GAP_M = 0.3;
+/** Dung sai mặt bằng HIỂN THỊ (m): ứng viên không rộng/sâu hơn mẫu cũ hiển thị quá chừng này trên từng trục. */
+export const SHOWN_TOL_M = 0.02;
 /**
  * Vai có sàn kích thước theo phân vị của chính pool vai (lượt 7): cạnh ngắn ứng viên ≥ phân vị SIZE_FLOOR_PCT của pool.
  * Pool armchair (72 mẫu) có mẫu đặt tên ghế ăn (`chair-dining-wood-woven` 541 mm, `chair-dining-grey-arm` 559 mm) mà
@@ -128,12 +130,10 @@ export interface SetPalette {
   readonly tone?: 'l' | 'd';
   /** Tường sáng (L* ≥ LIGHT_WALL_L); vắng tường thì theo tông gỗ. */
   readonly light?: boolean;
-  /** L* của gỗ tham chiếu theo tông (đọc thêm cho đầu dò). */
-  readonly woodL?: number;
 }
 
 /** sRGB hex → Lab (D65). */
-export const labOfHex = (hex: string): Lab | undefined => {
+const labOfHex = (hex: string): Lab | undefined => {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex);
   if (m === null) return undefined;
   const n = parseInt(m[1] as string, 16);
@@ -153,7 +153,7 @@ export const paletteOf = (style: SceneStyle, woodTone: 'l' | 'd' | undefined): S
   const color = SCENE_STYLE_MATERIALS.find((m) => m.id === id)?.material.properties?.color;
   const wall = typeof color === 'string' ? labOfHex(color) : undefined;
   const light = wall === undefined ? woodTone !== 'd' : wall[0] >= LIGHT_WALL_L;
-  return { ...(wall === undefined ? {} : { wall }), ...(woodTone === undefined ? {} : { tone: woodTone, woodL: WOOD_LAB[woodTone][0] }), light };
+  return { ...(wall === undefined ? {} : { wall }), ...(woodTone === undefined ? {} : { tone: woodTone }), light };
 };
 
 export interface SetMember {
@@ -170,6 +170,11 @@ export interface SetMember {
   readonly fixed: boolean;
   /** Chiều cao trần phòng (m) nếu bên gọi biết; vắng = không kiểm khoảng hở trần. */
   readonly ceilingM?: number;
+  /**
+   * Cỡ HIỂN THỊ [rộng, cao, sâu] (m) của một mẫu trong hộp của món, bằng đúng phép co dựng cảnh (`itemFitOf`); vắng =
+   * bên gọi không có hộp (test thuần) → ràng buộc theo cỡ catalog.
+   */
+  readonly shownOf?: (folder: string) => Dims | undefined;
 }
 
 export interface SetContext {
@@ -182,7 +187,7 @@ export interface SetContext {
   readonly qualityOf?: (id: string) => ModelQuality | undefined;
 }
 
-export type SetRule = 'roomset' | 'keep';
+type SetRule = 'roomset' | 'keep';
 export interface SetDecision {
   readonly id: string;
   readonly role: string;
@@ -231,8 +236,17 @@ export const hardRejectOf = (m: SetMember, folder: string, ctx: SetContext): str
   const refShort = ref === undefined ? 0 : Math.min(ref[0], ref[2]);
   const refLong = ref === undefined ? 0 : Math.max(ref[0], ref[2]);
   if (dims === undefined || !fitsSpot(dims, Math.max(m.short, refShort), Math.max(m.long, refLong))) return 'không lọt chỗ';
-  if (ref === undefined || dims[1] > ref[1] * (ref[1] >= TALL_M ? 1 : HEIGHT_GROW_MAX)) return 'cao hơn mẫu cũ';
-  if (m.ceilingM !== undefined && dims[1] > m.ceilingM - CEILING_GAP_M) return 'chạm gần trần';
+  // Lượt 9 (Codex review 4 #1, #4): chiều cao và mặt bằng xét trên cỡ HIỂN THỊ (phép co của dựng cảnh không đều trục,
+  // `heightMm` đã lưu đè cao mẫu) — hộp node không đổi không có nghĩa mặt bằng nhìn thấy không đổi.
+  const shown = m.shownOf?.(folder);
+  const shownRef = m.current === null ? undefined : m.shownOf?.(m.current);
+  if (m.shownOf !== undefined && (shown === undefined || shownRef === undefined)) return 'không tính được cỡ hiển thị';
+  if (shown !== undefined && shownRef !== undefined && (shown[0] > shownRef[0] + SHOWN_TOL_M || shown[2] > shownRef[2] + SHOWN_TOL_M))
+    return 'lớn hơn mẫu cũ khi hiển thị';
+  const h = shown ?? dims;
+  const hRef = shownRef ?? ref;
+  if (hRef === undefined || h[1] > hRef[1] * (hRef[1] >= TALL_M ? 1 : HEIGHT_GROW_MAX)) return 'cao hơn mẫu cũ';
+  if (m.ceilingM !== undefined && h[1] > m.ceilingM - CEILING_GAP_M) return 'chạm gần trần';
   if (SIZE_FLOOR_ROLES.has(m.role)) {
     const shorts = m.pool.flatMap((x) => {
       const d = ctx.dimsOf(x);
@@ -324,7 +338,7 @@ const woodDeltaOf = (lab: Lab, ref: Lab): number => {
 };
 
 /** Thành phần chi phí của một món trong phòng (nhỏ = hợp hơn) — đầu dò/diag đọc. */
-export interface ItemCost {
+interface ItemCost {
   readonly style: number;
   readonly wood: number;
   readonly soft: number;
@@ -337,7 +351,7 @@ export interface ItemCost {
 }
 
 /** Ngữ cảnh chấm một món: gỗ tham chiếu + họ nhấn đã có trong phòng (tường, đồ cố định, món đã chọn). */
-export interface ItemRefs {
+interface ItemRefs {
   readonly wood: Lab;
   readonly families: readonly number[];
   readonly anchor: boolean;
@@ -356,7 +370,7 @@ const familiesWith = (families: readonly number[], labs: readonly Lab[]): number
  *   + (phòng sáng) món ngồi tối đậm ≥ DARK_SEAT_SHARE → DARK_SEAT, còn lại DARK_SURF × tỉ phần tối đậm
  *   + W_FABRIC × (Σ tỉ phần × vượt CHROMA_CAP/CHROMA_CAP + số họ nhấn MỚI thêm vào phòng + ACCENT_ANCHOR nếu neo là món nhấn).
  */
-export const itemCostOf = (folder: string, role: string, refs: ItemRefs, ctx: SetContext, memo: Memo = new Map()): ItemCost => {
+const itemCostOf = (folder: string, role: string, refs: ItemRefs, ctx: SetContext, memo: Memo = new Map()): ItemCost => {
   const f = featOf(folder, ctx, memo);
   const light = ctx.palette.light !== false;
   const style = W_STYLE * (f.tier / (ctx.tiers + 1));
@@ -380,21 +394,6 @@ const toneWoodOf = (palette: SetPalette): Lab => WOOD_LAB[palette.tone ?? (palet
 /** Họ nhấn của tường (tường có màu) — điểm xuất phát của họ nhấn phòng. */
 const wallFamiliesOf = (palette: SetPalette): number[] =>
   palette.wall !== undefined && chromaOf(palette.wall) > NEUTRAL_C ? [hueOf(palette.wall)] : [];
-
-/**
- * Tổng chi phí một bộ mẫu (đầu dò/test): gỗ tham chiếu = gỗ của món đầu có gỗ (không có thì tông của căn); họ nhấn cộng
- * dồn theo thứ tự; món đầu là neo.
- */
-export const setCostOf = (folders: readonly string[], ctx: SetContext, memo: Memo = new Map()): number => {
-  const ref = folders.map((f) => featOf(f, ctx, memo).woodLab).find((l) => l !== undefined) ?? toneWoodOf(ctx.palette);
-  let families = wallFamiliesOf(ctx.palette);
-  let total = 0;
-  for (const [i, folder] of folders.entries()) {
-    total += itemCostOf(folder, '', { wood: ref, families, anchor: i === 0 }, ctx, memo).total;
-    families = familiesWith(families, featOf(folder, ctx, memo).loud.map((p) => p.lab));
-  }
-  return total;
-};
 
 const byId = (a: { readonly id: string }, b: { readonly id: string }): number => a.id.localeCompare(b.id);
 
@@ -540,7 +539,8 @@ export const roomSetOf = (
       const curCost = oldFail === undefined ? costOf(m.current as string) : Infinity;
       const cap = oldFail === undefined ? Infinity : oldFail === 'unknown' ? GOOD_COST : FAIL_COST;
       const old = oldFail === undefined ? curCost.toFixed(2) : `trượt: ${OLD_FAIL_VI[oldFail]}`;
-      const pick = shared !== undefined && fits(m, shared.f) ? shared : bestFor([m]);
+      // Mẫu chung (kể cả mẫu ghim) phải nằm trong ĐÚNG tập ứng viên của món nhận (lọc cỡ/QC/hướng), không thì chấm riêng.
+      const pick = shared !== undefined && m.pool.includes(shared.f) && fits(m, shared.f) ? shared : bestFor([m]);
       if (pick === undefined) {
         decide(m, m.current, anchor, 'không ứng viên qua ràng buộc cứng', undefined, curCost, oldFail);
       } else if (pick.cost > cap) {

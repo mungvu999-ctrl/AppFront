@@ -11,10 +11,12 @@ import { createDerivedHistory, recordDerived, restoreDerived, touchedTargetFor }
 
 import { createPascalEditCommand } from '../fromPascal';
 import { clearServerLibrary, registerServerLibrary } from '../furnitureCatalog';
+import { itemFitOf } from '../itemFit';
 import { LIBRARY_QUALITY, type ModelQuality, type QualityPart } from '../libraryQuality';
 import LIBRARY from '../libraryRoles.json' with { type: 'json' };
 import {
   DARK_L,
+  CEILING_GAP_M,
   DARK_SEAT_SHARE,
   FAIL_COST,
   GOOD_COST,
@@ -27,7 +29,7 @@ import {
   roomSetKeysOf,
   roomSetOf,
   roomSetOnOf,
-  setCostOf,
+  SHOWN_TOL_M,
   type Dims,
   type SetContext,
   type SetMember,
@@ -171,12 +173,11 @@ describe('roomSetOf — hàm thuần', () => {
     const ms = [member('F-sofa', 'sofa', 'sofa-blue', [], { fixed: true }), member('a', 'armchair', 'arm-green', ['arm-green', 'arm-grey'])];
     const ctx = ctxOf(table);
     expect(roomSetOf('R-1', ms, new Map(), ctx).get('a')?.to).toBe('arm-grey');
-    expect(setCostOf(['sofa-blue', 'arm-green'], ctx) - setCostOf(['sofa-blue', 'arm-grey'], ctx)).toBeGreaterThanOrEqual(1);
   });
 
   it('bảng màu từ SceneStyle so được: tường Lab + L* gỗ theo tông của căn', () => {
     const p = paletteOf(sceneStyleOf('am-ap'), 'd');
-    expect(p.woodL).toBe(35);
+    expect(p.tone).toBe('d');
     expect(p.wall?.[0]).toBeGreaterThan(85);
   });
 
@@ -199,7 +200,6 @@ describe('roomSetOf — hàm thuần', () => {
       'ns-b': qual('nightstand', { frame: OAK }),
     };
     const ctx = ctxOf(table, { bed: BED_DIMS });
-    expect(Math.abs(setCostOf(['bed', 'ns-a'], ctx) - setCostOf(['bed', 'ns-b'], ctx))).toBeLessThan(MIN_GAIN);
     const out = roomSetOf('R-1', [bedMember('F-bed', 'bed', [], { fixed: true }), member('n', 'nightstand', 'ns-a', ['ns-a', 'ns-b'])], new Map(), ctx);
     expect(out.get('n')).toMatchObject({ to: 'ns-a', rule: 'keep' });
   });
@@ -683,6 +683,14 @@ describe('roomset lượt 3 — mỗi món chỉ nhận mẫu qua ràng buộc c
     const ROLES = ['doubleBed', 'nightstand', 'closet', 'dresser', 'sofa', 'armchair', 'coffeeTable', 'diningTable', 'diningChair', 'bookshelf', 'desk'];
     let swaps = 0;
     let checked = 0;
+    // Cỡ hiển thị bằng đúng phép co dựng cảnh (`itemFitOf`): thư viện máy chủ giả lấy cỡ `useMm` thật.
+    const ids = [...new Set(ROLES.flatMap((role) => pool(role)))];
+    registerServerLibrary(ids.map((id) => {
+      const [widthMm, heightMm, depthMm] = real(id)?.useMm ?? [1000, 1000, 1000];
+      return { id, widthMm, heightMm, depthMm, modelUrl: `https://x.test/${id}.glb` };
+    }));
+    const CEIL = 2.7;
+    try {
     for (let r = 0; r < 300; r += 1) {
       const members: SetMember[] = [];
       for (let i = 0, n = 2 + Math.floor(rand() * 6); i < n; i += 1) {
@@ -692,7 +700,8 @@ describe('roomset lượt 3 — mỗi món chỉ nhận mẫu qua ràng buộc c
         const current = pickOf(ids);
         const [w, , d] = ctx.dimsOf(current) ?? [1, 1, 1];
         const k = 0.8 + rand() * 0.5;
-        members.push({ id: `m${i}`, role, short: Math.min(w, d) * k, long: Math.max(w, d) * k, current, pool: ids, fixed: rand() < 0.15 });
+        const [bw, bd] = [Math.min(w, d) * k, Math.max(w, d) * k];
+        members.push({ id: `m${i}`, role, short: bw, long: bd, current, pool: ids, fixed: rand() < 0.15, ceilingM: CEIL, shownOf: (x) => itemFitOf(x, bw, bd, undefined, CEIL * 1000)?.shownM });
       }
       for (const d of roomSetOf(`room-${r}`, members, new Map(), ctx).values()) {
         checked += 1;
@@ -705,7 +714,16 @@ describe('roomset lượt 3 — mỗi món chỉ nhận mẫu qua ràng buộc c
         // Lượt 5: mẫu cũ đạt chất lượng → hơn ≥ MIN_GAIN; trượt chất lượng → ≤ FAIL_COST; chưa biết → ≤ GOOD_COST.
         if (d.oldFail === undefined) expect((d.cost as number) <= (d.fromCost as number) - MIN_GAIN + 1e-9).toBe(true);
         else expect(d.cost as number).toBeLessThanOrEqual(d.oldFail === 'unknown' ? GOOD_COST : FAIL_COST);
+        // Lượt 9: mặt bằng HIỂN THỊ không lớn hơn mẫu cũ (từng trục, dung sai SHOWN_TOL_M); cao hiển thị chừa hở trần.
+        const [to, from] = [m.shownOf?.(d.to as string), m.shownOf?.(d.from as string)];
+        expect(to !== undefined && from !== undefined).toBe(true);
+        expect((to as Dims)[0]).toBeLessThanOrEqual((from as Dims)[0] + SHOWN_TOL_M + 1e-9);
+        expect((to as Dims)[2]).toBeLessThanOrEqual((from as Dims)[2] + SHOWN_TOL_M + 1e-9);
+        expect((to as Dims)[1]).toBeLessThanOrEqual(CEIL - CEILING_GAP_M + 1e-9);
       }
+    }
+    } finally {
+      clearServerLibrary();
     }
     console.info(`bất biến roomset: ${checked} quyết định, ${swaps} lần đổi`);
     expect(swaps).toBeGreaterThan(0);
@@ -976,7 +994,8 @@ describe('roomset — trần phòng lấy từ chiều cao tầng (toPascalScene
     return {
       ...g,
       levels: g.levels.map((l) => ({ ...l, heightMm: levelMm })),
-      furniture: [...g.furniture, piece(WARD, 'wardrobe', 1000, 600, 4300, 3500, { heightMm: 1900 } as Partial<Furniture>)],
+      // Không `heightMm` đã lưu: cao hiển thị theo mẫu (có `heightMm` thì mọi mẫu hiện đúng cao ấy — xem test Codex #1).
+      furniture: [...g.furniture, piece(WARD, 'wardrobe', 1000, 600, 4300, 3500)],
     } as SpatialGraph;
   };
   let current = '';
@@ -1005,5 +1024,64 @@ describe('roomset — trần phòng lấy từ chiều cao tầng (toPascalScene
     // Trần 2,4 m: tủ 2,15 m bị loại "chạm gần trần"; tủ 2,0 m lệch tông/phong cách vượt trần chi phí → giữ mẫu cũ.
     expect(assetOf(sceneOf(graphAt(2400), ON), WARD)).not.toBe(tall);
     expect(roomSetReport()[ROOM]?.items.find((d) => d.id === WARD)?.to).not.toBe(tall);
+  });
+});
+
+/* ---- Lượt 8 (Codex review 4 #3): mẫu ghim dùng chung phải nằm trong tập ứng viên của món nhận ---- */
+
+describe('roomset lượt 8 — mẫu dùng chung qua đúng bộ lọc ứng viên của món nhận', () => {
+  it('sofa sinh hộp 800×2000 không nhận sofa ghim 2000×800 mà bộ lọc hướng của nó đã loại', () => {
+    const table = {
+      pinned: qual('sofa', { fabric: GREY }),
+      own: qual('sofa', { fabric: GREY }),
+    };
+    const ctx = ctxOf(table, { pinned: [2, 0.8, 0.8], own: [0.8, 0.8, 2], old: [0.8, 0.8, 2] });
+    const out = roomSetOf(
+      'R',
+      [
+        member('F-sofa', 'sofa', 'pinned', [], { fixed: true, short: 0.8, long: 2 }),
+        // Bộ lọc của món nhận (setPoolOf: cỡ/QC/hướng) chỉ để lại `own`; mẫu cũ chưa có dữ liệu → được thay bằng mẫu ≤ GOOD_COST.
+        member('DRESS-sofa', 'sofa', 'old', ['own'], { short: 0.8, long: 2 }),
+      ],
+      new Map(),
+      ctx,
+    );
+    expect(hardRejectOf(member('x', 'sofa', 'pinned', [], { short: 0.8, long: 2 }), 'pinned', ctx)).toBeUndefined();
+    expect(out.get('DRESS-sofa')?.to).not.toBe('pinned');
+    expect(out.get('DRESS-sofa')?.to).toBe('own');
+  });
+});
+
+/* ---- Lượt 9 (Codex review 4 #1, #4): ràng buộc trên cỡ HIỂN THỊ bằng đúng phép co dựng cảnh ---- */
+
+describe('roomset lượt 9 — cỡ hiển thị (itemFitOf)', () => {
+  const ids = ['fit-old', 'fit-new', 'fit-tall'];
+  beforeAll(() => {
+    const dims: Record<string, [number, number, number]> = { 'fit-old': [500, 800, 500], 'fit-new': [500, 800, 1000], 'fit-tall': [1000, 1900, 600] };
+    registerServerLibrary(ids.map((id) => {
+      const [widthMm, heightMm, depthMm] = dims[id] as [number, number, number];
+      return { id, widthMm, heightMm, depthMm, modelUrl: `https://x.test/${id}.glb` };
+    }));
+  });
+  afterAll(() => clearServerLibrary());
+  const ctx = ctxOf(
+    { 'fit-old': qual('dresser', { frame: OAK }), 'fit-new': qual('dresser', { frame: OAK }), 'fit-tall': qual('closet', { frame: OAK }) },
+    { 'fit-old': [0.5, 0.8, 0.5], 'fit-new': [0.5, 0.8, 1.0], 'fit-tall': [1.0, 1.9, 0.6] },
+  );
+
+  it('#4: hộp 500×1000 mm — mẫu cũ hiện sâu < 1 m, mẫu thay hiện sâu đủ 1 m → loại "lớn hơn mẫu cũ khi hiển thị"', () => {
+    const shownOf = (x: string) => itemFitOf(x, 0.5, 1.0, undefined, 2700)?.shownM;
+    expect((shownOf('fit-old') as Dims)[2]).toBeLessThan(0.95);
+    expect((shownOf('fit-new') as Dims)[2]).toBeCloseTo(1.0, 6);
+    const m = member('d', 'dresser', 'fit-old', ['fit-new'], { short: 0.5, long: 1.0, shownOf });
+    expect(hardRejectOf(m, 'fit-new', ctx)).toBe('lớn hơn mẫu cũ khi hiển thị');
+    expect(roomSetOf('R', [m], new Map(), ctx).get('d')?.to).toBe('fit-old');
+  });
+
+  it('#1: tủ catalog 1,9 m, `heightMm` đã lưu 2300, trần 2,4 m → hiển thị 2,3 m, loại "chạm gần trần"', () => {
+    const shownOf = (x: string) => itemFitOf(x, 1.0, 0.6, 2300, 2400)?.shownM;
+    expect((shownOf('fit-tall') as Dims)[1]).toBeCloseTo(2.3, 6);
+    const m = member('w', 'closet', 'fit-tall', ['fit-tall'], { short: 0.6, long: 1.0, ceilingM: 2.4, shownOf });
+    expect(hardRejectOf(m, 'fit-tall', ctx)).toBe('chạm gần trần');
   });
 });

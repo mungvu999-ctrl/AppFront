@@ -182,7 +182,8 @@ describe('W3b — đồ đạc giữ khe, mẫu, độ cao', () => {
     expect(adopted).toHaveLength(1);
     expect(adopted.every((candidate) => candidate.id.startsWith('F-'))).toBe(true);
     expect(same?.variant).toBe(fields['variant']);
-    expect(same?.heightMm).toBe(fields['heightMm']);
+    // Món nhận lưu cỡ NHÌN THẤY cả ba trục (REVIEW-4 #2): cao = cao mẫu đã khớp lúc dựng.
+    expect(same?.heightMm).toBe(Math.round((fields['shownSizeM'] as number[])[1] as number * 1000));
   });
 });
 
