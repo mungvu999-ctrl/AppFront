@@ -1,6 +1,6 @@
 import { BoxGeometry, BufferGeometry, Float32BufferAttribute, Mesh, MeshStandardMaterial } from 'three';
 import { afterEach, describe, expect, it } from 'vitest';
-import { applyFabricMaterials, clearFabricMaterials, FABRIC_LEVELS, fabricLevelOf, fabricMatFlag, fabricReport, roleOfKey, setFabricLevel, setFabricMat } from './fabricMat';
+import { applyFabricMaterials, clearFabricMaterials, FABRIC_CACHE_MAX, FABRIC_LEVELS, fabricLevelOf, fabricMatFlag, fabricReport, roleOfKey, setFabricLevel, setFabricMat } from './fabricMat';
 import { fabricRoleOf, fabricSurfaceOf, modelKeyOf, type SurfaceFacts } from './fabricRules';
 
 const facts = (f: Partial<SurfaceFacts>): SurfaceFacts => ({ names: [], hasMap: false, hasUv: true, metalness: 0, roughness: 0.9, transparent: false, ...f });
@@ -199,43 +199,43 @@ describe('lát 3: lựa chọn người dùng + vòng đời vật liệu', () =
     expect(JSON.stringify(item)).toBe(before);
   });
 
-  it('vòng đời: vật liệu dùng chung chỉ dispose khi món cuối rời registry; đổi lựa chọn nhả khoá', () => {
+  it('Codex N1: món rời registry rồi áp lại trên cùng mesh — không ném, vật liệu đang dùng không bị dispose', () => {
     setFabricMat(true);
     const src = 'http://h/appback/library/bed-white-oak-headboard/model.glb';
     const sheet = new MeshStandardMaterial({ name: 'Standardmaterial', roughness: 0.9 });
     const a = new Mesh(new BoxGeometry(), sheet);
-    const b = new Mesh(new BoxGeometry(), sheet);
-    const nodes = new Map<string, unknown>([['item_F-A', 1], ['item_F-B', 1]]);
-    applyFabricMaterials([a], { id: 'item_F-A', asset: { src } }, nodes);
-    applyFabricMaterials([b], { id: 'item_F-B', asset: { src } }, nodes);
+    applyFabricMaterials([a], { id: 'item_F-A', asset: { src } });
     const fab = a.material as MeshStandardMaterial;
-    expect(b.material).toBe(fab);
     let disposed = 0;
     fab.addEventListener('dispose', () => (disposed += 1));
-    expect(fabricReport().materials).toBe(1);
-    nodes.delete('item_F-A');
-    applyFabricMaterials([new Mesh(new BoxGeometry(), new MeshStandardMaterial())], { id: 'item_F-C', asset: { src: '/items/closet/model.glb' } }, nodes);
+    // món khác áp (trước đây: lượt quét registry dispose vật liệu của A)
+    applyFabricMaterials([new Mesh(new BoxGeometry(), new MeshStandardMaterial({ roughness: 0.9 }))], { id: 'item_F-B', asset: { src } });
+    expect(() => applyFabricMaterials([a], { id: 'item_F-A', asset: { src } })).not.toThrow();
+    expect(a.material).toBe(fab);
     expect(disposed).toBe(0);
-    nodes.delete('item_F-B');
-    applyFabricMaterials([new Mesh(new BoxGeometry(), new MeshStandardMaterial())], { id: 'item_F-C', asset: { src: '/items/closet/model.glb' } }, nodes);
-    expect(disposed).toBe(1);
-    expect(fabricReport().materials).toBe(0);
-    expect(fabricReport().heldBy).toBe(0);
   });
 
-  it('món đổi sang khe người dùng: nhả và dispose vật liệu vải nó giữ', () => {
+  it('cache theo nội dung: 200 lần áp với UUID nguồn khác nhau không vượt trần, cùng màu dùng chung một vật liệu', () => {
     setFabricMat(true);
-    const first = meshWithSlot('body');
-    const item = { id: 'item_F-12', asset: { src: SOFA_SRC }, slots: {} as Record<string, string>, metadata: { appfront: { fields: { styleSlots: {} } } } };
-    applyFabricMaterials([first.mesh], item, new Map([['item_F-12', 1]]));
-    const fab = first.mesh.material as MeshStandardMaterial;
-    expect(fab.userData.fabricMat).toBe(true);
-    let disposed = 0;
-    fab.addEventListener('dispose', () => (disposed += 1));
-    first.mesh.material = first.m; // renderer gán lại vật liệu đã giải
-    applyFabricMaterials([first.mesh], { ...item, slots: { body: 'library:leather-calf' } }, new Map([['item_F-12', 1]]));
-    expect(first.mesh.material).toBe(first.m);
-    expect(disposed).toBe(1);
+    const src = 'http://h/appback/library/bed-white-oak-headboard/model.glb';
+    for (let i = 0; i < 200; i++) {
+      const m = new MeshStandardMaterial({ name: 'Standardmaterial', roughness: 0.9 });
+      m.color.setRGB(((i * 37) % 100) / 100, ((i * 53) % 100) / 100, ((i * 71) % 100) / 100);
+      const mesh = new Mesh(new BoxGeometry(), m);
+      applyFabricMaterials([mesh], { id: `item_F-${i}`, asset: { src } });
+      expect((mesh.material as MeshStandardMaterial).userData.fabricMat).toBe(true);
+    }
+    expect(fabricReport().materials).toBeLessThanOrEqual(FABRIC_CACHE_MAX);
+    clearFabricMaterials();
+    const same = () => {
+      const m = new MeshStandardMaterial({ name: 'Standardmaterial', roughness: 0.9 });
+      m.color.setRGB(0.3, 0.3, 0.3);
+      const mesh = new Mesh(new BoxGeometry(), m);
+      applyFabricMaterials([mesh], { id: 'item_F-x', asset: { src } });
+      return mesh.material;
+    };
+    expect(same()).toBe(same());
+    expect(fabricReport().materials).toBe(1);
   });
 
   it('clearFabricMaterials dispose mọi vật liệu còn giữ', () => {
