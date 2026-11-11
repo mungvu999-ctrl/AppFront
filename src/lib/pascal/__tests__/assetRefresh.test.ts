@@ -6,6 +6,7 @@ import { isServerModel, modelSrcOf } from '../furnitureCatalog';
 import {
   ASSET_EXPIRED_NOTICE,
   assetRefreshStatus,
+  assetLoadedOk,
   ensureSceneLibrary,
   installAssetRefresh,
   refreshAssetUrl,
@@ -48,7 +49,7 @@ describe('refreshAssetUrl — URL ký hết hạn', () => {
     expect(fresh).not.toBe(old);
     expect(fresh).toBe(modelSrcOf('lib-a'));
     expect(list).toHaveBeenCalledTimes(2);
-    expect(assetRefreshStatus()).toEqual({ refreshed: 1, retriedSame: 0, failures: [], notice: null });
+    expect(assetRefreshStatus()).toEqual({ refreshed: 1, retriedSame: 0, dropped: 0, failures: [], notice: null });
   });
 
   it('máy chủ trả URL y hệt (ký theo mốc giờ): thử lại ĐÚNG MỘT lần URL cũ; 403 mãi → dừng ở trần, báo', async () => {
@@ -127,7 +128,7 @@ describe('refreshAssetUrl — URL ký hết hạn', () => {
     expect(await pending).toBeNull();
     expect(isServerModel('mine-u1')).toBe(false);
     expect(isServerModel('mine-u2')).toBe(true);
-    expect(assetRefreshStatus()).toMatchObject({ failures: [{ modelId: 'mine-u1', reason: 'stale' }], notice: null });
+    expect(assetRefreshStatus()).toMatchObject({ dropped: 1, failures: [], notice: null });
   });
 
   it('URL của người trước (đã đổi phiên) không được gia hạn', async () => {
@@ -170,7 +171,7 @@ describe('đổi người / quá tuổi (review T2–T4)', () => {
     expect(await refreshAssetUrl(old, 403, undefined, noWait)).toBeNull();
     expect(list).toHaveBeenCalledTimes(1);
     expect(isServerModel('mine-u2')).toBe(false);
-    expect(assetRefreshStatus().failures).toEqual([{ modelId: 'lib-a', reason: 'stale' }]);
+    expect(assetRefreshStatus()).toMatchObject({ dropped: 1, failures: [], notice: null });
   });
 
   it('T3: đổi người (forget) xoá danh sách lỗi → câu báo tắt, người nghe được báo', async () => {
@@ -285,5 +286,62 @@ describe('installAssetRefresh — bản vá FileLoader (review T1)', () => {
     const patched = proto.load;
     uninstallAssetRefreshForTests();
     expect(proto.load).not.toBe(patched);
+  });
+});
+
+describe('lát 4 (review N3, T3)', () => {
+  it('N3: mẫu đã tải lại THÀNH CÔNG được tính lại trần lượt — phiên dài không báo exhausted mãi', async () => {
+    await ensureSceneLibrary();
+    let url = modelSrcOf('lib-a');
+    for (let k = 0; k < 2; k += 1) url = (await refreshAssetUrl(url, 403, undefined, noWait)) ?? 'x';
+    assetLoadedOk(url);
+    expect(await refreshAssetUrl(url, 403, undefined, noWait)).not.toBeNull();
+    expect(assetRefreshStatus().failures).toEqual([]);
+  });
+
+  it('N3: chỉ nhận URL mới mà chưa tải được thì KHÔNG xoá trần (403 mãi vẫn dừng)', async () => {
+    await ensureSceneLibrary();
+    let url = modelSrcOf('lib-a');
+    for (let k = 0; k < 2; k += 1) url = (await refreshAssetUrl(url, 403, undefined, noWait)) ?? 'x';
+    expect(await refreshAssetUrl(url, 403, undefined, noWait)).toBeNull();
+    expect(assetRefreshStatus().failures).toEqual([{ modelId: 'lib-a', reason: 'exhausted' }]);
+  });
+
+  it('N3: đọc lại theo tuổi thành công → trần lượt từng mẫu tính lại', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(0);
+    await ensureSceneLibrary();
+    let url = modelSrcOf('lib-a');
+    for (let k = 0; k < 2; k += 1) url = (await refreshAssetUrl(url, 403, undefined, noWait)) ?? 'x';
+    vi.setSystemTime(SIGNED_URL_MAX_AGE_MS * 2);
+    await ensureSceneLibrary();
+    expect(await refreshAssetUrl(modelSrcOf('lib-a'), 403, undefined, noWait)).not.toBeNull();
+  });
+
+  it.each([
+    ['rỗng', { ok: true, data: [] }],
+    ['403', { ok: false, error: { kind: 'forbidden' } }],
+  ])('N3: đọc lại theo tuổi trả %s (hợp lệ) → nhận, gỡ thư viện cũ, không giữ mãi', async (_n, reply) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(0);
+    await ensureSceneLibrary();
+    vi.setSystemTime(SIGNED_URL_MAX_AGE_MS + 1);
+    list.mockResolvedValueOnce(reply);
+    const lib = await ensureSceneLibrary();
+    expect(lib.source).not.toBe('server');
+    expect(isServerModel('lib-a')).toBe(false);
+    expect(await ensureSceneLibrary()).toBe(lib);
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it('T3: lỗi stale không vào danh sách, không báo người nghe (câu báo đã đóng không hiện lại)', async () => {
+    await ensureSceneLibrary();
+    const listener = vi.fn();
+    const off = subscribeAssetRefresh(listener);
+    signIn('u2');
+    expect(await refreshAssetUrl(modelSrcOf('lib-a'), 403, undefined, noWait)).toBeNull();
+    off();
+    expect(listener).not.toHaveBeenCalled();
+    expect(assetRefreshStatus()).toMatchObject({ dropped: 1, failures: [], notice: null });
   });
 });

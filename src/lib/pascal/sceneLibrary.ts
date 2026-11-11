@@ -101,7 +101,14 @@ export function ensureSceneLibrary(getApi: LibraryApiSource = defaultApi): Promi
     .catch((): LibraryLoad => ({ count: 0, source: 'fallback:threw', version: BUNDLED_LIBRARY_VERSION }))
     .then((load) => {
       // Đọc lại vì quá tuổi mà hỏng: giữ thư viện cũ (URL cũ vẫn gia hạn được từng mẫu), lượt dựng sau thử lại.
-      const result = keep !== null && load.source !== 'server' ? keep : withNotice(load);
+      // Danh sách rỗng/403/404 là câu trả lời HỢP LỆ (không phải lỗi mạng): nhận nó và gỡ thư viện cũ.
+      const result = keep !== null && libraryReadFailed(load.source) ? keep : withNotice(load);
+      if (keep !== null && result !== keep && shared === mine) {
+        if (load.source !== 'server') clearServerLibrary();
+        // Lượt đọc mới thành công: trần lượt gia hạn từng mẫu tính lại từ đầu.
+        assetAttempts.clear();
+        sameUrlRetried.clear();
+      }
       if (shared === mine) {
         settled = result;
         settledOwner = currentOwner();
@@ -123,6 +130,7 @@ export const resetSceneLibraryForTests = (): void => {
   settledOwner = null;
   assetLog.refreshed = 0;
   assetLog.retriedSame = 0;
+  assetLog.dropped = 0;
   assetLog.failures.length = 0;
 };
 
@@ -146,7 +154,12 @@ interface AssetFailure {
 }
 
 /** Số liệu gia hạn (đề nghị nối `__pascalProbe.assetRefresh()` vào `assetRefreshStatus`). */
-const assetLog: { refreshed: number; retriedSame: number; readonly failures: AssetFailure[] } = { refreshed: 0, retriedSame: 0, failures: [] };
+const assetLog: { refreshed: number; retriedSame: number; dropped: number; readonly failures: AssetFailure[] } = {
+  refreshed: 0,
+  retriedSame: 0,
+  dropped: 0,
+  failures: [],
+};
 const assetAttempts = new Map<string, number>();
 /** Mẫu đã dùng lượt "thử lại đúng URL cũ" (máy chủ ký theo mốc giờ tròn: đọc lại cùng mốc trả URL y hệt). */
 const sameUrlRetried = new Set<string>();
@@ -162,16 +175,19 @@ export interface AssetRefreshStatus {
   readonly refreshed: number;
   /** Lượt thử lại đúng URL cũ (đọc lại thư viện trả URL y hệt). */
   readonly retriedSame: number;
+  /** Lượt gia hạn bị bỏ vì phiên/người đã đổi (`stale`) — có chủ ý, KHÔNG tính là lỗi mẫu, không vào `failures`. */
+  readonly dropped: number;
   readonly failures: readonly AssetFailure[];
-  /** `ASSET_EXPIRED_NOTICE` khi có mẫu hỏng hẳn (không tính `stale`: request của phiên/người cũ bị bỏ có chủ ý). */
+  /** `ASSET_EXPIRED_NOTICE` khi có mẫu hỏng hẳn. */
   readonly notice: string | null;
 }
 
 export const assetRefreshStatus = (): AssetRefreshStatus => ({
   refreshed: assetLog.refreshed,
   retriedSame: assetLog.retriedSame,
+  dropped: assetLog.dropped,
   failures: [...assetLog.failures],
-  notice: assetLog.failures.some((f) => f.reason !== 'stale') ? ASSET_EXPIRED_NOTICE : null,
+  notice: assetLog.failures.length > 0 ? ASSET_EXPIRED_NOTICE : null,
 });
 
 /** Nghe thay đổi `assetRefreshStatus` (viewer hiện câu báo); trả hàm gỡ. */
@@ -185,6 +201,11 @@ export const subscribeAssetRefresh = (listener: () => void): (() => void) => {
 const notify = (): void => listeners.forEach((l) => l());
 
 const fail = (modelId: string, reason: AssetRefreshFailure): null => {
+  // `stale` không phải lỗi mẫu: không vào danh sách, không báo người nghe (câu báo đã đóng không hiện lại).
+  if (reason === 'stale') {
+    assetLog.dropped += 1;
+    return null;
+  }
   assetLog.failures.push({ modelId, reason });
   notify();
   return null;
@@ -281,6 +302,18 @@ type LoadFn = (
   onError?: (err: unknown) => void,
 ) => unknown;
 
+/**
+ * Một URL tải THÀNH CÔNG: mẫu ấy (nếu đã từng gia hạn) được tính lại trần lượt — phiên dài không báo `exhausted` mãi
+ * cho mẫu đã tải lại được. Chỉ xoá khi tải được (không xoá khi chỉ nhận URL mới): mẫu 403 mãi vẫn dừng ở trần.
+ */
+export const assetLoadedOk = (url: string): void => {
+  if (assetAttempts.size === 0) return;
+  const modelId = serverModelIdOfUrl(url);
+  if (modelId === undefined) return;
+  assetAttempts.delete(modelId);
+  sameUrlRetried.delete(modelId);
+};
+
 let installed: Promise<void> | null = null;
 let restore: (() => void) | null = null;
 
@@ -305,7 +338,11 @@ export function installAssetRefresh(
         proto.load = original;
       };
       proto.load = function patched(this: unknown, url, onLoad, onProgress, onError) {
-        return original.call(this, url, onLoad, onProgress, (err: unknown) => {
+        const loaded = (data: unknown): void => {
+          assetLoadedOk(url);
+          onLoad?.(data);
+        };
+        return original.call(this, url, loaded, onProgress, (err: unknown) => {
           const status = (err as { response?: { status?: number } } | null)?.response?.status;
           if (status === undefined) {
             onError?.(err);
