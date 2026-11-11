@@ -37,9 +37,15 @@ export function fabricRoleOf(id: string | null | undefined, src: string | null |
 export const FABRIC_NAME = /fabric|cloth|textile|linen|cotton|wool|velvet|boucle|suede|sheet|duvet|quilt|blanket|bedding|pillow|cushion|mattress|upholst|curtain|drape|throw|seat|towel/;
 /** Từ ngắn (chân, thanh) chỉ khớp nguyên từ: `leg` không khớp `elegant`, `rod` không khớp `product`. */
 export const NOT_FABRIC =
-  /wood|oak|walnut|pine|teak|metal|steel|chrome|brass|iron|alumin|gold|silver|copper|inox|frame|handle|glass|mirror|plastic|leather|marble|stone|lamp|bulb|emiss|screw|(?:^|[^a-z])(?:legs?|feet|foot|rod|rail|hook)(?:[^a-z]|$)/;
-/** Ngưỡng vật liệu trơn coi là vải trên món có vai vải (giường thư viện: ga `Standardmaterial` nhám 0,9, khung 0,6). */
+  /wood|oak|walnut|pine|teak|metal|steel|chrome|brass|iron|alumin|gold|silver|copper|inox|frame|handle|glass|mirror|plastic|leather|marble|stone|lamp|bulb|emiss|screw|edge|button|outline|(?:^|[^a-z])(?:legs?|feet|foot|rod|rail|hook)(?:[^a-z]|$)/;
+/**
+ * Ngưỡng vật liệu trơn coi là vải trên món có vai vải. Lát 2: CHĂN của giường thư viện (mesh `Box001`, 4550 đỉnh) dùng
+ * vật liệu `Box002__0` nhám 0,6 (mặc định xuất FBX/3ds Max) → ngưỡng 0,7 bỏ sót đúng mặt chính. Dải 0,5–0,7 chỉ nhận màu
+ * SÁNG (độ sáng tuyến tính ≥ `PLAIN_LIGHT_MIN`): vật liệu tối nhám vừa thường là khung/chân/viền.
+ */
 export const PLAIN_MIN_ROUGHNESS = 0.7;
+export const PLAIN_LIGHT_MIN_ROUGHNESS = 0.5;
+export const PLAIN_LIGHT_MIN = 0.5;
 export const PLAIN_MAX_METALNESS = 0.1;
 
 export interface SurfaceFacts {
@@ -50,6 +56,8 @@ export interface SurfaceFacts {
   metalness: number;
   roughness: number;
   transparent: boolean;
+  /** Độ sáng tuyến tính màu vật liệu (0..1); thiếu = 1 (glTF mặc định trắng). */
+  luminance?: number;
   /** Loại `itemLook` đã gắn (`userData.upholstery.kind`). */
   tagKind?: string | null;
 }
@@ -64,6 +72,8 @@ export function fabricSurfaceOf(f: SurfaceFacts): FabricMatch | null {
   if (f.hasMap && f.hasUv) return null;
   if (FABRIC_NAME.test(n)) return 'named';
   if (f.tagKind === 'fabric' || f.tagKind === 'bedding') return 'tagged';
-  if (!f.hasMap && f.metalness <= PLAIN_MAX_METALNESS && f.roughness >= PLAIN_MIN_ROUGHNESS) return 'plain';
+  if (f.hasMap || f.metalness > PLAIN_MAX_METALNESS) return null;
+  if (f.roughness >= PLAIN_MIN_ROUGHNESS) return 'plain';
+  if (f.roughness >= PLAIN_LIGHT_MIN_ROUGHNESS && (f.luminance ?? 1) >= PLAIN_LIGHT_MIN) return 'plain';
   return null;
 }

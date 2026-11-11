@@ -15,7 +15,7 @@
  * Khe người dùng gán vật liệu (món không sinh) giữ nguyên.
  */
 import { DoubleSide, type Material, type Mesh } from 'three';
-import { abs, clamp, cross, dFdx, dFdy, dot, faceDirection, materialColor, mix, mx_noise_float, normalize, normalView, positionView, positionWorld, sign, vec3, vec4 } from 'three/tsl';
+import { abs, clamp, smoothstep, uniform, cross, dFdx, dFdy, dot, faceDirection, materialColor, mix, mx_noise_float, normalize, normalView, positionView, positionWorld, sign, vec3, vec4 } from 'three/tsl';
 import { MeshPhysicalNodeMaterial, type Node } from 'three/webgpu';
 import LIBRARY_ROLES_JSON from '@/lib/pascal/libraryRoles.json' with { type: 'json' };
 import { namedFolderOf, serverKindOf, VARIANT_MODEL } from '@/lib/pascal/furnitureCatalog';
@@ -37,14 +37,55 @@ export const setFabricMat = (v: boolean): void => {
   on = v;
 };
 
+/**
+ * BẢNG CƯỜNG ĐỘ DUY NHẤT (lát 2). Mức chọn bằng `?fabric=<0..3>` (mặc định `FABRIC_LEVEL_DEFAULT`); mọi mức cùng MỘT đồ thị
+ * node (giá trị là uniform) → không thêm khoá shader. 0 = lát 1. Hạt sợi mờ dần theo khoảng cách camera: đủ dưới
+ * `grainNearM`, mất ở `grainFarM` (mức 0: không mờ). `tone` nhân màu (giữ sắc độ, trắng → trắng ngà/xám ấm).
+ * Căn cứ: nếp lát 1 dốc tối đa ≈ 2π·2,5 mm/0,25 m ≈ 0,06 rad (≈ 3,6°) → bóng đổ chỉ ±3–5 %, bị vai tone map nén trên nền
+ * gần trắng (ảnh cn03: gối đã áp vẫn y như cũ). Mức 2: 2π·12 mm/0,45 m ≈ 0,17 rad (≈ 10°) → ±10–15 %.
+ */
+export const FABRIC_LEVELS = [
+  { foldPeriodM: 0.25, foldHeightM: 0.0025, grainHeightM: 0.00012, grainAlbedo: 0.07, foldAlbedo: 0.06, tone: 1, grainNearM: 1e3, grainFarM: 2e3 },
+  { foldPeriodM: 0.35, foldHeightM: 0.006, grainHeightM: 0.00015, grainAlbedo: 0.08, foldAlbedo: 0.08, tone: 0.95, grainNearM: 1.2, grainFarM: 3 },
+  { foldPeriodM: 0.45, foldHeightM: 0.012, grainHeightM: 0.00018, grainAlbedo: 0.09, foldAlbedo: 0.1, tone: 0.9, grainNearM: 1.2, grainFarM: 3 },
+  { foldPeriodM: 0.55, foldHeightM: 0.02, grainHeightM: 0.0002, grainAlbedo: 0.1, foldAlbedo: 0.13, tone: 0.85, grainNearM: 1.2, grainFarM: 3 },
+] as const;
+/** Hằng lật mặc định của mức (điều phối viên đổi sau QA ảnh). */
+export const FABRIC_LEVEL_DEFAULT = 0;
+export function fabricLevelOf(search: string, def = FABRIC_LEVEL_DEFAULT): number {
+  const raw = new URLSearchParams(search).get('fabric');
+  const n = raw == null || raw === '' ? def : Math.round(Number(raw));
+  return Number.isFinite(n) ? Math.min(FABRIC_LEVELS.length - 1, Math.max(0, n)) : def;
+}
+let level = fabricLevelOf(typeof location === 'undefined' ? '' : location.search);
+const LV = FABRIC_LEVELS[level]!;
+const U = {
+  foldFreq: uniform(1 / LV.foldPeriodM),
+  foldHeight: uniform(LV.foldHeightM),
+  grainHeight: uniform(LV.grainHeightM),
+  grainAlbedo: uniform(LV.grainAlbedo),
+  foldAlbedo: uniform(LV.foldAlbedo),
+  tone: uniform(LV.tone),
+  grainNear: uniform(LV.grainNearM),
+  grainFar: uniform(LV.grainFarM),
+};
+/** Đổi mức lúc chạy (probe/A-B không nạp lại trang): chỉ đổi uniform. */
+export function setFabricLevel(next: number): number {
+  level = Math.min(FABRIC_LEVELS.length - 1, Math.max(0, Math.round(next)));
+  const v = FABRIC_LEVELS[level]!;
+  U.foldFreq.value = 1 / v.foldPeriodM;
+  U.foldHeight.value = v.foldHeightM;
+  U.grainHeight.value = v.grainHeightM;
+  U.grainAlbedo.value = v.grainAlbedo;
+  U.foldAlbedo.value = v.foldAlbedo;
+  U.tone.value = v.tone;
+  U.grainNear.value = v.grainNearM;
+  U.grainFar.value = v.grainFarM;
+  return level;
+}
+
 export const FABRIC_LOOK = {
-  foldPeriodM: 0.25,
-  foldHeightM: 0.0025,
   grainPeriodM: 0.006,
-  grainHeightM: 0.00012,
-  /** Biên độ độ sáng màu theo hạt / theo nếp (tỉ lệ). */
-  grainAlbedo: 0.07,
-  foldAlbedo: 0.06,
   roughness: 0.9,
   roughnessAmp: 0.08,
   sheen: 0.7,
@@ -77,10 +118,12 @@ let nodes: Nodes | undefined;
 function fabricNodes(): Nodes {
   if (nodes) return nodes;
   const L = FABRIC_LOOK;
-  const fold = mx_noise_float(positionWorld.div(L.foldPeriodM));
-  const grain = mx_noise_float(positionWorld.div(L.grainPeriodM).add(31.7));
+  const fold = mx_noise_float(positionWorld.mul(U.foldFreq));
+  // Hạt sợi chỉ hiện khi nhìn gần (xa: dưới một điểm ảnh → nhấp nháy, và mắt không thấy).
+  const near = smoothstep(U.grainNear, U.grainFar, positionView.z.negate()).oneMinus();
+  const grain = mx_noise_float(positionWorld.div(L.grainPeriodM).add(31.7)).mul(near);
   // mx_noise_float / faceDirection khai kiểu Node chung → ép về float.
-  const height = fold.mul(L.foldHeightM).add(grain.mul(L.grainHeightM)) as unknown as Node<'float'>;
+  const height = fold.mul(U.foldHeight).add(grain.mul(U.grainHeight)) as unknown as Node<'float'>;
   const face = faceDirection as unknown as Node<'float'>;
   // Mikkelsen "bump mapping unparametrized surfaces": đạo hàm màn hình của độ cao (mét) + của vị trí view (không chuẩn hoá
   // → biên độ đúng theo mét).
@@ -95,7 +138,7 @@ function fabricNodes(): Nodes {
   const grad = r1.mul(dhx).add(r2.mul(dhy)).mul(sign(det));
   const normal = normalize(normalView.mul(abs(det)).sub(grad)) as unknown as Node<'vec3'>;
   const base = (materialColor as unknown as Node<'vec4'>).rgb;
-  const shade = grain.mul(L.grainAlbedo).add(fold.mul(L.foldAlbedo)).add(1);
+  const shade = grain.mul(U.grainAlbedo).add(fold.mul(U.foldAlbedo)).add(1).mul(U.tone);
   nodes = {
     color: vec4(base.mul(shade), 1) as unknown as Node<'vec4'>,
     rough: clamp(grain.mul(L.roughnessAmp).add(L.roughness), 0, 1) as unknown as Node<'float'>,
@@ -186,7 +229,8 @@ export function applyFabricMaterials(meshes: readonly Mesh[], item: FabricItem |
         hasUv,
         metalness: src.metalness ?? 0,
         roughness: src.roughness ?? 1,
-        transparent: src.transparent || emissive,
+        transparent: src.transparent || src.opacity < 1 || emissive,
+        luminance: luminance(src.color ?? { r: 1, g: 1, b: 1 }),
         tagKind: (src.userData.upholstery as UpholsteryTag | undefined)?.kind ?? null,
       });
       if (!match) return mat;
@@ -205,6 +249,7 @@ export function applyFabricMaterials(meshes: readonly Mesh[], item: FabricItem |
 export function fabricReport() {
   return {
     on,
+    level,
     surfacesByRole: { ...report.surfaces },
     matchByRule: { ...report.match },
     items: report.items.size,

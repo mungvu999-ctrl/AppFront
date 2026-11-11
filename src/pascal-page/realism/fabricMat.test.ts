@@ -1,6 +1,6 @@
 import { BoxGeometry, BufferGeometry, Float32BufferAttribute, Mesh, MeshStandardMaterial } from 'three';
 import { afterEach, describe, expect, it } from 'vitest';
-import { applyFabricMaterials, clearFabricMaterials, fabricMatFlag, fabricReport, roleOfKey, setFabricMat } from './fabricMat';
+import { applyFabricMaterials, clearFabricMaterials, FABRIC_LEVELS, fabricLevelOf, fabricMatFlag, fabricReport, roleOfKey, setFabricLevel, setFabricMat } from './fabricMat';
 import { fabricRoleOf, fabricSurfaceOf, modelKeyOf, type SurfaceFacts } from './fabricRules';
 
 const facts = (f: Partial<SurfaceFacts>): SurfaceFacts => ({ names: [], hasMap: false, hasUv: true, metalness: 0, roughness: 0.9, transparent: false, ...f });
@@ -30,9 +30,12 @@ describe('fabricRules', () => {
     expect(roleOfKey('storage-wardrobe-greywash')).not.toBe('bed');
   });
 
-  it('bề mặt: ga trơn → vải; khung nhám 0,6, gỗ có ảnh, kim loại, kính, da → không', () => {
+  it('bề mặt: ga trơn → vải; chăn trắng nhám 0,6 (Box002__0) → vải; tối nhám 0,6, viền, trong suốt, gỗ có ảnh, kim loại, kính, da → không', () => {
     expect(fabricSurfaceOf(facts({ names: ['Standardmaterial'] }))).toBe('plain');
-    expect(fabricSurfaceOf(facts({ names: ['Box002__0'], roughness: 0.6 }))).toBeNull();
+    expect(fabricSurfaceOf(facts({ names: ['Box002__0'], roughness: 0.6 }))).toBe('plain');
+    expect(fabricSurfaceOf(facts({ names: ['Color_M08'], roughness: 0.6, luminance: 0.12 }))).toBeNull();
+    expect(fabricSurfaceOf(facts({ names: ['Box002__0'], roughness: 0.4 }))).toBeNull();
+    expect(fabricSurfaceOf(facts({ names: ['edge_color948886255'], roughness: 0.6 }))).toBeNull();
     expect(fabricSurfaceOf(facts({ names: ['Standardmaterial_0'], hasMap: true }))).toBeNull();
     expect(fabricSurfaceOf(facts({ names: ['slot_metal', 'metal'], metalness: 1, roughness: 0.3 }))).toBeNull();
     expect(fabricSurfaceOf(facts({ names: ['legs'], roughness: 0.9 }))).toBeNull();
@@ -46,6 +49,18 @@ describe('fabricRules', () => {
     expect(fabricSurfaceOf(facts({ names: ['Elegant_Cushion'], roughness: 0.4 }))).toBe('named');
     expect(fabricSurfaceOf(facts({ names: ['Lenestol_fabric'], hasMap: true, hasUv: true }))).toBeNull();
     expect(fabricSurfaceOf(facts({ names: ['Material'], roughness: 0.5, tagKind: 'bedding' }))).toBe('tagged');
+  });
+
+  it('mức cường độ ?fabric=: mặc định 0, kẹp 0..3, nếp tăng dần theo mức', () => {
+    expect(fabricLevelOf('')).toBe(0);
+    expect(fabricLevelOf('?fabric=2')).toBe(2);
+    expect(fabricLevelOf('?fabric=9')).toBe(3);
+    expect(fabricLevelOf('?fabric=-1')).toBe(0);
+    expect(fabricLevelOf('?fabric=abc')).toBe(0);
+    for (let i = 1; i < FABRIC_LEVELS.length; i++) expect(FABRIC_LEVELS[i]!.foldHeightM).toBeGreaterThan(FABRIC_LEVELS[i - 1]!.foldHeightM);
+    expect(setFabricLevel(2)).toBe(2);
+    expect(fabricReport().level).toBe(2);
+    setFabricLevel(0);
   });
 
   it('cờ: tắt mặc định, ?enable=fabricmat bật, ?disable thắng', () => {
@@ -70,7 +85,7 @@ describe('applyFabricMaterials', () => {
   const bed = () => {
     const sheet = new MeshStandardMaterial({ name: 'Standardmaterial', roughness: 0.9 });
     sheet.color.setRGB(0.96, 0.96, 0.96);
-    const frame = new MeshStandardMaterial({ name: 'Box002__0', roughness: 0.6 });
+    const frame = new MeshStandardMaterial({ name: 'Standardmaterial_0', roughness: 0.9, map: {} as never });
     return { sheet, frame, mesh: new Mesh(new BoxGeometry(), [sheet, frame]) };
   };
   const BED_SRC = 'http://h/appback/library/bed-white-oak-headboard/model.glb';
