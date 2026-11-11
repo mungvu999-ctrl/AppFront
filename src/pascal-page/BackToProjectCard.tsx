@@ -4,9 +4,10 @@
  * của upstream `viewer-toolbar.tsx`.
  */
 import { ArrowLeft, ArrowRight, ChevronDown, Eye, PencilRuler, TriangleAlert, WifiOff, X } from 'lucide-react';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
+import { assetRefreshStatus, subscribeAssetRefresh } from '@/lib/pascal/sceneLibrary';
 import { ROUTES } from '@/routes/paths';
 import { PROJECT_STEPS } from '@/routes/projectSteps';
 
@@ -115,11 +116,13 @@ function Toast({
   autoHideMs,
   children,
   onClose,
+  testId,
 }: {
   readonly alert: boolean;
   readonly autoHideMs?: number;
   readonly children: ReactNode;
   readonly onClose?: () => void;
+  readonly testId?: string;
 }) {
   const [paused, setPaused] = useState(false);
   // Hàm đóng đổi danh tính mỗi lượt vẽ của cầu: giữ trong ref để đồng hồ không đếm lại.
@@ -137,6 +140,7 @@ function Toast({
   return (
     <div
       className={`${TOAST} ${alert ? ALERT_TONE : INFO_TONE}`}
+      data-testid={testId}
       onBlur={() => setPaused(false)}
       onFocus={() => setPaused(true)}
       onKeyDown={(event) => {
@@ -177,6 +181,8 @@ export function SaveStatusCard({ save }: { readonly save: PascalSaveStatus }) {
   const [hiddenFailure, setHiddenFailure] = useState<string | null>(null);
   const showAlert = alert && (sticky || hiddenFailure !== alertText);
   const notices = save.notices;
+  // Mẫu thư viện hết hạn không tải lại được (`refreshAssetUrl`): giữ câu báo, không tự ẩn (món vẫn đang hỏng).
+  const assetNotice = useSyncExternalStore(subscribeAssetRefresh, () => assetRefreshStatus().notice);
 
   return (
     <>
@@ -194,7 +200,7 @@ export function SaveStatusCard({ save }: { readonly save: PascalSaveStatus }) {
         )}
         <span className="sr-only">{text}</span>
       </div>
-      {(showAlert || notices.length > 0) &&
+      {(showAlert || notices.length > 0 || assetNotice !== null) &&
         createPortal(
           <div className={TOAST_STACK} data-appfront-toast="">
             {showAlert && (
@@ -210,6 +216,11 @@ export function SaveStatusCard({ save }: { readonly save: PascalSaveStatus }) {
                     Đăng nhập lại
                   </a>
                 )}
+              </Toast>
+            )}
+            {assetNotice !== null && (
+              <Toast alert={false} testId="asset-expired-notice">
+                <span className="min-w-0 break-words">{assetNotice}</span>
               </Toast>
             )}
             {notices.map((notice) => (

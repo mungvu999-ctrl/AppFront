@@ -46,7 +46,25 @@ describe('refreshAssetUrl — URL ký hết hạn', () => {
     expect(fresh).not.toBe(old);
     expect(fresh).toBe(modelSrcOf('lib-a'));
     expect(list).toHaveBeenCalledTimes(2);
-    expect(assetRefreshStatus()).toEqual({ refreshed: 1, failures: [], notice: null });
+    expect(assetRefreshStatus()).toEqual({ refreshed: 1, retriedSame: 0, failures: [], notice: null });
+  });
+
+  it('máy chủ trả URL y hệt (ký theo mốc giờ): thử lại ĐÚNG MỘT lần URL cũ; 403 mãi → dừng ở trần, báo', async () => {
+    await ensureSceneLibrary();
+    const url = modelSrcOf('lib-a');
+    list.mockImplementation(async () => ({ ok: true, data: [{ ...item('lib-a', 0), modelUrl: url }] }));
+    const sleep = vi.fn<(ms: number) => Promise<void>>(noWait);
+    expect(await refreshAssetUrl(url, 403, undefined, sleep)).toBe(url);
+    expect(assetRefreshStatus()).toMatchObject({ refreshed: 0, retriedSame: 1, failures: [], notice: null });
+    // URL cũ vẫn 403 → lượt 2 (trong trần) đọc lại, vẫn y hệt → dừng, không thử nữa.
+    expect(await refreshAssetUrl(url, 403, undefined, sleep)).toBeNull();
+    expect(await refreshAssetUrl(url, 403, undefined, sleep)).toBeNull();
+    expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([400, 2_000]);
+    expect(assetRefreshStatus()).toMatchObject({
+      retriedSame: 1,
+      failures: [{ modelId: 'lib-a', reason: 'unchanged' }, { modelId: 'lib-a', reason: 'exhausted' }],
+      notice: ASSET_EXPIRED_NOTICE,
+    });
   });
 
   it('nhiều mẫu hết hạn cùng lúc → MỘT lượt đọc lại dùng chung', async () => {

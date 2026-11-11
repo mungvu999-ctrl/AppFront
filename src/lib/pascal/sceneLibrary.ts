@@ -62,6 +62,7 @@ const forget = (): void => {
   generation += 1;
   refreshing = null;
   assetAttempts.clear();
+  sameUrlRetried.clear();
   clearServerLibrary();
 };
 
@@ -109,6 +110,7 @@ export const resetSceneLibraryForTests = (): void => {
   forget();
   settledOwner = null;
   assetLog.refreshed = 0;
+  assetLog.retriedSame = 0;
   assetLog.failures.length = 0;
 };
 
@@ -132,15 +134,20 @@ interface AssetFailure {
 }
 
 /** Số liệu gia hạn (đề nghị nối `__pascalProbe.assetRefresh()` vào `assetRefreshStatus`). */
-const assetLog: { refreshed: number; readonly failures: AssetFailure[] } = { refreshed: 0, failures: [] };
+const assetLog: { refreshed: number; retriedSame: number; readonly failures: AssetFailure[] } = { refreshed: 0, retriedSame: 0, failures: [] };
 const assetAttempts = new Map<string, number>();
+/** Mẫu đã dùng lượt "thử lại đúng URL cũ" (máy chủ ký theo mốc giờ tròn: đọc lại cùng mốc trả URL y hệt). */
+const sameUrlRetried = new Set<string>();
 let refreshing: Promise<AssetRefreshFailure | null> | null = null;
 /** Id mẫu có trong lượt đọc lại gần nhất (mẫu vắng = người dùng đã mất quyền với nó). */
 let refreshedIds: ReadonlySet<string> = new Set();
 const listeners = new Set<() => void>();
 
 export interface AssetRefreshStatus {
+  /** Lượt thử lại bằng URL ký MỚI. */
   readonly refreshed: number;
+  /** Lượt thử lại đúng URL cũ (đọc lại thư viện trả URL y hệt). */
+  readonly retriedSame: number;
   readonly failures: readonly AssetFailure[];
   /** `ASSET_EXPIRED_NOTICE` khi có mẫu hỏng hẳn (không tính `stale`: request của phiên/người cũ bị bỏ có chủ ý). */
   readonly notice: string | null;
@@ -148,6 +155,7 @@ export interface AssetRefreshStatus {
 
 export const assetRefreshStatus = (): AssetRefreshStatus => ({
   refreshed: assetLog.refreshed,
+  retriedSame: assetLog.retriedSame,
   failures: [...assetLog.failures],
   notice: assetLog.failures.some((f) => f.reason !== 'stale') ? ASSET_EXPIRED_NOTICE : null,
 });
@@ -221,7 +229,14 @@ export async function refreshAssetUrl(
   // Lượt đọc mới không còn mẫu này = người dùng mất quyền với nó.
   if (!refreshedIds.has(modelId)) return fail(modelId, 'no-permission');
   const fresh = modelSrcOf(modelId);
-  if (fresh === url) return fail(modelId, 'unchanged');
+  if (fresh === url) {
+    // URL y hệt: thử lại ĐÚNG MỘT lần URL cũ (403 thoáng qua/proxy), vẫn trong trần lượt của mẫu; lần sau thì dừng.
+    if (sameUrlRetried.has(modelId)) return fail(modelId, 'unchanged');
+    sameUrlRetried.add(modelId);
+    assetLog.retriedSame += 1;
+    notify();
+    return url;
+  }
   assetLog.refreshed += 1;
   notify();
   return fresh;

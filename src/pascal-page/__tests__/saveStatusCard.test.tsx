@@ -195,3 +195,28 @@ describe('SaveStatusCard (v3 V3 — trạng thái lưu thật trên trang Pascal
     expect(screen.queryByRole('note')).toBeNull();
   });
 });
+
+describe('SaveStatusCard — mẫu thư viện hết hạn không tải lại được', () => {
+  it('hiện câu báo (role=status, data-testid) khi refreshAssetUrl hỏng hẳn, không tự ẩn', async () => {
+    const { registerServerLibrary, clearServerLibrary } = await import('@/lib/pascal/furnitureCatalog');
+    const { ASSET_EXPIRED_NOTICE, refreshAssetUrl, resetSceneLibraryForTests } = await import('@/lib/pascal/sceneLibrary');
+    resetSceneLibraryForTests();
+    registerServerLibrary([{ id: 'lib-x', widthMm: 900, heightMm: 800, depthMm: 500, modelUrl: 'https://minio.test/lib-x.glb?sig=1' }]);
+    render(<SaveStatusCard save={status()} />);
+    expect(screen.queryByTestId('asset-expired-notice')).toBeNull();
+
+    const forbidden = async () => ({ list: async () => ({ ok: false, error: { kind: 'forbidden' } }) }) as never;
+    await act(async () => {
+      await refreshAssetUrl('https://minio.test/lib-x.glb?sig=1', 403, forbidden, async () => undefined);
+    });
+    const toast = screen.getByTestId('asset-expired-notice');
+    expect(toast).toHaveAttribute('role', 'status');
+    expect(toast).toHaveTextContent(ASSET_EXPIRED_NOTICE);
+
+    vi.useFakeTimers();
+    act(() => vi.advanceTimersByTime(INFO_TOAST_MS * 3));
+    expect(screen.getByTestId('asset-expired-notice')).toBeInTheDocument();
+    act(() => resetSceneLibraryForTests());
+    clearServerLibrary();
+  });
+});
