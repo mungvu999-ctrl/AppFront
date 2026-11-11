@@ -154,12 +154,16 @@ type Src = Material & { color?: { r: number; g: number; b: number }; map?: unkno
  * Lát 4 (review Codex #3 + N1): cache khoá theo NỘI DUNG, không theo UUID nguồn, không đếm tham chiếu, không dispose từng món.
  * Khác nhau thật giữa các vật liệu vải chỉ là: side (khoá shader), màu (uniform, lượng tử hoá 1/`COLOR_STEPS`), cờ chăn ga và
  * dấu nhuộm upholstery (quyết định màu đích). Mẫu nạp lại / UUID mới → trùng khoá cũ, cache không phình. Trần cứng
- * `FABRIC_CACHE_MAX`: đầy thì dùng lại mục cùng side + dấu có màu gần nhất (không tạo, không dispose).
+ * `FABRIC_CACHE_MAX` (tổng) và `FABRIC_GROUP_MAX` (mỗi nhóm side + chăn ga + dấu nhuộm), kiểm TRƯỚC khi cấp: hết chỗ → dùng lại
+ * mục CÙNG NHÓM màu gần nhất; nhóm chưa có mục nào → giữ vật liệu gốc (không áp vải) — không bao giờ trả mục khác nhóm.
  * Vòng đời: sống theo trang. Không có điểm huỷ cảnh realism nào cho vật liệu đồ (đổi dự án = tải lại editor3d.html; `forget()`
  * của thư viện là đổi phiên, mesh vẫn có thể đang dùng vật liệu) → GIỚI HẠN: tối đa `FABRIC_CACHE_MAX` vật liệu nhỏ (không ảnh),
  * giữ tới khi rời trang. `clearFabricMaterials()` chỉ dùng cho test/điểm huỷ sau này.
  */
 export const FABRIC_CACHE_MAX = 32;
+export const FABRIC_GROUP_MAX = 8;
+/** Số mục theo nhóm. */
+const groupCount = new Map<string, number>();
 const COLOR_STEPS = 64;
 const cache = new Map<string, Material>();
 const sides = new Set<number>();
@@ -177,21 +181,20 @@ function contentKey(src: Src, bedding: boolean, tag: UpholsteryTag | undefined):
   return { group, key: `${group}|${q(c.r)},${q(c.g)},${q(c.b)}` };
 }
 
-/** Cache đầy: mục cùng nhóm (side + dấu) màu gần nhất; không có thì mục cùng side bất kỳ. */
-function nearest(group: string, side: number, c: Rgb): Material | undefined {
+/** Hết chỗ: mục CÙNG nhóm màu gần nhất (màu theo khoá lúc tạo, không theo màu đã nhuộm); không có → undefined. */
+function nearest(group: string, c: Rgb): Material | undefined {
   let best: Material | undefined;
   let bestD = Infinity;
   for (const [k, m] of cache) {
-    const same = k.startsWith(`${group}|`);
-    if (!same && m.side !== side) continue;
-    const mc = (m as Material & { color: Rgb }).color;
-    const d = (mc.r - c.r) ** 2 + (mc.g - c.g) ** 2 + (mc.b - c.b) ** 2 + (same ? 0 : 10);
+    if (!k.startsWith(`${group}|`)) continue;
+    const [r, g, b] = k.slice(group.length + 1).split(',').map((v) => Number(v) / COLOR_STEPS) as [number, number, number];
+    const d = (r - c.r) ** 2 + (g - c.g) ** 2 + (b - c.b) ** 2;
     if (d < bestD) [best, bestD] = [m, d];
   }
   return best;
 }
 
-function fabricMaterialFor(src: Src, bedding: boolean): Material {
+function fabricMaterialFor(src: Src, bedding: boolean): Material | undefined {
   // Nhuộm upholstery chạy sau trên vật liệu này (không ảnh → màu đích chép thẳng). Ga trắng trên giường → màu chăn ga của
   // phong cách (cùng họ trắng).
   const tag = src.userData.upholstery as UpholsteryTag | undefined;
@@ -200,10 +203,7 @@ function fabricMaterialFor(src: Src, bedding: boolean): Material {
   const hit = cache.get(key);
   if (hit) return hit;
   const c = clampRgb(src.color ?? { r: 1, g: 1, b: 1 });
-  if (cache.size >= FABRIC_CACHE_MAX) {
-    const near = nearest(group, src.side, c);
-    if (near) return near;
-  }
+  if (cache.size >= FABRIC_CACHE_MAX || (groupCount.get(group) ?? 0) >= FABRIC_GROUP_MAX) return nearest(group, c);
   const L = FABRIC_LOOK;
   const m = new MeshPhysicalNodeMaterial();
   m.name = `${src.name}|fabricmat`;
@@ -222,6 +222,7 @@ function fabricMaterialFor(src: Src, bedding: boolean): Material {
   m.userData = { fabricMat: true, ...(upholstery ? { upholstery } : {}) };
   sides.add(m.side);
   cache.set(key, m);
+  groupCount.set(group, (groupCount.get(group) ?? 0) + 1);
   return m;
 }
 
@@ -297,9 +298,11 @@ function applyRole(meshes: readonly Mesh[], item: FabricItem & { id: string }, r
         tagKind: (src.userData.upholstery as UpholsteryTag | undefined)?.kind ?? null,
       });
       if (!match) return mat;
+      const fab = fabricMaterialFor(src, role === 'bed' && luminance(src.color ?? { r: 0, g: 0, b: 0 }) >= BEDDING_LIGHT_MIN);
+      if (!fab) return mat; // hết chỗ, nhóm chưa có mục: giữ gốc
       count += 1;
       report.match[match] += 1;
-      return fabricMaterialFor(src, role === 'bed' && luminance(src.color ?? { r: 0, g: 0, b: 0 }) >= BEDDING_LIGHT_MIN);
+      return fab;
     });
     if (next.some((m, i) => m !== list[i])) mesh.material = Array.isArray(mesh.material) ? next : next[0]!;
   }
@@ -338,6 +341,7 @@ export function exposeFabricProbe(): void {
 export function clearFabricMaterials(): void {
   for (const m of cache.values()) m.dispose();
   cache.clear();
+  groupCount.clear();
   sides.clear();
   report.items.clear();
   for (const k of Object.keys(report.surfaces) as FabricRole[]) report.surfaces[k] = 0;

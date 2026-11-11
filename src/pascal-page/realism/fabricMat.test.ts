@@ -1,4 +1,4 @@
-import { BoxGeometry, BufferGeometry, Float32BufferAttribute, Mesh, MeshStandardMaterial } from 'three';
+import { BoxGeometry, DoubleSide, FrontSide, BufferGeometry, Float32BufferAttribute, Mesh, MeshStandardMaterial } from 'three';
 import { afterEach, describe, expect, it } from 'vitest';
 import { applyFabricMaterials, clearFabricMaterials, FABRIC_CACHE_MAX, FABRIC_LEVELS, fabricLevelOf, fabricMatFlag, fabricReport, roleOfKey, setFabricLevel, setFabricMat } from './fabricMat';
 import { fabricRoleOf, fabricSurfaceOf, modelKeyOf, type SurfaceFacts } from './fabricRules';
@@ -236,6 +236,58 @@ describe('lát 3: lựa chọn người dùng + vòng đời vật liệu', () =
     };
     expect(same()).toBe(same());
     expect(fabricReport().materials).toBe(1);
+  });
+
+  it('Codex B3: cache đầy vải tối không thẻ → chăn trắng không nhận mục xám sai nhóm; trần không bao giờ vượt', () => {
+    setFabricMat(true);
+    const src = 'http://h/appback/library/bed-white-oak-headboard/model.glb';
+    for (let i = 0; i < 40; i++) {
+      const m = new MeshStandardMaterial({ name: 'Standardmaterial', roughness: 0.9 });
+      m.color.setRGB(0.1 + i * 0.01, 0.1, 0.1); // tối → không thẻ chăn ga
+      applyFabricMaterials([new Mesh(new BoxGeometry(), m)], { id: `item_F-d${i}`, asset: { src } });
+      expect(fabricReport().materials).toBeLessThanOrEqual(FABRIC_CACHE_MAX);
+    }
+    for (let i = 0; i < 40; i++) {
+      const m = new MeshStandardMaterial({ name: 'Standardmaterial', roughness: 0.9, side: i % 2 ? DoubleSide : FrontSide });
+      m.color.setRGB(0.5 + (i % 10) * 0.04, 0.4 + (i % 7) * 0.05, 0.3);
+      applyFabricMaterials([new Mesh(new BoxGeometry(), m)], { id: `item_F-s${i}`, asset: { src } });
+      expect(fabricReport().materials).toBeLessThanOrEqual(FABRIC_CACHE_MAX);
+    }
+    const white = new MeshStandardMaterial({ name: 'Standardmaterial', roughness: 0.9 });
+    white.color.setRGB(0.9, 0.9, 0.9);
+    const mesh = new Mesh(new BoxGeometry(), white);
+    applyFabricMaterials([mesh], { id: 'item_F-w', asset: { src } });
+    const got = mesh.material as MeshStandardMaterial;
+    // hoặc vật liệu chăn ga đúng nhóm, hoặc giữ gốc — không bao giờ vải không thẻ
+    if (got.userData.fabricMat) expect(got.userData.upholstery).toEqual({ kind: 'bedding', recolour: true });
+    else expect(got).toBe(white);
+    expect(fabricReport().materials).toBeLessThanOrEqual(FABRIC_CACHE_MAX);
+  });
+
+  it('trần tổng đầy: nhóm mới không có mục → giữ vật liệu gốc, không cấp thêm', () => {
+    setFabricMat(true);
+    const src = '/items/curtain/model.glb';
+    const tags = [
+      { kind: 'fabric', recolour: true },
+      { kind: 'fabric', recolour: false },
+      { kind: 'fabric', recolour: true, drape: true },
+      { kind: 'bedding', recolour: true },
+      { kind: 'bedding', recolour: false },
+    ];
+    let kept = 0;
+    tags.forEach((tag, g) => {
+      for (let i = 0; i < 8; i++) {
+        const m = new MeshStandardMaterial({ name: 'slot_fabric', roughness: 0.9 });
+        m.color.setRGB(0.2 + i * 0.05, 0.3, 0.3);
+        m.userData.upholstery = tag;
+        const mesh = new Mesh(new BoxGeometry(), m);
+        applyFabricMaterials([mesh], { id: `item_DRESS-curtain-${g}-${i}`, asset: { src } });
+        if (mesh.material === m) kept += 1;
+        expect(fabricReport().materials).toBeLessThanOrEqual(FABRIC_CACHE_MAX);
+      }
+    });
+    expect(fabricReport().materials).toBe(FABRIC_CACHE_MAX);
+    expect(kept).toBe(8); // nhóm thứ 5 không còn chỗ, chưa có mục → giữ gốc
   });
 
   it('clearFabricMaterials dispose mọi vật liệu còn giữ', () => {
