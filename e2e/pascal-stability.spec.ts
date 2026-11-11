@@ -365,7 +365,7 @@ test.describe('Ổn định trang 3D Pascal', () => {
       console.log(`concept thật: ${manifest.nItems} món · ${manifest.library} · concept ${manifest.concept}`);
       expect(manifest.library).toBe('server');
       expect(manifest.concept).toBe('done');
-      const folders = new Set(manifest.itemSrc.map((entry) => /\/pascal\/items\/([^/]+)\//u.exec(entry)?.[1]));
+      const folders = new Set(manifest.itemSrc.map((entry) => /\/items\/([^/]+)\/model\.glb/u.exec(entry)?.[1]));
       // Ít nhất một mẫu concept chọn theo vai phải hiện trong cảnh.
       expect(folders.has(CONCEPT_FOLDER), JSON.stringify([...folders])).toBe(true);
       expect(folders.has(DEFAULT_CLOSET_FOLDER), JSON.stringify([...folders])).toBe(false);
