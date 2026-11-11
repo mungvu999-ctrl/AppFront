@@ -27,8 +27,19 @@ import { CONCEPT_FOLDER, conceptState, DEFAULT_CLOSET_FILE, richLibraryBody } fr
 
 const PROJECT_ID = 'P-FIXTURE0001';
 const VIEWPORT = { width: 1440, height: 900 } as const;
+/*
+ * TRẦN CHỜ — spec này chỉ kiểm CHỨC NĂNG, không khẳng định thời gian. Mọi hằng `*_TIMEOUT_MS` / `*_CEILING_MS` dưới đây
+ * là trần cho runner CI dựng hình bằng phần mềm (không GPU, luồng chính bận dựng tầng hàng chục giây), KHÔNG phải
+ * ngân sách UX. Đừng siết chúng để "đo" hiệu năng; đo hiệu năng chuyển tầng làm riêng (kit đo `F:/runs/m10/floor/switch.mjs`).
+ */
 /** Như `pascal-perf.spec.ts`: gói Pascal lớn, máy bận thì "đã dựng xong" tới muộn. */
 const READY_TIMEOUT_MS = 150_000;
+/** Bấm hàng tầng khi luồng chính đang dựng tầng trước (6a281dc4: CI không GPU vượt 10 s). */
+const LEVEL_CLICK_CEILING_MS = 90_000;
+/** Câu báo / lớp "đang chọn" hiện sau khi cảnh đã dựng. */
+const UI_SETTLE_CEILING_MS = 30_000;
+/** Nhãn "Đang chuẩn bị tầng…" tắt và mọi tầng đang hiện báo sẵn sàng sau loạt đổi tầng. */
+const LEVEL_READY_CEILING_MS = 120_000;
 /** Mỗi ca mở trang 2 lần (đối chứng + biến thể). */
 const TEST_TIMEOUT_MS = 330_000;
 const SLOW_MS = 4_000;
@@ -273,7 +284,7 @@ test.describe('Ổn định trang 3D Pascal', () => {
       await waitBuilt(page);
       const { library } = await manifestOf(page);
       expect(library).toMatch(/^fallback:/u);
-      await expect.poll(noticeSeen, { timeout: 30_000 }).toBe(true);
+      await expect.poll(noticeSeen, { timeout: UI_SETTLE_CEILING_MS }).toBe(true);
       expect(writes).toEqual([]);
     } finally {
       await page.context().close();
@@ -311,18 +322,17 @@ test.describe('Ổn định trang 3D Pascal', () => {
       await button(levelNames[1]!).click({ timeout: READY_TIMEOUT_MS });
       const sequence = [2, 0, 3, 1, 2, 3].map((index) => levelNames[index % levelNames.length]!);
       for (const name of sequence) {
-        // Máy CI không GPU: luồng chính bận dựng tầng hơn 10 giây nên nút chưa "ổn định" để bấm; trần rộng, không đổi điều kiểm.
-        await button(name).click({ timeout: 90_000 });
+        await button(name).click({ timeout: LEVEL_CLICK_CEILING_MS });
         await page.waitForTimeout(150);
       }
       const last = sequence.at(-1)!;
 
       await waitBuilt(page);
       // Tầng cuối đúng: hàng của nó mang nền "đang chọn" của bộ chọn tầng vendor.
-      await expect(button(last).locator('..')).toHaveClass(/bg-white\/10/u, { timeout: 30_000 });
+      await expect(button(last).locator('..')).toHaveClass(/bg-white\/10/u, { timeout: UI_SETTLE_CEILING_MS });
       // Nhãn "Đang chuẩn bị tầng…" (nếu có) phải tự tắt.
       const status = page.getByTestId('level-warm-status');
-      if ((await status.count()) > 0) await expect(status).toHaveText('', { timeout: 120_000 });
+      if ((await status.count()) > 0) await expect(status).toHaveText('', { timeout: LEVEL_READY_CEILING_MS });
       // Mọi tầng đang hiện báo sẵn sàng (luật w3 phải đã nạp: `null` = chưa áp → đỏ).
       await expect
         .poll(
@@ -333,7 +343,7 @@ test.describe('Ổn định trang 3D Pascal', () => {
               const shown = rows.filter((row) => row.shown);
               return shown.length > 0 && shown.every((row) => row.ready) ? 'ready' : JSON.stringify(shown);
             }),
-          { timeout: 120_000 },
+          { timeout: LEVEL_READY_CEILING_MS },
         )
         .toBe('ready');
 
