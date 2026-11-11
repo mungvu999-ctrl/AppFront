@@ -26,7 +26,14 @@ export function BackToProjectCard({ href, projectName, save }: BackToProjectCard
   return (
     <>
       <BackLink href={href} projectName={projectName} />
-      {save !== undefined ? <SaveStatusCard save={save} /> : <ReadOnlyChip />}
+      {save !== undefined ? (
+        <SaveStatusCard save={save} />
+      ) : (
+        <>
+          <ReadOnlyChip />
+          <ReadOnlyAssetNotice />
+        </>
+      )}
     </>
   );
 }
@@ -162,6 +169,41 @@ function Toast({
 }
 
 /**
+ * Mẫu thư viện hết hạn không tải lại được (`refreshAssetUrl`): giữ câu báo, không tự ẩn (món vẫn đang hỏng);
+ * người dùng đóng được, mẫu hỏng thêm thì hiện lại. Đổi người (`forget`) xoá danh sách lỗi → câu báo tắt.
+ * Dùng ở CẢ hai vai: người sửa (trong chồng toast của chip lưu) và người xem (không có chip lưu — vòng 11: câu báo
+ * từng chỉ nằm trong `SaveStatusCard` nên người xem không bao giờ thấy).
+ */
+function useAssetNotice(): { readonly text: string | null; readonly dismiss: () => void } {
+  const failures = useSyncExternalStore(subscribeAssetRefresh, () => assetRefreshStatus().failures.length);
+  const text = useSyncExternalStore(subscribeAssetRefresh, () => assetRefreshStatus().notice);
+  const [dismissedAt, setDismissedAt] = useState(0);
+  // Danh sách lỗi đã bị xoá (đổi người) rồi đầy lại: số đã đóng cũ không còn nghĩa.
+  const dismissed = dismissedAt <= failures ? dismissedAt : 0;
+  return { text: failures > dismissed ? text : null, dismiss: () => setDismissedAt(failures) };
+}
+
+function AssetNoticeToast({ text, onClose }: { readonly text: string; readonly onClose: () => void }) {
+  return (
+    <Toast alert={false} onClose={onClose} testId="asset-expired-notice">
+      <span className="min-w-0 break-words">{text}</span>
+    </Toast>
+  );
+}
+
+/** Vai chỉ xem: không có chip lưu nên câu báo mẫu hết hạn có chồng toast riêng (cùng vị trí). */
+export function ReadOnlyAssetNotice() {
+  const asset = useAssetNotice();
+  if (asset.text === null) return null;
+  return createPortal(
+    <div className={TOAST_STACK} data-appfront-toast="">
+      <AssetNoticeToast onClose={asset.dismiss} text={asset.text} />
+    </div>,
+    document.body,
+  );
+}
+
+/**
  * Chip lưu của tầng (v3 BE.md major 1): MỘT chấm màu — xanh đã lưu, vàng đang lưu, đỏ chưa lưu; mất
  * mạng là biểu tượng wifi gạch. Câu đầy đủ ("Đã lưu lúc 10:02"…) ở chú thích khi rê chuột và cho trình
  * đọc màn hình; thanh trên chật nên không in chữ.
@@ -181,14 +223,8 @@ export function SaveStatusCard({ save }: { readonly save: PascalSaveStatus }) {
   const [hiddenFailure, setHiddenFailure] = useState<string | null>(null);
   const showAlert = alert && (sticky || hiddenFailure !== alertText);
   const notices = save.notices;
-  // Mẫu thư viện hết hạn không tải lại được (`refreshAssetUrl`): giữ câu báo, không tự ẩn (món vẫn đang hỏng);
-  // người dùng đóng được, mẫu hỏng thêm thì hiện lại. Đổi người (`forget`) xoá danh sách lỗi → câu báo tắt.
-  const assetFailures = useSyncExternalStore(subscribeAssetRefresh, () => assetRefreshStatus().failures.length);
-  const assetNoticeText = useSyncExternalStore(subscribeAssetRefresh, () => assetRefreshStatus().notice);
-  const [assetDismissedAt, setAssetDismissedAt] = useState(0);
-  // Danh sách lỗi đã bị xoá (đổi người) rồi đầy lại: số đã đóng cũ không còn nghĩa.
-  const dismissed = assetDismissedAt <= assetFailures ? assetDismissedAt : 0;
-  const assetNotice = assetFailures > dismissed ? assetNoticeText : null;
+  const asset = useAssetNotice();
+  const assetNotice = asset.text;
 
   return (
     <>
@@ -224,11 +260,7 @@ export function SaveStatusCard({ save }: { readonly save: PascalSaveStatus }) {
                 )}
               </Toast>
             )}
-            {assetNotice !== null && (
-              <Toast alert={false} onClose={() => setAssetDismissedAt(assetFailures)} testId="asset-expired-notice">
-                <span className="min-w-0 break-words">{assetNotice}</span>
-              </Toast>
-            )}
+            {assetNotice !== null && <AssetNoticeToast onClose={asset.dismiss} text={assetNotice} />}
             {notices.map((notice) => (
               <Toast
                 alert={notice.tone === 'alert'}

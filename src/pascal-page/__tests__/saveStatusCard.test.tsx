@@ -219,4 +219,25 @@ describe('SaveStatusCard — mẫu thư viện hết hạn không tải lại đ
     act(() => resetSceneLibraryForTests());
     clearServerLibrary();
   });
+
+  it('vai CHỈ XEM (không có `save`) cũng thấy câu báo — vòng 11: trước đây câu báo chỉ nằm trong chip lưu', async () => {
+    vi.useRealTimers();
+    const { registerServerLibrary, clearServerLibrary } = await import('@/lib/pascal/furnitureCatalog');
+    const { ASSET_EXPIRED_NOTICE, refreshAssetUrl, resetSceneLibraryForTests } = await import('@/lib/pascal/sceneLibrary');
+    resetSceneLibraryForTests();
+    registerServerLibrary([{ id: 'lib-y', widthMm: 900, heightMm: 800, depthMm: 500, modelUrl: 'https://minio.test/lib-y.glb?sig=1' }]);
+    render(<BackToProjectCard href="/projects/p1/floors" projectName="Nhà mẫu" />);
+    expect(screen.queryByTestId('asset-expired-notice')).toBeNull();
+    const forbidden = async () => ({ list: async () => ({ ok: false, error: { kind: 'forbidden' } }) }) as never;
+    await act(async () => {
+      await refreshAssetUrl('https://minio.test/lib-y.glb?sig=1', 403, forbidden, async () => undefined);
+    });
+    const toast = screen.getByTestId('asset-expired-notice');
+    expect(toast).toHaveAttribute('role', 'status');
+    expect(toast).toHaveTextContent(ASSET_EXPIRED_NOTICE);
+    fireEvent.click(screen.getByRole('button', { name: /đóng/i }));
+    expect(screen.queryByTestId('asset-expired-notice')).toBeNull();
+    act(() => resetSceneLibraryForTests());
+    clearServerLibrary();
+  });
 });
