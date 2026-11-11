@@ -341,11 +341,24 @@ test.describe('Ổn định trang 3D Pascal', () => {
               const rows = (window as unknown as ProbeWindow).__pascalProbe?.levelReadiness();
               if (!rows) return 'chưa có levelReadiness';
               const shown = rows.filter((row) => row.shown);
-              return shown.length > 0 && shown.every((row) => row.ready) ? 'ready' : JSON.stringify(shown);
+              // Bất biến: tầng đang hiện chưa sẵn sàng thì phải có nhãn hoặc thông báo kẹt — UI không được im lặng.
+              const text = (id: string) => document.querySelector(`[data-testid="${id}"]`)?.textContent?.trim() ?? '';
+              if (shown.some((row) => !row.ready) && text('level-warm-status') === '' && text('level-warm-stalled') === '') {
+                const again = (window as unknown as ProbeWindow).__pascalProbe?.levelReadiness()?.filter((row) => row.shown) ?? [];
+                if (again.some((row) => !row.ready)) return `IM LẶNG: ${JSON.stringify(again)}`;
+              }
+              return shown.length > 0 && shown.every((row) => row.ready) ? 'ready' : 'pending';
             }),
           { timeout: LEVEL_READY_CEILING_MS },
         )
-        .toBe('ready');
+        .not.toBe('pending');
+      // Kết thúc poll ở 'ready'; chuỗi "IM LẶNG…" làm đỏ ngay với dòng trạng thái kèm theo.
+      expect(
+        await page.evaluate(() => {
+          const shown = (window as unknown as ProbeWindow).__pascalProbe?.levelReadiness()?.filter((row) => row.shown) ?? [];
+          return shown.length > 0 && shown.every((row) => row.ready) ? 'ready' : JSON.stringify(shown);
+        }),
+      ).toBe('ready');
 
       // Số món theo tầng: đúng như một lần mở KHÔNG đổi tầng, và tầng cuối không ít hơn đồ của bộ mẫu.
       const perLevel = await itemsPerLevel(page);
