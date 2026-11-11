@@ -1,6 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
-import { flagOn, inRoom, type LampItem, planLampAnchors, roomsWithVisibleSource, shadowSlotIndex } from './lampRule';
+import { Mesh, Scene, Vector3 } from 'three';
+
+import {
+  type AppliedLight,
+  fixtureMaterialCount,
+  flagOn,
+  inRoom,
+  LAMP_RULE_DEFAULT,
+  type LampItem,
+  lampRuleOn,
+  planLampAnchors,
+  ROOM_SHADOW_DEFAULT,
+  roomsWithVisibleSource,
+  shadowSlotIndex,
+  syncFixtures,
+} from './lampRule';
 import { planRoomLights, ROOM_LIGHT_MAX, type Polygon } from './roomLights';
 
 const rect = (x0: number, z0: number, w: number, d: number): Polygon => [[x0, z0], [x0 + w, z0], [x0 + w, z0 + d], [x0, z0 + d]];
@@ -28,12 +43,28 @@ describe('?enable=lamprule — luật neo đèn', () => {
     expect(planLampAnchors(plan, rooms, [...lamps].reverse(), tables)).toEqual(anchors);
   });
 
-  it('món tầng khác cùng x/z không được tính', () => {
-    expect(inRoom({ x: 1, y: 3.4 + 0.6, z: 1 }, rooms[0]!)).toBe(true);
-    expect(inRoom({ x: 1, y: 6.6, z: 1 }, rooms[0]!)).toBe(false);
+  it('món tầng khác cùng x/z không được tính (không biết tầng → theo cao độ)', () => {
+    expect(inRoom({ x: 1, y: 2.6, z: 1 }, rooms[0]!)).toBe(true);
+    expect(inRoom({ x: 1, y: 3.4, z: 1 }, rooms[0]!)).toBe(false);
     const plan = planRoomLights(rooms);
     const upstairs: LampItem[] = [{ id: 'up', kind: 'ceiling', x: 2, y: 6.4, z: 6 }];
     expect(planLampAnchors(plan, rooms, upstairs, []).every((a) => a.source !== 'existing-ceiling')).toBe(true);
+  });
+
+  it('Codex #4: hai tầng chồng mặt bằng — bàn ăn tầng trên (3,4 m) không quyết định ốp trần tầng dưới', () => {
+    const two = [
+      { polygon: rect(0, 0, 5, 4), name: 'Phòng ăn T1', floorY: 0, level: 'level_1' },
+      { polygon: rect(0, 0, 5, 4), name: 'Phòng ăn T2', floorY: 3.4, level: 'level_2' },
+    ];
+    const plan = planRoomLights(two);
+    const tables = [{ id: 'dt-up', x: 4, y: 3.4, z: 3, level: 'level_2' }];
+    const anchors = planLampAnchors(plan, two, [], tables);
+    const by = Object.fromEntries(plan.map((p, i) => [two[p.index]!.name, anchors[i]!]));
+    expect(by['Phòng ăn T1']).toMatchObject({ source: 'rule-center' });
+    expect(by['Phòng ăn T2']).toMatchObject({ source: 'rule-dining', ref: 'dt-up' });
+    // Biết tầng thì tầng quyết định, kể cả cao độ lệch.
+    expect(inRoom({ x: 1, y: 9, z: 1, level: 'level_1' }, two[0]!)).toBe(true);
+    expect(inRoom({ x: 1, y: 0, z: 1, level: 'level_2' }, two[0]!)).toBe(false);
   });
 
   it('phòng bị chia nhiều đèn (lamp-cal) → mỗi điểm chia một ốp trần tại chỗ', () => {
@@ -61,16 +92,55 @@ describe('?enable=roomshadow — ô đèn đổ bóng', () => {
   it('phòng chứa camera; ngoài mọi phòng → đèn gần nhất; không camera → 0', () => {
     const plan = planRoomLights(rooms);
     const kitchen = plan.findIndex((p) => p.index === 1);
-    expect(shadowSlotIndex(plan, rooms, { x: 6, z: 1 })).toBe(kitchen);
-    expect(shadowSlotIndex(plan, rooms, { x: 20, z: 2 })).toBe(kitchen);
+    expect(shadowSlotIndex(plan, rooms, { x: 6, y: 1.6, z: 1 })).toBe(kitchen);
+    expect(shadowSlotIndex(plan, rooms, { x: 20, y: 1.6, z: 2 })).toBe(kitchen);
     expect(shadowSlotIndex(plan, rooms, undefined)).toBe(0);
+  });
+
+  it('Codex #5: camera tầng trên chọn phòng tầng trên dù cùng x/z', () => {
+    const two = [
+      { polygon: rect(0, 0, 6, 5), floorY: 0, level: 'l1' },
+      { polygon: rect(0, 0, 5, 4), floorY: 3.4, level: 'l2' },
+    ];
+    const plan = planRoomLights(two);
+    const up = plan.findIndex((p) => p.index === 1);
+    const down = plan.findIndex((p) => p.index === 0);
+    expect(shadowSlotIndex(plan, two, { x: 2, y: 3.4 + 1.6, z: 2 })).toBe(up);
+    expect(shadowSlotIndex(plan, two, { x: 2, y: 1.6, z: 2 })).toBe(down);
   });
 });
 
 describe('cờ', () => {
-  it('tắt mặc định; ?enable= bật; ?disable= thắng', () => {
+  it('mặc định sản xuất: lamprule BẬT, roomshadow TẮT; ?disable= tắt lamprule', () => {
+    expect(LAMP_RULE_DEFAULT).toBe(true);
+    expect(ROOM_SHADOW_DEFAULT).toBe(false);
+    expect(flagOn('lamprule', LAMP_RULE_DEFAULT, '')).toBe(true);
+    expect(flagOn('lamprule', LAMP_RULE_DEFAULT, '?disable=lamprule')).toBe(false);
+    expect(flagOn('roomshadow', ROOM_SHADOW_DEFAULT, '')).toBe(false);
+    expect(lampRuleOn()).toBe(true);
+  });
+  it('cơ chế cờ: ?enable= bật; ?disable= thắng', () => {
     expect(flagOn('lamprule', false, '')).toBe(false);
     expect(flagOn('lamprule', false, '?enable=x,lamprule')).toBe(true);
     expect(flagOn('lamprule', true, '?enable=lamprule&disable=lamprule')).toBe(false);
+  });
+});
+
+describe('Codex #6: ốp trần dùng chung một vật liệu (một khoá shader)', () => {
+  it('12 ốp trần cường độ khác nhau → 1 vật liệu, màu riêng theo vật thể', () => {
+    const scene = new Scene();
+    const lights: AppliedLight[] = Array.from({ length: 12 }, (_, i) => ({
+      plan: { index: i, x: i, z: 0, intensity: 3 + i, range: 5 },
+      anchor: { source: 'rule-center', x: i, z: 0, fixture: true },
+      world: new Vector3(i, 2.9, 0),
+      ceilingY: 3,
+    }));
+    syncFixtures(scene, lights, 0xffc98a, 15, 1.6);
+    const meshes = scene.children.filter((c): c is Mesh => c instanceof Mesh && c.name === 'realism-lamp-fixture');
+    expect(meshes).toHaveLength(12);
+    expect(new Set(meshes.map((m) => m.material)).size).toBe(1);
+    expect(fixtureMaterialCount()).toBe(1);
+    const lum = meshes.map((m) => (m.userData.fixtureColor as { r: number }).r);
+    expect(lum[11]!).toBeGreaterThan(lum[0]!);
   });
 });

@@ -23,6 +23,7 @@ import {
   fixtureSpec,
   HABITABLE,
   lampRuleOn,
+  levelOf,
   maybeUpdateShadow,
   planLampAnchors,
   ROOM_SHADOW_CASTERS,
@@ -271,11 +272,11 @@ export function syncRoomLights(
   }
   for (const l of pool) if (l.parent !== scene) scene.add(l);
   // ponytail: dùng `polygon` đã lưu của zone (không giải lại autoFromWalls) — đủ cho căn hộ nạp từ backend.
-  const zones: { obj: Object3D; room: RoomInput }[] = [];
+  const zones: { id: string; obj: Object3D; room: RoomInput }[] = [];
   for (const id of registry.byType.zone ?? []) {
     const obj = registry.nodes.get(id);
     const node = nodes[id] as ZoneNodeLike;
-    if (obj && node?.polygon && shown(obj)) zones.push({ obj, room: { polygon: node.polygon, name: node.name } });
+    if (obj && node?.polygon && shown(obj)) zones.push({ id, obj, room: { polygon: node.polygon, name: node.name } });
   }
   const rooms = zones.map((z) => z.room);
   const lampRule = lampRuleOn();
@@ -291,18 +292,24 @@ export function syncRoomLights(
   if (ceil) plan = plan.map((p) => ({ ...p, range: roomLightRange(rooms[p.index]!.polygon, p, heightAt(p)) }));
   if (lightFlagOn('lamp-cal')) plan = calibrateRoomLights(plan, rooms, ROOM_LIGHT_MAX, ceil ? Math.min(...plan.map(heightAt)) : ROOM_LIGHT_HEIGHT_M);
   const camera = lampRule || roomShadowOn() ? trackCamera(scene) : undefined;
-  // B: phòng có camera lên ô 0 (đèn đổ bóng); các ô khác giữ thứ tự.
+  // Toạ độ thế giới + tầng của zone (zone chỉ tịnh tiến theo tầng — ponytail: zone xoay thì đổi sang worldToLocal từng phòng).
+  const origin = lampRule || roomShadowOn() ? zones.map((z) => z.obj.localToWorld(new Vector3())) : [];
+  const worldRooms = origin.length
+    ? rooms.map((r, i) => ({
+        polygon: r.polygon.map(([x, z]) => [x + origin[i]!.x, z + origin[i]!.z] as const),
+        floorY: origin[i]!.y,
+        level: levelOf(zones[i]!.id, nodes),
+      }))
+    : [];
+  // B: phòng có camera (đúng tầng) lên ô 0 (đèn đổ bóng); các ô khác giữ thứ tự.
   if (roomShadowOn() && plan.length > 1) {
-    const local = camera && zones.length ? zones[0]!.obj.worldToLocal(pos.copy(camera)) : undefined;
-    const k = shadowSlotIndex(plan, rooms, local);
+    const wp = plan.map((p) => ({ ...p, x: p.x + origin[p.index]!.x, z: p.z + origin[p.index]!.z }));
+    const k = shadowSlotIndex(wp, worldRooms, camera);
     if (k > 0) plan = [plan[k]!, ...plan.slice(0, k), ...plan.slice(k + 1)];
   }
   const applied: AppliedLight[] = [];
   if (lampRule) {
-    // Mọi thứ về toạ độ thế giới (zone chỉ tịnh tiến theo tầng — ponytail: zone xoay thì đổi sang worldToLocal từng phòng).
     const { lamps, tables } = collectRoomItems(registry, nodes, scene);
-    const origin = zones.map((z) => z.obj.localToWorld(new Vector3()));
-    const worldRooms = rooms.map((r, i) => ({ polygon: r.polygon.map(([x, z]) => [x + origin[i]!.x, z + origin[i]!.z] as const), floorY: origin[i]!.y }));
     const worldPlan = plan.map((p) => ({ ...p, x: p.x + origin[p.index]!.x, z: p.z + origin[p.index]!.z }));
     const anchors = planLampAnchors(worldPlan, worldRooms, lamps, tables);
     plan.forEach((p, i) => {

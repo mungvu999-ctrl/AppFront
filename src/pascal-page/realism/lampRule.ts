@@ -12,8 +12,8 @@
  *    camera (hoặc đèn gần camera nhất). Bóng cube 6 mặt `ROOM_SHADOW_MAP`², `autoUpdate = false`, vẽ lại chỉ khi đổi phòng/
  *    dời đèn/sửa cảnh.
  */
-import { CylinderGeometry, Mesh, type Object3D, type PointLight, type Scene, Vector3 } from 'three';
-import { color as tslColor, uniform } from 'three/tsl';
+import { Color, CylinderGeometry, Mesh, type Object3D, type PointLight, type Scene, Vector3 } from 'three';
+import { uniform } from 'three/tsl';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 
 import type { Polygon, RoomLightPlan } from './roomLights';
@@ -59,6 +59,8 @@ export interface LampItem {
   x: number;
   y: number;
   z: number;
+  /** id node tầng tổ tiên (khớp phòng theo tầng). */
+  level?: string;
 }
 export interface TableItem {
   id: string;
@@ -66,16 +68,35 @@ export interface TableItem {
   /** Cao độ gốc món (cùng hệ `floorY` của phòng). */
   y: number;
   z: number;
+  level?: string;
 }
 /** Đa giác + cao độ sàn (cùng hệ toạ độ với món); `floorY` lọc món tầng khác chồng cùng x/z. */
 export interface RoomShape {
   polygon: Polygon;
   floorY?: number;
+  /** id node tầng tổ tiên của zone. */
+  level?: string;
 }
-/** Món thuộc phòng: trong đa giác và (nếu biết `floorY`) cao độ trong [sàn − 0,5, sàn + 4,5] m. */
-export function inRoom(item: { x: number; y: number; z: number }, room: RoomShape): boolean {
-  if (room.floorY !== undefined && (item.y < room.floorY - 0.5 || item.y > room.floorY + 4.5)) return false;
+/**
+ * Món thuộc phòng: trong đa giác VÀ cùng tầng. Biết tầng của cả hai → so id tầng (review Codex #4: bàn ăn tầng trên cao
+ * 3,4 m từng lọt vào phòng tầng dưới cùng mặt bằng). Không biết (vd. camera) → cao độ trong [sàn − 0,5, sàn + 3) m.
+ */
+export function inRoom(item: { x: number; y: number; z: number; level?: string }, room: RoomShape): boolean {
+  if (item.level !== undefined && room.level !== undefined) {
+    if (item.level !== room.level) return false;
+  } else if (room.floorY !== undefined && (item.y < room.floorY - 0.5 || item.y >= room.floorY + 3)) return false;
   return inside(item.x, item.z, room.polygon);
+}
+
+/** id node tầng tổ tiên (theo `parentId`); không có → `undefined`. */
+export function levelOf(id: string, nodes: Record<string, unknown>): string | undefined {
+  for (let cur = id, n = 0; cur && n < 32; n++) {
+    const node = nodes[cur] as { type?: string; parentId?: string | null } | undefined;
+    if (!node) return undefined;
+    if (node.type === 'level') return cur;
+    cur = node.parentId ?? '';
+  }
+  return undefined;
 }
 export type AnchorSource = 'existing-ceiling' | 'rule-dining' | 'rule-center';
 export interface LampAnchor {
@@ -181,10 +202,10 @@ export function collectRoomItems(
       _p.add(_q.set(off[0] ?? 0, off[1] ?? 0, off[2] ?? 0));
       frame.worldToLocal(_p);
       const kind: LampKind = asset.attachTo === 'ceiling' ? 'ceiling' : TABLE_LAMP.test(label) ? 'table' : 'floor';
-      lamps.push({ id, kind, x: _p.x, y: _p.y, z: _p.z });
+      lamps.push({ id, kind, x: _p.x, y: _p.y, z: _p.z, level: levelOf(id, nodes) });
     } else if (DINING_TABLE.test(label)) {
       frame.worldToLocal(obj.getWorldPosition(_p));
-      tables.push({ id, x: _p.x, y: _p.y, z: _p.z });
+      tables.push({ id, x: _p.x, y: _p.y, z: _p.z, level: levelOf(id, nodes) });
     }
   }
   return { lamps, tables };
@@ -199,15 +220,28 @@ const fixtureGeo = (() => {
 })();
 
 const fixtures: Mesh[] = [];
-function fixtureAt(i: number, scene: Scene, hex: number): Mesh {
+let fixtureMat: MeshBasicNodeMaterial | undefined;
+/**
+ * MỘT vật liệu + MỘT đồ thị node cho mọi ốp trần (review Codex #6: mỗi khoá shader mới ≈ 32–42 ms dựng trên luồng chính).
+ * Màu × độ sáng là uniform nhóm vật thể, nạp theo từng mesh (`userData.fixtureColor`) trước mỗi lượt vẽ.
+ */
+function sharedFixtureMaterial(): MeshBasicNodeMaterial {
+  if (!fixtureMat) {
+    fixtureMat = new MeshBasicNodeMaterial();
+    fixtureMat.colorNode = uniform(new Color(0, 0, 0)).onObjectUpdate(
+      ({ object }) => (object?.userData.fixtureColor as Color | undefined) ?? undefined,
+    );
+  }
+  return fixtureMat;
+}
+/** Số vật liệu (≈ khoá shader) đang dùng cho ốp trần — probe; mong đợi ≤ 1. */
+export const fixtureMaterialCount = (): number => new Set(fixtures.map((m) => m.material)).size;
+
+function fixtureAt(i: number, scene: Scene): Mesh {
   let m = fixtures[i];
   if (!m) {
-    const mat = new MeshBasicNodeMaterial();
-    const level = uniform(0);
-    // Một cấu trúc node cho mọi ốp trần (cường độ là uniform) → một khoá shader.
-    mat.colorNode = tslColor(hex).mul(level);
-    m = new Mesh(fixtureGeo(), mat);
-    m.userData.level = level;
+    m = new Mesh(fixtureGeo(), sharedFixtureMaterial());
+    m.userData.fixtureColor = new Color(0, 0, 0);
     m.name = 'realism-lamp-fixture';
     m.castShadow = false;
     m.receiveShadow = false;
@@ -244,10 +278,10 @@ export function syncFixtures(scene: Scene, lights: readonly AppliedLight[], hex:
   if (lampRuleOn()) {
     for (const a of lights) {
       if (!a.anchor?.fixture || !(a.plan.intensity > 0)) continue;
-      const m = fixtureAt(n++, scene, hex);
+      const m = fixtureAt(n++, scene);
       const spec = fixtureSpec();
       m.position.set(a.world.x, a.ceilingY - spec.dropM / 2, a.world.z);
-      (m.userData.level as { value: number }).value = fixtureRadiance(a.plan.intensity, maxCd);
+      (m.userData.fixtureColor as Color).setHex(hex).multiplyScalar(fixtureRadiance(a.plan.intensity, maxCd));
       m.visible = cameraY < a.ceilingY;
     }
   }
@@ -320,19 +354,24 @@ export function trackCamera(scene: Scene): Vector3 | undefined {
   return camSeen ? camPos : undefined;
 }
 
-/** Thứ tự ưu tiên ô 0 (đèn đổ bóng): phòng chứa camera, không thì đèn gần camera nhất (ngang). Trả chỉ số trong `plan`. */
+/**
+ * Thứ tự ưu tiên ô 0 (đèn đổ bóng): phòng chứa camera (cùng tầng theo cao độ camera — review Codex #5), không thì đèn gần
+ * camera nhất (3D, đèn coi ở sàn + 1,5 m). Cùng hệ toạ độ cho `plan`, `rooms`, `cam`. Trả chỉ số trong `plan`.
+ */
 export function shadowSlotIndex(
   plan: readonly RoomLightPlan[],
-  rooms: readonly { polygon: Polygon }[],
-  cam: { x: number; z: number } | undefined,
+  rooms: readonly RoomShape[],
+  cam: { x: number; y: number; z: number } | undefined,
 ): number {
   if (!cam || !plan.length) return 0;
-  const inRoom = plan.findIndex((p) => inside(cam.x, cam.z, rooms[p.index]!.polygon));
-  if (inRoom >= 0) return inRoom;
+  const camItem = { x: cam.x, y: cam.y, z: cam.z };
+  const hit = plan.findIndex((p) => inRoom(camItem, rooms[p.index]!));
+  if (hit >= 0) return hit;
   let best = 0;
   let bestD = Infinity;
   plan.forEach((p, i) => {
-    const d = (p.x - cam.x) ** 2 + (p.z - cam.z) ** 2;
+    const y = (rooms[p.index]!.floorY ?? 0) + 1.5;
+    const d = (p.x - cam.x) ** 2 + (y - cam.y) ** 2 + (p.z - cam.z) ** 2;
     if (d < bestD) [best, bestD] = [i, d];
   });
   return best;
@@ -362,6 +401,7 @@ export function lampRuleReport() {
     roomsWithSource: report.rooms.filter((r) => r.visibleSource).length,
     roomsTotal: report.rooms.length,
     fixtures: fixtures.filter((m) => m.visible).length,
+    fixtureMaterials: fixtureMaterialCount(),
     rooms: report.rooms,
     shadow: { ...report.shadow },
   };
