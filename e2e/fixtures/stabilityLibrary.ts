@@ -12,7 +12,7 @@ const MODELS: readonly (readonly [string, Group])[] = [
   ['armchair-ph', 'chair'], ['coat-rack', 'chair'],
   ['bed-sf', 'bed'], ['bunkbed', 'bed'],
   ['sofa', 'sofa'], ['armchair-ph', 'sofa'],
-  ['closet', 'storage'], ['bookshelf', 'storage'], ['bookshelf-ph', 'storage'],
+  ['closet-gen', 'storage'], ['bookshelf', 'storage'], ['bookshelf-ph', 'storage'],
   ['bathroom-sink', 'sanitary'], ['bathtub', 'sanitary'],
   ['coffee-machine', 'kitchen'], ['ball', 'kitchen'],
   ['ac-block', 'technical'], ['air-conditioning', 'technical'], ['ceiling-fan', 'technical'], ['alarm-keypad', 'technical'],
@@ -33,16 +33,26 @@ export const richLibraryBody = (requestUrl: string): unknown[] =>
     widthMm: 600 + (index % 4) * 150,
   }));
 
-/** Mẫu concept chọn theo vai (id thư mục đóng gói có trong danh mục). */
-const ROLE_MODELS = {
-  doubleBed: 'bed-sf', singleBed: 'bed-sf', closet: 'closet-gen', dresser: 'closet-gen', bookshelf: 'bookshelf', diningChair: 'armchair-ph',
-  armchair: 'armchair-ph', sofa: 'sofa', nightstand: 'bedside-table', coffeeTable: 'coffee-table', desk: 'coffee-table',
-  diningTable: 'coffee-table', fridge: 'closet-gen', counter: 'closet-gen', toilet: 'bathroom-sink', bathtub: 'bathtub', shower: 'bathtub',
-  basin: 'bathroom-sink', washer: 'closet-gen', plant: 'bush', smallPlant: 'cactus', rug: 'books', roundRug: 'books',
-} as const;
+/** GLB của mục thư viện mà concept chọn cho vai tủ áo (`closet`); không vai nào khác dựng ra nó. */
 export const CONCEPT_FOLDER = 'closet-gen';
-/** Mẫu mặc định của vai tủ (kind wardrobe): concept đã đổi sang CONCEPT_FOLDER, nên không được xuất hiện. */
-export const DEFAULT_CLOSET_FOLDER = 'closet';
+/**
+ * Tệp mặc định của vai `closet` (hai tủ áo variant `wardrobe` của F1): thư mục `closet` qua swap realism
+ * (`REALISM_MODEL_SWAP`) thành `wardrobe-sf`. Concept áp → không còn trong cảnh; không áp → luôn có.
+ */
+export const DEFAULT_CLOSET_FILE = 'wardrobe-sf';
+const conceptClosetId = `e2e-lib-${String(MODELS.findIndex(([folder]) => folder === CONCEPT_FOLDER)).padStart(2, '0')}`;
+
+/**
+ * Mẫu concept chọn theo vai. Như máy chủ thật (Design Director chỉ chọn mục thư viện đã công bố), vai tủ áo dùng
+ * id mục thư viện; `modelFolderOf` bỏ id đóng gói ngoài danh mục của vai (vd. `closet-gen` cho `closet`) — các vai
+ * khác giữ id đóng gói chỉ để đủ khoá của schema.
+ */
+const ROLE_MODELS = {
+  doubleBed: 'bed-sf', singleBed: 'bed-sf', closet: conceptClosetId, dresser: 'dresser', bookshelf: 'bookshelf', diningChair: 'armchair-ph',
+  armchair: 'armchair-ph', sofa: 'sofa', nightstand: 'bedside-table', coffeeTable: 'coffee-table', desk: 'coffee-table',
+  diningTable: 'coffee-table', fridge: 'fridge', counter: 'kitchen-cabinet', toilet: 'bathroom-sink', bathtub: 'bathtub', shower: 'bathtub',
+  basin: 'bathroom-sink', washer: 'washing-machine', plant: 'bush', smallPlant: 'cactus', rug: 'books', roundRug: 'books',
+};
 
 const STAMP = '2026-11-01T00:00:00.000Z';
 

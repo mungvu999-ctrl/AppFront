@@ -23,7 +23,7 @@ import type { Browser, Page } from '@playwright/test';
 import { fixtureF1, fixtureF5 } from '../src/lib/pascal/__fixtures__';
 
 import { installFakeApi, type WireGraphDocument } from './fixtures/fakeApi';
-import { CONCEPT_FOLDER, conceptState, DEFAULT_CLOSET_FOLDER, richLibraryBody } from './fixtures/stabilityLibrary';
+import { CONCEPT_FOLDER, conceptState, DEFAULT_CLOSET_FILE, richLibraryBody } from './fixtures/stabilityLibrary';
 
 const PROJECT_ID = 'P-FIXTURE0001';
 const VIEWPORT = { width: 1440, height: 900 } as const;
@@ -366,9 +366,9 @@ test.describe('Ổn định trang 3D Pascal', () => {
       expect(manifest.library).toBe('server');
       expect(manifest.concept).toBe('done');
       const folders = new Set(manifest.itemSrc.map((entry) => /\/items\/([^/]+)\/model\.glb/u.exec(entry)?.[1]));
-      // Ít nhất một mẫu concept chọn theo vai phải hiện trong cảnh.
+      // Vai tủ áo: mục thư viện concept chọn thay tệp mặc định của vai (hai tủ áo của F1).
       expect(folders.has(CONCEPT_FOLDER), JSON.stringify([...folders])).toBe(true);
-      expect(folders.has(DEFAULT_CLOSET_FOLDER), JSON.stringify([...folders])).toBe(false);
+      expect(folders.has(DEFAULT_CLOSET_FILE), JSON.stringify([...folders])).toBe(false);
       expect(writes).toEqual([]);
     } finally {
       await page.context().close();

@@ -160,6 +160,19 @@ vi.mock('@/lib/pascal/sceneStandard', async (importOriginal) => {
   return { ...actual, standardSceneOf: vi.fn(actual.standardSceneOf) };
 });
 
+/** Thư viện chung giả: `gate` khác null = lượt đọc treo tới khi gọi; về thì gộp `items` vào danh mục. */
+const libraryGate = vi.hoisted(() => ({ gate: null as Promise<void> | null, items: [] as { id: string }[] }));
+vi.mock('@/lib/pascal/sceneLibrary', async () => {
+  const { registerServerLibrary } = await import('@/lib/pascal/furnitureCatalog');
+  return {
+    ensureSceneLibrary: async () => {
+      await libraryGate.gate;
+      registerServerLibrary(libraryGate.items.map((item) => ({ ...item, widthMm: 1000, heightMm: 2000, depthMm: 600, modelUrl: `https://x/${item.id}.glb` })));
+      return { count: libraryGate.items.length, source: 'server', version: 'lib-test' };
+    },
+  };
+});
+
 vi.mock('@/screens/viewer/PascalViewer/usePascalEdits', () => ({
   usePascalEdits: ({
     onRejected,
@@ -346,6 +359,28 @@ describe('usePascalProjectBridge', () => {
       expect(textsOf(result.current)).toEqual([]);
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it('v11 — concept về TRƯỚC thư viện: cầu chờ thư viện, mẫu AI (id thư viện máy chủ) vẫn đứng đầu prefer của vai', async () => {
+    let open = (): void => undefined;
+    libraryGate.gate = new Promise<void>((resolve) => (open = resolve));
+    libraryGate.items = [{ id: 'srv-closet-v11' }];
+    try {
+      const concept = doneConcept();
+      (concept.data.active.result as { models: Record<string, string> }).models = { closet: 'srv-closet-v11' };
+      conceptApi.read = concept;
+      const { result } = renderHook(() => usePascalProjectBridge('p1'));
+      await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+      expect(result.current.status).toBe('loading');
+      open();
+      await waitFor(() => expect(result.current.status).toBe('ready'));
+      vi.mocked(standardSceneOf).mockClear();
+      await act(() => result.current.onLoad());
+      expect(vi.mocked(standardSceneOf).mock.calls[0]?.[1]?.style?.prefer.closet).toEqual(['srv-closet-v11']);
+    } finally {
+      libraryGate.gate = null;
+      libraryGate.items = [];
     }
   });
 

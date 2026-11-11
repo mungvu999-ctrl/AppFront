@@ -268,6 +268,9 @@ async function loadProject(projectId: string): Promise<{
   separateUnits = settings?.separateUnits === true;
   const conceptLoaded = await conceptRead;
   const conceptState = conceptLoaded.state;
+  /* Mẫu AI chọn là id thư viện máy chủ: `sceneStyleFromConcept` chỉ giữ id đã gộp vào danh mục, nên phải chờ ĐÚNG lượt
+     đọc thư viện chung (cùng promise với `main.tsx`, không ném) — concept về trước thư viện từng làm mất mẫu AI âm thầm. */
+  await import('@/lib/pascal/sceneLibrary').then((m) => m.ensureSceneLibrary()).catch(() => undefined);
   // Concept đã xong thắng mọi phong cách khác (kể cả bản xem thử trên máy); chưa xong/hỏng → phong cách cũ.
   const concept = sceneConceptOf(conceptLoaded);
   const style = concept.style ?? readSceneStyle(() => localStorage, { id: projectId, style: settings?.sceneStyle });
