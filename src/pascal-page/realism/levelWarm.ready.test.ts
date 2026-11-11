@@ -27,15 +27,19 @@ describe('isLevelReady — một nghĩa', () => {
 });
 
 describe('ngân sách khung ấm', () => {
-  it('có trần WARM_CAP_MS khi khung thường nhẹ, sàn 4 ms khi khung thường nặng', () => {
-    expect(warmBudgetMs(5)).toBe(WARM_CAP_MS);
-    expect(warmBudgetMs(45)).toBe(5);
-    expect(warmBudgetMs(130)).toBe(4);
-    expect(warmBudgetMs(5, Infinity)).toBe(45); // `?disable=lwbudget`
+  it('không cờ → ba núm lát 1 TẮT (= vòng 9): không trần ngân sách, ép bóng mọi khung, flags tắt, không đo pha', async () => {
+    const { levelWarmStats } = await import('./levelWarm');
+    expect(warmBudgetMs(5)).toBe(45); // 50 − khung thường, không trần 10 ms
+    expect([0, 1, 7, 8].map((n) => shadowDue(n))).toEqual([true, true, true, true]);
+    expect(levelWarmStats().flags).toEqual({ shadowEvery: false, budgetCap: false, fastSkip: false, phase: false });
   });
-  it('ép vẽ lại bóng ở khung ấm đầu và mỗi 8 khung', () => {
-    expect([0, 1, 7, 8, 16].map((n) => shadowDue(n))).toEqual([true, false, false, true, true]);
-    expect(shadowDue(3, 1)).toBe(true); // `?disable=lwshadow`
+  it('`?enable=lwbudget`: trần WARM_CAP_MS khi khung thường nhẹ, sàn 4 ms khi khung thường nặng', () => {
+    expect(warmBudgetMs(5, WARM_CAP_MS)).toBe(WARM_CAP_MS);
+    expect(warmBudgetMs(45, WARM_CAP_MS)).toBe(5);
+    expect(warmBudgetMs(130, WARM_CAP_MS)).toBe(4);
+  });
+  it('`?enable=lwshadow8`: ép vẽ lại bóng ở khung ấm đầu và mỗi 8 khung', () => {
+    expect([0, 1, 7, 8, 16].map((n) => shadowDue(n, 8))).toEqual([true, false, false, true, true]);
   });
 });
 

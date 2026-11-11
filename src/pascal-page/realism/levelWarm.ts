@@ -33,12 +33,17 @@ import { isFirstLoad, warmStats } from './warm';
 
 const DISABLED = typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('disable') ?? '').split(',') : [];
 const URL_OFF = DISABLED.includes('levelwarm');
-/** V10 A/B: `lwshadow` = ép vẽ lại bóng MỌI khung ấm (cũ); `lwbudget` = ngân sách cũ (50 ms − phần vẽ thường, không trần);
- * `lwfast` = vật tầng ấm quá ngân sách vẫn tra khoá shader (cũ); `lwphase` = không đo từng pha. */
-const SHADOW_EVERY_OFF = DISABLED.includes('lwshadow');
-const BUDGET_CAP_OFF = DISABLED.includes('lwbudget');
-const FAST_SKIP_OFF = DISABLED.includes('lwfast');
-const PHASE_OFF = DISABLED.includes('lwphase');
+/**
+ * V10: ba núm lát 1 đo KHÔNG lợi (8 s: 2603 ms bật so với 2302 ms tắt) → mặc định TẮT (= vòng 9), bật bằng `?enable=`:
+ * `lwshadow8` ép bóng mỗi 8 khung ấm; `lwbudget` trần 10 ms việc ấm; `lwfast` dời vật quá ngân sách không tra khoá + bỏ
+ * gọi vẽ vật đã sẵn sàng. Đo pha (`levelWarmStats().phases`) chỉ chạy khi `?probe=1` hoặc `?enable=lwphase`.
+ */
+const PARAMS = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
+const ENABLED = (PARAMS.get('enable') ?? '').split(',');
+const SHADOW_EVERY_OFF = !ENABLED.includes('lwshadow8');
+const BUDGET_CAP_OFF = !ENABLED.includes('lwbudget');
+const FAST_SKIP_OFF = !ENABLED.includes('lwfast');
+const PHASE_OFF = !(PARAMS.get('probe') === '1' || ENABLED.includes('lwphase'));
 
 /** Ngưỡng tác vụ dài (Long Tasks API): cả khung ấm giữ dưới mức này. */
 export const LONG_TASK_MS = 50;
@@ -604,9 +609,11 @@ export function installLevelWarm(renderer: unknown, off = URL_OFF): void {
       }
     };
   };
-  timed(r._bindings, 'updateForRender', 'bindMs');
-  timed(pipelines, 'updateForRender', 'pipeMs');
-  timed(r._textures, 'updateTexture', 'texUploads');
+  if (!PHASE_OFF) {
+    timed(r._bindings, 'updateForRender', 'bindMs');
+    timed(pipelines, 'updateForRender', 'pipeMs');
+    timed(r._textures, 'updateTexture', 'texUploads');
+  }
 }
 
 /**
