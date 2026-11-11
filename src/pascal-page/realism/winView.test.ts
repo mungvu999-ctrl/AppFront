@@ -4,8 +4,8 @@ import { DAY_HDRI_URL, HDRI_URL } from './lighting';
 import { insideRoomBox, levelBoxes, MIN_ROOM_HEIGHT_M, parseWinView, WIN_GAIN, WIN_URL, winApplies, WINVIEW_DEFAULT } from './winView';
 
 describe('parseWinView', () => {
-  it('không cờ / off / giá trị lạ → null (hành vi như cũ)', () => {
-    expect(parseWinView('', 'dark')).toBeNull();
+  it('mặc định off / off / giá trị lạ → null (hành vi như cũ)', () => {
+    expect(parseWinView('', 'dark', 'off')).toBeNull();
     expect(parseWinView('?winview=off', 'dark')).toBeNull();
     expect(parseWinView('?winview=forest', 'light')).toBeNull();
     expect(parseWinView('?winview=', 'light')).toBeNull();
