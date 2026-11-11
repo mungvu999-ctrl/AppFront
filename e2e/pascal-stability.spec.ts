@@ -311,7 +311,8 @@ test.describe('Ổn định trang 3D Pascal', () => {
       await button(levelNames[1]!).click({ timeout: READY_TIMEOUT_MS });
       const sequence = [2, 0, 3, 1, 2, 3].map((index) => levelNames[index % levelNames.length]!);
       for (const name of sequence) {
-        await button(name).click({ timeout: 10_000 });
+        // Máy CI không GPU: luồng chính bận dựng tầng hơn 10 giây nên nút chưa "ổn định" để bấm; trần rộng, không đổi điều kiểm.
+        await button(name).click({ timeout: 90_000 });
         await page.waitForTimeout(150);
       }
       const last = sequence.at(-1)!;
