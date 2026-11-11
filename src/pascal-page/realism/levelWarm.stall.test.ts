@@ -87,19 +87,35 @@ describe('levelWarm: tầng đã sẵn sàng không báo chờ nhầm; vật h�
     expect(lw.levelWarmStats().current).toBe('L3');
     sample();
     expect(lw.levelWarmStats()).toMatchObject({ warmFrames: 0, yieldFrames: 1 });
-    // (i)+(ii) qua STALL_FRAMES khung không giảm → L2 kẹt: thôi nhường, L3 được ấm; L2 không báo sẵn sàng.
+    // Một chu kỳ STALL_FRAMES không giảm → levelWarm TỰ thử lại (không cần UI): vẫn `pending`, chưa kẹt.
     for (let i = 0; i < lw.STALL_FRAMES + 2; i++) sample();
+    expect(of('L2')).toMatchObject({ ready: false, stalled: false, status: 'pending' });
+    expect(lw.levelWarmStats().phases.stallRetries).toBe(1);
+    // (i)+(ii) hết MAX_STALL_RETRIES lượt → L2 kẹt: thôi nhường, L3 được ấm; L2 không báo sẵn sàng.
+    const cycles = (lw.MAX_STALL_RETRIES + 1) * (lw.STALL_FRAMES + 1);
+    for (let i = 0; i < cycles; i++) sample();
     const s = lw.levelWarmStats();
     expect(s.warmFrames).toBeGreaterThan(0);
     expect(s.warmed).toContain('L3');
-    expect(s.yieldFrames).toBeLessThanOrEqual(lw.STALL_FRAMES + 1);
-    expect(of('L2')).toMatchObject({ ready: false, stalled: true });
+    expect(s.yieldFrames).toBeLessThanOrEqual(cycles);
+    expect(s.phases.stallRetries).toBe(lw.MAX_STALL_RETRIES);
+    expect(of('L2')).toMatchObject({ ready: false, stalled: true, status: 'stalled' });
     expect(s.stalledShown).toContain('L2');
     // (iii) kẹt → hỏi trạng thái không ép vẽ lại nữa.
     dirty.mockClear();
     lw.levelReadiness();
     lw.levelReadiness();
     expect(dirty).not.toHaveBeenCalledWith('level-readiness');
+    // Pipeline đã tạo nhưng HỎNG (three `error`): không còn gì để chuẩn bị → không tính là chờ, tầng sẵn sàng.
+    r._nodes.get = () => ({ nodeBuilderState: {} }); // pipeline chỉ có sau khi đã dựng node
+    Object.assign(r._pipelines, { get: (o: O) => ({ pipeline: o === broken ? 'P' : undefined }) });
+    Object.assign(r.backend, { get: () => ({ error: true }) });
+    sample();
+    expect(of('L2')).toMatchObject({ ready: true, stalled: false, status: 'ready', pendingDraws: 0 });
+    expect(lw.levelWarmStats().failedDraws).toBeGreaterThan(0);
+    Object.assign(r.backend, { get: () => ({}) });
+    sample();
+    expect(of('L2').status).toBe('pending'); // không hỏng mà chưa có pipeline: lại chờ, không giả sẵn sàng
     // Số chờ giảm lại (vật dựng xong) → hết kẹt, sẵn sàng thật.
     broken.visible = true;
     r._pipelines.isReady = () => true;
