@@ -33,11 +33,19 @@ import { isFirstLoad, warmStats } from './warm';
 
 const DISABLED = typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('disable') ?? '').split(',') : [];
 const URL_OFF = DISABLED.includes('levelwarm');
-/** V10 A/B: `lwshadow` = ép vẽ lại bóng MỌI khung ấm (cũ); `lwbudget` = ngân sách cũ (50 ms − phần vẽ thường, không trần);
- * `lwfast` = vật tầng ấm quá ngân sách vẫn tra khoá shader (cũ); `lwphase` = không đo từng pha. */
-const SHADOW_EVERY_OFF = DISABLED.includes('lwshadow');
-const BUDGET_CAP_OFF = DISABLED.includes('lwbudget');
-const FAST_SKIP_OFF = DISABLED.includes('lwfast');
+/**
+ * V10 lát 2: lát 1 đo KHÔNG lợi (8 s: 2603 ms bật so với 2302 ms tắt) → mặc định = hành vi vòng 9; mỗi thay đổi bật bằng
+ * `?enable=`: `lwshadow8` ép bóng mỗi 8 khung ấm; `lwshadow1` mỗi khung ép chỉ MỘT đèn bóng (xoay vòng); `lwnoshadow` không
+ * ép bóng (cận dưới của phần bóng); `lwbudget` trần 10 ms việc ấm (cả khung đầu); `lwfast` dời vật quá ngân sách không tra
+ * khoá + bỏ gọi vẽ vật đã sẵn sàng; `lwearly` cho làm ấm trong lần nạp đầu khi W2 rảnh. `?disable=lwphase` tắt đo pha.
+ */
+const ENABLED = typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('enable') ?? '').split(',') : [];
+const SHADOW_EVERY_OFF = !ENABLED.includes('lwshadow8');
+const SHADOW_ONE = ENABLED.includes('lwshadow1');
+const SHADOW_NONE = ENABLED.includes('lwnoshadow');
+const BUDGET_CAP_OFF = !ENABLED.includes('lwbudget');
+const FAST_SKIP_OFF = !ENABLED.includes('lwfast');
+const EARLY = ENABLED.includes('lwearly');
 const PHASE_OFF = DISABLED.includes('lwphase');
 
 /** Ngưỡng tác vụ dài (Long Tasks API): cả khung ấm giữ dưới mức này. */
@@ -117,6 +125,34 @@ export function isLevelReady(l: { pendingAssets: number; warmed: boolean; shown:
 export const STALL_FRAMES = 600;
 /** Kẹt → tự thử lại (xoá theo dõi tiến triển, cho làm ấm/nhường lại) tối đa ngần này lần mỗi tầng mỗi cảnh; hết thì báo kẹt. */
 export const MAX_STALL_RETRIES = 2;
+
+/**
+ * Vật KHÔNG THỂ vẽ (lát 2: tầng hiện kẹt `pendingDraws` 2 mãi, `ready:false`): số vật chờ của tầng hiện đứng yên qua
+ * `UNDRAWABLE_SAMPLES` khung lấy mẫu liên tiếp trong khi W2/W1 không có việc nào và tầng không còn đồ GLB chờ → không gì
+ * đang dựng chúng; coi số ấy là "không vẽ được" (pipeline hỏng, vật không bao giờ được khởi động dựng) và loại khỏi
+ * "sẵn sàng". Số chờ đổi hoặc W2 có việc → theo dõi lại từ đầu. Đầu dò: `undrawable`.
+ */
+export const UNDRAWABLE_SAMPLES = 60;
+export interface UndrawableTrack {
+  n: number;
+  samples: number;
+}
+/** Thuần: ghi một mẫu; trả số vật coi là không vẽ được (0 nếu chưa đủ bằng chứng). */
+export function trackUndrawable(map: Map<string, UndrawableTrack>, id: string, pending: number, otherWork: number): number {
+  const t = map.get(id);
+  if (pending <= 0 || otherWork > 0 || !t || t.n !== pending) {
+    if (pending > 0 && otherWork === 0) map.set(id, { n: pending, samples: 1 });
+    else map.delete(id);
+    return 0;
+  }
+  t.samples++;
+  return t.samples >= UNDRAWABLE_SAMPLES ? t.n : 0;
+}
+const undrawableTrack = new Map<string, UndrawableTrack>();
+const undrawableOf = (id: string): number => {
+  const t = undrawableTrack.get(id);
+  return t && t.samples >= UNDRAWABLE_SAMPLES ? t.n : 0;
+};
 export interface Progress {
   best: number;
   flat: number;
@@ -183,9 +219,11 @@ export interface WarmPhases {
   keysStarted: number;
   pipelinesStarted: number;
   shadowForced: boolean;
+  /** Số đèn bóng bị ép vẽ lại ở khung này. */
+  shadowLights: number;
   budgetMs: number;
 }
-const zeroPhases = (): WarmPhases => ({ totalMs: 0, prepMs: 0, restMs: 0, wrapMs: 0, objMs: 0, bindMs: 0, pipeMs: 0, texUploads: 0, calls: 0, objects: 0, keysStarted: 0, pipelinesStarted: 0, shadowForced: false, budgetMs: 0 });
+const zeroPhases = (): WarmPhases => ({ totalMs: 0, prepMs: 0, restMs: 0, wrapMs: 0, objMs: 0, bindMs: 0, pipeMs: 0, texUploads: 0, calls: 0, objects: 0, keysStarted: 0, pipelinesStarted: 0, shadowForced: false, shadowLights: 0, budgetMs: 0 });
 let phase = zeroPhases();
 const roundPhases = (p: WarmPhases): WarmPhases =>
   Object.fromEntries(Object.entries(p).map(([k, v]) => [k, typeof v === 'number' ? Math.round(v * 10) / 10 : v])) as unknown as WarmPhases;
@@ -208,6 +246,53 @@ const phaseStats = {
 };
 /** Trong lời gọi vẽ của một vật tầng ấm (bộ đo bind/pipeline/texture chỉ ghi lúc này). */
 let inWarmObj = false;
+/**
+ * Đường lạnh: đo MỌI khung sống không ấm (bấm tầng chưa ấm → W2 dựng khi cần). Pha: `w2BuildMs` (đoạn dựng node đồng bộ
+ * W2 trong khung — `warmStats().frameBuildMs`), `bindMs`/`pipeMs`/`geomMs` (bindings, pipeline, buffer hình), `texUploads` +
+ * `texMs` (tải texture lên GPU), `shadowObjMs` (lời gọi vẽ của vật liệu lượt bóng), `objMs` (mọi lời gọi vẽ vật), `slowest`
+ * (lời gọi vật chậm nhất: loại + tên vật liệu, lượt bóng?). `longTasks`/`slowDraws`: tác vụ dài (PerformanceObserver) và
+ * khung vẽ > 50 ms kể từ lần chọn tầng — so hai danh sách để biết tác vụ dài nằm trong hay ngoài lệnh vẽ.
+ */
+interface ColdFrame {
+  drawMs: number;
+  w2BuildMs: number;
+  buildsStarted: number;
+  pipelinesStarted: number;
+  bindMs: number;
+  pipeMs: number;
+  geomMs: number;
+  texUploads: number;
+  texMs: number;
+  shadowObjMs: number;
+  objMs: number;
+  calls: number;
+  slowest: { ms: number; type: string; name: string; shadow: boolean };
+}
+const zeroCold = (): ColdFrame => ({ drawMs: 0, w2BuildMs: 0, buildsStarted: 0, pipelinesStarted: 0, bindMs: 0, pipeMs: 0, geomMs: 0, texUploads: 0, texMs: 0, shadowObjMs: 0, objMs: 0, calls: 0, slowest: { ms: 0, type: '', name: '', shadow: false } });
+let cold = zeroCold();
+let inCold = false;
+const coldStats = { since: 0, frames: 0, over50: 0, worst: zeroCold(), longTasks: [] as number[], slowDraws: [] as number[] };
+function resetCold(now: number): void {
+  Object.assign(coldStats, { since: Math.round(now), frames: 0, over50: 0, worst: zeroCold(), longTasks: [], slowDraws: [] });
+}
+let longObs = false;
+function observeLongTasks(): void {
+  if (longObs || typeof PerformanceObserver === 'undefined') return;
+  longObs = true;
+  try {
+    new PerformanceObserver((l) => {
+      for (const e of l.getEntries()) if (coldStats.longTasks.length < 40) coldStats.longTasks.push(Math.round(e.duration));
+    }).observe({ type: 'longtask' });
+  } catch {
+    /* trình duyệt không có longtask */
+  }
+}
+const r1 = (v: number): number => Math.round(v * 10) / 10;
+function coldSnapshot() {
+  const w = coldStats.worst;
+  const round = Object.fromEntries(Object.entries(w).map(([k, v]) => [k, typeof v === 'number' ? r1(v) : v]));
+  return { ...coldStats, worst: { ...round, slowest: { ...w.slowest, ms: r1(w.slowest.ms) } }, longTasks: [...coldStats.longTasks], slowDraws: [...coldStats.slowDraws] };
+}
 /** Khung ấm có vật bị dời không tra khoá → không được kết luận "xong" ở khung đó. */
 let uncounted = false;
 const stallRetries = new Map<string, number>();
@@ -257,7 +342,10 @@ const lastPending = new Map<string, number>();
 const lastTouch = new Map<string, number>();
 let lastInteractions = -1;
 let lastInteractAt = -Infinity;
-let budgetMs = LONG_TASK_MS;
+const firstBudget = (): number => (BUDGET_CAP_OFF ? LONG_TASK_MS : WARM_CAP_MS);
+let budgetMs = firstBudget();
+/** Đèn bóng kế tiếp được ép ở chế độ `lwshadow1`. */
+let shadowTurn = 0;
 let warmSpent = 0;
 let shadowsPending = true;
 /** Số khung ấm đã chạy cho tầng `current` (nhịp ép bóng `shadowDue`). */
@@ -301,6 +389,7 @@ function refreshRoots(scene: unknown): void {
     stalledShown.clear();
     stalledWarm.clear();
     stallRetries.clear();
+    undrawableTrack.clear();
   }
   rootIds = next;
 }
@@ -346,7 +435,8 @@ function onIdle(): void {
   const pick = nextWarmLevel(levelInfos(), new Set([...state.warmed, ...stalledWarm]), {
     tier: currentTier(),
     off: URL_OFF,
-    firstLoad: isFirstLoad(),
+    // `lwearly`: lần nạp đầu không chặn nếu W2/W1 rảnh (điều kiện `busy` bên dưới vẫn giữ: không giành việc của tầng hiện).
+    firstLoad: EARLY ? false : isFirstLoad(),
     // Hàng việc W2/W1 kẹt (ví dụ một ảnh lỗi không bao giờ tải) không chặn làm ấm tầng ẩn mãi.
     busy: w2Busy() && !w2Stalled,
     interacting: interacting(),
@@ -356,6 +446,7 @@ function onIdle(): void {
   stats.levelsStarted++;
   shadowsPending = true;
   levelWarmFrames = 0;
+  budgetMs = firstBudget();
   markDirty('level-warm');
 }
 
@@ -373,7 +464,7 @@ export function levelWarmFrame(scene: unknown, draw: () => void): void {
   const paused = root !== null && state.current !== null && interacting();
   if (paused) stats.pausedFrames++; // tầng vẫn là `current`; khung sau hết thao tác ấm tiếp
   // Tầng đang hiện còn vật chờ (người dùng vừa chọn tầng chưa ấm) → nhường W2/W1 cho nó; vẫn lấy mẫu để biết lúc xong.
-  const yieldShown = root !== null && state.current !== null && !paused && [...rootIds].some(([o, id]) => o.visible && (lastPending.get(id) ?? 0) > 0 && !stalledShown.has(id));
+  const yieldShown = root !== null && state.current !== null && !paused && [...rootIds].some(([o, id]) => o.visible && (lastPending.get(id) ?? 0) - undrawableOf(id) > 0 && !stalledShown.has(id));
   if (yieldShown) stats.yieldFrames++;
   const warm = root && state.current && !paused && !yieldShown ? root : null;
   sampling = wantSample || state.current !== null;
@@ -388,7 +479,12 @@ export function levelWarmFrame(scene: unknown, draw: () => void): void {
     phase = zeroPhases();
     uncounted = false;
   }
-  const pipes0 = warm ? warmStats().started : 0;
+  const ws0 = warmStats();
+  const pipes0 = ws0.started ?? 0;
+  const builds0 = ws0.builds ?? 0;
+  inCold = !warm && !PHASE_OFF;
+  coldFrameActive = inCold;
+  if (inCold) cold = zeroCold();
   try {
     if (warm) {
       warmRoot = warm;
@@ -398,11 +494,15 @@ export function levelWarmFrame(scene: unknown, draw: () => void): void {
         else if (o.frustumCulled) (o.frustumCulled = false), culled.push(o);
       });
       // Bóng có cache (shadow-cache.ts): khi tầng ấm còn vật chưa sẵn sàng, ép vẽ lại map để lượt bóng cũng dựng.
-      if (shadowsPending && shadowDue(levelWarmFrames)) {
+      if (shadowsPending && !SHADOW_NONE && shadowDue(levelWarmFrames)) {
         shadowForced = true;
+        const casters: Obj[] = [];
         (scene as Obj).traverse?.((o) => {
-          if (o.isLight && o.castShadow && o.shadow) o.shadow.needsUpdate = true;
+          if (o.isLight && o.castShadow && o.shadow) casters.push(o);
         });
+        const pick = SHADOW_ONE && casters.length ? [casters[shadowTurn++ % casters.length]!] : casters;
+        for (const o of pick) o.shadow!.needsUpdate = true;
+        phase.shadowLights = pick.length;
       }
       stats.lastBudgetMs = budgetMs;
     }
@@ -414,6 +514,8 @@ export function levelWarmFrame(scene: unknown, draw: () => void): void {
     if (warm) phase.prepMs = t0 - tp;
     draw();
   } finally {
+    inCold = false;
+    coldFrameActive = false;
     frameScene = null;
     warmRoot = null;
     if (warm) warm.visible = false;
@@ -431,7 +533,8 @@ export function levelWarmFrame(scene: unknown, draw: () => void): void {
     const w2 = w2Work();
     for (const [o, id] of rootIds) {
       if (!o.visible || !framePending.has(id)) continue;
-      const work = (framePending.get(id) ?? 0) + w2 + (items.get(id) ?? 0);
+      const und = trackUndrawable(undrawableTrack, id, framePending.get(id) ?? 0, w2 + (items.get(id) ?? 0));
+      const work = Math.max(0, (framePending.get(id) ?? 0) - und) + w2 + (items.get(id) ?? 0);
       // Tầng đang hiện đã sẵn sàng trọn một lần = coi như đã ấm (như tầng ấm xong): quay lại không báo chờ nhầm.
       if (work === 0) state.warmed.add(id);
       if (trackProgress(progress, id, work)) stalledShown.add(id);
@@ -447,6 +550,14 @@ export function levelWarmFrame(scene: unknown, draw: () => void): void {
   } else if (!PHASE_OFF) {
     phaseStats.normalFrameMs = phaseStats.normalFrameMs === 0 ? total : phaseStats.normalFrameMs + (total - phaseStats.normalFrameMs) * 0.1;
     phaseStats.maxNormalFrameMs = Math.max(phaseStats.maxNormalFrameMs, Math.round(total));
+    const ws = warmStats();
+    Object.assign(cold, { drawMs: total, w2BuildMs: ws.frameBuildMs ?? 0, buildsStarted: (ws.builds ?? 0) - builds0, pipelinesStarted: (ws.started ?? 0) - pipes0 });
+    coldStats.frames++;
+    if (total > LONG_TASK_MS) {
+      coldStats.over50++;
+      if (coldStats.slowDraws.length < 40) coldStats.slowDraws.push(Math.round(total));
+    }
+    if (total >= coldStats.worst.drawMs) coldStats.worst = cold;
   }
   for (const f of [...frameListeners]) f();
 }
@@ -520,6 +631,7 @@ export function installLevelWarm(renderer: unknown, off = URL_OFF): void {
   const inner = r._renderObjectDirect;
   r._renderObjectDirect = function (this: RendererLike, ...args: unknown[]) {
     const [object, material, scene, camera, lightsNode, , clippingContext, passId] = args;
+    if (inCold) return coldCall(this, args, material);
     if (!sampling || frameScene === null || scene !== frameScene) return inner.apply(this, args);
     const tw = performance.now();
     const root = levelRootOf(object as Obj);
@@ -556,6 +668,23 @@ export function installLevelWarm(renderer: unknown, off = URL_OFF): void {
       phase.wrapMs += performance.now() - tw;
     }
   };
+  const own = r._renderObjectDirect;
+  /** Khung lạnh: đo từng lời gọi vẽ vật (vẫn đi đường lấy mẫu nếu khung này lấy mẫu). */
+  function coldCall(self: RendererLike, args: unknown[], material: unknown): void {
+    inCold = false; // lời gọi lồng (lấy mẫu) không đo lại
+    const t = performance.now();
+    try {
+      own.apply(self, args);
+    } finally {
+      inCold = true;
+      const ms = performance.now() - t;
+      const m = material as { type?: string; name?: string; isShadowPassMaterial?: boolean } | null;
+      cold.objMs += ms;
+      cold.calls++;
+      if (m?.isShadowPassMaterial) cold.shadowObjMs += ms;
+      if (ms > cold.slowest.ms) cold.slowest = { ms, type: m?.type ?? '', name: m?.name ?? '', shadow: m?.isShadowPassMaterial === true };
+    }
+  }
   function warmObject(self: RendererLike, args: unknown[], built: boolean, key: string, id: string): void {
     if (!built) {
       let need = keysNeeded.get(id);
@@ -588,26 +717,36 @@ export function installLevelWarm(renderer: unknown, off = URL_OFF): void {
       if (!built) stats.avgColdMs = stats.avgColdMs === 0 ? spent : stats.avgColdMs + (spent - stats.avgColdMs) * 0.2;
     }
   }
-  // Bộ đo pha: chỉ ghi khi đang trong lời gọi vẽ của vật tầng ấm (`inWarmObj`); ngoài đó gọi thẳng.
-  const timed = (host: object | undefined, name: string, into: 'bindMs' | 'pipeMs' | 'texUploads'): void => {
+  // Bộ đo pha: ghi khi đang trong lời gọi vẽ của vật tầng ấm (`inWarmObj`) hoặc trong khung lạnh; ngoài đó gọi thẳng.
+  const timed = (host: object | undefined, name: string, into: 'bind' | 'pipe' | 'tex' | 'geom'): void => {
     const h = host as Record<string, unknown> | undefined;
     const f = h?.[name];
     if (!h || typeof f !== 'function') return;
     h[name] = function (this: unknown, ...a: unknown[]): unknown {
-      if (!inWarmObj) return f.apply(this, a);
+      if (!inWarmObj && !coldOn()) return f.apply(this, a);
       const t = performance.now();
       try {
         return f.apply(this, a);
       } finally {
-        if (into === 'texUploads') phase.texUploads++;
-        else phase[into] += performance.now() - t;
+        const ms = performance.now() - t;
+        if (inWarmObj) {
+          if (into === 'tex') phase.texUploads++;
+          else if (into === 'bind') phase.bindMs += ms;
+          else if (into === 'pipe') phase.pipeMs += ms;
+        } else if (into === 'tex') (cold.texUploads++, (cold.texMs += ms));
+        else cold[`${into}Ms`] += ms;
       }
     };
   };
-  timed(r._bindings, 'updateForRender', 'bindMs');
-  timed(pipelines, 'updateForRender', 'pipeMs');
-  timed(r._textures, 'updateTexture', 'texUploads');
+  timed(r._bindings, 'updateForRender', 'bind');
+  timed(pipelines, 'updateForRender', 'pipe');
+  timed(r._textures, 'updateTexture', 'tex');
+  timed((r as { _geometries?: object })._geometries, 'updateForRender', 'geom');
+  observeLongTasks();
 }
+/** Đang trong lệnh vẽ của khung lạnh (kể cả trong lời gọi vật, nơi `inCold` tạm tắt). */
+let coldFrameActive = false;
+const coldOn = (): boolean => coldFrameActive;
 
 /**
  * Tầng kẹt → thử lại: xoá theo dõi tiến triển + cờ kẹt của tầng (tầng ẩn được chọn làm ấm lại, tầng hiện được nhường lại),
@@ -634,6 +773,8 @@ export interface LevelReadiness {
   pendingAssets: number;
   /** Vật chưa có shader/pipeline ở khung lấy mẫu gần nhất chạm tầng; `null` = chưa từng lấy mẫu tầng này. */
   pendingDraws: number | null;
+  /** Trong `pendingDraws`: vật không thể vẽ (`trackUndrawable`), không tính vào `compiled`/`ready`. */
+  undrawable: number;
   /** `pendingDraws` lấy ở khung lấy mẫu MỚI NHẤT (không phải số cũ của lần chạm trước). */
   fresh: boolean;
   /** Mọi vật của tầng có shader + pipeline ở mẫu mới nhất (`fresh && pendingDraws === 0`), hoặc đã ấm và chưa có mẫu mới. */
@@ -646,11 +787,14 @@ export interface LevelReadiness {
 }
 
 /** Cho đầu dò/E2E: tầng nào còn đang nạp. */
-export function levelReadiness(): LevelReadiness[] {
+export function levelReadiness(opts: { passive?: boolean } = {}): LevelReadiness[] {
   // Số đếm vật chờ lấy ở khung có lấy mẫu gần nhất; hỏi lần này thì khung kế lấy mẫu (bài kiểm hỏi lặp).
   // Tầng đang hiện đều kẹt thì chỉ lấy mẫu ở khung tự có, không ép vẽ lại (vòng vẽ không chạy mãi vì một vật hỏng).
-  if (!wantSample && [...rootIds].some(([o, id]) => o.visible && !stalledShown.has(id))) markDirty('level-readiness');
-  wantSample = true;
+  // `passive`: chỉ đọc số đã có (nhãn theo dõi tiếp sau khi sẵn sàng mà không giữ vòng vẽ chạy).
+  if (!opts.passive) {
+    if (!wantSample && [...rootIds].some(([o, id]) => o.visible && !stalledShown.has(id))) markDirty('level-readiness');
+    wantSample = true;
+  }
   const items = unsettledItems();
   const busy = w2Busy();
   return [...rootIds].map(([o, levelId]) => {
@@ -658,10 +802,13 @@ export function levelReadiness(): LevelReadiness[] {
     const pendingDraws = lastPending.get(levelId) ?? null;
     const warmed = state.warmed.has(levelId);
     const touchedLastFrame = lastTouch.get(levelId) === lastSampleFrame;
-    const ready = isLevelReady({ pendingAssets, warmed, shown: o.visible, touchedLastFrame, pendingDraws, w2Busy: busy });
+    const undrawable = o.visible ? undrawableOf(levelId) : 0;
+    // "Sẵn sàng" tính trên vật VẼ ĐƯỢC: trừ vật không thể vẽ.
+    const drawable = pendingDraws === null ? null : Math.max(0, pendingDraws - undrawable);
+    const ready = isLevelReady({ pendingAssets, warmed, shown: o.visible, touchedLastFrame, pendingDraws: drawable, w2Busy: busy });
     const stalled = !ready && (stalledShown.has(levelId) || stalledWarm.has(levelId));
-    const compiled = touchedLastFrame ? pendingDraws === 0 : warmed;
-    return { levelId, shown: o.visible, pendingAssets, pendingDraws, fresh: touchedLastFrame, compiled, warmed, ready, stalled };
+    const compiled = touchedLastFrame ? drawable === 0 : warmed;
+    return { levelId, shown: o.visible, pendingAssets, pendingDraws, undrawable, fresh: touchedLastFrame, compiled, warmed, ready, stalled };
   });
 }
 
@@ -675,6 +822,7 @@ export function onLevelWarmFrame(f: () => void): () => void {
 export const levelWarmActive = (): boolean => stats.frameCalls > 0;
 
 export function noteLevelSelected(levelId: string, now = performance.now()): void {
+  resetCold(now);
   Object.assign(switchStats, { levelId, selectedAt: now, readyAt: null, lastWaitMs: null, count: switchStats.count + 1 });
 }
 
@@ -705,7 +853,9 @@ export function levelWarmStats() {
     keysNeeded: Object.fromEntries([...keysNeeded].map(([id, s]) => [id, s.size])),
     /** Pha từng khung ấm (`WarmPhases`): `phases.last`, `phases.worst`, khung có/không ép bóng, khung thường. */
     phases: { ...phaseStats, normalFrameMs: Math.round(phaseStats.normalFrameMs * 10) / 10 },
-    flags: { shadowEvery: !SHADOW_EVERY_OFF, budgetCap: !BUDGET_CAP_OFF, fastSkip: !FAST_SKIP_OFF, phase: !PHASE_OFF },
+    flags: { shadow8: !SHADOW_EVERY_OFF, shadow1: SHADOW_ONE, noShadow: SHADOW_NONE, budgetCap: !BUDGET_CAP_OFF, fastSkip: !FAST_SKIP_OFF, early: EARLY, phase: !PHASE_OFF, setupBudget: warmStats().setupBudget ?? false },
+    /** Đường lạnh (khung sống KHÔNG ấm) từ lần chọn tầng gần nhất: khung vẽ tệ nhất tách pha. */
+    cold: coldSnapshot(),
   };
 }
 

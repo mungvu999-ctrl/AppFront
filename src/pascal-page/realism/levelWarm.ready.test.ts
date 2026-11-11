@@ -28,14 +28,15 @@ describe('isLevelReady — một nghĩa', () => {
 
 describe('ngân sách khung ấm', () => {
   it('có trần WARM_CAP_MS khi khung thường nhẹ, sàn 4 ms khi khung thường nặng', () => {
-    expect(warmBudgetMs(5)).toBe(WARM_CAP_MS);
-    expect(warmBudgetMs(45)).toBe(5);
-    expect(warmBudgetMs(130)).toBe(4);
+    expect(warmBudgetMs(5, WARM_CAP_MS)).toBe(WARM_CAP_MS); // `?enable=lwbudget`
+    expect(warmBudgetMs(5)).toBe(45); // mặc định vòng 9
+    expect(warmBudgetMs(45, WARM_CAP_MS)).toBe(5);
+    expect(warmBudgetMs(130, WARM_CAP_MS)).toBe(4);
     expect(warmBudgetMs(5, Infinity)).toBe(45); // `?disable=lwbudget`
   });
   it('ép vẽ lại bóng ở khung ấm đầu và mỗi 8 khung', () => {
-    expect([0, 1, 7, 8, 16].map((n) => shadowDue(n))).toEqual([true, false, false, true, true]);
-    expect(shadowDue(3, 1)).toBe(true); // `?disable=lwshadow`
+    expect([0, 1, 7, 8, 16].map((n) => shadowDue(n, 8))).toEqual([true, false, false, true, true]);
+    expect(shadowDue(3, 1)).toBe(true); // mặc định (vòng 9): mọi khung
   });
 });
 
@@ -44,5 +45,21 @@ describe('retryStalled', () => {
     const got = Array.from({ length: MAX_STALL_RETRIES + 2 }, () => retryStalled('L2'));
     expect(got).toEqual([...Array(MAX_STALL_RETRIES).fill(true), false, false]);
     expect(retryStalled('L3')).toBe(true);
+  });
+});
+
+describe('trackUndrawable', () => {
+  it('số chờ đứng yên khi W2 rảnh qua UNDRAWABLE_SAMPLES mẫu → coi là không vẽ được; W2 có việc/số đổi → lại từ đầu', async () => {
+    const { trackUndrawable, UNDRAWABLE_SAMPLES } = await import('./levelWarm');
+    const m = new Map();
+    let got = 0;
+    for (let i = 0; i < UNDRAWABLE_SAMPLES - 1; i++) got = trackUndrawable(m, 'L1', 2, 0);
+    expect(got).toBe(0);
+    expect(trackUndrawable(m, 'L1', 2, 0)).toBe(2);
+    expect(trackUndrawable(m, 'L1', 2, 1)).toBe(0); // W2 có việc
+    for (let i = 0; i < UNDRAWABLE_SAMPLES; i++) got = trackUndrawable(m, 'L1', i % 2 ? 2 : 3, 0);
+    expect(got).toBe(0); // số dao động: đang có tiến triển
+    expect(trackUndrawable(m, 'L1', 0, 0)).toBe(0);
+    expect(m.size).toBe(0);
   });
 });

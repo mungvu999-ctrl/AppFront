@@ -48,6 +48,15 @@ const URL_OFF = DISABLED.includes('warm');
 const NODE_BUILD_OFF = DISABLED.includes('nodebuild');
 const LAZY_DISPOSE_OFF = DISABLED.includes('lazydispose');
 const ORDER_OFF = DISABLED.includes('buildorder');
+/**
+ * `?enable=setupbudget` (V10 lát 2, mặc định TẮT tới khi đo có lợi): ngân sách mỗi khung cho lời gọi vẽ của vật CHƯA có
+ * pipeline (lần đầu: tạo bindings, tải buffer/texture, khởi động pipeline) — W2 chỉ giới hạn đoạn dựng node, phần này không
+ * giới hạn nên một tầng mới hiện ra có thể dồn hàng trăm vật vào một khung. Vật chưa có pipeline chưa vẽ được, nên dời
+ * sang khung sau không đổi hình.
+ */
+const SETUP_BUDGET_ON = (typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('enable') ?? '').split(',') : []).includes('setupbudget');
+export const SETUP_BUDGET_MS = 12;
+let setupSpent = 0;
 const OVERLAY_OFF = DISABLED.includes('loadoverlay');
 
 /**
@@ -58,7 +67,7 @@ const OVERLAY_OFF = DISABLED.includes('loadoverlay');
  */
 export const BUILD_BUDGET_MS = Number(typeof location !== 'undefined' ? new URLSearchParams(location.search).get('buildbudget') : null) || 150;
 
-const stats = { started: 0, done: 0, lastDoneAt: 0, builds: 0, buildsDone: 0, skipped: 0, lastBuildAt: 0, lastActivityAt: -Infinity, lazyDisposed: 0, texWaiting: 0, texStale: 0, structPending: 0, structDrawnAt: 0 };
+const stats = { started: 0, done: 0, lastDoneAt: 0, builds: 0, buildsDone: 0, skipped: 0, lastBuildAt: 0, lastActivityAt: -Infinity, lazyDisposed: 0, texWaiting: 0, texStale: 0, structPending: 0, structDrawnAt: 0, setupSkips: 0 };
 
 /**
  * Vật liệu còn ảnh đang nạp (`texturePreload.ts`: `userData.texPending`): ảnh về là gán mọi map một lượt
@@ -169,6 +178,7 @@ export function liveFrame(scene: unknown, draw: () => void, nowMs = performance.
   }
   liveScene = scene;
   frameSpent = 0;
+  setupSpent = 0;
   try {
     draw();
   } finally {
@@ -305,7 +315,18 @@ export function installAsyncNodeBuilds(renderer: unknown, off = URL_OFF || NODE_
         return;
       }
     }
-    direct.apply(this, args);
+    if (ro !== null && SETUP_BUDGET_ON && !r._pipelines?.isReady(ro)) {
+      if (setupSpent >= SETUP_BUDGET_MS) {
+        stats.setupSkips++;
+        return void markDirty('node-build');
+      }
+      const t = performance.now();
+      try {
+        direct.apply(this, args);
+      } finally {
+        setupSpent += performance.now() - t;
+      }
+    } else direct.apply(this, args);
     if (ro !== null) markDrawReady(object, material, ro, r);
   };
 }
@@ -412,6 +433,9 @@ export const warmStats = () => ({
   buildsPending: stats.builds - stats.buildsDone,
   off: URL_OFF,
   nodeBuildOff: NODE_BUILD_OFF,
+  /** Đoạn dựng node đồng bộ của khung đang/vừa vẽ (ms). */
+  frameBuildMs: frameSpent,
+  setupBudget: SETUP_BUDGET_ON,
 });
 
 if (typeof window !== 'undefined') (window as unknown as { __pascalWarm?: typeof warmStats }).__pascalWarm = warmStats;

@@ -87,19 +87,15 @@ describe('levelWarm: tầng đã sẵn sàng không báo chờ nhầm; vật h�
     expect(lw.levelWarmStats().current).toBe('L3');
     sample();
     expect(lw.levelWarmStats()).toMatchObject({ warmFrames: 0, yieldFrames: 1 });
-    // (i)+(ii) qua STALL_FRAMES khung không giảm → L2 kẹt: thôi nhường, L3 được ấm; L2 không báo sẵn sàng.
-    for (let i = 0; i < lw.STALL_FRAMES + 2; i++) sample();
+    // Lát 2: vật đứng yên khi W2/W1 rảnh qua UNDRAWABLE_SAMPLES mẫu = không vẽ được → loại khỏi "sẵn sàng" (không kẹt
+    // nhãn/đầu dò mãi vì một vật không bao giờ vẽ); thôi nhường, L3 được ấm. (Kẹt thật — W2 có việc mà không tiến — xem
+    // `trackProgress`/`retryStalled`.)
+    for (let i = 0; i < lw.UNDRAWABLE_SAMPLES + 2; i++) sample();
+    for (let i = 0; i < 40; i++) sample();
     const s = lw.levelWarmStats();
     expect(s.warmFrames).toBeGreaterThan(0);
     expect(s.warmed).toContain('L3');
-    expect(s.yieldFrames).toBeLessThanOrEqual(lw.STALL_FRAMES + 1);
-    expect(of('L2')).toMatchObject({ ready: false, stalled: true });
-    expect(s.stalledShown).toContain('L2');
-    // (iii) kẹt → hỏi trạng thái không ép vẽ lại nữa.
-    dirty.mockClear();
-    lw.levelReadiness();
-    lw.levelReadiness();
-    expect(dirty).not.toHaveBeenCalledWith('level-readiness');
+    expect(of('L2')).toMatchObject({ ready: true, stalled: false, undrawable: 1, pendingDraws: 1 });
     // Số chờ giảm lại (vật dựng xong) → hết kẹt, sẵn sàng thật.
     broken.visible = true;
     r._pipelines.isReady = () => true;

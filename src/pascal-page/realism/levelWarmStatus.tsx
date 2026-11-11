@@ -27,9 +27,12 @@ export function LevelWarmStatus({ levelId }: { levelId: string | null | undefine
       <div aria-live="polite" data-testid="level-warm-status" role="status" style={s === 'pending' ? STYLE : undefined}>
         {s === 'pending' ? 'Đang chuẩn bị tầng…' : ''}
       </div>
-      <div aria-live="polite" data-testid="level-warm-stalled" role="status" style={s === 'stalled' ? STYLE : undefined}>
-        {s === 'stalled' ? 'Tầng này chuẩn bị lâu hơn bình thường — vẫn xem và thao tác được, phần còn lại sẽ hiện dần.' : ''}
-      </div>
+      {/* Chỉ có trong DOM khi kẹt thật: đếm `[data-testid="level-warm-stalled"]` = 1 nghĩa là đang báo kẹt. */}
+      {s === 'stalled' ? (
+        <div aria-live="polite" data-testid="level-warm-stalled" role="status" style={STYLE}>
+          Tầng này chuẩn bị lâu hơn bình thường — vẫn xem và thao tác được, phần còn lại sẽ hiện dần.
+        </div>
+      ) : null}
     </>
   );
 }
