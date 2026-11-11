@@ -15,6 +15,7 @@ import { CATALOG_MODELS, isServerModel, VARIANT_MODEL } from './furnitureCatalog
 import LIBRARY_QC_JSON from './libraryQc.json' with { type: 'json' };
 import LIBRARY_ROLES_JSON from './libraryRoles.json' with { type: 'json' };
 import { rectOfFurniture, rectsOverlap } from './placement';
+import { paletteOf, ROOMSET_ON, roomSetOf, SET_ROLES, type SetDecision, type SetMember } from './roomSet';
 import LIBRARY_COLORS_JSON from './libraryColors.json' with { type: 'json' };
 import {
   chairSetFolderOf,
@@ -250,6 +251,8 @@ export type LayerStyle = SceneStyle & {
   readonly layout?: ReadonlySet<LayoutFlag>;
   /** Biến thể theo phòng / bộ ghế `?enable=roomvariety,chairset,varietyai` (`roomVariety.ts`); thiếu = cờ URL lúc nạp. */
   readonly variety?: ReadonlySet<VarietyFlag>;
+  /** Bộ nội thất theo phòng `?enable=roomset` (`roomSet.ts`); thiếu = cờ URL lúc nạp. Bật thì thay `roomvariety`/`chairset`. */
+  readonly roomSet?: boolean;
 };
 
 const SAVED_FOLDER = /\/items\/([^/]+)\//;
@@ -293,7 +296,8 @@ const isAuto = (f: Pick<Furniture, 'id'> & Shaped): boolean =>
   isGenerated(f) || (f.reviewed === false && f.source !== 'human' && f.model === undefined);
 
 /* ---- Biến thể theo phòng + bộ ghế (`roomVariety.ts`, vòng 11 b1) ---- */
-const varietyOf = (style: SceneStyle): ReadonlySet<VarietyFlag> => (style as LayerStyle).variety ?? VARIETY_FLAGS_ON;
+const varietyOf = (style: SceneStyle): ReadonlySet<VarietyFlag> =>
+  roomSetOn(style) ? NO_VARIETY : ((style as LayerStyle).variety ?? VARIETY_FLAGS_ON);
 /** Món được đổi mẫu: đồ sinh (lớp đề xuất); `varietyai` mở thêm đồ AI dò chưa xác nhận, chưa gán mẫu. */
 const inVarietyScope = (f: Pick<Furniture, 'id'> & Shaped, flags: ReadonlySet<VarietyFlag>): boolean =>
   isGenerated(f) || (flags.has('varietyai') && isAuto(f));
@@ -687,6 +691,7 @@ export const modelFolderOf = (
   roleOverride?: FurnitureRole,
 ): string | null => {
   if (harmonySuspended) return baseFolderOf(f, style, usage, roleOverride);
+  if (roomSetOn(style)) return roomSetFolderOf(f, style, usage, roleOverride);
   const flags = varietyOf(style);
   const scoped = flags.size > 0 && inVarietyScope(f, flags);
   // Mẫu khi không cờ (tính TRƯỚC: sổ QC/phối ghi theo id, lượt sau thắng) — chỉ để ghi provenance đổi mẫu.
@@ -766,6 +771,10 @@ export const contextRolesOf = (
   VARIETY_LOG.clear();
   VARIETY_CHANGES.clear();
   GUARD_REJECTS.clear();
+  SET_ROOMS.clear();
+  SET_LOG.clear();
+  SET_APPLIED.clear();
+  setPlans = new WeakMap();
   const roles = new Map<string, FurnitureRole>();
   const toiletsOf = new Map<string, Placed[]>();
   const beds = items.filter((f) => f.kind === 'bed');
@@ -788,6 +797,7 @@ export const contextRolesOf = (
   }
   registerHarmonyRooms(items, usageOf, roles);
   registerChairGroups(items, usageOf, roles);
+  addSetMembers(items, usageOf, roles);
   return roles;
 };
 
@@ -894,4 +904,124 @@ export const withoutOverlaps = (generated: readonly Furniture[], fixed: readonly
     taken.push({ levelId: f.levelId, rect });
     return true;
   });
+};
+
+/* ---- Bộ nội thất theo phòng (`?enable=roomset`, `roomSet.ts`, vòng 12 làn S) ---- */
+
+const roomSetOn = (style: SceneStyle): boolean => (style as LayerStyle).roomSet ?? ROOMSET_ON;
+type SetInput = FolderInput & Partial<Pick<Furniture, 'edited' | 'slots'>>;
+/** Phạm vi đổi mẫu: đồ sinh chưa gán mẫu, đồ AI chưa xác nhận chưa gán mẫu; không `edited`, không `slots`. */
+const inSetScope = (f: SetInput): boolean =>
+  f.model === undefined && f.slots === undefined && f.edited !== true && (isGenerated(f) || isAuto(f));
+/** Chữ ký món lúc đăng ký: dữ liệu đổi (cỡ, phòng, loại, phạm vi, mẫu) thì quyết định cũ không dùng. */
+const setSigOf = (f: SetInput): string => {
+  const [short, long] = footprintOf(f);
+  return [f.kind, f.variant ?? '', short.toFixed(3), long.toFixed(3), f.roomId, inSetScope(f) ? 1 : 0, f.model?.src ?? ''].join('|');
+};
+interface SetRoom {
+  readonly usage: RoomUsage | undefined;
+  readonly members: Map<string, { readonly f: SetInput; readonly role: FurnitureRole; readonly override?: FurnitureRole; readonly sig: string }>;
+}
+/** Sổ phòng của lượt dựng: đồ đã lưu (`contextRolesOf`) + đồ bày phòng trống (`addRoomSetMembers`, trước lớp trang trí). */
+const SET_ROOMS = new Map<string, SetRoom>();
+/** Quyết định đã chốt trong lượt dựng theo đối tượng phong cách (mỗi lượt một đối tượng); `contextRolesOf` làm mới. */
+let setPlans = new WeakMap<SceneStyle, Map<string, SetDecision>>();
+/** Sổ báo cáo (đầu dò): id món → quyết định + phòng. */
+const SET_LOG = new Map<string, SetDecision & { readonly roomId: string }>();
+/** Món thật sự dựng bằng mẫu `roomset` trong lượt (quyết định có thể bị bỏ khi mẫu luật cũ khác lúc chấm). */
+const SET_APPLIED = new Set<string>();
+
+const addSetMembers = <T extends SetInput>(
+  items: readonly T[],
+  usageOf: (f: T) => RoomUsage | undefined,
+  roles?: ReadonlyMap<string, FurnitureRole>,
+): void => {
+  for (const f of items) {
+    if (f.roomId === undefined || f.kind === 'stair') continue;
+    const usage = usageOf(f);
+    const override = roles?.get(f.id);
+    const role = override ?? roleOf(f, usage);
+    if (!SET_ROLES.includes(role)) continue;
+    const room = SET_ROOMS.get(f.roomId) ?? { usage, members: new Map() };
+    SET_ROOMS.set(f.roomId, room);
+    room.members.set(f.id, { f, role, ...(override === undefined ? {} : { override }), sig: setSigOf(f) });
+  }
+};
+/** toPascal: đồ bày phòng trống vào sổ bộ TRƯỚC lớp trang trí (đèn bàn/chăn đọc mẫu của món chủ). */
+export const addRoomSetMembers = (items: readonly Furniture[], usageOf: (f: Pick<Furniture, 'roomId'>) => RoomUsage | undefined): void =>
+  addSetMembers(items, usageOf);
+
+/** Ứng viên của món: cùng tập luật cũ xếp hạng (thư viện máy chủ của vai, vừa cỡ, không bị QC loại, đồ sinh đúng hướng). */
+const setPoolOf = (f: SetInput, role: FurnitureRole, style: SceneStyle): readonly string[] => {
+  // Mẫu concept AI chọn cho vai: không qua xếp hạng thư viện → giữ.
+  if ((style.prefer[role] ?? []).some(isServerModel)) return [];
+  const lib = libraryFoldersOf(role, f.variant).filter((x) => isServerModel(x) && !QC_EXCLUDED.has(x));
+  if (lib.length === 0) return [];
+  const best = Math.min(...lib.map((x) => sizeCostOf(f, x)));
+  const orient = isGenerated(f) && !ROTATABLE_ROLES.has(role) && !rulesOffOf(style).has('orient');
+  return lib.filter((x) => sizeCostOf(f, x) <= best + LIBRARY_SIZE_SLACK && !(orient && misOriented(f, x)));
+};
+
+const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: ReadonlyMap<string, SetDecision>): Map<string, SetDecision> => {
+  const wanted = style.libraryStyles ?? [];
+  const members: SetMember[] = [...room.members.values()].map(({ f, role, override }) => {
+    const scoped = inSetScope(f);
+    const saved = f.model === undefined ? undefined : (SAVED_FOLDER.exec(f.model.src)?.[1] ?? null);
+    const [short, long] = footprintOf(f);
+    return {
+      id: f.id,
+      role,
+      short,
+      long,
+      current: saved !== undefined ? saved : baseFolderOf(f, style, room.usage, override),
+      pool: scoped ? setPoolOf(f, role, style) : [],
+      fixed: !scoped,
+    };
+  });
+  const tone = rulesOffOf(style).has('tone') ? undefined : (style as LayerStyle).woodTone;
+  const plan = roomSetOf(roomId, members, decided, {
+    tierOf: (x) => styleTierOf(x, wanted),
+    tiers: wanted.length,
+    dimsOf: (x) => CATALOG_MODELS[x]?.dimensions,
+    palette: paletteOf(style, tone),
+  });
+  for (const [id, d] of plan) SET_LOG.set(id, { ...d, roomId });
+  return plan;
+};
+
+const roomSetFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, roleOverride?: FurnitureRole): string | null => {
+  const current = baseFolderOf(f, style, usage, roleOverride);
+  const room = f.roomId === undefined ? undefined : SET_ROOMS.get(f.roomId);
+  const member = room?.members.get(f.id);
+  let folder = current;
+  if (room !== undefined && member !== undefined && member.sig === setSigOf(f) && inSetScope(f)) {
+    const plan = setPlans.get(style) ?? new Map<string, SetDecision>();
+    setPlans.set(style, plan);
+    if (!plan.has(f.id)) for (const [id, d] of planRoom(f.roomId as string, room, style, plan)) plan.set(id, d);
+    const decision = plan.get(f.id);
+    // Chỉ dùng quyết định cho đúng mẫu luật cũ đã chấm (vai/ngữ cảnh khác → luật cũ).
+    if (decision !== undefined && decision.from === current) folder = decision.to;
+  }
+  if (folder !== current) SET_APPLIED.add(f.id);
+  else SET_APPLIED.delete(f.id);
+  VARIETY_LOG.set(f.id, { roomId: f.roomId, role: roleOverride ?? roleOf(f, usage), folder });
+  return folder;
+};
+
+/** Món đổi mẫu do `roomset` trong lượt dựng hiện tại (toPascal ghi provenance). */
+export const roomSetSwapOf = (id: string): SetDecision | undefined => {
+  const d = SET_LOG.get(id);
+  return d?.rule === 'roomset' && SET_APPLIED.has(id) ? d : undefined;
+};
+
+type RoomSetEntry = SetDecision & { readonly roomId: string };
+/** Đầu dò `__pascalProbe.roomSet()`: phòng → neo + từng món (vai, mẫu cũ → mới, luật, chi phí, lý do giữ/chọn). */
+export const roomSetReport = (): Record<string, { readonly anchor: string | null; readonly items: readonly RoomSetEntry[] }> => {
+  const out: Record<string, { anchor: string | null; items: RoomSetEntry[] }> = {};
+  for (const d of SET_LOG.values()) {
+    const room = (out[d.roomId] ??= { anchor: null, items: [] });
+    room.items.push(d);
+    if (d.anchor && room.anchor === null) room.anchor = d.id;
+  }
+  return out;
 };

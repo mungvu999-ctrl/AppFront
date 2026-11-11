@@ -83,7 +83,8 @@ import {
   type SceneRepair,
 } from './sceneLayer';
 import { furnishingUsageOf, isPlausibleStair, lShapedRunArms, orphanWallIds, weldWallEnds } from './structureFixes';
-import { contextRolesOf, isThinHob, isThinSink, modelFolderOf, roleOf, withoutOverlaps } from './sceneVariety';
+import { ROOMSET_VERSION } from './roomSet';
+import { addRoomSetMembers, contextRolesOf, isThinHob, isThinSink, modelFolderOf, roleOf, roomSetSwapOf, withoutOverlaps } from './sceneVariety';
 import type {
   AppFrontOrigin,
   PascalDoorNode,
@@ -182,6 +183,14 @@ const skip = (id: string, kind: string, reason: string): SkippedEntity => ({ id,
 const withFields = <N extends PascalNode>(node: N, extra: Readonly<Record<string, unknown>>): N => {
   const origin: AppFrontOrigin = node.metadata?.appfront ?? { confidence: 1, source: 'ai', reviewed: false };
   return { ...node, metadata: { ...node.metadata, appfront: { ...origin, fields: { ...origin.fields, ...extra } } } };
+};
+
+/** Món `roomset` đổi mẫu: ghi `prov.model` (đồ sinh giữ luật sinh; đồ AI mang prov hạng `ai`). */
+const withRoomSetProv = <N extends PascalNode>(node: N, furnitureId: string): N => {
+  const swap = roomSetSwapOf(furnitureId);
+  if (swap === undefined) return node;
+  const prov = (node.metadata?.appfront?.fields?.[PROV_FIELD] as SceneProvenance | undefined) ?? { cls: 'ai', rule: 'roomset', version: SCENE_LAYER_VERSION };
+  return withFields(node, { [PROV_FIELD]: { ...prov, model: { rule: 'roomset', version: ROOMSET_VERSION, from: swap.from } } });
 };
 
 /** Vai nhúng trong id món sinh `DRESS-<vai>-…`. */
@@ -1433,7 +1442,8 @@ export const toPascalScene = (
           )
         : node;
     const repair = repairs?.get(furniture.id);
-    nodes[node.id] = repair === undefined ? shown : withFields(shown, { [REPAIR_FIELD]: repair });
+    const provShown = withRoomSetProv(shown, furniture.id);
+    nodes[node.id] = repair === undefined ? provShown : withFields(provShown, { [REPAIR_FIELD]: repair });
     adopt(levelNodeId, node.id);
 
     /* V1 — nhánh thứ hai của dãy tủ chữ L: đồ sinh ra (`isGeneratedNodeId`). */
@@ -1462,6 +1472,8 @@ export const toPascalScene = (
   const notOff = (furniture: Furniture): boolean => !offIds.has(furniture.id);
   const furnishedAll = furnish === 'on' ? furnishEmptyRooms(usable, style) : [];
   const furnished = furnishedAll.filter(notOff);
+  // `roomset`: đồ bày phòng trống vào sổ bộ của phòng trước lớp trang trí (đèn bàn/chăn đọc mẫu món chủ).
+  addRoomSetMembers(furnished, (f) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId)));
   const dressedAll = furnish === 'on' ? dressingOf({ ...usable, furniture: [...builtFurniture, ...furnished] }, style) : [];
   const dressed = dressedAll.filter(notOff);
   const builtRoomIds = new Set(builtRooms.map((room) => room.id));
@@ -1508,7 +1520,10 @@ export const toPascalScene = (
       sinkFolderOf(furniture, counterPool, usageOfGenerated),
     );
 
-    nodes[node.id] = withFields({ ...node, metadata: { ...node.metadata, generated: 'dressing' } }, { [PROV_FIELD]: provOfGenerated(furniture) });
+    nodes[node.id] = withRoomSetProv(
+      withFields({ ...node, metadata: { ...node.metadata, generated: 'dressing' } }, { [PROV_FIELD]: provOfGenerated(furniture) }),
+      furniture.id,
+    );
     adopt(levelNodeId, node.id);
     if (furniture.roomId !== undefined) dressIdsOf.set(furniture.roomId, [...(dressIdsOf.get(furniture.roomId) ?? []), furniture.id]);
   }
@@ -1661,7 +1676,7 @@ export const toPascalScene = (
   for (const node of Object.values(nodes)) {
     const fields = node.metadata?.appfront?.fields;
     const prov = fields?.[PROV_FIELD] as SceneProvenance | undefined;
-    if (prov !== undefined) generatedByRule[prov.rule] = (generatedByRule[prov.rule] ?? 0) + 1;
+    if (prov !== undefined && prov.cls === 'generated') generatedByRule[prov.rule] = (generatedByRule[prov.rule] ?? 0) + 1;
     if (fields?.[REPAIR_FIELD] !== undefined) repaired += 1;
   }
 

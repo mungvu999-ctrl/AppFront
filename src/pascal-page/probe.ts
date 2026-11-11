@@ -110,6 +110,14 @@ if (window.__pascalProbe) {
   });
 }
 
+// Bộ nội thất theo phòng (vòng 12 làn S, `?enable=roomset`, `roomSet.ts`): phòng → { anchor, items[{id, role, from, to, rule, cost, why}] }.
+// Rỗng khi cờ tắt. `rule: 'keep'` kèm `why` = lý do giữ mẫu cũ.
+if (window.__pascalProbe) {
+  void import('@/lib/pascal/sceneVariety').then(({ roomSetReport }) => {
+    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { roomSet: roomSetReport });
+  });
+}
+
 // Vai thư viện mở rộng (vòng 11 b2, `?enable=libroles2`, `libraryRoles2.ts`):
 // { on, default, pools, loaded, swaps{id→{variant, from, to}}, flat{before, after} — số món sinh dùng mẫu Pascal 0 texture theo vai }.
 if (window.__pascalProbe) {

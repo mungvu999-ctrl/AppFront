@@ -29,12 +29,15 @@ export const classOf = (f: Pick<Furniture, 'source' | 'reviewed' | 'edited'>): E
 
 /** Provenance ghi trên node dẫn xuất (`metadata.appfront.fields.prov`). */
 export interface SceneProvenance {
-  readonly cls: 'generated';
+  /** `ai`: món AI đã lưu mà lớp dẫn xuất chỉ đổi MẪU (`model`) — không tính vào `generatedByRule`. */
+  readonly cls: 'generated' | 'ai';
   /** Luật sinh (vd `furnish:bed`, `dress:curtain`, `light:ceiling`, `railing`, `kitchenRun`). */
   readonly rule: string;
   readonly version: typeof SCENE_LAYER_VERSION;
   /** Id thực thể làm mốc (phòng, ô mở, đồ chủ) — để `dressingOff`/nhận biết phần tử gốc đổi. */
   readonly hostId?: string;
+  /** Lớp dẫn xuất đổi mẫu thư viện của món (vòng 12 `roomset`): luật + phiên bản luật + mẫu luật cũ. */
+  readonly model?: { readonly rule: 'roomset'; readonly version: number; readonly from: string | null };
 }
 
 /**
