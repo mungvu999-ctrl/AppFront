@@ -85,3 +85,10 @@ if (window.__pascalProbe) {
     if (window.__pascalProbe) Object.assign(window.__pascalProbe, { harmony: harmonyReport });
   });
 }
+
+// Gia hạn URL ký mẫu thư viện (vòng 10, `sceneLibrary.ts`): trạng thái số lần gia hạn / hết lượt.
+if (window.__pascalProbe) {
+  void import('@/lib/pascal/sceneLibrary').then(({ assetRefreshStatus }) => {
+    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { assetRefresh: assetRefreshStatus });
+  });
+}

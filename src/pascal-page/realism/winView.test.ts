@@ -42,9 +42,11 @@ describe('parseWinView', () => {
     expect(parseWinView('?winview=auto', 'light')).toBeNull();
   });
 
-  it('không cờ → WINVIEW_DEFAULT (off); fallback auto bật; ?disable=winview thắng mọi thứ', () => {
-    expect(WINVIEW_DEFAULT).toBe('off');
-    expect(parseWinView('', 'dark')).toBeNull();
+  it('không cờ → WINVIEW_DEFAULT (auto: Buổi tối = sunset, chủ đề sáng không áp); fallback off tắt; ?disable=winview thắng mọi thứ', () => {
+    expect(WINVIEW_DEFAULT).toBe('auto');
+    expect(parseWinView('', 'dark')?.mode).toBe('sunset');
+    expect(parseWinView('', 'light')).toBeNull();
+    expect(parseWinView('', 'dark', 'off')).toBeNull();
     expect(parseWinView('', 'dark', 'auto')?.mode).toBe('sunset');
     expect(parseWinView('?disable=foo,winview', 'dark', 'auto')).toBeNull();
     expect(parseWinView('?winview=sunset&disable=winview', 'dark')).toBeNull();

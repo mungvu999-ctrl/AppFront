@@ -220,7 +220,7 @@ describe('installAssetRefresh — bản vá FileLoader (review T1)', () => {
     original = proto.load;
     requested.length = 0;
     // Như FileLoader thật: lời gọi trùng URL đang tải dùng chung MỘT request, mọi người gọi nhận kết quả cùng nhịp.
-    const waiting = new Map<string, { onLoad?: (d: unknown) => void; onError?: (e: unknown) => void }[]>();
+    const waiting = new Map<string, { onLoad: ((d: unknown) => void) | undefined; onError: ((e: unknown) => void) | undefined }[]>();
     proto.load = (url, onLoad, _p, onError) => {
       const queue = waiting.get(url);
       if (queue !== undefined) {

@@ -17,7 +17,7 @@ import { GLASS_ENV_URL } from './matGlass';
 export type WinMode = 'sunset' | 'courtyard' | 'sky';
 
 /** Giá trị khi URL không có `?winview`. Đổi thành 'auto' để bật mặc định (một dòng). */
-export const WINVIEW_DEFAULT: 'off' | 'auto' = 'off';
+export const WINVIEW_DEFAULT: 'off' | 'auto' = 'auto';
 export type WinScope = 'inside' | 'all';
 
 /** Ảnh có sẵn trong repo (không thêm tệp): Venice hoàng hôn (nhà + nước), sân đô thị (nhà + cây), trời trưa thuần. */
