@@ -16,6 +16,25 @@ import { type Object3D, PointLight, type Scene, Vector3 } from 'three';
 
 import { NIGHT_THEME_ID } from '../renderLook';
 import { syncStudioGround } from './horizon';
+import {
+  type AppliedLight,
+  collectRoomItems,
+  FIXTURE_LIGHT_GAP_M,
+  fixtureSpec,
+  HABITABLE,
+  lampRuleOn,
+  levelOf,
+  maybeUpdateShadow,
+  planLampAnchors,
+  ROOM_SHADOW_CASTERS,
+  roomShadowOn,
+  roomsWithVisibleSource,
+  setRoomReport,
+  setupShadowCaster,
+  shadowSlotIndex,
+  syncFixtures,
+  trackCamera,
+} from './lampRule';
 import { lightFlagOn } from './lightFlag';
 import { syncRoomClip } from './lightingRoomClip';
 import { sceneTier } from './tiers';
@@ -238,28 +257,32 @@ export function syncRoomLights(
       for (const l of pool) l.removeFromParent();
       pool = [];
     }
+    syncFixtures(scene, [], ROOM_LIGHT_COLOR, ROOM_LIGHT_MAX_CD, 0);
     return;
   }
   if (!pool.length) {
-    pool = Array.from({ length: ROOM_LIGHT_MAX }, () => {
+    pool = Array.from({ length: ROOM_LIGHT_MAX }, (_, i) => {
       const l = new PointLight(ROOM_LIGHT_COLOR, 0, ROOM_LIGHT_RANGE_MIN_M, 2);
       l.castShadow = false;
+      // `?enable=roomshadow`: castShadow cố định từ lúc tạo bể (không đổi khoá vật liệu về sau, `lampRule.ts`).
+      if (i < ROOM_SHADOW_CASTERS && roomShadowOn()) setupShadowCaster(l, scene);
       l.name = 'realism-room-light';
       return l;
     });
   }
   for (const l of pool) if (l.parent !== scene) scene.add(l);
   // ponytail: dùng `polygon` đã lưu của zone (không giải lại autoFromWalls) — đủ cho căn hộ nạp từ backend.
-  const zones: { obj: Object3D; room: RoomInput }[] = [];
+  const zones: { id: string; obj: Object3D; room: RoomInput }[] = [];
   for (const id of registry.byType.zone ?? []) {
     const obj = registry.nodes.get(id);
     const node = nodes[id] as ZoneNodeLike;
-    if (obj && node?.polygon && shown(obj)) zones.push({ obj, room: { polygon: node.polygon, name: node.name } });
+    if (obj && node?.polygon && shown(obj)) zones.push({ id, obj, room: { polygon: node.polygon, name: node.name } });
   }
   const rooms = zones.map((z) => z.room);
-  const ceil = lightFlagOn('lamp-ceil');
+  const lampRule = lampRuleOn();
+  const ceil = lightFlagOn('lamp-ceil') || lampRule;
   const ceilings = ceil ? ceilingsOf(registry, nodes) : [];
-  const heightAt = (p: RoomLightPlan): number => {
+  const heightAt = (p: { index: number; x: number; z: number }): number => {
     if (!ceil) return ROOM_LIGHT_HEIGHT_M;
     const obj = zones[p.index]!.obj;
     const floorY = obj.localToWorld(pos.set(0, 0, 0)).y;
@@ -268,15 +291,60 @@ export function syncRoomLights(
   let plan = planRoomLights(rooms);
   if (ceil) plan = plan.map((p) => ({ ...p, range: roomLightRange(rooms[p.index]!.polygon, p, heightAt(p)) }));
   if (lightFlagOn('lamp-cal')) plan = calibrateRoomLights(plan, rooms, ROOM_LIGHT_MAX, ceil ? Math.min(...plan.map(heightAt)) : ROOM_LIGHT_HEIGHT_M);
+  const camera = lampRule || roomShadowOn() ? trackCamera(scene) : undefined;
+  // Toạ độ thế giới + tầng của zone (zone chỉ tịnh tiến theo tầng — ponytail: zone xoay thì đổi sang worldToLocal từng phòng).
+  const origin = lampRule || roomShadowOn() ? zones.map((z) => z.obj.localToWorld(new Vector3())) : [];
+  const worldRooms = origin.length
+    ? rooms.map((r, i) => ({
+        polygon: r.polygon.map(([x, z]) => [x + origin[i]!.x, z + origin[i]!.z] as const),
+        floorY: origin[i]!.y,
+        level: levelOf(zones[i]!.id, nodes),
+      }))
+    : [];
+  // B: phòng có camera (đúng tầng) lên ô 0 (đèn đổ bóng); các ô khác giữ thứ tự.
+  if (roomShadowOn() && plan.length > 1) {
+    const wp = plan.map((p) => ({ ...p, x: p.x + origin[p.index]!.x, z: p.z + origin[p.index]!.z }));
+    const k = shadowSlotIndex(wp, worldRooms, camera);
+    if (k > 0) plan = [plan[k]!, ...plan.slice(0, k), ...plan.slice(k + 1)];
+  }
+  const applied: AppliedLight[] = [];
+  if (lampRule) {
+    const { lamps, tables } = collectRoomItems(registry, nodes, scene);
+    const worldPlan = plan.map((p) => ({ ...p, x: p.x + origin[p.index]!.x, z: p.z + origin[p.index]!.z }));
+    const anchors = planLampAnchors(worldPlan, worldRooms, lamps, tables);
+    plan.forEach((p, i) => {
+      const a = anchors[i]!;
+      const o = origin[p.index]!;
+      const local = { index: p.index, x: a.x - o.x, z: a.z - o.z };
+      const ceilingY = o.y + heightAt(local) + LAMP_CEIL_GAP_M;
+      const y = a.y ?? ceilingY - fixtureSpec().dropM - FIXTURE_LIGHT_GAP_M;
+      applied.push({ plan: p, anchor: a, world: new Vector3(a.x, y, a.z), ceilingY });
+    });
+    const anchoredRooms = new Set(plan.map((p) => p.index));
+    const visible = roomsWithVisibleSource(worldRooms, anchoredRooms, lamps);
+    setRoomReport(
+      rooms.map((r, i) => ({
+        name: r.name ?? '',
+        habitable: HABITABLE.test(r.name ?? ''),
+        visibleSource: visible[i]!,
+        anchors: applied.filter((x) => x.plan.index === i).map((x) => ({ source: x.anchor!.source, ref: x.anchor!.ref, intensity: x.plan.intensity, fixture: x.anchor!.fixture })),
+      })),
+    );
+  }
   pool.forEach((l, i) => {
     const p = plan[i];
     if (!p) {
       l.intensity = 0;
       return;
     }
-    zones[p.index]!.obj.localToWorld(pos.set(p.x, heightAt(p), p.z));
-    l.position.copy(pos);
+    if (applied[i]) l.position.copy(applied[i].world);
+    else {
+      zones[p.index]!.obj.localToWorld(pos.set(p.x, heightAt(p), p.z));
+      l.position.copy(pos);
+    }
     l.intensity = p.intensity;
     l.distance = p.range;
   });
+  syncFixtures(scene, applied, ROOM_LIGHT_COLOR, ROOM_LIGHT_MAX_CD, camera?.y ?? -Infinity);
+  if (roomShadowOn() && pool[0]) maybeUpdateShadow(pool[0], nodes, plan[0] ? (rooms[plan[0].index]?.name ?? null) : null);
 }

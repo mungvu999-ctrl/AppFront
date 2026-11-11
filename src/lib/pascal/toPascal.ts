@@ -49,6 +49,7 @@ import { applyFloorTransforms, floorDisplayTransformsOf } from './floorAlignment
 import { CATALOG_MODELS, VARIANT_MODEL, isServerModel, modelSrcOf, thumbnailOf } from './furnitureCatalog';
 import { bodyOfPascalId, BUILDING_NODE_ID, SITE_NODE_ID, toPascalId } from './ids';
 import { expandKitchenRuns, isKitchenRunHost, KITCHEN_RUN_ID_PREFIX } from './kitchenRuns';
+import { libRoles2Apply, libRoles2LampOf } from './libraryRoles2';
 import { loggiaOpenSpansOf } from './loggiaRailing';
 import { isAutoFaced, orientDetectedFurniture } from './orientDetected';
 import { roofNodesOf } from './roofs';
@@ -910,7 +911,7 @@ const itemNodeOf = (
     ...(wholePaint === undefined ? {} : Object.fromEntries(Object.keys(styleSlots ?? {}).map((slot) => [slot, wholePaint]))),
     ...furniture.slots,
   };
-  const lampOf = fit === null ? undefined : lampInteractiveOf(fit.folder, style);
+  const lampOf = fit === null ? undefined : (libRoles2LampOf(furniture, style) ?? lampInteractiveOf(fit.folder, style));
 
   return {
     object: 'node',
@@ -1489,7 +1490,8 @@ export const toPascalScene = (
   const counterPool = [...builtFurniture, ...generatedAll];
   const usageOfGenerated = (f: Furniture) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId));
 
-  for (const furniture of generatedAll) {
+  // Vòng 11 b2 `?enable=libroles2`: đèn sinh dựng bằng mẫu thư viện có texture lọt chỗ đặt (`libraryRoles2.ts`).
+  for (const furniture of libRoles2Apply(generatedAll, style)) {
     const levelNodeId = levelNodeIdOf.get(furniture.levelId);
     const levelHeightMm = levelHeightMmOf.get(furniture.levelId);
 

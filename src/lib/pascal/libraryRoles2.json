@@ -1,0 +1,519 @@
+{
+ "source": "scripts/gen-library-roles2.mjs — profiles.jsonl + glbstat (b0 glb-local.json, b2 glb-pack4.json)",
+ "thresholds": {
+  "maxTris": 60000,
+  "maxKb": 1024,
+  "minTexturedMaterials": 1,
+  "maxFootprintAspect": 1.3,
+  "heightMm": {
+   "floorLamp": [
+    1300,
+    2000
+   ],
+   "tableLamp": [
+    300,
+    700
+   ]
+  }
+ },
+ "roles": {
+  "floorLamp": [
+   "lamp-floor-arc-three-shade-a42",
+   "lamp-floor-black-white",
+   "lamp-floor-brass-dome-b",
+   "lamp-floor-drum-shade-metal-a162",
+   "lamp-floor-shelf-wood-a44",
+   "lamp-floor-silver-white-shade-a188",
+   "lamp-floor-slim-black-base-b",
+   "lamp-floor-tripod-black",
+   "lamp-floor-tripod-white-a50",
+   "lamp-floor-white-pole"
+  ],
+  "tableLamp": [
+   "lamp-banker-green",
+   "lamp-bedside-white",
+   "lamp-blue-ceramic-base-b",
+   "lamp-ceramic-table-white-shade-b",
+   "lamp-table-ceramic-navy",
+   "lamp-table-ceramic-white",
+   "lamp-table-concrete-white-shade-a117",
+   "lamp-table-copper-white-shade-a32",
+   "lamp-table-glass-column",
+   "lamp-table-gold-wire-base-b",
+   "lamp-table-green-suede",
+   "lamp-table-teal-ceramic",
+   "lamp-white-drum-slim-b",
+   "lamp-white-globe-base-b"
+  ]
+ },
+ "models": {
+  "lamp-floor-arc-three-shade-a42": {
+   "s": [
+    "modern-lux"
+   ],
+   "kb": 353,
+   "tris": 21082,
+   "mm": [
+    951,
+    1950,
+    924
+   ]
+  },
+  "lamp-floor-black-white": {
+   "s": [],
+   "kb": 162,
+   "tris": 6977,
+   "mm": [
+    441,
+    1699,
+    441
+   ]
+  },
+  "lamp-floor-brass-dome-b": {
+   "s": [
+    "midcentury",
+    "modern-lux"
+   ],
+   "kb": 437,
+   "tris": 25000,
+   "mm": [
+    328,
+    1480,
+    328
+   ]
+  },
+  "lamp-floor-drum-shade-metal-a162": {
+   "s": [
+    "modern-min"
+   ],
+   "kb": 356,
+   "tris": 20476,
+   "mm": [
+    306,
+    1500,
+    304
+   ]
+  },
+  "lamp-floor-shelf-wood-a44": {
+   "s": [
+    "midcentury"
+   ],
+   "kb": 462,
+   "tris": 20974,
+   "mm": [
+    310,
+    1569,
+    308
+   ]
+  },
+  "lamp-floor-silver-white-shade-a188": {
+   "s": [
+    "modern-min"
+   ],
+   "kb": 319,
+   "tris": 19582,
+   "mm": [
+    347,
+    1443,
+    347
+   ]
+  },
+  "lamp-floor-slim-black-base-b": {
+   "s": [
+    "modern-min"
+   ],
+   "kb": 717,
+   "tris": 40594,
+   "mm": [
+    324,
+    1600,
+    416
+   ]
+  },
+  "lamp-floor-tripod-black": {
+   "s": [
+    "midcentury"
+   ],
+   "kb": 662,
+   "tris": 18633,
+   "mm": [
+    477,
+    1860,
+    477
+   ]
+  },
+  "lamp-floor-tripod-white-a50": {
+   "s": [
+    "scandinavian",
+    "midcentury"
+   ],
+   "kb": 633,
+   "tris": 38198,
+   "mm": [
+    458,
+    1545,
+    449
+   ]
+  },
+  "lamp-floor-white-pole": {
+   "s": [
+    "modern-min"
+   ],
+   "kb": 105,
+   "tris": 4796,
+   "mm": [
+    420,
+    1475,
+    420
+   ]
+  },
+  "lamp-banker-green": {
+   "s": [
+    "neoclassic"
+   ],
+   "kb": 211,
+   "tris": 17788,
+   "mm": [
+    306,
+    425,
+    242
+   ]
+  },
+  "lamp-bedside-white": {
+   "s": [
+    "modern-min"
+   ],
+   "kb": 818,
+   "tris": 49166,
+   "mm": [
+    198,
+    372,
+    199
+   ]
+  },
+  "lamp-blue-ceramic-base-b": {
+   "s": [],
+   "kb": 287,
+   "tris": 16748,
+   "mm": [
+    220,
+    475,
+    220
+   ]
+  },
+  "lamp-ceramic-table-white-shade-b": {
+   "s": [
+    "wabi-sabi"
+   ],
+   "kb": 296,
+   "tris": 18284,
+   "mm": [
+    211,
+    455,
+    211
+   ]
+  },
+  "lamp-table-ceramic-navy": {
+   "s": [],
+   "kb": 420,
+   "tris": 54546,
+   "mm": [
+    240,
+    511,
+    240
+   ]
+  },
+  "lamp-table-ceramic-white": {
+   "s": [
+    "korean-min"
+   ],
+   "kb": 417,
+   "tris": 54546,
+   "mm": [
+    240,
+    511,
+    240
+   ]
+  },
+  "lamp-table-concrete-white-shade-a117": {
+   "s": [
+    "modern-min"
+   ],
+   "kb": 252,
+   "tris": 16308,
+   "mm": [
+    229,
+    380,
+    229
+   ]
+  },
+  "lamp-table-copper-white-shade-a32": {
+   "s": [],
+   "kb": 266,
+   "tris": 17142,
+   "mm": [
+    300,
+    431,
+    300
+   ]
+  },
+  "lamp-table-glass-column": {
+   "s": [
+    "modern-lux"
+   ],
+   "kb": 94,
+   "tris": 7040,
+   "mm": [
+    211,
+    509,
+    211
+   ]
+  },
+  "lamp-table-gold-wire-base-b": {
+   "s": [
+    "modern-lux",
+    "midcentury"
+   ],
+   "kb": 566,
+   "tris": 37408,
+   "mm": [
+    303,
+    618,
+    303
+   ]
+  },
+  "lamp-table-green-suede": {
+   "s": [
+    "modern-lux"
+   ],
+   "kb": 299,
+   "tris": 28720,
+   "mm": [
+    301,
+    630,
+    301
+   ]
+  },
+  "lamp-table-teal-ceramic": {
+   "s": [],
+   "kb": 104,
+   "tris": 2714,
+   "mm": [
+    321,
+    645,
+    321
+   ]
+  },
+  "lamp-white-drum-slim-b": {
+   "s": [
+    "modern-min",
+    "korean-min"
+   ],
+   "kb": 270,
+   "tris": 16748,
+   "mm": [
+    220,
+    475,
+    220
+   ]
+  },
+  "lamp-white-globe-base-b": {
+   "s": [
+    "modern-min"
+   ],
+   "kb": 254,
+   "tris": 16032,
+   "mm": [
+    217,
+    404,
+    217
+   ]
+  }
+ },
+ "rejected": {
+  "lamp-floor-arc-brass-a29": [
+   "matBang"
+  ],
+  "lamp-floor-boom-arm-cream-a146": [
+   "matBang"
+  ],
+  "lamp-floor-brass-white-shade-a110": [
+   "cao"
+  ],
+  "lamp-floor-mid-century-black-a41": [
+   "tris",
+   "kb"
+  ],
+  "lamp-floor-tripod-spot-chrome-a81": [
+   "tris",
+   "kb"
+  ],
+  "lamp-floor-tripod-wood": [
+   "tris",
+   "kb",
+   "matBang"
+  ],
+  "lamp-floor-twin-shade-brass-a125": [
+   "matBang"
+  ],
+  "lamp-floor-white-shade-brass-b": [
+   "matBang"
+  ],
+  "desk-lamp-hq": [
+   "matBang",
+   "cao"
+  ],
+  "lamp-desk-globe-black-arm-b": [
+   "matBang"
+  ],
+  "lamp-desk-green": [
+   "matBang"
+  ],
+  "lamp-desk-wood-black": [
+   "matBang"
+  ],
+  "lamp-floor-black-cone-brass-a114": [
+   "matBang"
+  ],
+  "lamp-ribbed-cream-ceramic-b": [
+   "tris",
+   "kb"
+  ],
+  "lamp-table-blond-wood-base-b": [
+   "tris",
+   "kb"
+  ],
+  "lamp-table-blue-ceramic-white-shade-a198": [
+   "tris"
+  ],
+  "lamp-table-edison-brass-a43": [
+   "tris",
+   "kb"
+  ],
+  "lamp-table-striped-base-white-a77": [
+   "tris",
+   "kb"
+  ],
+  "lamp-table-wood-grey-shade": [
+   "tris"
+  ],
+  "lamp-task-black-wood-detail-b": [
+   "tris",
+   "kb",
+   "matBang"
+  ],
+  "lamp-task-white-arm-b": [
+   "matBang"
+  ]
+ },
+ "flatPascal": [
+  "ac-block",
+  "air-conditioning",
+  "alarm-keypad",
+  "barbell",
+  "barbell-stand",
+  "basket-hoop",
+  "bathroom-sink",
+  "bathtub",
+  "bedside-table",
+  "bookshelf",
+  "bunkbed",
+  "bush",
+  "cactus",
+  "ceiling-fan",
+  "ceiling-lamp",
+  "closet",
+  "closet-gen",
+  "coat-rack",
+  "coffee-machine",
+  "coffee-table",
+  "column",
+  "computer",
+  "curtain",
+  "curtain-uv",
+  "cutting-board",
+  "dining-chair",
+  "dining-table",
+  "double-bed",
+  "dresser",
+  "drying-rack",
+  "easel",
+  "electric-panel",
+  "ev-wall-charger",
+  "exit-sign",
+  "fir-tree",
+  "fire-detector",
+  "floor-lamp",
+  "fridge",
+  "frying-pan",
+  "guitar",
+  "hood",
+  "hood-sf",
+  "hydrant",
+  "indoor-plant",
+  "iron",
+  "ironing-board",
+  "kitchen",
+  "kitchen-cabinet",
+  "kitchen-cabinet-gen",
+  "kitchen-counter",
+  "kitchen-counter-gen",
+  "kitchen-shelf",
+  "kitchen-shelf-gen",
+  "kitchen-sink-gen",
+  "kitchen-utensils",
+  "laundry-bag",
+  "livingroom-chair",
+  "lounge-chair",
+  "microwave",
+  "office-chair",
+  "office-table",
+  "outdoor-playhouse",
+  "palm",
+  "parking-spot",
+  "patio-umbrella",
+  "picture",
+  "pillar",
+  "pillow",
+  "pillow-uv",
+  "recessed-light",
+  "rectangular-carpet",
+  "round-carpet",
+  "round-mirror",
+  "rug-nf",
+  "scooter",
+  "sewing-machine",
+  "shelf",
+  "shower-angle",
+  "shower-rug",
+  "shower-square",
+  "single-bed",
+  "skate",
+  "small-indoor-plant",
+  "smoke-detector",
+  "sofa",
+  "sprinkler",
+  "stereo-speaker",
+  "stool",
+  "stove",
+  "sunbed",
+  "table-lamp",
+  "television",
+  "tesla",
+  "thermostat",
+  "threadmill",
+  "throw-blanket",
+  "throw-blanket-uv",
+  "toaster",
+  "toilet",
+  "toilet-paper",
+  "trash-bin",
+  "tree",
+  "tv-stand",
+  "tv-stand-gen",
+  "wall-sconce",
+  "wardrobe-sf",
+  "washing-machine",
+  "wine-bottle"
+ ]
+}
