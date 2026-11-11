@@ -147,7 +147,10 @@ export function ensureSceneLibrary(getApi: LibraryApiSource = defaultApi): Promi
           sharedPending = false;
           shared = settled !== null && currentOwner() === settledOwner ? Promise.resolve(settled) : null;
         }
-        return settled ?? withNotice({ count: 0, source: STALE_SOURCE, version: BUNDLED_LIBRARY_VERSION });
+        // Chỉ trả kết quả đã chốt khi nó còn của người đang đăng nhập; đổi người thì `fallback:stale` (review Codex-4 #2).
+        return settled !== null && currentOwner() === settledOwner
+          ? settled
+          : withNotice({ count: 0, source: STALE_SOURCE, version: BUNDLED_LIBRARY_VERSION });
       }
       // Đọc lại vì quá tuổi mà hỏng: giữ thư viện cũ (URL cũ vẫn gia hạn được từng mẫu), lượt dựng sau thử lại.
       // Danh sách rỗng/403/404 là câu trả lời HỢP LỆ (không phải lỗi mạng): nhận nó và gỡ thư viện cũ.
@@ -217,7 +220,32 @@ const assetAttempts = new Map<string, number>();
 /** Mẫu đã dùng lượt "thử lại đúng URL cũ" (máy chủ ký theo mốc giờ tròn: đọc lại cùng mốc trả URL y hệt). */
 const sameUrlRetried = new Set<string>();
 /** Gia hạn đang chạy theo mẫu: nhiều lời gọi cùng mẫu (FileLoader gọi onError của TỪNG người gọi) dùng chung một lượt. */
-const inflight = new Map<string, Promise<string | null>>();
+/**
+ * Lượt gia hạn đang chạy theo mẫu, dùng chung cho mọi người chờ. Mỗi người chờ có `signal` riêng: lượt chung chỉ bị huỷ
+ * (`ctl`) khi KHÔNG còn người chờ nào sống — một người huỷ không làm người khác mất lượt (review Codex-4 #1).
+ */
+interface InflightRefresh {
+  readonly promise: Promise<string | null>;
+  readonly ctl: AbortController;
+  live: number;
+}
+const inflight = new Map<string, InflightRefresh>();
+
+/** Thêm một người chờ vào lượt chung; người không có `signal` không bao giờ rời. */
+const joinRefresh = (entry: InflightRefresh, signal: AbortSignal | undefined): void => {
+  if (signal?.aborted === true) {
+    if (entry.live === 0) entry.ctl.abort();
+    return;
+  }
+  entry.live += 1;
+  if (signal === undefined) return;
+  const leave = (): void => {
+    entry.live -= 1;
+    if (entry.live === 0) entry.ctl.abort();
+  };
+  signal.addEventListener('abort', leave, { once: true });
+  void entry.promise.finally(() => signal.removeEventListener('abort', leave));
+};
 let refreshing: Promise<AssetRefreshFailure | 'aborted' | null> | null = null;
 
 export interface AssetRefreshStatus {
@@ -337,13 +365,17 @@ export function refreshAssetUrl(
   if (status !== 401 && status !== 403) return Promise.resolve(null);
   const modelId = serverModelIdOfUrl(url);
   if (modelId === undefined) return Promise.resolve(null);
-  const running = inflight.get(modelId);
-  if (running !== undefined) return running;
-  const mine = refreshOnce(modelId, url, getApi, sleep, signal).finally(() => {
-    if (inflight.get(modelId) === mine) inflight.delete(modelId);
-  });
-  inflight.set(modelId, mine);
-  return mine;
+  let entry = inflight.get(modelId);
+  if (entry === undefined) {
+    const ctl = new AbortController();
+    const promise: Promise<string | null> = refreshOnce(modelId, url, getApi, sleep, ctl.signal).finally(() => {
+      if (inflight.get(modelId)?.promise === promise) inflight.delete(modelId);
+    });
+    entry = { promise, ctl, live: 0 };
+    inflight.set(modelId, entry);
+  }
+  joinRefresh(entry, signal);
+  return entry.promise;
 }
 
 async function refreshOnce(

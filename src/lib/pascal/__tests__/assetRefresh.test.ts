@@ -633,3 +633,58 @@ describe('review Codex-3 (lát 3)', () => {
     expect(list).toHaveBeenCalledTimes(3);
   });
 });
+
+describe('review Codex-4 (lát 4)', () => {
+  it('#1: A và B cùng chờ gia hạn một mẫu, A huỷ trong lúc chờ lùi → B vẫn nhận URL mới (1 lần đọc thư viện)', async () => {
+    await ensureSceneLibrary();
+    const old = modelSrcOf('lib-a');
+    let wake: () => void = () => undefined;
+    const sleep = () => new Promise<void>((r) => (wake = r));
+    const a = new AbortController();
+    const b = new AbortController();
+    const pa = refreshAssetUrl(old, 403, undefined, sleep, a.signal);
+    const pb = refreshAssetUrl(old, 403, undefined, sleep, b.signal);
+    a.abort();
+    wake();
+    const fresh = await pb;
+    expect(fresh).not.toBeNull();
+    expect(fresh).toBe(modelSrcOf('lib-a'));
+    expect(await pa).toBe(fresh); // promise chung; người huỷ đã được trả ngay ở lớp fetch (unlessAborted)
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it('#1: MỌI người chờ đều huỷ → không gọi API, không ghi danh mục; trần không tăng', async () => {
+    await ensureSceneLibrary();
+    const old = modelSrcOf('lib-a');
+    let wake: () => void = () => undefined;
+    const sleep = () => new Promise<void>((r) => (wake = r));
+    const a = new AbortController();
+    const b = new AbortController();
+    const pa = refreshAssetUrl(old, 403, undefined, sleep, a.signal);
+    void refreshAssetUrl(old, 403, undefined, sleep, b.signal);
+    a.abort();
+    b.abort();
+    wake();
+    expect(await pa).toBeNull();
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(modelSrcOf('lib-a')).toBe(old);
+    // Lượt sau (không huỷ) dùng lượt thứ 2 của trần rồi dừng: trần vẫn 2.
+    expect(await refreshAssetUrl(old, 403, undefined, noWait)).not.toBeNull();
+    expect(await refreshAssetUrl(modelSrcOf('lib-a'), 403, undefined, noWait)).toBeNull();
+    expect(assetRefreshStatus().failures).toEqual([{ modelId: 'lib-a', reason: 'exhausted' }]);
+  });
+
+  it('#2: đổi tài khoản khi đọc theo tuổi đang chờ → người chờ nhận fallback:stale, không phải kết quả của người trước', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(0);
+    await ensureSceneLibrary();
+    vi.setSystemTime(SIGNED_URL_MAX_AGE_MS + 1);
+    let release: (v: unknown) => void = () => undefined;
+    list.mockImplementationOnce(() => new Promise((r) => (release = r)));
+    const age = ensureSceneLibrary();
+    await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    signIn('u2');
+    release({ ok: true, data: [item('lib-a', 60), item('mine-u1', 60)] });
+    expect(await age).toMatchObject({ source: 'fallback:stale', count: 0 });
+  });
+});
