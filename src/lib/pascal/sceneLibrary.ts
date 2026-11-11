@@ -63,6 +63,12 @@ const forget = (): void => {
   refreshing = null;
   assetAttempts.clear();
   sameUrlRetried.clear();
+  inflight.clear();
+  // Câu báo mẫu hỏng là của người/phiên trước: đổi người thì không còn treo.
+  if (assetLog.failures.length > 0) {
+    assetLog.failures.length = 0;
+    notify();
+  }
   clearServerLibrary();
 };
 
@@ -75,11 +81,16 @@ const forget = (): void => {
  *   ấy, khớp câu báo "Tải lại trang để thử lại" (editor là trang riêng nên tự đọc lượt của nó).
  */
 export function ensureSceneLibrary(getApi: LibraryApiSource = defaultApi): Promise<SceneLibrary> {
-  installAssetRefresh();
+  void installAssetRefresh();
   const session = getSessionSnapshot();
+  /** Thư viện máy chủ đã chốt nhưng URL quá tuổi: GIỮ nó (không gỡ `SERVER_FILES`) tới khi lượt đọc lại thành công. */
+  let keep: SceneLibrary | null = null;
   if (settled !== null && session.status !== 'unknown' && currentOwner() !== settledOwner) forget();
   // URL ký đã quá tuổi: cảnh dựng mới (đổi dự án/phiên bản) lấy URL mới thay vì URL sắp/đã hết hạn.
-  else if (settled?.source === 'server' && Date.now() - settledAt > SIGNED_URL_MAX_AGE_MS) forget();
+  else if (settled?.source === 'server' && Date.now() - settledAt > SIGNED_URL_MAX_AGE_MS) {
+    keep = settled;
+    shared = null;
+  }
   if (shared !== null) return shared;
   const mine = getApi()
     .then((api) =>
@@ -89,12 +100,13 @@ export function ensureSceneLibrary(getApi: LibraryApiSource = defaultApi): Promi
     )
     .catch((): LibraryLoad => ({ count: 0, source: 'fallback:threw', version: BUNDLED_LIBRARY_VERSION }))
     .then((load) => {
-      const result = withNotice(load);
+      // Đọc lại vì quá tuổi mà hỏng: giữ thư viện cũ (URL cũ vẫn gia hạn được từng mẫu), lượt dựng sau thử lại.
+      const result = keep !== null && load.source !== 'server' ? keep : withNotice(load);
       if (shared === mine) {
         settled = result;
         settledOwner = currentOwner();
-        settledAt = Date.now();
-        if (load.source === 'fallback:no-session') shared = null;
+        if (result !== keep) settledAt = Date.now();
+        if (load.source === 'fallback:no-session' || result === keep) shared = null;
       }
       return result;
     });
@@ -138,6 +150,8 @@ const assetLog: { refreshed: number; retriedSame: number; readonly failures: Ass
 const assetAttempts = new Map<string, number>();
 /** Mẫu đã dùng lượt "thử lại đúng URL cũ" (máy chủ ký theo mốc giờ tròn: đọc lại cùng mốc trả URL y hệt). */
 const sameUrlRetried = new Set<string>();
+/** Gia hạn đang chạy theo mẫu: nhiều lời gọi cùng mẫu (FileLoader gọi onError của TỪNG người gọi) dùng chung một lượt. */
+const inflight = new Map<string, Promise<string | null>>();
 let refreshing: Promise<AssetRefreshFailure | null> | null = null;
 /** Id mẫu có trong lượt đọc lại gần nhất (mẫu vắng = người dùng đã mất quyền với nó). */
 let refreshedIds: ReadonlySet<string> = new Set();
@@ -208,15 +222,33 @@ const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => set
  * mới để thử lại; `null` = không thử lại (không phải mẫu thư viện, lỗi khác, hết quyền, hết lượt, request cũ đã đổi
  * phiên/người). Mỗi mẫu tối đa `ASSET_REFRESH_BACKOFF_MS.length` lần mỗi lượt đọc thư viện. Không ném.
  */
-export async function refreshAssetUrl(
+export function refreshAssetUrl(
   url: string,
   status: number,
   getApi: LibraryApiSource = defaultApi,
   sleep: (ms: number) => Promise<void> = defaultSleep,
 ): Promise<string | null> {
-  if (status !== 401 && status !== 403) return null;
+  if (status !== 401 && status !== 403) return Promise.resolve(null);
   const modelId = serverModelIdOfUrl(url);
-  if (modelId === undefined) return null;
+  if (modelId === undefined) return Promise.resolve(null);
+  const running = inflight.get(modelId);
+  if (running !== undefined) return running;
+  const mine = refreshOnce(modelId, url, getApi, sleep).finally(() => {
+    if (inflight.get(modelId) === mine) inflight.delete(modelId);
+  });
+  inflight.set(modelId, mine);
+  return mine;
+}
+
+async function refreshOnce(
+  modelId: string,
+  url: string,
+  getApi: LibraryApiSource,
+  sleep: (ms: number) => Promise<void>,
+): Promise<string | null> {
+  // Phiên đã đổi người mà chưa qua `ensureSceneLibrary` (vd. đăng nhập người khác ở thẻ khác): không gộp thư viện
+  // của người mới vào danh mục của người cũ.
+  if (currentOwner() !== settledOwner) return fail(modelId, 'stale');
   const used = assetAttempts.get(modelId) ?? 0;
   const wait = ASSET_REFRESH_BACKOFF_MS[used];
   if (wait === undefined) return fail(modelId, 'exhausted');
@@ -249,7 +281,8 @@ type LoadFn = (
   onError?: (err: unknown) => void,
 ) => unknown;
 
-let installed = false;
+let installed: Promise<void> | null = null;
+let restore: (() => void) | null = null;
 
 /**
  * Nối gia hạn vào `FileLoader.load` của three: điểm tải GLB chung của mọi viewer (Pascal `useGLTF` → GLTFLoader →
@@ -257,15 +290,20 @@ let installed = false;
  * khác hoặc hết lượt → chuyển nguyên lỗi cho Pascal (hình thay thế) + `assetRefreshStatus().notice`.
  * Tắt: `?disable=assetrefresh`. Nạp `three` động để không kéo three vào chunk của màn không có 3D.
  */
-export function installAssetRefresh(): void {
-  if (installed || typeof window === 'undefined') return;
-  const off = new URLSearchParams(window.location.search).getAll('disable').some((v) => v.split(',').includes('assetrefresh'));
-  if (off) return;
-  installed = true;
-  void import('three')
+export function installAssetRefresh(
+  getApi: LibraryApiSource = defaultApi,
+  sleep: (ms: number) => Promise<void> = defaultSleep,
+): Promise<void> {
+  if (installed !== null) return installed;
+  const off = new URLSearchParams(globalThis.location?.search ?? '').getAll('disable').some((v) => v.split(',').includes('assetrefresh'));
+  if (off) return Promise.resolve();
+  installed = import('three')
     .then(({ FileLoader }) => {
       const proto = FileLoader.prototype as unknown as { load: LoadFn };
       const original = proto.load;
+      restore = () => {
+        proto.load = original;
+      };
       proto.load = function patched(this: unknown, url, onLoad, onProgress, onError) {
         return original.call(this, url, onLoad, onProgress, (err: unknown) => {
           const status = (err as { response?: { status?: number } } | null)?.response?.status;
@@ -273,16 +311,24 @@ export function installAssetRefresh(): void {
             onError?.(err);
             return;
           }
-          void refreshAssetUrl(url, status).then((fresh) =>
+          void refreshAssetUrl(url, status, getApi, sleep).then((fresh) =>
             fresh === null ? onError?.(err) : patched.call(this, fresh, onLoad, onProgress, onError),
           );
         });
       };
     })
     .catch(() => {
-      installed = false;
+      installed = null;
     });
+  return installed;
 }
+
+/** Gỡ bản vá `FileLoader` (test; bản dựng không gọi). */
+export const uninstallAssetRefreshForTests = (): void => {
+  restore?.();
+  restore = null;
+  installed = null;
+};
 
 /** Một `modelId` không có trong danh mục (đóng gói + thư viện máy chủ đã gộp) và thứ dựng thay nó. */
 export interface UnresolvedModel {

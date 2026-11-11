@@ -23,16 +23,10 @@
  */
 
 import { useInfiniteQuery, useQueries, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { loadSceneConcept, type SceneConcept } from '@/lib/pascal/sceneConcept';
-import {
-  assetRefreshStatus,
-  ensureSceneLibrary,
-  sceneLibraryNow,
-  subscribeAssetRefresh,
-  type SceneLibrary,
-} from '@/lib/pascal/sceneLibrary';
+import { ensureSceneLibrary, sceneLibraryNow, type SceneLibrary } from '@/lib/pascal/sceneLibrary';
 import type { FloorVersionSummary } from '@/api/schemas/versions';
 import { flushAutosaves, useFloorLayerAutosave } from '@/hooks/useAutosave';
 import { formatDuration } from '@/lib/format/datetime';
@@ -93,7 +87,15 @@ import {
   unsavedEditsNotice,
 } from './versionHistoryModel';
 import { buildPlanDiffModel, entityCountsOf, togglePinned } from './versionHistoryPlan';
-import { buildVisualModel, convertScene, graphOfVersion, isEmptySource, NO_SCENE, versionSceneOptions } from './versionHistoryScene';
+import {
+  buildVisualModel,
+  convertScene,
+  graphOfVersion,
+  isEmptySource,
+  isOldSceneVersion,
+  NO_SCENE,
+  versionSceneOptions,
+} from './versionHistoryScene';
 
 /** Lượt N18 cùng lúc. */
 export const SNAPSHOT_CONCURRENCY = 2;
@@ -385,8 +387,8 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
   /* Concept AI (N47) của dự án — cùng quy tắc với editor (`loadSceneConcept`): chờ kết quả, 403/404 im lặng, lỗi có
      câu báo. N47 chỉ có concept HIỆN HÀNH (không có lịch sử concept) nên chỉ bản hiện tại dùng nó; bản cũ dựng lại từ
      dữ liệu của chính phiên bản (`versionSceneOptions`). Kết quả của dự án cũ bị bỏ (`live`). */
-  // Mẫu thư viện hết hạn không tải lại được (`refreshAssetUrl`) → câu báo, không đổi cảnh âm thầm.
-  const assetNotice = useSyncExternalStore(subscribeAssetRefresh, () => assetRefreshStatus().notice);
+  /* Gia hạn URL ký (`refreshAssetUrl`) KHÔNG phủ màn này: GLB ở đây do gói pascal-mount tải bằng bản three riêng
+     (`src/components/pascal/pascalMount.tsx`), bản vá FileLoader của SPA không chạm tới — nên không nối câu báo ở đây. */
   const [concept, setConcept] = useState<{ readonly projectId: string; readonly value: SceneConcept } | null>(null);
   useEffect(() => {
     let live = true;
@@ -397,9 +399,12 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
   }, [projectId]);
   const sceneConcept = concept?.projectId === projectId ? concept.value : null;
   // Bản cũ: chỉ dữ liệu của phiên bản + chú thích; bản hiện tại: concept hiện hành (`versionSceneOptions`).
+  // "Hiện tại" theo ID phiên bản (hàng `isCurrent`), không so tham chiếu đồ thị (`graphOfVersion` luôn tạo mới).
+  const sceneVersionId = sceneFromRight ? rightVersionId : leftVersionId;
+  const sceneIsOld = isOldSceneVersion(sceneSource !== undefined, sceneVersionId, rows);
   const versionScene = useMemo(
-    () => versionSceneOptions(sceneConcept, sceneGraph, graph),
-    [sceneConcept, sceneGraph, graph],
+    () => versionSceneOptions(sceneConcept, sceneIsOld),
+    [sceneConcept, sceneIsOld],
   );
   const scene = useMemo(
     () => (library === null || versionScene === null ? NO_SCENE : convertScene(sceneGraph, versionScene.options)),
@@ -434,7 +439,7 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
         isFetchingDiff: pairFetching,
         // Chờ cả thư viện lẫn concept: không dựng bằng mẫu đóng gói/phong cách mặc định rồi đổi sau.
         libraryPending: library === null || versionScene === null,
-        libraryNotice: [library?.notice, versionScene?.note, assetNotice].filter(Boolean).join(' ') || null,
+        libraryNotice: [library?.notice, versionScene?.note].filter(Boolean).join(' ') || null,
       }),
     [
       gateway.capabilities,
@@ -443,7 +448,6 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
       scene,
       library,
       versionScene,
-      assetNotice,
       diff,
       builds,
       leftVersionId,

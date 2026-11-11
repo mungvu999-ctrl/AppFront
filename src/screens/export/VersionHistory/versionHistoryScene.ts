@@ -67,15 +67,26 @@ export const OLD_VERSION_FURNISH_NOTE =
  * - Bản CŨ: KHÔNG bơm concept/phong cách hiện tại vào — "bản tái dựng" chỉ từ dữ liệu của phiên bản: không phong cách
  *   concept, không đồ AI bổ sung, không tự bày (`furnish: 'off'`; đồ đã lưu trong ảnh chụp vẫn dựng), kèm chú thích.
  *   Không cần chờ concept. Câu báo lỗi đọc concept chỉ đi với bản hiện tại (bản cũ không dùng concept).
+ * `isOldVersion` xác định theo ID phiên bản (hàng `isCurrent` của lịch sử), KHÔNG so tham chiếu đồ thị:
+ * `graphOfVersion` luôn tạo đối tượng mới kể cả cho bản trùng trạng thái hiện tại.
  */
 export function versionSceneOptions(
   concept: SceneConcept | null,
-  version: NormalizedSpatial | null,
-  current: NormalizedSpatial | null,
+  isOldVersion: boolean,
 ): { readonly options: ReturnType<typeof conceptSceneOptions>; readonly note: string | null } | null {
-  if (version !== null && version !== current) return { options: { furnish: 'off' }, note: OLD_VERSION_FURNISH_NOTE };
+  if (isOldVersion) return { options: { furnish: 'off' }, note: OLD_VERSION_FURNISH_NOTE };
   return concept === null ? null : { options: conceptSceneOptions(concept), note: concept.notice };
 }
+
+/**
+ * Cảnh đang dựng có phải bản CŨ không — theo ID phiên bản: có ảnh chụp riêng (`hasSnapshot`) và hàng của nó không phải
+ * `isCurrent`. Không có ảnh chụp thì cảnh là mô hình hiện tại.
+ */
+export const isOldSceneVersion = (
+  hasSnapshot: boolean,
+  versionId: string | null,
+  rows: readonly { readonly id: string; readonly isCurrent: boolean }[],
+): boolean => hasSnapshot && rows.find((row) => row.id === versionId)?.isCurrent !== true;
 
 /**
  * Đồ thị không gian thành cảnh Pascal — cảnh chuẩn `standardSceneOf` (cùng luật bày với màn 3D chính); `options` mang

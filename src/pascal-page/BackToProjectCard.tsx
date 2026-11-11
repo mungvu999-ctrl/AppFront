@@ -181,8 +181,14 @@ export function SaveStatusCard({ save }: { readonly save: PascalSaveStatus }) {
   const [hiddenFailure, setHiddenFailure] = useState<string | null>(null);
   const showAlert = alert && (sticky || hiddenFailure !== alertText);
   const notices = save.notices;
-  // Mẫu thư viện hết hạn không tải lại được (`refreshAssetUrl`): giữ câu báo, không tự ẩn (món vẫn đang hỏng).
-  const assetNotice = useSyncExternalStore(subscribeAssetRefresh, () => assetRefreshStatus().notice);
+  // Mẫu thư viện hết hạn không tải lại được (`refreshAssetUrl`): giữ câu báo, không tự ẩn (món vẫn đang hỏng);
+  // người dùng đóng được, mẫu hỏng thêm thì hiện lại. Đổi người (`forget`) xoá danh sách lỗi → câu báo tắt.
+  const assetFailures = useSyncExternalStore(subscribeAssetRefresh, () => assetRefreshStatus().failures.length);
+  const assetNoticeText = useSyncExternalStore(subscribeAssetRefresh, () => assetRefreshStatus().notice);
+  const [assetDismissedAt, setAssetDismissedAt] = useState(0);
+  // Danh sách lỗi đã bị xoá (đổi người) rồi đầy lại: số đã đóng cũ không còn nghĩa.
+  const dismissed = assetDismissedAt <= assetFailures ? assetDismissedAt : 0;
+  const assetNotice = assetFailures > dismissed ? assetNoticeText : null;
 
   return (
     <>
@@ -219,7 +225,7 @@ export function SaveStatusCard({ save }: { readonly save: PascalSaveStatus }) {
               </Toast>
             )}
             {assetNotice !== null && (
-              <Toast alert={false} testId="asset-expired-notice">
+              <Toast alert={false} onClose={() => setAssetDismissedAt(assetFailures)} testId="asset-expired-notice">
                 <span className="min-w-0 break-words">{assetNotice}</span>
               </Toast>
             )}
