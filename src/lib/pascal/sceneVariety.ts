@@ -16,6 +16,7 @@ import LIBRARY_QC_JSON from './libraryQc.json' with { type: 'json' };
 import LIBRARY_ROLES_JSON from './libraryRoles.json' with { type: 'json' };
 import { rectOfFurniture, rectsOverlap } from './placement';
 import { GENERATED_DRESS_PREFIX } from './sceneDressing';
+import { accentKeyOf, harmonyKeyOf, LAYOUT_FLAGS_ON, roomHarmonyPlanOf, type LayoutFlag, type RoomHarmonyPlan } from './sceneHarmony';
 import { SCENE_RULES_OFF } from './sceneLayer';
 import type { SceneStyle } from './sceneStyles';
 
@@ -95,7 +96,9 @@ const PER_ITEM_ROLES: ReadonlySet<FurnitureRole> = new Set(['plant', 'smallPlant
 
 const metresOf = (valueMm: number): number => millimetresToMetres(millimetres(valueMm));
 
-type Shaped = Pick<Furniture, 'kind' | 'variant' | 'boundingBox' | 'rotationDeg'> & Partial<Pick<Furniture, 'heightMm'>>;
+/** `reviewed`/`source`/`model` chỉ đọc khi có (đối tượng đầy đủ lúc dựng cảnh) — thiếu = coi như KHÔNG tự động. */
+type Shaped = Pick<Furniture, 'kind' | 'variant' | 'boundingBox' | 'rotationDeg'> &
+  Partial<Pick<Furniture, 'heightMm' | 'reviewed' | 'source' | 'model'>>;
 
 /** Cạnh ngắn/dài của mặt bằng (m) — không phụ thuộc hộp đã xoay 90° hay chưa. */
 const footprintOf = (f: Shaped): readonly [number, number] => {
@@ -237,7 +240,12 @@ const LIBRARY = LIBRARY_ROLES_JSON as {
 };
 
 /** Phong cách + phần lớp cảnh tính một lần cho cả căn (`standardSceneOf`): luật đã tắt, tông gỗ của căn (`woodToneOf`). */
-export type LayerStyle = SceneStyle & { readonly rulesOff?: ReadonlySet<string>; readonly woodTone?: 'l' | 'd' };
+export type LayerStyle = SceneStyle & {
+  readonly rulesOff?: ReadonlySet<string>;
+  readonly woodTone?: 'l' | 'd';
+  /** Thí nghiệm phối đồ `?layout=` (`sceneHarmony.ts`); thiếu = cờ URL lúc nạp. */
+  readonly layout?: ReadonlySet<LayoutFlag>;
+};
 
 const SAVED_FOLDER = /\/items\/([^/]+)\//;
 /**
@@ -250,11 +258,17 @@ export const woodToneOf = (
   style: SceneStyle,
 ): 'l' | 'd' | undefined => {
   const count = { l: 0, d: 0 };
-  for (const { f, usage } of items) {
-    if (isGenerated(f) || f.kind === 'stair') continue;
-    const folder = f.model === undefined ? modelFolderOf(f, style, usage) : (SAVED_FOLDER.exec(f.model.src)?.[1] ?? null);
-    const t = folder === null ? undefined : LIBRARY.models[folder]?.t;
-    if (t === 'l' || t === 'd') count[t] += 1;
+  // Tông của căn đếm trên mẫu KHÔNG phối (`hue` dùng sổ phòng của lượt dựng, chưa có lúc này) → như khi không cờ.
+  harmonySuspended = true;
+  try {
+    for (const { f, usage } of items) {
+      if (isGenerated(f) || f.kind === 'stair') continue;
+      const folder = f.model === undefined ? modelFolderOf(f, style, usage) : (SAVED_FOLDER.exec(f.model.src)?.[1] ?? null);
+      const t = folder === null ? undefined : LIBRARY.models[folder]?.t;
+      if (t === 'l' || t === 'd') count[t] += 1;
+    }
+  } finally {
+    harmonySuspended = false;
   }
   if (count.l !== count.d) return count.d > count.l ? 'd' : 'l';
   const first = style.libraryStyles?.[0];
@@ -265,6 +279,13 @@ export const woodToneOf = (
 };
 const rulesOffOf = (style: SceneStyle): ReadonlySet<string> => (style as LayerStyle).rulesOff ?? SCENE_RULES_OFF;
 const isGenerated = (f: Pick<Furniture, 'id'>): boolean => f.id.startsWith(GENERATED_DRESS_PREFIX);
+const layoutOf = (style: SceneStyle): ReadonlySet<LayoutFlag> => (style as LayerStyle).layout ?? LAYOUT_FLAGS_ON;
+/**
+ * Lựa chọn TỰ ĐỘNG (được thí nghiệm `?layout=` đổi mẫu): đồ sinh, hoặc đồ AI chưa xác nhận (`reviewed === false`,
+ * không phải nguồn người) mà người dùng chưa gán mẫu. Mẫu concept chọn không đi qua xếp hạng thư viện nên tự giữ.
+ */
+const isAuto = (f: Pick<Furniture, 'id'> & Shaped): boolean =>
+  isGenerated(f) || (f.reviewed === false && f.source !== 'human' && f.model === undefined);
 
 /**
  * Luật `orient` (B): chi phí cỡ THEO HƯỚNG TRỤC — rộng mẫu với rộng hộp, sâu với sâu (`swap` = món xoay 90°).
@@ -306,7 +327,7 @@ const styleTierOf = (folder: string, wanted: readonly string[]): number => {
  * các món hợp nhau, cuối cùng vừa cỡ. Cùng vai trò ra cùng mẫu khắp căn (bộ đồng bộ); cây/thảm thì đổi
  * theo từng món trong nhóm hợp nhất. null = thư viện chưa nạp mẫu nào của vai trò.
  */
-const libraryModelOf = (f: Shaped & Pick<Furniture, 'id'>, role: FurnitureRole, style: SceneStyle): string | null => {
+const libraryModelOf = (f: Shaped & Pick<Furniture, 'id'> & Partial<Pick<Furniture, 'roomId'>>, role: FurnitureRole, style: SceneStyle): string | null => {
   const all = libraryFoldersOf(role, f.variant).filter(isServerModel);
   const pick = rankedLibraryPickOf(f, role, style, all);
   if (pick === null || !QC_EXCLUDED.has(pick)) return pick;
@@ -335,7 +356,7 @@ const QC_SWAPS = new Map<string, QcSwap>();
 export const libraryQcSwaps = (): ReadonlyMap<string, QcSwap> => QC_SWAPS;
 
 const rankedLibraryPickOf = (
-  f: Shaped & Pick<Furniture, 'id'>,
+  f: Shaped & Pick<Furniture, 'id'> & Partial<Pick<Furniture, 'roomId'>>,
   role: FurnitureRole,
   style: SceneStyle,
   library: readonly string[],
@@ -343,30 +364,151 @@ const rankedLibraryPickOf = (
   if (library.length === 0) return null;
   const best = Math.min(...library.map((folder) => sizeCostOf(f, folder)));
   const wanted = style.libraryStyles ?? [];
-  // Luật `tone` (C): CHỈ món sinh — mẫu lệch tông gỗ của căn xếp sau, trong cùng giới hạn cỡ (đồ AI/người dùng không đổi).
-  const tone = isGenerated(f) && !rulesOffOf(style).has('tone') ? (style as LayerStyle).woodTone : undefined;
+  const layout = layoutOf(style);
+  const auto = isAuto(f);
+  /* Luật `tone` (C): món sinh — mẫu lệch tông gỗ của căn xếp sau, trong cùng giới hạn cỡ (đồ AI/người dùng không đổi).
+     `?layout=toneall`: mở cho MỌI đồ tự động (AI chưa xác nhận). Mẫu thiếu tông: miss 0 (không phạt, không thưởng). */
+  const toneOn = isGenerated(f) || (layout.has('toneall') && auto);
+  const tone = toneOn && !rulesOffOf(style).has('tone') ? (style as LayerStyle).woodTone : undefined;
   const toneMiss = (folder: string): number => {
     const t = LIBRARY.models[folder]?.t;
     return tone !== undefined && t !== undefined && t !== tone ? 1 : 0;
   };
+  const harmony = layout.has('hue') && auto ? harmonyOf(f, role, style) : undefined;
+  const hueKeys = (folder: string): readonly [number, number] => {
+    const m = LIBRARY.models[folder];
+    if (harmony === undefined) return [0, m?.c ?? 0];
+    return harmony.accent ? accentKeyOf(harmony.h, m?.h, m?.c ?? 0) : [harmonyKeyOf(harmony.h, m?.h), m?.c ?? 0];
+  };
   const ranked = library
     .filter((folder) => sizeCostOf(f, folder) <= best + LIBRARY_SIZE_SLACK)
-    .map((folder) => ({ folder, miss: toneMiss(folder), tier: styleTierOf(folder, wanted), chroma: LIBRARY.models[folder]?.c ?? 0 }))
-    .sort((a, b) => a.miss - b.miss || a.tier - b.tier || a.chroma - b.chroma || a.folder.localeCompare(b.folder));
+    .map((folder) => ({ folder, miss: toneMiss(folder), tier: styleTierOf(folder, wanted), hue: hueKeys(folder) }))
+    .sort((a, b) => a.miss - b.miss || a.tier - b.tier || a.hue[0] - b.hue[0] || a.hue[1] - b.hue[1] || a.folder.localeCompare(b.folder));
+  const head = ranked[0];
   const top = ranked
-    .filter((r) => r.tier === ranked[0]?.tier && r.miss === ranked[0]?.miss)
-    .slice(0, PER_ITEM_ROLES.has(role) ? 4 : 1);
-  const pick = top[fnv1a(f.id) % top.length]?.folder ?? null;
+    .filter((r) => r.tier === head?.tier && r.miss === head?.miss && r.hue[0] === head?.hue[0])
+    .slice(0, PER_ITEM_ROLES.has(role) && harmony?.accent !== true ? 4 : 1);
+  const chosen = top[fnv1a(f.id) % top.length];
+  const pick = chosen?.folder ?? null;
+  const logged = (folder: string | null): string | null => {
+    if (harmony !== undefined && folder !== null && chosen !== undefined) {
+      const m = LIBRARY.models[folder];
+      HARMONY_LOG.set(f.id, {
+        roomId: harmony.roomId,
+        role,
+        folder,
+        accent: harmony.accent,
+        reason: `tier=${chosen.tier} tone=${chosen.miss === 0 ? 'ok' : 'lech'} ${harmony.accent ? 'nhan' : 'hop'}=${chosen.hue[0]} h=${m?.h ?? '-'} c=${m?.c ?? '-'}`,
+      });
+    }
+    return folder;
+  };
   /* Luật `orient` (B), món sinh có mặt trước (giường, tủ…): mẫu nằm ngang hộp → mẫu khác CÙNG HỌ MÀU vừa hướng hơn;
      không có thì giữ mẫu cũ (không đổi tông chỉ để khớp hướng). Vai đối xứng thì xoay món (`orientedGenerated`). */
-  if (pick === null || !isGenerated(f) || ROTATABLE_ROLES.has(role) || rulesOffOf(style).has('orient') || !misOriented(f, pick)) return pick;
+  if (pick === null || !isGenerated(f) || ROTATABLE_ROLES.has(role) || rulesOffOf(style).has('orient') || !misOriented(f, pick)) return logged(pick);
   const family = LIBRARY.models[pick]?.h;
   const own = orientedCostOf(f, pick);
   const better = library
     .filter((folder) => family !== undefined && LIBRARY.models[folder]?.h === family && orientedCostOf(f, folder) + ORIENT_MARGIN < own)
     .map((folder) => ({ folder, miss: toneMiss(folder), tier: styleTierOf(folder, wanted), chroma: LIBRARY.models[folder]?.c ?? 0 }))
     .sort((a, b) => a.miss - b.miss || a.tier - b.tier || a.chroma - b.chroma || a.folder.localeCompare(b.folder));
-  return better[0]?.folder ?? pick;
+  return logged(better[0]?.folder ?? pick);
+};
+
+/* ---- Phối đồ theo phòng (`?layout=hue`, `sceneHarmony.ts`) ---- */
+
+interface HarmonyRoom {
+  readonly usage: RoomUsage | undefined;
+  readonly plan: RoomHarmonyPlan;
+  readonly anchor: Placed | undefined;
+  readonly anchorRole: FurnitureRole | undefined;
+  /** Mẫu + họ màu của neo, tính lần đầu cần trong lượt dựng (phong cách cố định trong lượt). */
+  anchorPick?: { readonly folder: string | null; readonly h: string | undefined };
+}
+interface HarmonyEntry {
+  readonly roomId: string;
+  readonly role: FurnitureRole;
+  readonly folder: string;
+  readonly accent: boolean;
+  readonly reason: string;
+}
+/** Sổ phòng của lượt dựng hiện tại (`contextRolesOf` ghi lại mỗi lượt). */
+const HARMONY_ROOMS = new Map<string, HarmonyRoom>();
+const HARMONY_LOG = new Map<string, HarmonyEntry>();
+let harmonySuspended = false;
+
+/** Phối của một món tự động: họ màu neo + có phải món nhấn; `undefined` = món là neo / phòng chưa có sổ. */
+const harmonyOf = (
+  f: Shaped & Pick<Furniture, 'id'> & Partial<Pick<Furniture, 'roomId'>>,
+  role: FurnitureRole,
+  style: SceneStyle,
+): { readonly roomId: string; readonly h: string | undefined; readonly accent: boolean } | undefined => {
+  if (harmonySuspended || f.roomId === undefined) return undefined;
+  const room = HARMONY_ROOMS.get(f.roomId);
+  if (room === undefined || room.anchor === undefined || room.plan.anchorId === f.id) return undefined;
+  if (room.anchorPick === undefined) {
+    const a = room.anchor;
+    const folder =
+      a.model !== undefined ? (SAVED_FOLDER.exec(a.model.src)?.[1] ?? null) : modelFolderOf(a, style, room.usage, room.anchorRole);
+    room.anchorPick = { folder, h: folder === null ? undefined : LIBRARY.models[folder]?.h };
+  }
+  // Phòng chưa có ứng viên nhấn trong đồ có sẵn: thảm (thường do lớp trang trí sinh) làm món nhấn.
+  const accent = room.plan.accentId === undefined ? role === 'rug' || role === 'roundRug' : room.plan.accentId === f.id;
+  return { roomId: f.roomId, h: room.anchorPick.h, accent };
+};
+
+const registerHarmonyRooms = (
+  items: readonly Placed[],
+  usageOf: (f: Placed) => RoomUsage | undefined,
+  roles: ReadonlyMap<string, FurnitureRole>,
+): void => {
+  HARMONY_ROOMS.clear();
+  HARMONY_LOG.clear();
+  const byRoom = new Map<string, Placed[]>();
+  for (const f of items) if (f.roomId !== undefined && f.kind !== 'stair') byRoom.set(f.roomId, [...(byRoom.get(f.roomId) ?? []), f]);
+  for (const [roomId, list] of byRoom) {
+    const usage = usageOf(list[0] as Placed);
+    const roleOfItem = (f: Placed): FurnitureRole => roles.get(f.id) ?? roleOf(f, usage);
+    const plan = roomHarmonyPlanOf(
+      list.map((f) => {
+        const [short, long] = footprintOf(f);
+        return { id: f.id, role: roleOfItem(f), area: short * long, auto: isAuto(f) };
+      }),
+      usage,
+    );
+    const anchor = list.find((f) => f.id === plan.anchorId);
+    HARMONY_ROOMS.set(roomId, { usage, plan, anchor, anchorRole: anchor === undefined ? undefined : roles.get(anchor.id) });
+  }
+};
+
+type HarmonyReport = Record<
+  string,
+  {
+    readonly usage: RoomUsage | undefined;
+    readonly anchor: { readonly id: string; readonly folder: string | null; readonly h: string | undefined } | null;
+    readonly accent: string;
+    readonly items: readonly { readonly id: string; readonly role: FurnitureRole; readonly folder: string; readonly accent: boolean; readonly reason: string }[];
+  }
+>;
+/**
+ * Đầu dò `?layout=hue`: mỗi phòng → neo (id, mẫu, họ màu), món nhấn, và các món tự động đã phối (vai → mẫu, lý do).
+ * Rỗng khi không cờ. `accent: 'rug'` = phòng không có ghế bành/ghế băng tự động → thảm làm nhấn.
+ */
+export const harmonyReport = (): HarmonyReport => {
+  const out: Record<string, HarmonyReport[string]> = {};
+  for (const [roomId, room] of HARMONY_ROOMS) {
+    const items = [...HARMONY_LOG]
+      .filter(([, e]) => e.roomId === roomId)
+      .map(([id, e]) => ({ id, role: e.role, folder: e.folder, accent: e.accent, reason: e.reason }));
+    if (items.length === 0) continue;
+    out[roomId] = {
+      usage: room.usage,
+      anchor: room.plan.anchorId === undefined ? null : { id: room.plan.anchorId, folder: room.anchorPick?.folder ?? null, h: room.anchorPick?.h },
+      accent: room.plan.accentId ?? 'rug',
+      items,
+    };
+  }
+  return out;
 };
 
 /**
@@ -396,7 +538,7 @@ export const orientedGenerated = (f: Furniture, style: SceneStyle, usage?: RoomU
  */
 export const modelFolderOf = (
   f: Pick<Furniture, 'id' | 'kind' | 'variant' | 'boundingBox' | 'rotationDeg' | 'roomId'> &
-    Partial<Pick<Furniture, 'heightMm'>>,
+    Partial<Pick<Furniture, 'heightMm' | 'reviewed' | 'source' | 'model'>>,
   style: SceneStyle,
   usage?: RoomUsage,
   /** Vai trò theo ngữ cảnh phòng (`contextRolesOf`): đè cả variant, chỉ đổi mẫu. */
@@ -483,6 +625,7 @@ export const contextRolesOf = (
       .slice(MAX_TOILETS_PER_ROOM)
       .forEach((f) => roles.set(f.id, 'basin'));
   }
+  registerHarmonyRooms(items, usageOf, roles);
   return roles;
 };
 

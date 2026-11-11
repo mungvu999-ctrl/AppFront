@@ -77,3 +77,11 @@ if (window.__pascalProbe) {
     if (window.__pascalProbe) Object.assign(window.__pascalProbe, { drape: drapeReport });
   });
 }
+
+// Phối đồ (vòng 10, `?layout=toneall|hue`, `sceneHarmony.ts`): phòng → { usage, anchor{id,folder,h}, accent, items[{id,role,folder,accent,reason}] }.
+// Rỗng khi không cờ `hue`. Nạp động để khối tách khỏi phần import (sceneVariety vốn đã trong gói).
+if (window.__pascalProbe) {
+  void import('@/lib/pascal/sceneVariety').then(({ harmonyReport }) => {
+    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { harmony: harmonyReport });
+  });
+}
