@@ -10,6 +10,7 @@
  *   liệu bóng; ra ngoài nhà trả lại môi trường chung. Mức Thấp không chụp.
  */
 import {
+  Box3,
   DataTexture,
   EquirectangularReflectionMapping,
   FloatType,
@@ -34,7 +35,7 @@ import { glassTwinParams, isGlossy, isLambertGlass, pmremWithoutMrt, probeStep, 
 import { useRealism } from './store';
 import { currentTier } from './tiers';
 import { isFirstLoad } from './warm';
-import { winApplies, type WinScope, winViewState } from './winView';
+import { insideRoomBox, levelBoxes, type RoomBox, winApplies, type WinScope, winViewState } from './winView';
 
 pmremWithoutMrt(PMREMGenerator.prototype as unknown as Record<string, unknown>);
 
@@ -242,10 +243,6 @@ function finish(renderer: unknown, scene: Scene, p: Vector3, inside: boolean) {
   const t0 = performance.now();
   swapGlass(scene);
   reflectStats.inside = inside;
-  if (camInside !== inside) {
-    camInside = inside;
-    applySky();
-  }
   if (!inside) {
     if (applied) restore(scene);
     return;
@@ -275,12 +272,56 @@ function finish(renderer: unknown, scene: Scene, p: Vector3, inside: boolean) {
   reflectStats.maxFinishMs = Math.max(reflectStats.maxFinishMs, reflectStats.finishMs);
 }
 
+const wallBox = new Box3();
+let roomBoxes: RoomBox[] = [];
+let roomBoxesCount = -1;
+let roomBoxesAge = 0;
+
+/** Hộp trong-nhà mỗi tầng từ tường + trần của registry (gom theo tổ tiên là node `level`). */
+function collectRoomBoxes(registry: RegistryLike): RoomBox[] {
+  const levels = new Set([...(registry.byType.level ?? [])].map((id) => registry.nodes.get(id)).filter(Boolean) as Object3D[]);
+  const items: Parameters<typeof levelBoxes>[0] = [];
+  for (const kind of ['wall', 'ceiling'] as const) {
+    for (const id of registry.byType[kind] ?? []) {
+      const obj = registry.nodes.get(id);
+      if (!obj) continue;
+      let lv: Object3D | null = obj.parent;
+      while (lv && !levels.has(lv)) lv = lv.parent;
+      wallBox.setFromObject(obj);
+      if (wallBox.isEmpty()) continue;
+      const { min, max } = wallBox;
+      items.push({ level: lv?.uuid ?? '', kind, box: { minX: min.x, minY: min.y, minZ: min.z, maxX: max.x, maxY: max.y, maxZ: max.z } });
+    }
+  }
+  return levelBoxes(items);
+}
+
+/**
+ * Tín hiệu trong-nhà cho phông cửa sổ: mỗi khung (chỉ khi phông `?winview` đã nạp), độc lập probe phản chiếu.
+ * Hộp tính lại khi số node đổi hoặc mỗi 60 khung (tường kéo/sửa).
+ */
+function syncWinInside(p: Vector3, registry: RegistryLike): void {
+  if (!winSky) return;
+  if (registry.nodes.size !== roomBoxesCount || ++roomBoxesAge >= 60) {
+    roomBoxes = collectRoomBoxes(registry);
+    roomBoxesCount = registry.nodes.size;
+    roomBoxesAge = 0;
+  }
+  const inside = insideRoomBox(p, roomBoxes);
+  winViewState.inside = inside;
+  if (inside !== camInside) {
+    camInside = inside;
+    applySky();
+  }
+}
+
 /**
  * Gọi mỗi khung từ `Lights` (vendor). Rẻ khi không chụp: so vị trí camera + đếm node.
  * Khi camera đứng yên và đã đi > 1,5 m / cảnh thêm node: biên dịch trước (`warm`) rồi chụp ở khung sau (`probeStep`).
  */
 export function syncReflectionProbe(renderer: unknown, scene: Scene, camera: PerspectiveCamera, registry: RegistryLike): void {
   const p = camera.position;
+  syncWinInside(p, registry);
   const moving = p.distanceToSquared(prev) > 1e-6;
   prev.copy(p);
   const { tier, backend, flags } = useRealism.getState();
