@@ -34,6 +34,7 @@ import { glassTwinParams, isGlossy, isLambertGlass, pmremWithoutMrt, probeStep, 
 import { useRealism } from './store';
 import { currentTier } from './tiers';
 import { isFirstLoad } from './warm';
+import { winApplies, type WinScope, winViewState } from './winView';
 
 pmremWithoutMrt(PMREMGenerator.prototype as unknown as Record<string, unknown>);
 
@@ -45,7 +46,14 @@ placeholder.generateMipmaps = false;
 placeholder.needsUpdate = true;
 const skyTex = texture(placeholder);
 const skyWeight = uniform(0);
+/** Mép dưới (dir.y) của HDRI trên phông: 0 = cắt ở chân trời (như cũ); `?winview` hạ xuống `WIN_FLOOR`. */
+const skyFloor = uniform(0);
+/** Trời của CHỦ ĐỀ (cũng là nền probe phản chiếu). Phông cửa sổ `?winview` để riêng, không vào probe. */
 let skyHdri: Texture | null = null;
+let winSky: Texture | null = null;
+let winScope: WinScope = 'inside';
+let winFloor = 0;
+let camInside = false;
 
 /**
  * Số đo probe, đọc qua `__pascalProbe.reflect()` (`?probe=1`). `lastMs` = thời gian CPU của `fromScene`;
@@ -69,18 +77,35 @@ export function makeSkyTexture(raw: Float32Array, width: number, height: number,
   return t;
 }
 
+/** Chọn ảnh phông: cửa sổ (`?winview`, khi áp) thắng trời chủ đề; không có gì → gradient. Đổi uniform, không biên dịch lại. */
+function applySky(): void {
+  const win = winSky && winApplies(winScope, camInside) ? winSky : null;
+  const tex = win ?? skyHdri;
+  skyTex.value = tex ?? placeholder;
+  skyWeight.value = tex ? 1 : 0;
+  skyFloor.value = win ? winFloor : 0;
+  winViewState.active = !!win;
+}
+
 /** `installHdri` gọi khi HDRI nạp xong (null = gỡ). */
 export function setHdriSky(tex: Texture | null): void {
   skyHdri = tex;
-  skyTex.value = tex ?? placeholder;
-  skyWeight.value = tex ? 1 : 0;
+  applySky();
+}
+
+/** `installWinView` gọi khi phông cửa sổ nạp xong (null = gỡ). `floor` = mép dưới dir.y của HDRI. */
+export function setWinSky(tex: Texture | null, scope: WinScope = 'inside', floor = 0): void {
+  winSky = tex;
+  winScope = scope;
+  winFloor = floor;
+  applySky();
 }
 
 /** Phông trời: HDRI ngay trên chân trời (đủ 3,4°: tầm mắt qua cửa sổ thấy mây), dưới giữ gradient. Mức Thấp giữ gradient (không thêm lượt đọc ảnh). */
 export function hdriBackdrop(worldDir: Node<'vec3'>, gradient: Node<'vec3'>): Node<'vec3'> {
   if (currentTier() === 'low') return gradient;
   const sky = skyTex.sample(equirectUV(worldDir)).rgb;
-  return mix(gradient, sky, skyWeight.mul(smoothstep(0, 0.06, worldDir.y)));
+  return mix(gradient, sky, skyWeight.mul(smoothstep(skyFloor, skyFloor.add(0.06), worldDir.y)));
 }
 
 interface RegistryLike {
@@ -201,7 +226,7 @@ async function warm(r: WebGPURenderer, scene: Scene, p: Vector3, inside: boolean
       cubeCam.up.set(0, y === 0 ? 1 : 0, y === 0 ? 0 : 1);
       cubeCam.lookAt(p.x + x, p.y + y, p.z + z);
       cubeCam.updateMatrixWorld();
-      if (skyHdri && skyWeight.value > 0) scene.background = skyHdri;
+      if (skyHdri) scene.background = skyHdri;
       r.setRenderTarget(probeRT); // compileAsync đọc đích ngay lúc gọi (đồng bộ) → trả lại đích cũ liền
       const job = r.compileAsync(scene, cubeCam);
       r.setRenderTarget(old);
@@ -217,6 +242,10 @@ function finish(renderer: unknown, scene: Scene, p: Vector3, inside: boolean) {
   const t0 = performance.now();
   swapGlass(scene);
   reflectStats.inside = inside;
+  if (camInside !== inside) {
+    camInside = inside;
+    applySky();
+  }
   if (!inside) {
     if (applied) restore(scene);
     return;
@@ -224,7 +253,7 @@ function finish(renderer: unknown, scene: Scene, p: Vector3, inside: boolean) {
   pmrem ??= new PMREMGenerator(renderer as WebGPURenderer);
   const bg = scene.background;
   // Cửa sổ trong ảnh chụp thấy trời HDRI thay màu nền phẳng.
-  if (skyHdri && skyWeight.value > 0) scene.background = skyHdri;
+  if (skyHdri) scene.background = skyHdri;
   probeRT = pmrem.fromScene(scene, 0, 0.05, 60, { size: 256, position: p, renderTarget: probeRT });
   scene.background = bg;
   reflectStats.lastMs = performance.now() - t0;

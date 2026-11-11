@@ -63,3 +63,10 @@ if (window.__pascalProbe) {
     if (window.__pascalProbe) Object.assign(window.__pascalProbe, { itemCut: itemCutReport });
   });
 }
+
+// E-WINVIEW (vòng 10, `winView.ts`): phông HDRI qua kính — { mode, gain, scope, loaded, active }.
+if (window.__pascalProbe) {
+  void import('./realism/winView').then(({ winViewReport }) => {
+    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { winView: winViewReport });
+  });
+}

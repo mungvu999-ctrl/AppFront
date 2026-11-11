@@ -16,8 +16,9 @@ import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { pmremTexture } from 'three/tsl';
 
 import { HDRI_SCALE, HDRI_TIMEOUT_MS, HDRI_VARIANT, type HdriVariant, hdriAutoScale, hdriUrlFor, mixGradient, shouldLoadHdri } from './lighting';
-import { makeSkyTexture, setHdriSky } from './reflect';
+import { makeSkyTexture, setHdriSky, setWinSky } from './reflect';
 import { useRealism } from './store';
+import { parseWinView, WIN_FLOOR, WIN_URL, winViewState } from './winView';
 
 /** `?hdri=pure|gradient|off` để chấm mù hai biến thể (không có = HDRI_VARIANT). */
 const askedHdri = () => (typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('hdri'));
@@ -25,8 +26,9 @@ const askedHdri = () => (typeof location === 'undefined' ? null : new URLSearchP
 const buffers = new Map<string, Promise<ArrayBuffer>>();
 
 /** Byte thô của HDRI theo chủ đề, tải một lần (đổi chủ đề qua lại không tải lại). Lỗi → lần sau thử lại. */
-function hdriBytes(themeId: string): Promise<ArrayBuffer> {
-  const url = hdriUrlFor(themeId);
+const hdriBytes = (themeId: string): Promise<ArrayBuffer> => bytesOf(hdriUrlFor(themeId));
+
+function bytesOf(url: string): Promise<ArrayBuffer> {
   let pending = buffers.get(url);
   if (!pending) {
     pending = new FileLoader().setResponseType('arraybuffer').loadAsync(url) as Promise<ArrayBuffer>;
@@ -68,6 +70,56 @@ function stableEnvNode(scene: Scene): ReturnType<typeof pmremTexture> | null {
 
 /** Trả hàm dọn (gỡ HDRI; nút môi trường ở lại). `themeId` chọn HDRI (Ban ngày khác Nắng chiều, gói 2B). */
 export function installHdri(scene: Scene, appearance: string, themeId = ''): () => void {
+  const undoTheme = installThemeHdri(scene, appearance, themeId);
+  const undoWin = installWinView(appearance);
+  return () => {
+    undoTheme();
+    undoWin();
+  };
+}
+
+/**
+ * E-WINVIEW (`winView.ts`): HDRI có cảnh CHỈ cho phông qua kính — không đụng `envNode`, probe phản chiếu hay tone.
+ * Chạy cả chủ đề tối (lý do chính: "Buổi tối" vốn không có HDRI → cửa sổ là mảng xám) và độc lập với `?hdri=off`.
+ */
+function installWinView(appearance: string): () => void {
+  const view = typeof location === 'undefined' ? null : parseWinView(location.search, appearance);
+  const { backend, tier } = useRealism.getState();
+  if (!view || backend !== 'webgpu' || tier === 'low') return () => {};
+  Object.assign(winViewState, view, { loaded: false });
+  let done = false;
+  let sky: Texture | null = null;
+  const warn = (error: unknown) => console.warn('[pascal-realism] phông cửa sổ không tải được, giữ phông cũ', error);
+  bytesOf(WIN_URL[view.mode]).then((buffer) => {
+    if (done) return;
+    const url = URL.createObjectURL(new Blob([buffer]));
+    new HDRLoader().setDataType(FloatType).load(
+      url,
+      (texture) => {
+        URL.revokeObjectURL(url);
+        if (done) return;
+        const { data, width, height } = texture.image as { data: Float32Array; width: number; height: number };
+        // Cùng chuẩn hoá với trời chủ đề, nhân gain; ảnh thuần (không pha gradient). Ảnh tải về chưa lên GPU → bỏ, không dispose.
+        sky = makeSkyTexture(data, width, height, hdriAutoScale(data, width, height) * view.gain);
+        winViewState.loaded = true;
+        setWinSky(sky, view.scope, WIN_FLOOR);
+      },
+      undefined,
+      (error) => {
+        URL.revokeObjectURL(url);
+        warn(error);
+      },
+    );
+  }, warn);
+  return () => {
+    done = true;
+    winViewState.loaded = false;
+    if (sky) setWinSky(null);
+    sky?.dispose();
+  };
+}
+
+function installThemeHdri(scene: Scene, appearance: string, themeId: string): () => void {
   const { backend, flags } = useRealism.getState();
   const asked = askedHdri();
   if (asked === 'off') return () => {};
