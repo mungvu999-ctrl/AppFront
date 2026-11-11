@@ -61,6 +61,8 @@ interface StabilityProbe {
   items(): ProbeItem[];
   node(id: string): unknown;
   levelReadiness(): LevelReadiness[] | null;
+  /** Tầng đang chọn theo store viewer (độc lập với nhãn). */
+  selectedLevel?(): string | null;
   sceneState(): { library?: string; libraryVersion?: string; concept?: string };
 }
 /** Kiểu của `window` trong `page.evaluate` — hàm truyền vào bị tuần tự hoá nên không gọi được trợ giúp ở mô-đun. */
@@ -316,6 +318,45 @@ test.describe('Ổn định trang 3D Pascal', () => {
     const levelNames = (f5.doc.graph.levels as readonly { readonly name: string }[]).map((level) => level.name);
     const { page, writes } = await open(browser, { graphDoc: f5.doc as unknown as WireGraphDocument });
     try {
+      // Bất biến (review A #3/#7, Codex 6 + N5): tầng ĐANG CHỌN theo store viewer (`selectedLevel()` — độc lập với nhãn
+      // đang được kiểm) chưa sẵn sàng thì nhãn, thông báo kẹt hoặc lớp phủ nạp đầu phải hiện. Quan sát chạy TRƯỚC lần bấm
+      // đầu và suốt chuỗi đổi nhanh, tới khi đổi xong và tầng chọn sẵn sàng thêm 3 s. Mỗi lần đọc chờ 2 rAF + một nhịp cho
+      // React commit; im lặng phải kéo dài 3 lần đọc liên tiếp. Đã có dòng readiness mà thiếu tầng chọn/dòng khớp kéo dài
+      // = đỏ (không xanh giả khi theo dõi hỏng); kết quả trả về và khẳng định tường minh.
+      const observing = page.evaluate(async (ceilingMs) => {
+        const probe = () => (window as unknown as ProbeWindow).__pascalProbe;
+        const done = () => (window as unknown as { __levelSwitchDone?: boolean }).__levelSwitchDone === true;
+        const text = (id: string) => document.querySelector(`[data-testid="${id}"]`)?.textContent?.trim() ?? '';
+        const overlay = () => /Đang (dựng|mở) mô hình 3D/u.test(document.body?.innerText ?? '');
+        const commit = () => new Promise((f) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(f, 0))));
+        const read = () => {
+          const rows = probe()?.levelReadiness() ?? [];
+          const id = probe()?.selectedLevel?.() ?? null;
+          return { rows, id, row: id ? rows.find((r) => r.levelId === id) : undefined };
+        };
+        const t0 = performance.now();
+        let readyAt: number | null = null;
+        let silent = 0;
+        let missing = 0;
+        let checked = 0;
+        while (performance.now() - t0 < ceilingMs && !(done() && readyAt !== null && performance.now() - readyAt >= 3_000)) {
+          const a = read();
+          await commit();
+          const b = read();
+          if (b.rows.length > 0 && !b.row) {
+            if (++missing >= 10) return `THIẾU TẦNG CHỌN: id=${String(b.id)} rows=${JSON.stringify(b.rows)}`;
+          } else missing = 0;
+          if (b.row) checked++;
+          const quiet = text('level-warm-status') === '' && text('level-warm-stalled') === '' && !overlay();
+          if (a.row && b.row && a.id === b.id && !a.row.ready && !b.row.ready && quiet) {
+            if (++silent >= 3) return `IM LẶNG: ${JSON.stringify(b.row)}`;
+          } else silent = 0;
+          if (b.row?.ready) readyAt ??= performance.now();
+          else readyAt = null;
+          await new Promise((f) => setTimeout(f, 100));
+        }
+        return checked > 0 && readyAt !== null ? 'ok' : `KHÔNG QUAN SÁT ĐƯỢC: checked=${checked} ready=${readyAt !== null}`;
+      }, LEVEL_READY_CEILING_MS);
       // Hàng tầng của bộ chọn tầng nổi (vendor `floating-level-selector.tsx`, mỗi hàng `div.group/level`).
       const button = (name: string) => page.locator('div[class~="group/level"]').getByRole('button', { name, exact: true });
       // Bấm ngay khi hàng tầng hiện (có thể trước khi cảnh dựng xong).
@@ -326,39 +367,15 @@ test.describe('Ổn định trang 3D Pascal', () => {
         await page.waitForTimeout(150);
       }
       const last = sequence.at(-1)!;
+      await page.evaluate(() => void ((window as unknown as { __levelSwitchDone?: boolean }).__levelSwitchDone = true));
 
       await waitBuilt(page);
       // Tầng cuối đúng: hàng của nó mang nền "đang chọn" của bộ chọn tầng vendor.
       await expect(button(last).locator('..')).toHaveClass(/bg-white\/10/u, { timeout: UI_SETTLE_CEILING_MS });
+      expect(await observing, 'tầng đang chọn ready:false mà nhãn và thông báo kẹt đều trống').toBe('ok');
       // Nhãn "Đang chuẩn bị tầng…" (nếu có) phải tự tắt.
       const status = page.getByTestId('level-warm-status');
       if ((await status.count()) > 0) await expect(status).toHaveText('', { timeout: LEVEL_READY_CEILING_MS });
-      // Bất biến (review A #3/#7, Codex 6): tầng ĐANG CHỌN (`levelWarmStats().switch.levelId` — đúng tầng nhãn theo) chưa
-      // sẵn sàng thì nhãn hoặc thông báo kẹt phải hiện. Mỗi lần đọc chờ 2 rAF + một nhịp cho React commit; chỉ kết luận im
-      // lặng khi kéo dài qua 3 lần đọc liên tiếp (vài khung). Quan sát tới khi sẵn sàng + 3 s; vi phạm đầu tiên được trả về
-      // và khẳng định tường minh (không bị nuốt nếu sau đó tầng sẵn sàng).
-      const silence = await page.evaluate(async (ceilingMs) => {
-        const probe = (window as unknown as { __pascalProbe?: { levelReadiness(): LevelReadiness[] | null; levelWarmStats(): { switch?: { levelId?: string | null } } | null } }).__pascalProbe;
-        const text = (id: string) => document.querySelector(`[data-testid="${id}"]`)?.textContent?.trim() ?? '';
-        const commit = () => new Promise((f) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(f, 0))));
-        const t0 = performance.now();
-        let readyAt: number | null = null;
-        let silent = 0;
-        while (performance.now() - t0 < ceilingMs && (readyAt === null || performance.now() - readyAt < 3_000)) {
-          const id = probe?.levelWarmStats()?.switch?.levelId;
-          const row = id ? probe?.levelReadiness()?.find((r) => r.levelId === id) : undefined;
-          await commit();
-          const again = id ? probe?.levelReadiness()?.find((r) => r.levelId === id) : undefined;
-          if (row && again && !row.ready && !again.ready && text('level-warm-status') === '' && text('level-warm-stalled') === '') {
-            if (++silent >= 3) return `IM LẶNG: ${JSON.stringify(again)}`;
-          } else silent = 0;
-          if (again?.ready) readyAt ??= performance.now();
-          else readyAt = null;
-          await new Promise((f) => setTimeout(f, 100));
-        }
-        return 'ok';
-      }, LEVEL_READY_CEILING_MS);
-      expect(silence, 'tầng đang chọn ready:false mà nhãn và thông báo kẹt đều trống').toBe('ok');
       // Mọi tầng đang hiện báo sẵn sàng (luật w3 phải đã nạp: `null` = chưa áp → đỏ).
       await expect
         .poll(

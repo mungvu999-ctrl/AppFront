@@ -22,9 +22,9 @@ export const uiStateOf = (row: Pick<LevelReadiness, 'status'> | undefined, stall
  * đầu dò), đọc lại SAU MỖI khung sống suốt lúc tầng còn được chọn — kể cả sau khi đã sẵn sàng. Vòng 10 thôi nghe ở lần
  * `ready` đầu (thường là số cũ của tầng đã ấm, trước khi tầng hiện) và không nghe nếu chưa có khung nào lúc gắn; báo kẹt
  * tự tắt sau 10 s → `ready:false` mà UI im lặng. Xin mẫu (ép vẽ) CHỈ khi chính tầng này `pending`, hoặc `ready` mà tầng
- * hiện chưa có mẫu mới / W2-W1 đang dựng (đổi chủ đề, vật mới). `stalled` không xin (tầng khác còn hiện — bóng, chế độ
- * chồng — không được kéo vòng vẽ chạy mãi). Không xin mẫu thì chỉ đọc lại khi có mẫu mới (`levelSampleSeq`, ví dụ đầu dò
- * hỏi) hoặc mỗi `IDLE_READ_EVERY` khung. `useLayoutEffect`: đổi tầng không có một lần vẽ nhãn trống.
+ * hiện chưa có mẫu mới / W2-W1 đang dựng (đổi chủ đề, vật mới). `stalled` chỉ xin mẫu THỤ ĐỘNG (`'passive'`: đếm trên
+ * khung tự có, không ép vẽ — tầng khác còn hiện không kéo vòng vẽ chạy mãi, mà vẽ hồi phục vẫn gỡ được kẹt). Không xin
+ * mẫu (ready, W2 rảnh) thì chỉ đọc lại khi có mẫu mới (`levelSampleSeq`, ví dụ đầu dò hỏi) hoặc mỗi `IDLE_READ_EVERY` khung. `useLayoutEffect`: đổi tầng không có một lần vẽ nhãn trống.
  */
 export function useLevelWarmState(levelId: string | null | undefined, off = STATUS_OFF, stallUiOff = STALL_UI_OFF): LevelWarmUiState {
   // Chuỗi `id|trạng thái`: setState cùng chuỗi thì React bỏ qua (nghe mỗi khung không gây vẽ lại).
@@ -32,7 +32,7 @@ export function useLevelWarmState(levelId: string | null | undefined, off = STAT
   useLayoutEffect(() => {
     if (!levelId || off) return setUi('');
     noteLevelSelected(levelId);
-    let sample = true; // lần đầu sau khi chọn: không tin số cũ có từ trước khi tầng hiện
+    let sample: boolean | 'passive' = true; // lần đầu sau khi chọn: không tin số cũ có từ trước khi tầng hiện
     let seq = -1;
     let skipped = 0;
     const step = () => {
@@ -41,7 +41,8 @@ export function useLevelWarmState(levelId: string | null | undefined, off = STAT
       seq = levelSampleSeq();
       const row = levelReadiness(sample).find((r) => r.levelId === levelId);
       if (row?.status === 'ready') noteLevelReady(levelId);
-      sample = row?.status === 'pending' || (row?.status === 'ready' && ((row.shown && !row.fresh) || levelWorkActive()));
+      sample =
+        row?.status === 'stalled' ? 'passive' : row?.status === 'pending' || (row?.status === 'ready' && ((row.shown && !row.fresh) || levelWorkActive()));
       setUi(`${levelId}|${uiStateOf(row, stallUiOff) ?? ''}`);
     };
     step();

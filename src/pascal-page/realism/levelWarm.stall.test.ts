@@ -125,5 +125,23 @@ describe('levelWarm: tầng đã sẵn sàng không báo chờ nhầm; vật h�
     r._nodes.get = () => ({ nodeBuilderState: {} });
     lw.levelWarmFrame(scene, drawShown); // khung tự vẽ (không do levelReadiness ép)
     expect(of('L2')).toMatchObject({ ready: true, stalled: false });
+
+    // Codex N1: L2 kẹt lại; vẽ hồi phục (0 vật chờ). Không ai xin mẫu → 25 khung vẫn báo kẹt (lỗi cũ: nhãn thôi xin mẫu
+    // khi kẹt). Nhãn xin mẫu THỤ ĐỘNG → khung tự có gỡ kẹt, không ép vẽ.
+    r._pipelines.isReady = (o: O) => o !== broken;
+    r._nodes.get = (o: O) => ({ nodeBuilderState: o === broken ? undefined : {} });
+    Object.assign(r.backend, { get: () => ({}) });
+    for (let i = 0; i < lw.STALL_FRAMES + 3; i++) sample();
+    lw.levelWarmFrame(scene, drawShown); // tiêu lần xin mẫu của `sample()` cuối
+    expect(lw.levelReadiness(false).find((l) => l.levelId === 'L2')?.status).toBe('stalled');
+    r._pipelines.isReady = () => true;
+    r._nodes.get = () => ({ nodeBuilderState: {} });
+    for (let i = 0; i < 25; i++) lw.levelWarmFrame(scene, drawShown);
+    expect(lw.levelReadiness(false).find((l) => l.levelId === 'L2')).toMatchObject({ status: 'stalled', pendingDraws: 1 });
+    dirty.mockClear();
+    lw.levelReadiness('passive');
+    lw.levelWarmFrame(scene, drawShown);
+    expect(lw.levelReadiness(false).find((l) => l.levelId === 'L2')).toMatchObject({ status: 'ready', pendingDraws: 0 });
+    expect(dirty).not.toHaveBeenCalledWith('level-readiness');
   });
 });

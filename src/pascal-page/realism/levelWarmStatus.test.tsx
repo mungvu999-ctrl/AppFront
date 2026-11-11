@@ -11,7 +11,7 @@ let work = false;
 let seq = 0;
 let holdSeq = false;
 vi.mock('./levelWarm', () => ({
-  levelReadiness: (sample = true) => {
+  levelReadiness: (sample: boolean | 'passive' = true) => {
     sampled(sample);
     return [...rows].map(([levelId, r]) => ({ levelId, shown: true, fresh: true, ...r }));
   },
@@ -173,8 +173,8 @@ describe('LevelWarmStatus — nhãn = levelReadiness().status, không bao giờ 
     sampled.mockClear();
     frame();
     frame();
-    expect(sampled).toHaveBeenCalled();
-    expect(sampled).not.toHaveBeenCalledWith(true);
+    expect(sampled).not.toHaveBeenCalledWith(true); // không ép vẽ
+    expect(sampled).toHaveBeenLastCalledWith('passive'); // Codex N1: vẫn đếm trên khung tự có để gỡ kẹt
     expect(stallNote()).not.toBe('');
   });
 

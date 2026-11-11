@@ -653,14 +653,15 @@ export interface LevelReadiness {
 }
 
 /**
- * Cho đầu dò/E2E/nhãn: tầng nào còn đang nạp. `sample` (mặc định, đầu dò): khung kế lấy mẫu (bài kiểm hỏi lặp);
- * `false` = chỉ đọc số đã có (nhãn nghe mỗi khung khi tầng đã sẵn sàng mà không giữ vòng vẽ chạy).
+ * Cho đầu dò/E2E/nhãn: tầng nào còn đang nạp. Hai quyết định tách riêng: LẤY MẪU (khung vẽ kế đếm vật chờ) và ÉP VẼ
+ * (`markDirty` để có khung kế). `true` (mặc định, đầu dò; nhãn khi `pending`): lấy mẫu + ép vẽ. `'passive'` (nhãn khi
+ * `stalled`): chỉ lấy mẫu trên khung tự có — kẹt gỡ được khi vẽ hồi phục mà không kéo vòng vẽ chạy mãi. `false`: chỉ đọc.
  */
-export function levelReadiness(sample = true): LevelReadiness[] {
-  // Số đếm vật chờ lấy ở khung có lấy mẫu gần nhất. Tầng đang hiện đều kẹt thì chỉ lấy mẫu ở khung tự có, không ép vẽ
-  // lại (vòng vẽ không chạy mãi vì một vật hỏng).
+export function levelReadiness(sample: boolean | 'passive' = true): LevelReadiness[] {
+  // Số đếm vật chờ lấy ở khung có lấy mẫu gần nhất. Tầng đang hiện đều kẹt thì không ép vẽ (một vật hỏng không giữ vòng
+  // vẽ chạy mãi), chỉ lấy mẫu ở khung tự có.
   if (sample) {
-    if (!wantSample && [...rootIds].some(([o, id]) => o.visible && !stalledShown.has(id))) markDirty('level-readiness');
+    if (sample === true && !wantSample && [...rootIds].some(([o, id]) => o.visible && !stalledShown.has(id))) markDirty('level-readiness');
     wantSample = true;
   }
   const items = unsettledItems();
