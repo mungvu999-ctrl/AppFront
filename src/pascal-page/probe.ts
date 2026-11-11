@@ -101,3 +101,11 @@ if (window.__pascalProbe) {
   });
 }
 
+
+// Biến thể theo phòng / bộ ghế (vòng 11 b1, `?enable=roomvariety,chairset,varietyai`, `roomVariety.ts`): có số cả khi không cờ.
+// { flags, byRole{vai: {items, rooms, models, maxRoomsOneModel, folders}}, tables{bàn: {chairs, models, folders}}, changes{id: {from, to, rule}} }.
+if (window.__pascalProbe) {
+  void import('@/lib/pascal/sceneVariety').then(({ roomVarietyReport }) => {
+    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { roomVariety: roomVarietyReport });
+  });
+}
