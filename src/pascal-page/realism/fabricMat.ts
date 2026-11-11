@@ -23,7 +23,7 @@ import { fabricRoleOf, fabricSurfaceOf, type FabricMatch, type FabricRole } from
 import type { UpholsteryTag } from './upholstery';
 
 /** Hằng lật mặc định (điều phối viên đổi sau QA ảnh). */
-export const FABRIC_MAT_DEFAULT = false;
+export const FABRIC_MAT_DEFAULT = true;
 
 export function fabricMatFlag(search: string, def = FABRIC_MAT_DEFAULT): boolean {
   const q = new URLSearchParams(search);
@@ -51,7 +51,7 @@ export const FABRIC_LEVELS = [
   { foldPeriodM: 0.55, foldHeightM: 0.02, grainHeightM: 0.0002, grainAlbedo: 0.1, foldAlbedo: 0.13, tone: 0.85, grainNearM: 1.2, grainFarM: 3 },
 ] as const;
 /** Hằng lật mặc định của mức (điều phối viên đổi sau QA ảnh). */
-export const FABRIC_LEVEL_DEFAULT = 0;
+export const FABRIC_LEVEL_DEFAULT = 2;
 export function fabricLevelOf(search: string, def = FABRIC_LEVEL_DEFAULT): number {
   const raw = new URLSearchParams(search).get('fabric');
   const n = raw == null || raw === '' ? def : Math.round(Number(raw));

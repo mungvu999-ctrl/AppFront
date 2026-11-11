@@ -63,8 +63,9 @@ describe('pool libroles2 (ngưỡng)', () => {
     expect(POOLS.flatPascal).toEqual(expect.arrayContaining(['floor-lamp', 'table-lamp', 'curtain', 'kitchen-cabinet-gen']));
   });
 
-  it('cờ: tắt mặc định, ?enable bật, ?disable thắng', () => {
-    expect(libRoles2FlagOf('')).toBe(false);
+  it('cờ: bật mặc định (QA ảnh 6 căn, vòng 11), ?enable bật, ?disable thắng', () => {
+    expect(libRoles2FlagOf('')).toBe(true);
+    expect(libRoles2FlagOf('?disable=libroles2')).toBe(false);
     expect(libRoles2FlagOf('?enable=x,libroles2')).toBe(true);
     expect(libRoles2FlagOf('?enable=libroles2&disable=libroles2')).toBe(false);
     expect(libRoles2FlagOf('?disable=libroles2', true)).toBe(false);

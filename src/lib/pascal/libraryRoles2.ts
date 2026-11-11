@@ -21,7 +21,7 @@ import { GENERATED_DRESS_PREFIX, lampInteractiveOf } from './sceneDressing';
 import type { SceneStyle } from './sceneStyles';
 
 /** HẰNG LẬT MẶC ĐỊNH: `true` sau khi QA ảnh chọn. `?disable=libroles2` luôn tắt. */
-export const LIBROLES2_DEFAULT = false;
+export const LIBROLES2_DEFAULT = true;
 export const LIBROLES2_FLAG = 'libroles2';
 
 export const libRoles2FlagOf = (search: string, def: boolean = LIBROLES2_DEFAULT): boolean => {

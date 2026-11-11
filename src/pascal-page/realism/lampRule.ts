@@ -19,7 +19,7 @@ import { MeshBasicNodeMaterial } from 'three/webgpu';
 import type { Polygon, RoomLightPlan } from './roomLights';
 
 /** Hằng lật mặc định (điều phối viên đổi sau QA ảnh). `?disable=<tên>` luôn tắt. */
-export const LAMP_RULE_DEFAULT = false;
+export const LAMP_RULE_DEFAULT = true;
 export const ROOM_SHADOW_DEFAULT = false;
 
 const params = (): URLSearchParams => new URLSearchParams(typeof location === 'undefined' ? '' : location.search);

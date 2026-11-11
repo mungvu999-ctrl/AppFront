@@ -51,20 +51,21 @@ describe('fabricRules', () => {
     expect(fabricSurfaceOf(facts({ names: ['Material'], roughness: 0.5, tagKind: 'bedding' }))).toBe('tagged');
   });
 
-  it('mức cường độ ?fabric=: mặc định 0, kẹp 0..3, nếp tăng dần theo mức', () => {
-    expect(fabricLevelOf('')).toBe(0);
+  it('mức cường độ ?fabric=: mặc định 2, kẹp 0..3, nếp tăng dần theo mức', () => {
+    expect(fabricLevelOf('')).toBe(2);
     expect(fabricLevelOf('?fabric=2')).toBe(2);
     expect(fabricLevelOf('?fabric=9')).toBe(3);
     expect(fabricLevelOf('?fabric=-1')).toBe(0);
-    expect(fabricLevelOf('?fabric=abc')).toBe(0);
+    expect(fabricLevelOf('?fabric=abc')).toBe(2);
     for (let i = 1; i < FABRIC_LEVELS.length; i++) expect(FABRIC_LEVELS[i]!.foldHeightM).toBeGreaterThan(FABRIC_LEVELS[i - 1]!.foldHeightM);
     expect(setFabricLevel(2)).toBe(2);
     expect(fabricReport().level).toBe(2);
-    setFabricLevel(0);
+    setFabricLevel(2);
   });
 
-  it('cờ: tắt mặc định, ?enable=fabricmat bật, ?disable thắng', () => {
-    expect(fabricMatFlag('')).toBe(false);
+  it('cờ: bật mặc định (QA ảnh 6 căn, vòng 11), ?enable=fabricmat bật, ?disable thắng', () => {
+    expect(fabricMatFlag('')).toBe(true);
+    expect(fabricMatFlag('?disable=fabricmat')).toBe(false);
     expect(fabricMatFlag('?enable=lamprule,fabricmat')).toBe(true);
     expect(fabricMatFlag('?enable=fabricmat&disable=fabricmat')).toBe(false);
     expect(fabricMatFlag('?disable=fabricmat', true)).toBe(false);
@@ -91,6 +92,7 @@ describe('applyFabricMaterials', () => {
   const BED_SRC = 'http://h/appback/library/bed-white-oak-headboard/model.glb';
 
   it('cờ tắt: không đổi gì', () => {
+    setFabricMat(false);
     const { mesh, sheet } = bed();
     applyFabricMaterials([mesh], { id: 'item_F-1', asset: { src: BED_SRC } });
     expect((mesh.material as MeshStandardMaterial[])[0]).toBe(sheet);
