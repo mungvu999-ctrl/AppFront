@@ -45,6 +45,14 @@ export const ANCHOR_BAND = 0.08;
  * (tủ greywash → mirror) hơn 0,28 theo công thức mới.
  */
 export const MIN_GAIN = 0.25;
+/**
+ * Trần chi phí của mẫu THAY khi không so được với mẫu cũ (lượt 5, cảnh thật aka3 + chấm ảnh mù 9 căn):
+ * - mẫu cũ CHƯA BIẾT (thiếu dữ liệu chất lượng / `parts`): chỉ thay bằng mẫu tốt tuyệt đối ≤ GOOD_COST;
+ * - mẫu cũ trượt ràng buộc CHẤT LƯỢNG (issues, front, giường không full): thay bằng mẫu ≤ FAIL_COST, không bao giờ "rẻ nhất
+ *   bất kể". Mẫu được khen có chi phí 0,00–0,04; mẫu bị chê thấp nhất 0,98 (sofa da xanh), còn lại 1,24–3,76.
+ */
+export const GOOD_COST = 0.3;
+export const FAIL_COST = 0.9;
 /** Gỗ: ΔE (L* tối hơn tham chiếu tính đủ, sáng hơn tính nửa) trong dung sai này coi là cùng tông; vượt thì /WOOD_DE_REF. */
 export const WOOD_TOL = 15;
 export const WOOD_DE_REF = 20;
@@ -151,9 +159,20 @@ export interface SetDecision {
   readonly cost?: number;
   /** Chi phí mẫu luật cũ của CHÍNH món này trong cùng ngữ cảnh; vắng = mẫu cũ trượt ràng buộc cứng. */
   readonly fromCost?: number;
+  /** Mẫu cũ trượt ràng buộc CHẤT LƯỢNG nào (máy đọc, thống kê); vắng = mẫu cũ đạt và so được. */
+  readonly oldFail?: OldFail;
   /** Lý do giữ / chọn (tiếng Việt, cho đầu dò). */
   readonly why: string;
 }
+
+/** Mẫu cũ "không đạt" vì: lỗi QC, mặt trước chưa tin, giường chưa đủ chăn gối, hoặc chưa biết (thiếu dữ liệu / parts). */
+export type OldFail = 'issues' | 'front' | 'completeness' | 'unknown';
+const OLD_FAIL_VI: Readonly<Record<OldFail, string>> = {
+  issues: 'có lỗi QC',
+  front: 'mặt trước chưa tin',
+  completeness: 'giường chưa đủ chăn gối',
+  unknown: 'chưa biết (thiếu dữ liệu chất lượng/parts)',
+};
 const chromaOf = (lab: Lab): number => Math.hypot(lab[1], lab[2]);
 const hueOf = (lab: Lab): number => (Math.atan2(lab[2], lab[1]) * 180) / Math.PI;
 const hueGap = (a: number, b: number): number => {
@@ -176,6 +195,20 @@ export const hardRejectOf = (m: SetMember, folder: string, ctx: SetContext): str
   if (ref === undefined || dims[1] > ref[1] * HEIGHT_GROW_MAX) return 'cao hơn mẫu cũ';
   return undefined;
 };
+/**
+ * Mẫu ĐANG DÙNG chỉ "không đạt" về CHẤT LƯỢNG (lượt 5): nó đã được đặt và co vào hộp nên hình học (lọt chỗ, cao) là
+ * hiện trạng hợp lệ — trước đây `hardRejectOf` áp `fitsSpot` lên mẫu cũ, mẫu co vào hộp nhỏ hơn mặt bằng gốc (sofa 1,89 m
+ * trong hộp 1,62 m) bị coi trượt và bị thay bằng mẫu rẻ nhất bất kể điểm phạt.
+ */
+export const oldFailOf = (m: SetMember, folder: string, ctx: SetContext): OldFail | undefined => {
+  const q = (ctx.qualityOf ?? defaultQualityOf)(folder);
+  if (q === undefined || q.parts === undefined || q.parts.length === 0) return 'unknown';
+  if ((q.issues ?? []).length > 0) return 'issues';
+  if (q.front.check !== 'ok') return 'front';
+  if (BED_ROLES.has(m.role)) return q.completeness === undefined ? 'unknown' : q.completeness.v === 'full' ? undefined : 'completeness';
+  return undefined;
+};
+
 /** Đặc trưng màu của một mẫu (tính một lần mỗi lượt `roomSetOf`), chỉ từ Lab ĐO + tỉ phần; nhãn chất liệu chỉ dùng để nhận gỗ. */
 interface Feat {
   readonly tier: number;
@@ -385,7 +418,7 @@ export const roomSetOf = (
   }
   let anchorWood: Lab | undefined;
   const out = new Map<string, SetDecision>();
-  const decide = (m: SetMember, to: string | null, anchor: boolean, why: string, cost?: number, fromCost?: number): void => {
+  const decide = (m: SetMember, to: string | null, anchor: boolean, why: string, cost?: number, fromCost?: number, oldFail?: OldFail): void => {
     out.set(m.id, {
       id: m.id,
       role: m.role,
@@ -395,6 +428,7 @@ export const roomSetOf = (
       anchor,
       ...(cost === undefined || !Number.isFinite(cost) ? {} : { cost }),
       ...(fromCost === undefined || !Number.isFinite(fromCost) ? {} : { fromCost }),
+      ...(oldFail === undefined ? {} : { oldFail }),
       why,
     });
   };
@@ -430,16 +464,21 @@ export const roomSetOf = (
     // Từng món quyết định RIÊNG (lượt 3): chỉ nhận mẫu qua ràng buộc cứng của chính nó VÀ hơn mẫu luật cũ của chính
     // nó ≥ MIN_GAIN (hoặc mẫu cũ trượt ràng buộc cứng); không thì giữ mẫu cũ của nó. Món cùng mẫu cũ ra cùng kết quả.
     for (const m of todo) {
-      const curOk = m.current !== null && fits(m, m.current);
-      const curCost = curOk ? costOf(m.current as string) : Infinity;
+      // Mẫu cũ: chỉ xét CHẤT LƯỢNG (hình học là hiện trạng). Đạt → so biên MIN_GAIN; trượt → trần FAIL_COST; chưa biết → GOOD_COST.
+      const oldFail: OldFail | undefined = m.current === null ? 'unknown' : oldFailOf(m, m.current, ctx);
+      const curCost = oldFail === undefined ? costOf(m.current as string) : Infinity;
+      const cap = oldFail === undefined ? Infinity : oldFail === 'unknown' ? GOOD_COST : FAIL_COST;
+      const old = oldFail === undefined ? curCost.toFixed(2) : `trượt: ${OLD_FAIL_VI[oldFail]}`;
       const pick = shared !== undefined && fits(m, shared.f) ? shared : bestFor([m]);
-      if (pick !== undefined && pick.cost <= curCost - MIN_GAIN) {
+      if (pick === undefined) {
+        decide(m, m.current, anchor, 'không ứng viên qua ràng buộc cứng', undefined, curCost, oldFail);
+      } else if (pick.cost > cap) {
+        decide(m, m.current, anchor, `giữ: mẫu cũ ${old}; ứng viên tốt nhất ${pick.cost.toFixed(2)} > trần ${cap}`, curCost, curCost, oldFail);
+      } else if (pick.cost <= curCost - MIN_GAIN) {
         const via = pick === shared && pinned !== undefined ? 'cùng mẫu món cùng vai đã có' : anchor ? `neo, dải ${pick.band}` : 'hợp bộ';
-        decide(m, pick.f, anchor, `${via}; ${pick.cost.toFixed(2)} < cũ ${curOk ? curCost.toFixed(2) : 'không đạt'}`, pick.cost, curCost);
-      } else if (pick === undefined) {
-        decide(m, m.current, anchor, 'không ứng viên qua ràng buộc cứng');
+        decide(m, pick.f, anchor, `${via}; ${pick.cost.toFixed(2)} < cũ ${old}`, pick.cost, curCost, oldFail);
       } else {
-        decide(m, m.current, anchor, `mẫu mới không hơn rõ (tốt nhất ${pick.cost.toFixed(2)}, cũ ${curOk ? curCost.toFixed(2) : 'không đạt'})`, curCost, curCost);
+        decide(m, m.current, anchor, `mẫu mới không hơn rõ (tốt nhất ${pick.cost.toFixed(2)}, cũ ${old})`, curCost, curCost, oldFail);
       }
     }
     for (const m of todo) {

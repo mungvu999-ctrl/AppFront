@@ -16,7 +16,10 @@ import LIBRARY from '../libraryRoles.json' with { type: 'json' };
 import {
   DARK_L,
   DARK_SEAT_SHARE,
+  FAIL_COST,
+  GOOD_COST,
   hardRejectOf,
+  oldFailOf,
   MIN_GAIN,
   paletteOf,
   ROOMSET_VERSION,
@@ -669,7 +672,7 @@ describe('roomset lượt 3 — mỗi món chỉ nhận mẫu qua ràng buộc c
     expect(out.get('b1')?.to).toBe('bed-drawers-greywash');
   });
 
-  it('bất biến trên 300 phòng sinh ngẫu nhiên (hạt cố định): món đổi mẫu qua ràng buộc cứng của nó và hơn mẫu cũ ≥ MIN_GAIN, hoặc mẫu cũ trượt', () => {
+  it('bất biến trên 300 phòng sinh ngẫu nhiên (hạt cố định): món đổi mẫu qua ràng buộc cứng của nó và hơn mẫu cũ ≥ MIN_GAIN, hoặc dưới trần theo lý do mẫu cũ trượt', () => {
     let seed = 12345;
     const rand = (): number => {
       seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
@@ -696,8 +699,9 @@ describe('roomset lượt 3 — mỗi món chỉ nhận mẫu qua ràng buộc c
         swaps += 1;
         const m = members.find((x) => x.id === d.id) as SetMember;
         expect(hardRejectOf(m, d.to as string, ctx)).toBeUndefined();
-        const oldFails = d.from === null || hardRejectOf(m, d.from, ctx) !== undefined;
-        if (!oldFails) expect((d.cost as number) <= (d.fromCost as number) - MIN_GAIN + 1e-9).toBe(true);
+        // Lượt 5: mẫu cũ đạt chất lượng → hơn ≥ MIN_GAIN; trượt chất lượng → ≤ FAIL_COST; chưa biết → ≤ GOOD_COST.
+        if (d.oldFail === undefined) expect((d.cost as number) <= (d.fromCost as number) - MIN_GAIN + 1e-9).toBe(true);
+        else expect(d.cost as number).toBeLessThanOrEqual(d.oldFail === 'unknown' ? GOOD_COST : FAIL_COST);
       }
     }
     console.info(`bất biến roomset: ${checked} quyết định, ${swaps} lần đổi`);
@@ -759,5 +763,69 @@ describe('roomSetKeysOf lượt 4 — biên ô không lật vì nhiễu dấu ph
       expect(keyOf(room(0, 0, w, h, 1e-9))).toBe(base);
       expect(keyOf(room(0, 0, w, h, -1e-9))).toBe(base);
     }
+  });
+});
+
+/* ---- Lượt 5: cảnh thật aka3 (probe roomSet) — mẫu cũ bị coi trượt vì co vào hộp nhỏ hơn mặt bằng gốc ---- */
+
+describe('roomset lượt 5 — mẫu đang dùng chỉ "không đạt" về chất lượng (dữ liệu thật, hộp món như aka3)', () => {
+  const real = (id: string): ModelQuality | undefined => LIBRARY_QUALITY.models[id];
+  const am = sceneStyleOf('am-ap');
+  const wanted = am.libraryStyles ?? [];
+  const libStyles = (LIBRARY as unknown as { models: Record<string, { s: string[] }> }).models;
+  const ctx: SetContext = {
+    tierOf: (f) => {
+      const s = libStyles[f]?.s ?? [];
+      const best = Math.min(...wanted.map((c, i) => (s.includes(c) ? i : Infinity)));
+      return best !== Infinity ? best : s.length === 0 ? wanted.length : wanted.length + 1;
+    },
+    tiers: wanted.length,
+    dimsOf: (f) => {
+      const u = real(f)?.useMm;
+      return u === undefined ? undefined : [u[0] / 1000, u[1] / 1000, u[2] / 1000];
+    },
+    palette: paletteOf(am, 'l'),
+    qualityOf: real,
+  };
+  const pool = (role: string): string[] => (roles[role] ?? []).filter((id) => real(id) !== undefined);
+  /** Hộp món (m) đọc từ `items[].dimensions` của probe aka3: [rộng, cao, sâu]. */
+  const boxed = (id: string, role: string, current: string, w: number, d: number): SetMember => ({
+    id,
+    role,
+    short: Math.min(w, d),
+    long: Math.max(w, d),
+    current,
+    pool: pool(role),
+    fixed: false,
+  });
+  const aka3Room = (): SetMember[] => [
+    boxed('sofa', 'sofa', 'sofa-grey-linen-slim', 1.22, 1.62),
+    boxed('table', 'diningTable', 'dining-table-pro', 1.4, 0.8),
+    boxed('commode', 'dresser', 'storage-commode-beige', 1.2, 0.6),
+    boxed('shelf', 'bookshelf', 'storage-shelf-metal-oak', 0.9, 0.35),
+    ...['c1', 'c2', 'c3', 'c4'].map((id) => boxed(id, 'diningChair', 'dining-chair-pro', 0.45, 0.45)),
+  ];
+
+  it('mẫu cũ co vào hộp nhỏ hơn mặt bằng gốc: trước đây trượt "không lọt chỗ"; giờ đạt chất lượng nên phải so biên', () => {
+    for (const m of aka3Room().filter((x) => ['sofa', 'table', 'commode', 'c1'].includes(x.id))) {
+      expect(hardRejectOf(m, m.current as string, ctx)).toBe('không lọt chỗ');
+      expect(oldFailOf(m, m.current as string, ctx)).toBeUndefined();
+    }
+  });
+
+  it('sofa xám, bàn ăn sồi, ghế ăn, tủ commode: giữ mẫu cũ hoặc đổi sang mẫu có điểm phạt ≤ GOOD_COST — không còn sofa da đen, gỗ tối, ghế uốn đen', () => {
+    const out = roomSetOf('aka3', aka3Room(), new Map(), ctx);
+    for (const d of out.values()) {
+      expect(d.rule === 'keep' || (d.cost ?? Infinity) <= GOOD_COST).toBe(true);
+      expect(['sofa-black-leather-2', 'table-dining-dark-wood', 'chair-bentwood-classic', 'storage-dresser-pine']).not.toContain(d.to);
+    }
+    console.info([...out.values()].map((d) => `${d.id}: ${d.from} → ${d.to} [${d.rule}${d.oldFail ? `, cũ ${d.oldFail}` : ''}] ${d.why}`).join('\n'));
+  });
+
+  it('mẫu cũ chưa biết (không có trong dữ liệu chất lượng): chỉ thay bằng mẫu ≤ GOOD_COST, ghi oldFail = unknown', () => {
+    const out = roomSetOf('u', [boxed('c', 'diningChair', 'khong-co-trong-du-lieu', 0.5, 0.55)], new Map(), ctx);
+    const d = out.get('c');
+    expect(d?.oldFail).toBe('unknown');
+    expect(d?.rule === 'keep' || (d?.cost ?? Infinity) <= GOOD_COST).toBe(true);
   });
 });
