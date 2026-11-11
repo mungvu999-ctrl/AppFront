@@ -15,7 +15,7 @@
  */
 import type { Furniture } from '@/domain/spatial/types';
 
-import { CATALOG_MODELS, isServerModel, serverModelPath, VARIANT_MODEL } from './furnitureCatalog';
+import { canonicalModelId, CATALOG_MODELS, isServerModel, LIBROLES2_MODEL_PREFIX, serverModelPath, VARIANT_MODEL } from './furnitureCatalog';
 import POOLS_JSON from './libraryRoles2.json' with { type: 'json' };
 import { GENERATED_DRESS_PREFIX, lampInteractiveOf } from './sceneDressing';
 import type { SceneStyle } from './sceneStyles';
@@ -48,13 +48,11 @@ const FLAT_PASCAL: ReadonlySet<string> = new Set(POOLS.flatPascal);
  * - `toSpatial` lưu đúng mẫu nhờ `libRoles2BaseIdOf` (review B1 #1), giữ nguyên tiền tố → đèn đã nhận nạp lại vẫn sáng;
  * - món người dùng tự chọn mẫu pool (id chuẩn, không tiền tố) KHÔNG tự sáng (review B2 N3).
  */
-export const LIBROLES2_MODEL_PREFIX = 'appfront-libroles2-';
-const BASE_ID = /^[a-z0-9_-]+$/;
-/** Id thư viện chuẩn của `model.id`/`asset.id` do luật này đặt; `undefined` = không phải. */
+export { LIBROLES2_MODEL_PREFIX };
+/** Id thư viện chuẩn của `model.id`/`asset.id` do luật này đặt; `undefined` = không phải (giải mã chung `canonicalModelId`). */
 export const libRoles2BaseIdOf = (id: string): string | undefined => {
-  if (!id.startsWith(LIBROLES2_MODEL_PREFIX)) return undefined;
-  const base = id.slice(LIBROLES2_MODEL_PREFIX.length);
-  return BASE_ID.test(base) ? base : undefined;
+  const base = canonicalModelId(id);
+  return base === id ? undefined : base;
 };
 
 /** FNV-1a 32 bit. */
@@ -134,16 +132,13 @@ export const libRoles2Apply = <F extends Furniture>(generated: readonly F[], sty
 
 /**
  * Nguồn sáng của đèn đã đổi mẫu: của mẫu Pascal cùng vai (cường độ, màu, tầm giữ nguyên), độ cao nguồn nhân tỉ lệ chiều
- * cao mẫu mới / mẫu Pascal. `undefined` = món không mang dấu `appfront-libroles2-` với mẫu pool của vai nó (hoặc cờ tắt).
+ * cao mẫu mới / mẫu Pascal. Điều kiện DUY NHẤT là dấu provenance `appfront-libroles2-` + vai có đèn Pascal: KHÔNG phụ thuộc
+ * cờ hay pool hiện hành (cờ/pool chỉ quyết định việc CHỌN mẫu cho đèn sinh mới) — đèn đã nhận, đã lưu thì luôn sáng như lúc
+ * nhận (review Codex B3). Món người dùng tự chọn mẫu (id chuẩn, không dấu) → `undefined`.
  */
-export const libRoles2LampOf = (
-  f: Pick<Furniture, 'variant'> & Partial<Pick<Furniture, 'model' | 'heightMm'>>,
-  style: SceneStyle,
-  on: boolean = LIBROLES2_ON,
-): unknown => {
-  // Chỉ món mang dấu luật này (đèn sinh vừa đổi, hoặc đèn đã nhận nạp lại từ bản lưu); mẫu người dùng tự chọn thì không.
+export const libRoles2LampOf = (f: Pick<Furniture, 'variant'> & Partial<Pick<Furniture, 'model' | 'heightMm'>>, style: SceneStyle): unknown => {
   const folder = f.model === undefined ? undefined : libRoles2BaseIdOf(f.model.id);
-  if (!on || f.variant === undefined || folder === undefined || !(POOLS.roles[f.variant] ?? []).includes(folder)) return undefined;
+  if (f.variant === undefined || folder === undefined) return undefined;
   const base = VARIANT_MODEL[f.variant]?.folder;
   const baseH = base === undefined ? undefined : CATALOG_MODELS[base]?.dimensions[1];
   const lamp = base === undefined ? undefined : (structuredClone(lampInteractiveOf(base, style)) as { effects?: { kind: string; offset?: number[] }[] } | undefined);

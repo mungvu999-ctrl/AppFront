@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SpatialGraphDocumentSchema } from '@/api/schemas/spatialGraph';
 import { normalizeSpatial } from '@/domain/spatial/normalize';
@@ -8,7 +8,7 @@ import { fixtureF2 } from '../__fixtures__';
 import { createPascalEditCommand } from '../fromPascal';
 import { isEditedGenerated } from '../toSpatial';
 
-import { CATALOG_MODELS, clearServerLibrary, registerServerLibrary } from '../furnitureCatalog';
+import { CATALOG_MODELS, clearServerLibrary, isServerModel, modelSrcOf, registerServerLibrary, serverAttributionOf, serverKindOf, thumbnailOf } from '../furnitureCatalog';
 import LIBRARY_QC from '../libraryQc.json';
 import POOLS from '../libraryRoles2.json';
 import { LIBROLES2_DEFAULT, LIBROLES2_MODEL_PREFIX, LIBROLES2_POOLS, libRoles2BaseIdOf, libRoles2Apply, libRoles2FlagOf, libRoles2LampOf, libRoles2PickOf, libRoles2Report, withLibRoles2 } from '../libraryRoles2';
@@ -239,5 +239,58 @@ describe('review Codex B2', () => {
     const node = itemsOf(toPascalScene({ ...graph, furniture: [...graph.furniture, user] }, { furnish: 'on' }).scene).find((n) => n.id === 'item_F-userlamp');
     expect(node).toBeDefined();
     expect(hasLight(node)).toBe(false);
+  });
+});
+
+describe('review Codex B3', () => {
+  it('giải mã chung: id có tiền tố provenance tra danh mục như id chuẩn (ghi công CC-BY, đường mẫu/ảnh, loại)', () => {
+    registerServerLibrary([
+      { id: 'lamp-credit-x', widthMm: 240, heightMm: 500, depthMm: 240, modelUrl: 'https://lib/c.glb?sig=1', previewUrl: 'https://lib/c.webp', furnitureKind: 'other', attribution: 'Tác giả A · CC BY 4.0' },
+    ]);
+    const prefixed = `${LIBROLES2_MODEL_PREFIX}lamp-credit-x`;
+    expect(serverAttributionOf(prefixed)).toBe('Tác giả A · CC BY 4.0');
+    expect(serverAttributionOf(prefixed)).toBe(serverAttributionOf('lamp-credit-x'));
+    expect(modelSrcOf(prefixed)).toBe('https://lib/c.glb?sig=1');
+    expect(thumbnailOf(prefixed)).toBe('https://lib/c.webp');
+    expect(serverKindOf(prefixed)).toBe('other');
+    expect(isServerModel(prefixed)).toBe(true);
+    // Mẫu gói sẵn: đường của id chuẩn, không dựng đường có tiền tố.
+    expect(modelSrcOf(`${LIBROLES2_MODEL_PREFIX}floor-lamp`)).toBe(modelSrcOf('floor-lamp'));
+    expect(serverAttributionOf('appfront-libroles2-Bad/Id')).toBeUndefined();
+  });
+
+  it('đèn đã lưu mang dấu luôn sáng: cờ tắt (?disable=libroles2) và mẫu không còn trong pool; món người dùng không dấu vẫn không sáng', async () => {
+    vi.stubGlobal('location', { search: '?disable=libroles2', href: 'http://localhost/editor3d.html?disable=libroles2' });
+    vi.resetModules();
+    try {
+      const cat = await import('../furnitureCatalog');
+      const lr = await import('../libraryRoles2');
+      const tp = await import('../toPascal');
+      expect(lr.LIBROLES2_ON).toBe(false);
+      const gone = 'lamp-retired-from-pool';
+      expect(Object.values(lr.LIBROLES2_POOLS).flat()).not.toContain(gone);
+      cat.registerServerLibrary([{ id: gone, widthMm: 240, heightMm: 500, depthMm: 240, modelUrl: `https://lib/${gone}.glb?sig=1` }]);
+      const graph: SpatialGraph = SpatialGraphDocumentSchema.parse(fixtureF2().doc).graph;
+      const host = graph.furniture[0] as Furniture;
+      const saved: Furniture = {
+        ...host,
+        id: 'F-adoptedlamp' as Furniture['id'],
+        kind: 'other',
+        variant: 'tableLamp',
+        heightMm: 500 as Furniture['heightMm'],
+        model: { id: `${LIBROLES2_MODEL_PREFIX}${gone}`, src: `/items/${gone}/model.glb` },
+      };
+      const user: Furniture = { ...saved, id: 'F-userlamp2' as Furniture['id'], model: { id: gone, src: `/items/${gone}/model.glb` } };
+      const nodes = tp.toPascalScene({ ...graph, furniture: [...graph.furniture, saved, user] }, { furnish: 'on' }).scene.nodes as Record<string, PascalItemNode>;
+      const lit = (n: PascalItemNode | undefined): boolean =>
+        ((n?.asset as { interactive?: { effects: { kind: string }[] } } | undefined)?.interactive?.effects ?? []).some((e) => e.kind === 'light');
+      expect(nodes['item_F-adoptedlamp']?.asset.src).toBe(`https://lib/${gone}.glb?sig=1`);
+      expect(lit(nodes['item_F-adoptedlamp'])).toBe(true);
+      expect(lit(nodes['item_F-userlamp2'])).toBe(false);
+      cat.clearServerLibrary();
+    } finally {
+      vi.unstubAllGlobals();
+      vi.resetModules();
+    }
   });
 });

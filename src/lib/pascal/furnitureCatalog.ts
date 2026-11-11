@@ -716,14 +716,27 @@ export const absoluteUrl = (url: string): string => {
   }
 };
 
+/**
+ * Tiền tố PROVENANCE trong `model.id`/`asset.id` (vòng 11 b2: đèn `libraryRoles2.ts` = `appfront-libroles2-<id thư viện>`).
+ * Mọi chỗ tra danh mục theo id phải giải mã về id chuẩn qua `canonicalModelId` (ghi công CC-BY, đường mẫu/ảnh, loại).
+ */
+export const LIBROLES2_MODEL_PREFIX = 'appfront-libroles2-';
+const CANONICAL_ID = /^[a-z0-9_-]+$/;
+/** Id chuẩn của một id mẫu (bỏ tiền tố provenance); id không mang tiền tố hợp lệ trả nguyên. */
+export const canonicalModelId = (id: string): string => {
+  if (!id.startsWith(LIBROLES2_MODEL_PREFIX)) return id;
+  const base = id.slice(LIBROLES2_MODEL_PREFIX.length);
+  return CANONICAL_ID.test(base) ? base : id;
+};
+
 /** true khi thư mục đến từ thư viện máy chủ. */
-export const isServerModel = (folder: string): boolean => SERVER_FILES.has(folder);
+export const isServerModel = (folder: string): boolean => SERVER_FILES.has(canonicalModelId(folder));
 
 /** Loại đồ của mẫu máy chủ (theo nhóm thư viện) — món mới đặt từ bảng đồ chưa có `kind` trong siêu dữ liệu. */
-export const serverKindOf = (folder: string): FurnitureKind | undefined => SERVER_FILES.get(folder)?.item.furnitureKind;
+export const serverKindOf = (folder: string): FurnitureKind | undefined => SERVER_FILES.get(canonicalModelId(folder))?.item.furnitureKind;
 
 /** Ghi công tác giả + giấy phép của mẫu máy chủ tải về; mẫu dựng sẵn không có. */
-export const serverAttributionOf = (folder: string): string | undefined => SERVER_FILES.get(folder)?.item.attribution;
+export const serverAttributionOf = (folder: string): string | undefined => SERVER_FILES.get(canonicalModelId(folder))?.item.attribution;
 
 /**
  * `src` lưu xuống của mẫu máy chủ: URL ký hết hạn nên không lưu được; lưu dạng `/items/<id>/model.glb`
@@ -782,10 +795,14 @@ const KEPT_BUILTIN_IDS: ReadonlySet<string> = new Set(['cabinet']);
 export const libraryOnlyCatalog = <T extends { readonly id: string }>(builtins: readonly T[], tiles: readonly T[]): T[] =>
   tiles.length === 0 ? [...builtins] : [...builtins.filter((item) => KEPT_BUILTIN_IDS.has(item.id)), ...tiles];
 
-export const modelSrcOf = (folder: string): string =>
-  SERVER_FILES.get(folder)?.model ?? `/items/${fileFolderOf(folder)}/model.glb`;
-export const thumbnailOf = (folder: string): string =>
-  SERVER_FILES.get(folder)?.preview ?? `/items/${fileFolderOf(folder)}/thumbnail.webp`;
+export const modelSrcOf = (id: string): string => {
+  const folder = canonicalModelId(id);
+  return SERVER_FILES.get(folder)?.model ?? `/items/${fileFolderOf(folder)}/model.glb`;
+};
+export const thumbnailOf = (id: string): string => {
+  const folder = canonicalModelId(id);
+  return SERVER_FILES.get(folder)?.preview ?? `/items/${fileFolderOf(folder)}/thumbnail.webp`;
+};
 
 /**
  * Mặt đặt đồ của mẫu, tỉ lệ chiều cao (0 = đáy, 1 = đỉnh): `topY` tay thắng, không thì số đo GLB của
