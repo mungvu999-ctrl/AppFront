@@ -294,42 +294,56 @@ export const setCostOf = (folders: readonly string[], ctx: SetContext, memo: Mem
 
 const byId = (a: { readonly id: string }, b: { readonly id: string }): number => a.id.localeCompare(b.id);
 
-/** Cỡ ô làm tròn của chữ ký phòng, mm (diện tích làm tròn 0,1 m²). */
+/** Cỡ ô của chữ ký phòng, mm (cạnh hộp bao) và mm² (diện tích 0,1 m²). */
 const KEY_GRID_MM = 100;
+const KEY_AREA_MM2 = 1e5;
 /** Lưới thô của vị trí phòng trong tầng, mm: sửa phòng khác vài chục mm không đẩy tâm phòng này qua ô. */
 const KEY_SPOT_MM = 500;
+/**
+ * Lệch biên ô (lượt 4): `floor((v + lệch) / ô)` đặt biên ô ở v ≡ −lệch (mod ô) thay vì giữa ô của `round` — giá trị
+ * thường gặp (bội 25/50/100 mm, diện tích bội 0,01 m²) nằm đúng giữa hai ô của `round` (4550/100 = 45,5) nên nhiễu
+ * dấu phẩy động lật ô. Lệch lẻ (37 mm; 2×tâm lệch 251 mm; diện tích 37 000 mm²) đưa biên ra xa các bội ấy.
+ */
+const KEY_EDGE_MM = 37;
+const KEY_SPOT_EDGE_2MM = 251;
+const KEY_AREA_EDGE_MM2 = 37_000;
 
 /**
  * Khoá băm của từng phòng theo NỘI DUNG, không theo id (id sinh lại khi chép sang dự án khác → nội thất không được
- * đổi): công năng + cạnh ngắn/dài hộp bao (làm tròn 100 mm) + diện tích (0,1 m²) + tâm hộp bao TƯƠNG ĐỐI so với góc
- * nhỏ nhất của các phòng cùng tầng, lưới thô 500 mm. Không dùng thứ hạng giữa các phòng trùng chữ ký (lượt 3): sửa phòng
- * A không đổi khoá phòng B. Đánh đổi: sửa làm DỜI góc nhỏ nhất của tầng (phòng ở mép trái/trên nới ra ngoài) thì khoá
- * mọi phòng tầng ấy có thể đổi; tâm phòng nằm sát biên ô 500 mm cũng có thể nhảy ô. Tịnh tiến/chép cả căn → cùng khoá.
+ * đổi): công năng + cạnh ngắn/dài hộp bao (ô 100 mm) + diện tích (ô 0,1 m²) + tâm hộp bao TƯƠNG ĐỐI so với góc nhỏ
+ * nhất của các phòng cùng tầng (ô 500 mm). Toạ độ làm tròn về mm NGUYÊN trước mọi phép tính (nhiễu < 0,5 mm, tịnh
+ * tiến cả căn không đổi khoá); tâm tính bằng tổng x0 + x1 nguyên (2 × tâm) để không có số lẻ dấu phẩy động.
+ * Không dùng thứ hạng giữa các phòng trùng chữ ký (lượt 3): sửa phòng A không đổi khoá phòng B. Đánh đổi: sửa làm DỜI
+ * góc nhỏ nhất của tầng (phòng ở mép trái/trên nới ra ngoài) thì khoá mọi phòng tầng ấy có thể đổi; giá trị nằm đúng
+ * biên ô (đã lệch khỏi các bội thường gặp) vẫn lật ô khi sửa 1 mm.
  */
 export const roomSetKeysOf = (
   rooms: readonly { readonly id: string; readonly levelId: string; readonly usage: string | undefined; readonly outline: readonly { readonly x: number; readonly y: number }[] }[],
 ): Map<string, string> => {
-  const grid = (v: number): number => Math.round(v / KEY_GRID_MM);
+  const cell = (v: number, edge: number, size: number): number => Math.floor((v + edge) / size);
+  const snapped = rooms.map((r) => ({ ...r, outline: r.outline.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) })) }));
   const originOf = new Map<string, { x: number; y: number }>();
-  for (const r of rooms) {
+  for (const r of snapped) {
     for (const p of r.outline) {
       const o = originOf.get(r.levelId);
       originOf.set(r.levelId, o === undefined ? { x: p.x, y: p.y } : { x: Math.min(o.x, p.x), y: Math.min(o.y, p.y) });
     }
   }
-  const info = rooms.map((r) => {
+  const info = snapped.map((r) => {
     const xs = r.outline.map((p) => p.x);
     const ys = r.outline.map((p) => p.y);
     const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
     const o = originOf.get(r.levelId) ?? { x: 0, y: 0 };
-    const area = Math.abs(r.outline.reduce((sum, p, i) => {
+    // Shoelace trên mm nguyên: tổng nguyên chính xác (|toạ độ| < 9·10⁷ mm); ×2 diện tích để khỏi chia lẻ.
+    const area2 = Math.abs(r.outline.reduce((sum, p, i) => {
       const q = r.outline[(i + 1) % r.outline.length] ?? p;
       return sum + p.x * q.y - q.x * p.y;
-    }, 0)) / 2;
+    }, 0));
     const [w, h] = [x1 - x0, y1 - y0];
-    const sig = `${r.usage ?? ''}|${grid(Math.min(w, h))}x${grid(Math.max(w, h))}|${Math.round(area / 1e5)}`;
-    const spot = (v: number): number => Math.round(v / KEY_SPOT_MM);
-    return { id: r.id, key: `${sig}#${spot((x0 + x1) / 2 - o.x)},${spot((y0 + y1) / 2 - o.y)}` };
+    const side = (v: number): number => cell(v, KEY_EDGE_MM, KEY_GRID_MM);
+    const sig = `${r.usage ?? ''}|${side(Math.min(w, h))}x${side(Math.max(w, h))}|${cell(area2, 2 * KEY_AREA_EDGE_MM2, 2 * KEY_AREA_MM2)}`;
+    const spot = (twice: number): number => cell(twice, KEY_SPOT_EDGE_2MM, 2 * KEY_SPOT_MM);
+    return { id: r.id, key: `${sig}#${spot(x0 + x1 - 2 * o.x)},${spot(y0 + y1 - 2 * o.y)}` };
   });
   return new Map(info.map(({ id, key }) => [id, key]));
 };

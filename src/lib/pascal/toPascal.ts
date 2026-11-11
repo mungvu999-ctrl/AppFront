@@ -58,6 +58,7 @@ import {
   ceilingNodesOf,
   floorMaterialOf,
   adoptedFurnitureIdOf,
+  ruleAdoptedIdsOf,
   isGeneratedLightId,
   isGeneratedNodeId,
   lightOffIdOf,
@@ -1370,9 +1371,10 @@ export const toPascalScene = (
   const graphIdSet = new Set<string>(graphFurnitureIds);
   const twinIds = new Set([...offIds].filter((id) => graphIdSet.has(adoptedFurnitureIdOf(id))));
   const adoptedIds = new Set<string>([...twinIds].map(adoptedFurnitureIdOf));
-  /** Mẫu LUẬT CHỌN của món đã nhận (`model.id` = `appfront-<loại>`, không phải mẫu người dùng đổi): thư mục, hoặc undefined. */
+  const ruleAdopted = ruleAdoptedIdsOf(graph.rooms, graph.furniture);
+  /** Mẫu LUẬT CHỌN của món đã nhận (cặp chắc chắn, `ruleAdoptedIdsOf`; không phải mẫu người dùng đổi): thư mục, hoặc undefined. */
   const ruleFolderOf = (f: Furniture): string | undefined => {
-    if (!adoptedIds.has(f.id) || f.model?.id !== `appfront-${f.kind}`) return undefined;
+    if (!ruleAdopted.has(f.id) || f.model === undefined) return undefined;
     const folder = SWAPPED_MODEL_SRC.exec(f.model.src)?.[1];
     return folder !== undefined && Object.prototype.hasOwnProperty.call(CATALOG_MODELS, folder) ? folder : undefined;
   };

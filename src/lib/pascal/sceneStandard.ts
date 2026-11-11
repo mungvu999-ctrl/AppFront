@@ -6,6 +6,7 @@
 
 import type { SpatialGraph } from '@/domain/spatial/types';
 
+import { ruleAdoptedIdsOf } from './sceneDressing';
 import { ALL_SCENE_RULES_OFF, SCENE_RULES_OFF, type SceneRepair } from './sceneLayer';
 import { repairScene, repairsById } from './sceneRepair';
 import { sceneStyleOf } from './sceneStyles';
@@ -29,11 +30,13 @@ export const standardSceneOf = (
   const rulesOff = raw ? ALL_SCENE_RULES_OFF : SCENE_RULES_OFF;
   // Luật `tone` (C): tông gỗ của căn tính MỘT lần từ đồ có sẵn (đã sửa cảnh), chỉ áp cho đồ sinh.
   const usageOf = new Map(fixed.graph.rooms.map((r) => [r.id as string, furnishingUsageOf(r)]));
+  const adoptedRule = ruleAdoptedIdsOf(fixed.graph.rooms, fixed.graph.furniture);
   const woodTone = rulesOff.has('tone')
     ? undefined
     : woodToneOf(
         fixed.graph.furniture
-          .filter((f) => f.suggested !== true)
+          // Món đã nhận còn mẫu luật chọn (cặp chắc chắn): vẫn là đồ dẫn xuất với tông căn, như trước khi nhận.
+          .filter((f) => f.suggested !== true && !adoptedRule.has(f.id))
           .map((f) => {
             const usage = f.roomId === undefined ? undefined : usageOf.get(f.roomId);
             return usage === undefined ? { f } : { f, usage };

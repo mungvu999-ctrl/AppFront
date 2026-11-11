@@ -312,6 +312,27 @@ describe('catalog thật: nhận một tab đầu giường không đổi mẫu 
       expect(model(reloaded.nodes[`item_${adoptedFurnitureIdOf(dressIdOf(tab))}`])).toBe(model(tab));
     });
   }
+
+  it('REVIEW-3 #1 — cờ tắt, không cặp nhận: sofa tối đã lưu `appfront-sofa` vẫn tính vào tông căn (như mẫu id catalog)', () => {
+    const sofa = (modelId: string): Furniture =>
+      ({
+        ...HUMAN,
+        id: 'F-0000000SOFA01' as Furniture['id'],
+        levelId: LVL,
+        roomId: ROOM,
+        kind: 'sofa',
+        centre: { x: 4300, y: 2000 },
+        boundingBox: { min: { x: 3850, y: 1000 }, max: { x: 4750, y: 3000 } },
+        rotationDeg: 90,
+        model: { id: modelId, src: '/items/sofa-brown-leather-3s-b/model.glb' },
+      }) as unknown as Furniture;
+    const srcs = (modelId: string): string[] =>
+      items(sceneOf({ ...emptyBedroom(), furniture: [sofa(modelId)] }, REAL_OFF))
+        .filter((n) => n.id.startsWith('item_DRESS-'))
+        .map((n) => `${n.id}=${n.asset.src.split('?')[0] ?? ''}|${n.asset.dimensions.join(',')}`);
+    expect(srcs('appfront-sofa').length).toBeGreaterThan(3);
+    expect(srcs('appfront-sofa')).toEqual(srcs('sofa-brown-leather-3s-b'));
+  });
 });
 
 describe('cờ tắt, dự án không có cặp nhận: mẫu đã lưu hiển thị như master (REVIEW-2 #3)', () => {

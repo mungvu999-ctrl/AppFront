@@ -10,7 +10,7 @@
  * sẵn — chỉ dùng những cái có đủ tệp (`.ktx2` của repo hoặc `.webp` tự dựng, J2).
  */
 
-import type { FurnitureId, Room, RoomFinish, RoomUsage, Wall } from '@/domain/spatial/types';
+import type { Furniture, FurnitureId, Room, RoomFinish, RoomUsage, Wall } from '@/domain/spatial/types';
 import { millimetres, millimetresToMetres } from '@/domain/units/types';
 import { GLASS_MATERIAL_REF, isGlassWall } from '@/domain/walls/glass';
 import { INTERIOR_SKIRTING } from '@/pascal-page/realism/details';
@@ -250,6 +250,21 @@ const fnv = (text: string, seed: number): number => {
 export const adoptedFurnitureIdOf = (dressId: string): FurnitureId => {
   const part = (seed: number): string => fnv(dressId, seed).toString(36).toUpperCase().padStart(7, '0');
   return `F-${part(0x811c9dc5)}${part(0x2b6c1a93)}` as FurnitureId;
+};
+
+/**
+ * Id các món đã nhận RIÊNG LẺ còn mang mẫu luật chọn, nhận diện chắc chắn: id = `adoptedFurnitureIdOf(d)` với `d` nằm
+ * trong `dressingOff` của CHÍNH phòng món ấy, và `model.id` = `appfront-<loại>`. Món đã lưu khác (kể cả `appfront-<loại>`
+ * không có cặp) không thuộc tập này.
+ */
+export const ruleAdoptedIdsOf = (
+  rooms: readonly Pick<Room, 'id' | 'dressingOff'>[],
+  furniture: readonly Pick<Furniture, 'id' | 'roomId' | 'kind' | 'model'>[],
+): Set<string> => {
+  const paired = new Map(rooms.flatMap((room) => (room.dressingOff ?? []).map((d) => [adoptedFurnitureIdOf(d) as string, room.id as string] as const)));
+  return new Set(
+    furniture.filter((f) => paired.get(f.id) === f.roomId && f.model?.id === `appfront-${f.kind}`).map((f) => f.id as string),
+  );
 };
 
 /** Trường siêu dữ liệu của node món sinh: thư mục mẫu đang dựng (lượt về lưu khi món được nhận). */
