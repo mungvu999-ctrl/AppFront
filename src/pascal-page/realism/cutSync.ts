@@ -214,7 +214,11 @@ const shadowBefore: ShadowHook = (_r, object, _c, _sc, _g, depth) => {
   }
   // Luôn đặt lại đúng trạng thái cho MỌI mesh: lượt vẽ trước ném lỗi thì onAfterShadow không chạy, vật liệu chung không được nhiễm.
   clearNoClip(depth);
-  if (shadowWholeMeshes.has(object)) Object.assign(depth, NO_CLIP);
+  if (!shadowWholeMeshes.has(object)) return;
+  Object.assign(depth, NO_CLIP);
+  // three gọi before/render/after không có finally; lượt bóng đồng bộ → microtask chạy sau khi ném lỗi/khi xong, gỡ cho MỌI vật đổ bóng
+  // (tường/sàn không có móc cũng không thừa hưởng NO_CLIP). ponytail: giả định renderObject trong lượt bóng không await giữa before và after.
+  queueMicrotask(() => clearNoClip(depth));
 };
 const shadowAfter: ShadowHook = (_r, _o, _c, _sc, _g, depth) => clearNoClip(depth);
 function clearNoClip(depth: Material): void {

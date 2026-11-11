@@ -84,6 +84,19 @@ describe('luật cắt đồ theo node/hình học (vòng 10)', () => {
     expect(Object.hasOwn(depth, 'setupHardwareClipping')).toBe(false);
   });
 
+  it('lượt bóng ném lỗi: NO_CLIP tự gỡ sau microtask, kể cả khi mesh kế là tường không có móc', async () => {
+    const depth = new NodeMaterial() as unknown as Depth;
+    const whole = box(level(), new MeshStandardMaterial(), 2) as ShadowMesh;
+    markShadowWhole(whole, true);
+    expect(() => {
+      whole.onBeforeShadow(null, whole, null, null, whole.geometry, depth, null);
+      throw new Error('render lỗi');
+    }).toThrow();
+    await Promise.resolve();
+    expect(Object.hasOwn(depth, 'setupClipping')).toBe(false);
+    expect(Object.hasOwn(depth, 'setupHardwareClipping')).toBe(false);
+  });
+
   it('mesh mới phân loại lần đầu không làm vật liệu bóng dựng lại', () => {
     const depth = new NodeMaterial() as unknown as Depth;
     const a = box(level(), new MeshStandardMaterial(), 2) as ShadowMesh;
