@@ -18,7 +18,7 @@ import { pmremTexture } from 'three/tsl';
 import { HDRI_SCALE, HDRI_TIMEOUT_MS, HDRI_VARIANT, type HdriVariant, hdriAutoScale, hdriUrlFor, mixGradient, shouldLoadHdri } from './lighting';
 import { makeSkyTexture, requestWinSky, setHdriSky, setWinSky } from './reflect';
 import { useRealism } from './store';
-import { parseWinView, WIN_FLOOR, WIN_URL, winViewState } from './winView';
+import { parseWinView, resetWinViewState, WIN_FLOOR, WIN_URL, winViewState } from './winView';
 
 /** `?hdri=pure|gradient|off` để chấm mù hai biến thể (không có = HDRI_VARIANT). */
 const askedHdri = () => (typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('hdri'));
@@ -136,6 +136,7 @@ function installWinView(appearance: string): () => void {
   winRelease = null;
   if (!view || backend !== 'webgpu' || tier === 'low') {
     releaseWinSkies();
+    resetWinViewState();
     return () => {};
   }
   const url = WIN_URL[view.mode];
@@ -161,7 +162,7 @@ function installWinView(appearance: string): () => void {
     }, view.scope);
   return () => {
     done = true;
-    winViewState.loaded = false;
+    resetWinViewState();
     requestWinSky(null);
     setWinSky(null);
     winRelease = setTimeout(() => {

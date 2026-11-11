@@ -5,7 +5,7 @@ vi.mock('./warm', () => ({ isFirstLoad: () => false, warmStats: () => ({ pending
 vi.mock('./tiers', () => ({ currentTier: () => 'high' }));
 vi.mock('./idle', () => ({ HOLD_MS: 150, idleStats: () => ({ reasons: {} }), markDirty: () => {} }));
 
-const { isLevelReady, warmBudgetMs, shadowDue, retryStalled, MAX_STALL_RETRIES, WARM_CAP_MS } = await import('./levelWarm');
+const { isLevelReady, warmBudgetMs, shadowDue, WARM_CAP_MS } = await import('./levelWarm');
 
 const base = { pendingAssets: 0, warmed: true, shown: true, touchedLastFrame: true, pendingDraws: 0, w2Busy: false };
 
@@ -40,13 +40,5 @@ describe('ngân sách khung ấm', () => {
   });
   it('`?enable=lwshadow8`: ép vẽ lại bóng ở khung ấm đầu và mỗi 8 khung', () => {
     expect([0, 1, 7, 8, 16].map((n) => shadowDue(n, 8))).toEqual([true, false, false, true, true]);
-  });
-});
-
-describe('retryStalled', () => {
-  it('thử lại có giới hạn mỗi tầng', () => {
-    const got = Array.from({ length: MAX_STALL_RETRIES + 2 }, () => retryStalled('L2'));
-    expect(got).toEqual([...Array(MAX_STALL_RETRIES).fill(true), false, false]);
-    expect(retryStalled('L3')).toBe(true);
   });
 });

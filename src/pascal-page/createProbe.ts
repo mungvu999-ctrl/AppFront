@@ -52,6 +52,8 @@ export interface PascalProbe {
   levelReadiness(): unknown;
   /** Bộ đếm làm ấm tầng ẩn (`levelWarmStats`): lượt rảnh, lý do từ chối, khung ấm (`maxWarmFrameMs`/`maxBaseMs`/`maxObjectMs`), tầng còn chờ ấm (`remaining`), đổi tầng → sẵn sàng (`switch.lastWaitMs`/`maxWaitMs`); `null` như trên. */
   levelWarmStats(): unknown;
+  /** Tầng đang chọn theo store viewer (`selection.levelId`) — độc lập với nhãn đang được kiểm; `null` = chưa chọn. */
+  selectedLevel(): string | null;
   /** Đổi nút vật liệu/phơi sáng lúc chạy (đo biến thể cùng một lần nạp): nhiễu bề mặt, kính, exposure. */
   setLook(v: { surf?: { rough?: number; albedo?: number; scale?: number }; exposure?: number; grade?: { contrast?: number; saturation?: number } }): void;
   /** Các lần sửa cảnh (`SceneRepair`: món, hành động, luật, lý do, trước/sau) mà lượt dựng gần nhất đã áp. */
@@ -294,6 +296,7 @@ export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter,
     reflect: () => ({ ...((globalThis as { __realismReflect?: object }).__realismReflect ?? {}) }),
     levelReadiness: () => levelWarm()?.levelReadiness() ?? null,
     levelWarmStats: () => levelWarm()?.levelWarmStats() ?? null,
+    selectedLevel: () => (useViewer.getState() as { selection?: { levelId?: string | null } }).selection?.levelId ?? null,
     itemMaterials: (match) => {
       const out: Record<string, unknown>[] = [];
       for (const [id, n] of entriesOf('item')) {

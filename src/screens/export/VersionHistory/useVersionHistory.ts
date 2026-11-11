@@ -26,7 +26,7 @@ import { useInfiniteQuery, useQueries, useQueryClient } from '@tanstack/react-qu
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { loadSceneConcept, type SceneConcept } from '@/lib/pascal/sceneConcept';
-import { ensureSceneLibrary, sceneLibraryNow, type SceneLibrary } from '@/lib/pascal/sceneLibrary';
+import { abandonAssetRefresh, ensureSceneLibrary, sceneLibraryNow, type SceneLibrary } from '@/lib/pascal/sceneLibrary';
 import type { FloorVersionSummary } from '@/api/schemas/versions';
 import { flushAutosaves, useFloorLayerAutosave } from '@/hooks/useAutosave';
 import { formatDuration } from '@/lib/format/datetime';
@@ -387,8 +387,9 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
   /* Concept AI (N47) của dự án — cùng quy tắc với editor (`loadSceneConcept`): chờ kết quả, 403/404 im lặng, lỗi có
      câu báo. N47 chỉ có concept HIỆN HÀNH (không có lịch sử concept) nên chỉ bản hiện tại dùng nó; bản cũ dựng lại từ
      dữ liệu của chính phiên bản (`versionSceneOptions`). Kết quả của dự án cũ bị bỏ (`live`). */
-  /* Gia hạn URL ký (`refreshAssetUrl`) KHÔNG phủ màn này: GLB ở đây do gói pascal-mount tải bằng bản three riêng
-     (`src/components/pascal/pascalMount.tsx`), bản vá FileLoader của SPA không chạm tới — nên không nối câu báo ở đây. */
+  /* Gia hạn URL ký phủ cả màn này: lớp chặn fetch của `ensureSceneLibrary` chạm tới GLB do gói pascal-mount tải (bản
+     three riêng). Rời dự án/màn thì lượt gia hạn đang chạy bị bỏ, không tải lại cho cảnh đã gỡ. */
+  useEffect(() => () => abandonAssetRefresh(), [projectId]);
   const [concept, setConcept] = useState<{ readonly projectId: string; readonly value: SceneConcept } | null>(null);
   useEffect(() => {
     let live = true;
@@ -399,9 +400,9 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
   }, [projectId]);
   const sceneConcept = concept?.projectId === projectId ? concept.value : null;
   // Bản cũ: chỉ dữ liệu của phiên bản + chú thích; bản hiện tại: concept hiện hành (`versionSceneOptions`).
-  // "Hiện tại" theo ID phiên bản (hàng `isCurrent`), không so tham chiếu đồ thị (`graphOfVersion` luôn tạo mới).
+  // "Hiện tại" chỉ khi revision của bản khớp revision tầng (không theo hàng đầu tạm, không so tham chiếu đồ thị).
   const sceneVersionId = sceneFromRight ? rightVersionId : leftVersionId;
-  const sceneIsOld = isOldSceneVersion(sceneSource !== undefined, sceneVersionId, rows);
+  const sceneIsOld = isOldSceneVersion(sceneSource !== undefined, sceneVersionId, summaryMap, currentRevision);
   const versionScene = useMemo(
     () => versionSceneOptions(sceneConcept, sceneIsOld),
     [sceneConcept, sceneIsOld],

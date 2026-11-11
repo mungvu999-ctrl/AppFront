@@ -95,4 +95,8 @@ export const insideRoomBox = (p: { x: number; y: number; z: number }, boxes: rea
 /** Trạng thái cho `__pascalProbe.winView()`; `lighting-hdri.ts` + `reflect.ts` ghi. */
 export const winViewState = { mode: 'off' as WinMode | 'off', gain: 0, scope: 'inside' as WinScope, loaded: false, requested: false, active: false, inside: false };
 
+/** Tắt phông cửa sổ (cleanup / cài lại ở trạng thái tắt): probe không còn báo đang yêu cầu. */
+export const resetWinViewState = (): void => {
+  Object.assign(winViewState, { mode: 'off', gain: 0, scope: 'inside', loaded: false, requested: false, inside: false });
+};
 export const winViewReport = () => ({ ...winViewState });

@@ -1,9 +1,9 @@
 /**
- * Nhãn "Đang chuẩn bị tầng…" dưới bộ chọn tầng (vendor `floating-level-selector.tsx`, luật
- * `scripts/realism/w4-level-status.mjs`): tầng vừa chọn chưa sẵn sàng (`levelReadiness().ready` — cùng nghĩa với đầu dò:
- * không còn đồ GLB chờ và mẫu mới nhất không còn vật chờ shader/pipeline) thì hiện, sẵn sàng thì tắt. Hỏi lại sau mỗi
- * khung sống (`onLevelWarmFrame`). Kẹt (sau khi tự thử lại) → thông báo riêng `level-warm-stalled`, tự tắt sau 10 s.
- * Không đổi lần bấm: tầng vẫn đổi ngay, nhãn chỉ báo. `?disable=levelstatus` tắt cả hai; `?disable=levelstall` tắt báo kẹt.
+ * Nhãn dưới bộ chọn tầng (vendor `floating-level-selector.tsx`, luật `scripts/realism/w4-level-status.mjs`), theo đúng
+ * `levelReadiness().status` của tầng đang chọn — cùng nguồn với đầu dò: `pending` → "Đang chuẩn bị tầng…"; `stalled`
+ * (số chờ không giảm qua `STALL_FRAMES` khung lấy mẫu) → thông báo riêng `level-warm-stalled`, giữ tới khi tầng xong hoặc đổi tầng
+ * (không tự tắt: `ready:false` không bao giờ im lặng); `ready` → rỗng. Không đổi lần bấm: tầng vẫn đổi ngay, nhãn chỉ
+ * báo. `?disable=levelstatus` tắt cả hai; `?disable=levelstall` tắt báo kẹt.
  */
 import { useLevelWarmState } from './levelWarmReady';
 
@@ -28,7 +28,7 @@ export function LevelWarmStatus({ levelId }: { levelId: string | null | undefine
         {s === 'pending' ? 'Đang chuẩn bị tầng…' : ''}
       </div>
       <div aria-live="polite" data-testid="level-warm-stalled" role="status" style={s === 'stalled' ? STYLE : undefined}>
-        {s === 'stalled' ? 'Tầng này chuẩn bị lâu hơn bình thường — vẫn xem và thao tác được, phần còn lại sẽ hiện dần.' : ''}
+        {s === 'stalled' ? 'Tầng này chuẩn bị lâu hơn bình thường — vẫn xem và thao tác được.' : ''}
       </div>
     </>
   );

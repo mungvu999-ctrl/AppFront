@@ -14,12 +14,13 @@
  */
 
 import { Boxes, MonitorOff } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { Skeleton } from '@/components/feedback/Skeleton';
 import type { PascalMountOptions } from '@/components/pascal/pascalMountTypes';
 import { bodyOfPascalId } from '@/lib/pascal/ids';
+import { assetRefreshStatus, subscribeAssetRefresh } from '@/lib/pascal/sceneLibrary';
 import { defaultLoadMount, type MountModule } from '@/screens/viewer/PascalViewer/usePascalViewer';
 
 import type { VisualDiffModel } from './types';
@@ -47,13 +48,21 @@ function highlightIdsOf(visual: VisualDiffModel): readonly string[] {
     return [];
   }
 
-  const wanted = new Set(visual.changedEntityIds);
+  const nodes = visual.scene.nodes;
+  const nodeIds = Object.keys(nodes);
+  const changed = new Set(visual.changedEntityIds);
+  const wallIds = nodeIds.filter((nodeId) => (nodes[nodeId] as { type?: string } | undefined)?.type === 'wall');
+  // Mọi tường (≥ 2) đều đổi — vd. bản gốc rỗng nên "thêm" toàn bộ: tô hết không phân biệt được gì, mà viền chọn của
+  // Pascal còn vẽ cạnh KHUẤT (vàng) của mọi tường bên trong xuyên qua mặt ngoài → mảng loang trên tường ngoài (làn a3,
+  // vòng 11). Khi ấy chỉ tô hàng đang trỏ.
+  const everyWallChanged = wallIds.length > 1 && wallIds.every((nodeId) => changed.has(bodyOfPascalId(nodeId)));
+  const wanted = everyWallChanged ? new Set<string>() : changed;
 
   if (visual.hoveredEntityId !== null) {
     wanted.add(visual.hoveredEntityId);
   }
 
-  return Object.keys(visual.scene.nodes).filter((nodeId) => wanted.has(bodyOfPascalId(nodeId)));
+  return nodeIds.filter((nodeId) => wanted.has(bodyOfPascalId(nodeId)));
 }
 
 export interface VersionVisualDiffProps {
@@ -79,6 +88,8 @@ export function VersionVisualDiff({ visual }: VersionVisualDiffProps) {
   }, []);
 
   const scene = visual.scene;
+  /* Mẫu hết hạn không tải lại được sau khi gia hạn (`installAssetRefresh`): cùng câu báo với editor. */
+  const assetNotice = useSyncExternalStore(subscribeAssetRefresh, () => assetRefreshStatus().notice);
 
   /* Chạy lại khi đổi cảnh (đổi cặp phiên bản): dựng lại đúng cảnh mới, dispose cảnh cũ. */
   useEffect(() => {
@@ -191,6 +202,7 @@ export function VersionVisualDiff({ visual }: VersionVisualDiffProps) {
         <span className="block">{visual.caption}</span>
         <span className="block">{VISUAL_HINT}</span>
           {visual.libraryNotice ? <span className="block" role="status">{visual.libraryNotice}</span> : null}
+        {assetNotice ? <span className="block text-text-primary" role="alert">{assetNotice}</span> : null}
       </figcaption>
     </figure>
   );
