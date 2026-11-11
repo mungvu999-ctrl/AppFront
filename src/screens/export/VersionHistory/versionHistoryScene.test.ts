@@ -120,30 +120,41 @@ describe('thư viện mẫu chung (ensureSceneLibrary)', () => {
   });
 });
 
-describe('bản cũ với concept AI hiện hành (versionSceneOptions)', () => {
+describe('bản cũ dựng lại chỉ từ dữ liệu của phiên bản (versionSceneOptions)', () => {
   const addition = { levelId: 'L', roomId: 'R-x', kind: 'chair', centre: { x: 0, y: 0 }, widthMm: 450, depthMm: 450, rotationDeg: 0 } as never;
-  const done = { style: undefined, additions: [addition], furnish: 'off', source: 'done', notice: null } as const;
+  const done = { style: { id: 'concept-style' } as never, additions: [addition], furnish: 'off', source: 'done', notice: null } as const;
   const withRooms = (rooms: readonly string[]) => ({ ...current, byKind: { ...current.byKind, room: rooms } }) as typeof current;
 
-  it('bản hiện tại: concept như editor (không tự bày, có đồ AI), không chú thích', () => {
-    expect(versionSceneOptions(done, current, current)).toEqual({ options: { furnish: 'off', additions: [addition] }, note: null });
+  it('bản hiện tại: concept như editor (phong cách + đồ AI, không tự bày), không chú thích', () => {
+    expect(versionSceneOptions(done, current, current)).toEqual({
+      options: { style: done.style, furnish: 'off', additions: [addition] },
+      note: null,
+    });
   });
 
-  it('bản cũ cùng phòng với mô hình hiện tại: vẫn theo concept', () => {
-    const old = withRooms(current.byKind.room.slice(0, 1));
-    expect(versionSceneOptions(done, old, current).note).toBeNull();
-    expect(versionSceneOptions(done, old, current).options.furnish).toBe('off');
+  it('bản hiện tại: concept chưa đọc xong → null (chờ), lỗi đọc concept → câu báo đi theo', () => {
+    expect(versionSceneOptions(null, current, current)).toBeNull();
+    expect(versionSceneOptions({ ...done, notice: 'báo' }, current, current)?.note).toBe('báo');
   });
 
-  it('bản cũ có phòng khác id: tự bày như khi không có concept, bỏ đồ AI, có chú thích tiếng Việt', () => {
-    const old = withRooms([...current.byKind.room, 'R-cu-khac-id']);
-    const result = versionSceneOptions(done, old, current);
-    expect(result.options).toEqual({ furnish: 'on' });
-    expect(result.note).toBe(OLD_VERSION_FURNISH_NOTE);
+  it.each([
+    ['cùng phòng', () => withRooms(current.byKind.room.slice(0, 1))],
+    ['phòng khác id', () => withRooms([...current.byKind.room, 'R-cu-khac-id'])],
+  ])('bản cũ (%s): không phong cách/đồ AI hiện hành, không tự bày, có chú thích — kể cả khi concept chưa về', (_n, old) => {
+    for (const concept of [done, null]) {
+      expect(versionSceneOptions(concept, old(), current)).toEqual({ options: { furnish: 'off' }, note: OLD_VERSION_FURNISH_NOTE });
+    }
   });
 
-  it('không có concept: tự bày sẵn, không chú thích', () => {
-    const none = { ...done, additions: [], furnish: 'on', source: 'none' } as const;
-    expect(versionSceneOptions(none, withRooms(['R-khac']), current)).toEqual({ options: { furnish: 'on' }, note: null });
+  it('bản cũ: đồ đã lưu trong ảnh chụp vẫn dựng, không có đồ tự bày', () => {
+    const scene = convertScene(current, versionSceneOptions(done, withRooms(['R-cu']), current)?.options);
+    const auto = convertScene(current, { furnish: 'on' });
+    const items = (c: typeof scene) => Object.values(c.scene?.nodes ?? {}).filter((n) => (n as { type?: string }).type === 'item').length;
+    expect(items(scene)).toBeLessThanOrEqual(items(auto));
+  });
+
+  it('không có concept, bản hiện tại: tự bày như editor', () => {
+    const none = { ...done, style: undefined, additions: [], furnish: 'on', source: 'none' } as const;
+    expect(versionSceneOptions(none, current, current)).toEqual({ options: { furnish: 'on' }, note: null });
   });
 });

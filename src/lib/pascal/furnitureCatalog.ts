@@ -681,6 +681,16 @@ export const clearServerLibrary = (): void => {
   SERVER_FILES.clear();
 };
 
+/**
+ * Id mẫu máy chủ đang giữ URL `url` (so phần trước `?`: chữ ký đổi mỗi lượt ký). `undefined` = không phải mẫu thư viện
+ * đang nạp — kể cả URL của người dùng trước khi đã đổi phiên (`clearServerLibrary`).
+ */
+export const serverModelIdOfUrl = (url: string): string | undefined => {
+  const bare = url.split('?')[0];
+  for (const [id, file] of SERVER_FILES) if (file.model.split('?')[0] === bare) return id;
+  return undefined;
+};
+
 /** true khi thư mục đến từ thư viện máy chủ. */
 export const isServerModel = (folder: string): boolean => SERVER_FILES.has(folder);
 
