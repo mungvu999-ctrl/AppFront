@@ -34,11 +34,11 @@ export const setDrapeFlags = (next: readonly DrapeFlag[]): void => {
 export const CURTAIN_FOLDER = 'curtain';
 const LINEN = 'library:fabric-linen';
 /** Họ vải phong cách dùng được làm rèm (vải dệt mỏng); da/boucle không. */
-const WOVEN: ReadonlySet<string> = new Set([LINEN, 'library:fabric-cotton']);
+export const DRAPE_WOVEN: ReadonlySet<string> = new Set([LINEN, 'library:fabric-cotton']);
 
 /** Vải rèm cho phong cách: giữ họ vải của phong cách nếu là vải dệt, không thì lanh. */
 export const drapeFabricOf = (style: Pick<SceneStyle, 'families'>): string =>
-  WOVEN.has(style.families.fabric) ? style.families.fabric : LINEN;
+  DRAPE_WOVEN.has(style.families.fabric) ? style.families.fabric : LINEN;
 
 /** Màu rèm = màu chăn ga của phong cách (sáng, trung tính, cùng tông tường/giường). */
 const DRAPE_COLOUR: Readonly<Record<SceneStyleId, string>> = {
@@ -61,6 +61,13 @@ export const DRAPE_UV_FOLDERS: ReadonlySet<string> = new Set([CURTAIN_FOLDER, 'p
 /** Cho `furnitureCatalog.ts` fileFolderOf: thư mục tệp GLB khi `?drape=uv`; undefined = giữ nguyên. */
 export const drapeFileFolderOf = (folder: string): string | undefined =>
   drapeOn('uv') && DRAPE_UV_FOLDERS.has(folder) ? `${folder}-uv` : undefined;
+
+/** `-uv` chỉ là lựa chọn hiển thị: đường lưu ra dữ liệu luôn về thư mục gốc (`/items/curtain-uv/…` → `/items/curtain/…`). */
+export const drapeSavedSrc = (src: string): string =>
+  src.replace(/^\/items\/([a-z0-9_-]+)-uv\//, (all, folder: string) => (DRAPE_UV_FOLDERS.has(folder) ? `/items/${folder}/` : all));
+
+/** Món của node Pascal này là rèm FE tự sinh (`item_DRESS-curtain-…`), không phải rèm người dùng đặt. */
+export const isGeneratedCurtainId = (nodeId: string): boolean => /(^|_)DRESS-curtain-/.test(nodeId);
 
 export interface DrapeCurtain {
   id: string;

@@ -5,6 +5,7 @@ import {
   drapeColourOf,
   drapeFabricOf,
   drapeFileFolderOf,
+  drapeSavedSrc,
   drapeHeightMm,
   parseDrape,
   setDrapeFlags,
@@ -38,6 +39,13 @@ describe('drape — luật thuần', () => {
     expect(drapeHeightMm(3200, 2272)).toBe(3100);
     expect(drapeHeightMm(2700, 2272)).toBe(2600);
     expect(drapeHeightMm(2200, 2272)).toBe(2272);
+  });
+
+  it('đường -uv chỉ để hiển thị: lưu ra luôn về thư mục gốc', () => {
+    expect(drapeSavedSrc('/items/pillow-uv/model.glb')).toBe('/items/pillow/model.glb');
+    expect(drapeSavedSrc('/items/curtain-uv/model.glb')).toBe('/items/curtain/model.glb');
+    expect(drapeSavedSrc('/items/sofa-uv/model.glb')).toBe('/items/sofa-uv/model.glb');
+    expect(drapeSavedSrc('/items/pillow/model.glb')).toBe('/items/pillow/model.glb');
   });
 
   it('thư mục GLB có UV chỉ khi bật uv', () => {

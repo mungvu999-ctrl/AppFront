@@ -656,6 +656,15 @@ describe('đổi mẫu đồ đạc', () => {
 
     expect(node?.type === 'item' ? node.asset.id : null).toBe('catalog-sofa-2');
   });
+
+  it('?drape=uv: đường GLB `-uv` chỉ để hiển thị, lưu ra luôn thư mục gốc (vòng 10)', () => {
+    if (itemNode === undefined || itemNode.type !== 'item') throw new Error('cảnh nền phải có đồ đạc');
+    const asset = { ...itemNode.asset, id: 'catalog-pillow', src: '/items/pillow-uv/model.glb' };
+    const saved = toSpatialGraph(sceneWith(itemNode.id, { ...itemNode, asset }));
+    const json = JSON.stringify(saved);
+    expect(json).not.toContain('-uv/');
+    expect(json).toContain('/items/pillow/model.glb');
+  });
 });
 
 /** R3-F1/F2 — lượt ghi từ Pascal không được làm mất dữ liệu của F1-ext. */
