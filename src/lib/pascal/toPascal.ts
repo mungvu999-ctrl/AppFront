@@ -57,10 +57,16 @@ import { insideOutline, swingDirectionOf } from './swingDirection';
 import {
   ceilingNodesOf,
   floorMaterialOf,
+  adoptedFurnitureIdOf,
+  ruleAdoptedIdsOf,
   isGeneratedLightId,
   isGeneratedNodeId,
   lightOffIdOf,
   itemSlotsOf,
+  MODEL_FOLDER_FIELD,
+  adoptedPairOf,
+  ADOPTED_FIT_FIELD,
+  SHOWN_SIZE_FIELD,
   OUTLINE_PAINT_SLOT,
   lampInteractiveOf,
   GENERATED_DRESS_PREFIX,
@@ -82,8 +88,10 @@ import {
   type SceneProvenance,
   type SceneRepair,
 } from './sceneLayer';
+import { itemFitOf } from './itemFit';
 import { furnishingUsageOf, isPlausibleStair, lShapedRunArms, orphanWallIds, weldWallEnds } from './structureFixes';
-import { contextRolesOf, isThinHob, isThinSink, modelFolderOf, roleOf, withoutOverlaps } from './sceneVariety';
+import { ROOMSET_VERSION, roomSetKeysOf } from './roomSet';
+import { addRoomSetMembers, contextRolesOf, isThinHob, isThinSink, modelFolderOf, roleOf, roomSetSwapOf, setRoomSetKeys, withoutOverlaps } from './sceneVariety';
 import type {
   AppFrontOrigin,
   PascalDoorNode,
@@ -182,6 +190,14 @@ const skip = (id: string, kind: string, reason: string): SkippedEntity => ({ id,
 const withFields = <N extends PascalNode>(node: N, extra: Readonly<Record<string, unknown>>): N => {
   const origin: AppFrontOrigin = node.metadata?.appfront ?? { confidence: 1, source: 'ai', reviewed: false };
   return { ...node, metadata: { ...node.metadata, appfront: { ...origin, fields: { ...origin.fields, ...extra } } } };
+};
+
+/** Món `roomset` đổi mẫu: ghi `prov.model` (đồ sinh giữ luật sinh; đồ AI mang prov hạng `ai`). */
+const withRoomSetProv = <N extends PascalNode>(node: N, furnitureId: string): N => {
+  const swap = roomSetSwapOf(furnitureId);
+  if (swap === undefined) return node;
+  const prov = (node.metadata?.appfront?.fields?.[PROV_FIELD] as SceneProvenance | undefined) ?? { cls: 'ai', rule: 'roomset', version: SCENE_LAYER_VERSION };
+  return withFields(node, { [PROV_FIELD]: { ...prov, model: { rule: 'roomset', version: ROOMSET_VERSION, from: swap.from } } });
 };
 
 /** Vai nhúng trong id món sinh `DRESS-<vai>-…`. */
@@ -618,13 +634,6 @@ const furnitureFolderOf = (furniture: Furniture, style: SceneStyle, usage: RoomU
     ? 'washing-machine'
     : modelFolderOf(furniture, style, usage);
 
-/** Cây mà catalog dựng cao hơn trần (cọ 4,5 m, thông 3 m): trong nhà chặn ở 2,2 m. */
-const TALL_PLANT_FOLDERS: ReadonlySet<string> = new Set(['palm', 'fir-tree']);
-const TALL_PLANT_MAX_M = 2.2;
-
-/** Thảm: phủ đúng mặt bằng hộp bao; dày theo `heightMm` hoặc nửa catalog (10 mm từng làm `s` chung = 0,25). */
-const RUG_FOLDERS: ReadonlySet<string> = new Set(['rectangular-carpet', 'round-carpet']);
-
 /**
  * Thảm phải nằm trong phòng của nó: có `roomId` thì phòng ấy phải dựng được và chứa tâm thảm; không có thì
  * tâm phải trong một phòng cùng tầng. Phòng thiếu (BE chưa dò ra phòng khách) / AI đặt lệch → thảm "lạc"
@@ -636,37 +645,6 @@ const isStrayRug = (f: Furniture, rooms: readonly Room[]): boolean => {
   const homes = f.roomId === undefined ? rooms.filter((r) => r.levelId === f.levelId) : rooms.filter((r) => r.id === f.roomId);
   return !homes.some((r) => insideOutline(f.centre, r.outline));
 };
-const RUG_SCALE_Y = 0.5;
-/**
- * Đồ kéo dài được theo từng trục (dãy tủ, kệ, chậu rửa liền tủ, bồn cây…): một tỉ lệ chung
- * thu cả dãy 3 m về một mô-đun. Kéo hết theo trục dài của hộp (không trần — tủ áo 3 m ra 3 m),
- * trục kia trong `[FIT_AXIS_MIN; FIT_AXIS_MAX]` × mẫu nhưng không quá hộp, cao giữ thật.
- */
-const STRETCH_FOLDERS: ReadonlySet<string> = new Set([
-  'closet',
-  'kitchen-cabinet',
-  'kitchen-counter',
-  'kitchen-shelf',
-  'kitchen',
-  'bookshelf',
-  'shelf',
-  'bush',
-  'bathroom-sink',
-  'dresser',
-  'tv-stand',
-  // Bàn trà chữ nhật vào ô vuông 0,9 × 0,9 (F1): co đều thì chỉ còn sâu 0,5 m.
-  'coffee-table',
-]);
-/** Biên co giãn một trục mặt bằng quanh tỉ lệ chung (C3, GIAI-PHAP 3.4): lệch hơn thì mẫu méo dáng. */
-const FIT_AXIS_MIN = 0.8;
-const FIT_AXIS_MAX = 1.25;
-/** Biên hệ số cao khi bản vẽ không cho `heightMm`: giữ cao thật của mẫu (bàn ăn không còn 0,30 m). */
-const FIT_HEIGHT_MIN = 0.9;
-const FIT_HEIGHT_MAX = 1.1;
-const clampTo = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
-/** `heightMm` là bề dày tấm trên bản vẽ (mặt bếp 20 mm), không phải cao mẫu: khớp theo mặt bằng, giữ cao thật. */
-const OWN_HEIGHT_FOLDERS: ReadonlySet<string> = new Set(['hob-sf']);
-
 /** Tâm `p` nằm trong mặt bằng (đã xoay) của `host`. */
 const coversPoint = (host: Furniture, p: { readonly x: number; readonly y: number }): boolean => {
   const t = (host.rotationDeg * Math.PI) / 180;
@@ -813,6 +791,13 @@ const stairNodesOf = (
 
 const SWAPPED_MODEL_SRC = /^\/items\/([a-z0-9_-]+)\/model\.glb$/;
 
+/** Bản sao món bỏ `model` (exactOptionalPropertyTypes không cho gán `undefined`). */
+const withoutModel = (f: Furniture): Furniture => {
+  const copy = { ...f };
+  delete copy.model;
+  return copy;
+};
+
 const itemNodeOf = (
   furniture: Furniture,
   levelNodeId: PascalNodeId,
@@ -823,6 +808,8 @@ const itemNodeOf = (
   baseLiftMm = 0,
   /** Mẫu thay cho mẫu tự chọn (dãy tủ có chậu mỏng nằm trên). */
   folderOverride?: string,
+  /** Cặp nhận: khớp đúng hộp bao + `heightMm` từng trục (hộp là cỡ nhìn thấy lúc lưu, kể cả khi người dùng co giãn). */
+  exactFit = false,
 ): PascalItemNode => {
   const label = FURNITURE_KIND_LABELS[furniture.kind];
   const widthM = metresOf(furniture.boundingBox.max.x - furniture.boundingBox.min.x);
@@ -839,67 +826,11 @@ const itemNodeOf = (
     folder === null
       ? null
       : { folder, liftMm: furniture.variant === undefined ? undefined : VARIANT_MODEL[furniture.variant]?.liftMm };
-  const catalog = model === null ? undefined : CATALOG_MODELS[model.folder];
 
-  // Khớp mô hình vào hộp bao CỤC BỘ bằng `asset.scale` — `node.scale` phải giữ
+  // Khớp mô hình vào hộp bao CỤC BỘ bằng `asset.scale` (`itemFitOf`, itemFit.ts) — `node.scale` phải giữ
   // [1, 1, 1] vì lượt về đọc lệch khỏi 1 là "người dùng vừa kéo" (toSpatial `isUnscaled`).
   // `asset.id` cũng giữ nguyên `appfront-<kind>`: đổi nó là lượt về sinh `model` (R1-3b).
-  const fit = (() => {
-    if (model === null || catalog === undefined) {
-      return null;
-    }
-
-    const [cw, ch, cd] = catalog.dimensions;
-    const fixedH =
-      furniture.heightMm === undefined || OWN_HEIGHT_FOLDERS.has(model.folder) ? undefined : metresOf(furniture.heightMm);
-    // Không có `heightMm` (bản quét AI) thì chỉ hộp bao quyết định `s` — món đồ có thể
-    // phình cao vô lý. Chặn: ≤ 1,25× cỡ catalog, cây cao ≤ 2,2 m, và không quá trần tầng.
-    const maxH =
-      fixedH ??
-      Math.min(metresOf(levelHeightMm), TALL_PLANT_FOLDERS.has(model.folder) ? TALL_PLANT_MAX_M : ch * 1.25);
-    // Tỉ lệ từng trục [sx, sy, sz] theo nhóm: thảm phủ mặt bằng, đồ kéo dài kéo theo chiều dài,
-    // đồ cứng co giãn từng trục có chặn lệch. Chỉ `asset.scale` lệch trục — lượt về
-    // chỉ đọc `node.scale` nên không đổi gì.
-    // Hộp bao là khung riêng của món (K1: `orientDetected` đã đổi cạnh khi quay 90/270), node
-    // quay theo `rotationDeg` — nên `rx`/`rz` so trục riêng với trục mẫu, không đụng `asset.rotation`.
-    const rx = widthM / cw;
-    const rz = depthM / cd;
-    const heightOf = (ref: number): number =>
-      fixedH === undefined ? Math.min(clampTo(ref, FIT_HEIGHT_MIN, FIT_HEIGHT_MAX), maxH / ch) : fixedH / ch;
-    // Không trục mặt bằng nào vượt hộp bao (FE-H): biên [0,8; 1,25] chỉ chống co thiếu — mẫu khác dáng
-    // hộp (chậu, tủ đầu giường, kệ nông) từng phình gấp đôi hộp ở trục bị chặn.
-    const [ax, sy, az] = ((): PascalVec3 => {
-      if (RUG_FOLDERS.has(model.folder)) return [rx, fixedH === undefined ? RUG_SCALE_Y : fixedH / ch, rz];
-      if (STRETCH_FOLDERS.has(model.folder)) {
-        // Kéo hết theo trục dài của hộp (so với mẫu), trục kia giữ gần chiều sâu mẫu.
-        const alongX = rx >= rz;
-        const deep = clampTo(alongX ? rz : rx, FIT_AXIS_MIN, FIT_AXIS_MAX);
-        return alongX ? [rx, heightOf(deep), deep] : [deep, heightOf(deep), rz];
-      }
-      // Đồ cứng: mỗi trục co giãn riêng trong [0,8; 1,25] × trung bình nhân hai trục.
-      const g = Math.sqrt(rx * rz);
-      return [clampTo(rx, g * FIT_AXIS_MIN, g * FIT_AXIS_MAX), heightOf(g), clampTo(rz, g * FIT_AXIS_MIN, g * FIT_AXIS_MAX)];
-    })();
-    const sx = Math.min(ax, rx);
-    const sz = Math.min(az, rz);
-    // `asset.scale` nhân thẳng vào GLB gốc; catalog nào có scale riêng thì `dimensions`
-    // là cỡ sau scale đó (cọ: GLB cao 11,9 m × 0,37) — phải nhân lại, không thì cao gấp đôi tường.
-    const [kx, ky, kz] = catalog.scale ?? [1, 1, 1];
-    // Đồ treo tường: mô hình mỏng hơn hộp bao thì áp lưng nó vào mép sau (−z cục
-    // bộ, phía tường) thay vì treo lơ lửng giữa hộp. Dời bằng `asset.offset` chứ
-    // không dời `position`: tâm món đồ phải giữ đúng `centre` để lượt về không trôi.
-    // `attachTo` không ghi ra — Pascal sẽ đòi một bức tường cha mà node này không có.
-    const backShift = catalog.attachTo === 'wall-side' ? -(depthM - cd * sz) / 2 : 0;
-    const [ox, oy, oz] = catalog.offset;
-
-    return {
-      folder: model.folder,
-      heightM: fixedH ?? ch * sy,
-      scale: [sx * kx, sy * ky, sz * kz] as PascalVec3,
-      offset: [ox * sx, oy * sy, oz * sz + backShift] as PascalVec3,
-      rotation: [...catalog.rotation] as PascalVec3,
-    };
-  })();
+  const fit = model === null ? null : itemFitOf(model.folder, widthM, depthM, furniture.heightMm, levelHeightMm, exactFit);
   const heightM = fit?.heightM ?? heightOfFurniture(furniture, levelHeightMm);
   const liftMm = furniture.liftMm ?? model?.liftMm ?? baseLiftMm;
   const liftM = metresOf(liftMm);
@@ -954,6 +885,10 @@ const itemNodeOf = (
         ...(furniture.variant === undefined ? {} : { variant: furniture.variant }),
         ...(furniture.heightMm === undefined ? {} : { heightMm: furniture.heightMm }),
         ...(furniture.liftMm === undefined ? {} : { liftMm: furniture.liftMm }),
+        // Món sinh: mẫu đang dựng, để lượt về lưu đúng mẫu ấy khi món được nhận (`toSpatial`: `MODEL_FOLDER_FIELD` khi lưu, `SHOWN_SIZE_FIELD` trong `seenSizeM`).
+        ...(fit !== null && furniture.model === undefined && furniture.id.startsWith(GENERATED_DRESS_PREFIX)
+          ? { [MODEL_FOLDER_FIELD]: fit.folder, [SHOWN_SIZE_FIELD]: fit.shownM }
+          : {}),
       }),
     },
   };
@@ -1341,11 +1276,36 @@ export const toPascalScene = (
   const expanded = expandKitchenRuns(orientDetectedFurniture(graph.furniture, graph.walls), builtWalls);
   const furnitureToBuild = expanded.filter((f) => !offIds.has(f.id));
   const graphFurnitureIds = graph.furniture.map((f) => f.id as string);
+  /* V4 — món sinh đã thành đồ thật RIÊNG LẺ (`dressingOff` có `DRESS-x` + đồ thật id `adoptedFurnitureIdOf(x)`): lớp
+     dẫn xuất tính như khi nó còn là đồ sinh — đồ thật ấy không chặn bày phòng, bản sinh ("twin") vẫn dự phần đăng ký
+     bộ/chủ trang trí nhưng không dựng (đồ thật dựng thay). Nhờ vậy anh em giữ chỗ và mẫu sau khi lưu. Dữ liệu cũ (cả
+     phòng đã nhận, id ngẫu nhiên) không có cặp nào: đọc y như trước. */
+  const graphIdSet = new Set<string>(graphFurnitureIds);
+  const twinIds = new Set([...offIds].filter((id) => graphIdSet.has(adoptedFurnitureIdOf(id))));
+  const adoptedIds = new Set<string>([...twinIds].map(adoptedFurnitureIdOf));
+  const ruleAdopted = ruleAdoptedIdsOf(graph.rooms, graph.furniture);
+  const isAdoptedPair = adoptedPairOf(graph.rooms);
+  /** Mẫu LUẬT CHỌN của món đã nhận (cặp chắc chắn, `ruleAdoptedIdsOf`; không phải mẫu người dùng đổi): thư mục, hoặc undefined. */
+  const ruleFolderOf = (f: Furniture): string | undefined => {
+    if (!ruleAdopted.has(f.id) || f.model === undefined) return undefined;
+    const folder = SWAPPED_MODEL_SRC.exec(f.model.src)?.[1];
+    return folder !== undefined && Object.prototype.hasOwnProperty.call(CATALOG_MODELS, folder) ? folder : undefined;
+  };
 
   /* Vai trò theo ngữ cảnh phòng (bồn cầu thừa → lavabo, bàn nhỏ xa giường → bàn phụ): chỉ đổi mẫu. */
   const contextUsageOf = (f: Pick<Furniture, 'roomId'>) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId));
+  // `roomset` băm theo nội dung phòng, không theo id (chép sang dự án khác giữ nguyên nội thất).
+  // Trần phòng = chiều cao tầng dựng tường (`roomset` chừa hở trần cho món cao).
+  setRoomSetKeys(
+    roomSetKeysOf(builtRooms.map((room) => ({ id: room.id, levelId: room.levelId, usage: roomUsageOf.get(room.id), outline: room.outline }))),
+    new Map(builtRooms.flatMap((room) => {
+      const mm = levelHeightMmOf.get(room.levelId);
+      return mm === undefined ? [] : [[room.id as string, mm / 1000] as const];
+    })),
+  );
+  // Món đã nhận còn mẫu luật chọn: twin đại diện trong sổ bộ (như trước khi nhận), không thành đồ cố định của bảng màu.
   const contextRoles = contextRolesOf(
-    furnitureToBuild.filter((f) => f.suggested !== true),
+    furnitureToBuild.filter((f) => f.suggested !== true && ruleFolderOf(f) === undefined),
     contextUsageOf,
   );
 
@@ -1413,14 +1373,24 @@ export const toPascalScene = (
     const sinkFolder =
       sinkFolderOf(furniture, furnitureToBuild, usageOf) ??
       (contextRole === undefined ? undefined : (modelFolderOf(furniture, style, usage, contextRole) ?? undefined));
-    const node =
+    // Mẫu luật chọn của món đã nhận dựng như đồ sinh (cùng đường hoán đổi hiển thị) + ghi lại thư mục để lượt về giữ.
+    const ruleFolder = ruleFolderOf(furniture);
+    const built = ruleFolder === undefined ? furniture : withoutModel(furniture);
+    const folderFor = ruleFolder ?? sinkFolder;
+    // Cặp nhận: hộp đã lưu là cỡ nhìn thấy (`toSpatial`) → dựng khớp đúng hộp, giữ cỡ người dùng co giãn.
+    const exact = isAdoptedPair(furniture);
+    const rawNode =
       arms === null
-        ? itemNodeOf(furniture, levelNodeId, levelHeightMm, style, usage, counterTopMmOf(furniture, furnitureToBuild, style, usageOf), sinkFolder)
+        ? itemNodeOf(built, levelNodeId, levelHeightMm, style, usage, counterTopMmOf(furniture, furnitureToBuild, style, usageOf), folderFor, exact)
         : longArmNodeOf(
-            furniture,
+            built,
             arms.long,
-            itemNodeOf({ ...furniture, ...arms.long }, levelNodeId, levelHeightMm, style, usage, 0, sinkFolder),
+            itemNodeOf({ ...built, ...arms.long }, levelNodeId, levelHeightMm, style, usage, 0, folderFor, exact),
           );
+    const node = withFields(rawNode, {
+      ...(ruleFolder === undefined ? {} : { [MODEL_FOLDER_FIELD]: ruleFolder }),
+      ...(exact ? { [ADOPTED_FIT_FIELD]: true } : {}),
+    });
 
     /* Hộp quầy gốc vẫn phải có node (thiếu = lượt lưu đọc thành xoá) nhưng ẩn; dãy tủ thay nó là đồ sinh ra.
        Thảm lạc ngoài phòng (`isStrayRug`) cũng vậy: giữ node để lưu không xoá, chỉ không trải ra sân trống. */
@@ -1433,7 +1403,8 @@ export const toPascalScene = (
           )
         : node;
     const repair = repairs?.get(furniture.id);
-    nodes[node.id] = repair === undefined ? shown : withFields(shown, { [REPAIR_FIELD]: repair });
+    const provShown = withRoomSetProv(shown, furniture.id);
+    nodes[node.id] = repair === undefined ? provShown : withFields(provShown, { [REPAIR_FIELD]: repair });
     adopt(levelNodeId, node.id);
 
     /* V1 — nhánh thứ hai của dãy tủ chữ L: đồ sinh ra (`isGeneratedNodeId`). */
@@ -1450,26 +1421,45 @@ export const toPascalScene = (
    * đồ thật. Không bao giờ được lưu (`isGeneratedNodeId`), không tính vào `skipped`: món nào
    * không dựng được thì bỏ im lặng. Chỉ chạy khi `furnish: 'on'` — mặc định cảnh không tự thêm đồ.
    */
+  const baseFurniture = builtFurniture.filter((f) => !adoptedIds.has(f.id));
   const usable = {
     ...graph,
     walls: builtWalls,
     openings: builtOpenings,
     rooms: builtRooms.map((room) => ({ ...room, usage: furnishingUsageOf(room) })),
-    furniture: builtFurniture,
+    furniture: baseFurniture,
   };
   /* H4 — món tự bày người dùng đã xoá (`offIds`) không bày lại; lọc trước `dressingOf`
-     để gối/đèn không bày lên một cái giường đã xoá. */
+     để gối/đèn không bày lên một cái giường đã xoá. Twin thì giữ tới lúc dựng (`notOff`). */
   const notOff = (furniture: Furniture): boolean => !offIds.has(furniture.id);
+  const inLayer = (furniture: Furniture): boolean => notOff(furniture) || twinIds.has(furniture.id);
   const furnishedAll = furnish === 'on' ? furnishEmptyRooms(usable, style) : [];
-  const furnished = furnishedAll.filter(notOff);
-  const dressedAll = furnish === 'on' ? dressingOf({ ...usable, furniture: [...builtFurniture, ...furnished] }, style) : [];
-  const dressed = dressedAll.filter(notOff);
+  const builtById = new Map<string, Furniture>(builtFurniture.map((f) => [f.id, f]));
+  /* Twin đứng ở chỗ/góc của đồ thật (giữ cỡ gốc: chữ ký bộ không đổi) → chăn, thảm, đèn trên mặt đi theo món đã dời/xoay. */
+  const atAdopted = (f: Furniture): Furniture => {
+    const real = twinIds.has(f.id) ? builtById.get(adoptedFurnitureIdOf(f.id)) : undefined;
+    if (real === undefined) return f;
+    const dx = real.centre.x - f.centre.x;
+    const dy = real.centre.y - f.centre.y;
+    const { min, max } = f.boundingBox;
+    return {
+      ...f,
+      centre: real.centre,
+      rotationDeg: real.rotationDeg,
+      boundingBox: { min: { x: min.x + dx, y: min.y + dy }, max: { x: max.x + dx, y: max.y + dy } },
+    };
+  };
+  const furnished = furnishedAll.filter(inLayer).map(atAdopted);
+  // `roomset`: đồ bày phòng trống vào sổ bộ của phòng trước lớp trang trí (đèn bàn/chăn đọc mẫu món chủ).
+  addRoomSetMembers(furnished, (f) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId)));
+  const dressedAll = furnish === 'on' ? dressingOf({ ...usable, furniture: [...baseFurniture, ...furnished] }, style) : [];
+  const dressed = dressedAll.filter(inLayer);
   const builtRoomIds = new Set(builtRooms.map((room) => room.id));
   const aiAll = designAdditionsOf(
     additions.filter((addition) => builtRoomIds.has(addition.roomId as Room['id'])),
-    [...builtFurniture, ...furnished],
+    [...baseFurniture, ...furnished],
   );
-  const aiAdded = aiAll.filter(notOff);
+  const aiAdded = aiAll.filter(inLayer);
   /* Provenance: bày phòng trống = vai + phòng; đồ AI = phòng; trang trí = vai + món/ô mở/phòng chủ (id dài nhất khớp). */
   const furnishedIds = new Set<string>(furnishedAll.map((f) => f.id));
   const aiIds = new Set<string>(aiAll.map((f) => f.id));
@@ -1482,9 +1472,14 @@ export const toPascalScene = (
         : provenanceOf(`dress:${roleInId(f.id)}`, hostIn(f.id, hostPool));
   const dressIdsOf = new Map<string, string[]>();
   // AI (designAdditionsOf) đặt thảm theo tâm nó tự chọn và thảm không bị chặn chồng: tâm ngoài phòng → bỏ.
+  /* Chặn chồng: twin không dự (đồ thật dựng thay; anh em giữ nguyên dù người dùng dời món sát chúng). Món đã nhận mà
+     twin không còn sinh (đổi công năng phòng…) là đồ thật thường: đồ sinh mới không được chồng lên nó. */
+  // Twin còn được sinh ở đâu đó lượt này: lớp dẫn xuất hoặc dãy tủ tách từ quầy (`expanded`).
+  const layerIds = new Set<string>([...furnished, ...dressed, ...aiAdded, ...expanded].map((f) => f.id));
+  const orphans = builtFurniture.filter((f) => adoptedIds.has(f.id) && ![...twinIds].some((id) => layerIds.has(id) && adoptedFurnitureIdOf(id) === f.id));
   const generatedAll = withoutOverlaps(
-    [...furnished, ...dressed, ...aiAdded].filter((f) => !isStrayRug(f, builtRooms)),
-    builtFurniture,
+    [...furnished, ...dressed, ...aiAdded].filter((f) => notOff(f) && !isStrayRug(f, builtRooms)),
+    [...baseFurniture, ...orphans],
   );
   /* Chậu/mặt bếp sinh ra nằm trên mặt đá dãy tủ sinh ra (hoặc thật), như đường đồ thật ở trên. */
   const counterPool = [...builtFurniture, ...generatedAll];
@@ -1508,7 +1503,10 @@ export const toPascalScene = (
       sinkFolderOf(furniture, counterPool, usageOfGenerated),
     );
 
-    nodes[node.id] = withFields({ ...node, metadata: { ...node.metadata, generated: 'dressing' } }, { [PROV_FIELD]: provOfGenerated(furniture) });
+    nodes[node.id] = withRoomSetProv(
+      withFields({ ...node, metadata: { ...node.metadata, generated: 'dressing' } }, { [PROV_FIELD]: provOfGenerated(furniture) }),
+      furniture.id,
+    );
     adopt(levelNodeId, node.id);
     if (furniture.roomId !== undefined) dressIdsOf.set(furniture.roomId, [...(dressIdsOf.get(furniture.roomId) ?? []), furniture.id]);
   }
@@ -1661,7 +1659,7 @@ export const toPascalScene = (
   for (const node of Object.values(nodes)) {
     const fields = node.metadata?.appfront?.fields;
     const prov = fields?.[PROV_FIELD] as SceneProvenance | undefined;
-    if (prov !== undefined) generatedByRule[prov.rule] = (generatedByRule[prov.rule] ?? 0) + 1;
+    if (prov !== undefined && prov.cls === 'generated') generatedByRule[prov.rule] = (generatedByRule[prov.rule] ?? 0) + 1;
     if (fields?.[REPAIR_FIELD] !== undefined) repaired += 1;
   }
 

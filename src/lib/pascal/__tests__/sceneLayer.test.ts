@@ -37,9 +37,9 @@ const lamp = items(scene).find((node) => /^item_DRESS-tableLamp-DRESS-nightstand
 if (lamp === undefined) throw new Error('F2 phải có đèn bàn trên tủ đầu giường tự bày');
 const bedroomId = adoptableRoomOf(lamp) as string;
 
-/** Người dùng dời một món tự bày của phòng ngủ → cả phòng thành đồ thật (V4); trả về đồ thị sau khi lưu. */
+/** Người dùng dời giường tự bày của phòng ngủ → riêng giường thành đồ thật (V4); trả về đồ thị sau khi lưu. */
 const adoptBedroom = (): SpatialGraph => {
-  const target = items(scene).find((node) => adoptableRoomOf(node) === bedroomId && node.id.includes('-bed-')) as PascalItemNode;
+  const target = scene.nodes[toPascalId('item', `DRESS-bed-${bedroomId}`)] as PascalItemNode;
   const moved: PascalNode = { ...target, position: [target.position[0] + 0.1, target.position[1], target.position[2]] };
   const result = createPascalEditCommand({
     graph: normalizeSpatial(graph),
@@ -57,14 +57,16 @@ const adoptBedroom = (): SpatialGraph => {
   };
 };
 
-describe('lớp cảnh v1 — không nhân đôi sau khi nhận cả phòng', () => {
-  it('nạp lại sau khi nhận phòng ngủ: không còn món sinh nào trong phòng, số món giữ nguyên', () => {
+describe('lớp cảnh v1 — không nhân đôi sau khi nhận một món', () => {
+  it('nạp lại sau khi nhận giường: anh em vẫn là món sinh, giường chỉ còn bản đồ thật, số món giữ nguyên', () => {
     const saved = adoptBedroom();
     const reloaded = toPascalScene(saved, { furnish: 'on' }).scene;
-    const dressedIn = (of: PascalScene) => inRoom(of, bedroomId).filter((node) => bodyOfPascalId(node.id).startsWith('DRESS-'));
+    // Đồ đặt trên/dưới giường dựng lại theo chỗ mới của giường (có thể không còn chỗ đặt); còn lại giữ nguyên.
+    const offBed = (node: PascalItemNode): boolean => !node.id.includes(`-DRESS-bed-${bedroomId}`);
+    const dressedIn = (of: PascalScene) => inRoom(of, bedroomId).filter((node) => bodyOfPascalId(node.id).startsWith('DRESS-') && offBed(node));
 
-    expect(dressedIn(reloaded).map((node) => node.id)).toEqual([]);
-    expect(inRoom(reloaded, bedroomId)).toHaveLength(inRoom(scene, bedroomId).length);
+    expect(dressedIn(reloaded).map((node) => node.id)).toEqual(dressedIn(scene).map((node) => node.id).filter((id) => id !== toPascalId('item', `DRESS-bed-${bedroomId}`)));
+    expect(inRoom(reloaded, bedroomId).filter(offBed)).toHaveLength(inRoom(scene, bedroomId).filter(offBed).length);
   });
 
   it('tải lại hai lần: cùng tập id sinh', () => {

@@ -65,6 +65,7 @@ import { appFrontIdOf, bodyOfPascalId } from './ids';
 import { roofIdOfSegment, roofNodeIdOf } from './roofs';
 import { undoFloorTransforms } from './floorAlignment';
 import { isGeneratedNodeId } from './sceneDressing';
+import { DRESSING_OFF_MAX } from './sceneLayer';
 import {
   adoptableRoomOf,
   isEditedGenerated,
@@ -446,17 +447,18 @@ export const createPascalEditCommand = (input: PascalEditInput): PascalEditResul
   /* Tầng căn (báo cáo 2.8.2) chỉ dời khi hiển thị: gỡ một lần ở đây để mọi so sánh với
      siêu dữ liệu đã lưu (đồ bày biện "đã dời chưa", toSpatialGraph) dùng toạ độ đã lưu. */
   const scene = undoFloorTransforms(input.scene);
-  /* V4 — sửa (dời/xoay/kéo) một món bày biện sinh ra còn trong cảnh thì cả bộ
-     của phòng ấy thành đồ thật trong cùng lệnh: nhận nửa bộ thì nửa kia biến
-     mất ở lượt mở sau (`furnishEmptyRooms` chỉ lo phòng trống). Xoá thì ghi `Room.dressingOff` (H4). */
-  const adoptRoomIds = new Set(
-    input.commit.changedNodeIds
-      .map((nodeId) => scene.nodes[nodeId])
-      .map((node) => (isEditedGenerated(node) ? adoptableRoomOf(node) : null))
-      .filter((roomId): roomId is string => roomId !== null)
+  /* V4 — sửa (dời/xoay/kéo/sơn/đổi mẫu) một món bày biện sinh ra: RIÊNG món ấy thành đồ thật, id gốc vào
+     `dressingOff`; anh em vẫn là lớp dẫn xuất (`toPascal` tính phòng như khi món còn là đồ sinh, nhận ra cặp qua
+     `adoptedFurnitureIdOf`). Món đã nhận trong phiên (có trong sổ id) mà vẫn khác lúc nạp thì giữ nhận qua các lượt
+     sau. Hoàn tác về đúng như cũ thì món lại là đồ sinh. Xoá thì ghi `Room.dressingOff` (H4). */
+  const changedIds = new Set(input.commit.changedNodeIds);
+  const adoptNodeIds = new Set(
+    Object.values(scene.nodes)
+      .filter((node) => (changedIds.has(node.id) || idBook.has(node.id)) && isEditedGenerated(node))
+      .map((node) => node.id)
       .concat(input.adoptNodeIds ?? []),
   );
-  const { graph: after, skipped } = toSpatialGraph(scene, idBook, adoptRoomIds);
+  const { graph: after, skipped } = toSpatialGraph(scene, idBook, adoptNodeIds);
   const afterById = new Map<string, SpatialEntity>();
 
   for (const entity of [
@@ -524,24 +526,13 @@ export const createPascalEditCommand = (input: PascalEditInput): PascalEditResul
     }
   }
 
-  for (const node of Object.values(scene.nodes)) {
-    const minted = adoptRoomIds.has(adoptableRoomOf(node) ?? '') ? idBook.get(node.id) : undefined;
-    const change =
-      minted === undefined || seen.has(minted)
-        ? null
-        : // Đã nhận nuôi ở lượt trước thì đối tượng đã có trong bản vẽ: lượt này là sửa (hoặc không gì), không phải thêm.
-          changeBetween('furniture', graphEntity(input.graph, minted), afterById.get(minted));
-
-    if (minted !== undefined && change !== null) {
-      seen.add(minted);
-      changes.push(change);
-    }
-  }
-
-  /* Món rời đã thành đồ thật: sửa tiếp là cập nhật; hoàn tác về như lúc nạp hay xoá hẳn thì đồ thật ấy đi theo. */
+  /* Món sinh đã thành đồ thật: sửa tiếp là cập nhật; hoàn tác về như lúc nạp hay xoá hẳn thì đồ thật ấy đi theo. */
   for (const nodeId of input.commit.changedNodeIds) {
     const node = scene.nodes[nodeId];
-    const minted = isGeneratedNodeId(nodeId) && (node === undefined || isLooseGenerated(node)) ? idBook.get(nodeId) : undefined;
+    const minted =
+      isGeneratedNodeId(nodeId) && (node === undefined || isLooseGenerated(node) || adoptableRoomOf(node) !== null)
+        ? idBook.get(nodeId)
+        : undefined;
 
     if (minted === undefined || seen.has(minted)) continue;
     const now = afterById.get(minted);
@@ -599,6 +590,19 @@ export const createPascalEditCommand = (input: PascalEditInput): PascalEditResul
       type: PASCAL_COMMAND_TYPE,
       code: 'PASCAL_NO_CHANGE',
       reasons: ['Thay đổi này không làm bản vẽ khác đi nên không có gì để ghi.'],
+    });
+  }
+
+  /* `Room.dressingOff` không rơi dấu của món đã nhận (rơi = món mọc đôi): đầy trần thì từ chối nhận thêm, giữ nguyên dữ liệu. */
+  const full = after.rooms.find((room) => (room.dressingOff ?? []).length > DRESSING_OFF_MAX);
+
+  if (full !== undefined) {
+    return err({
+      type: PASCAL_COMMAND_TYPE,
+      code: 'PASCAL_UNKNOWN_NODE',
+      reasons: [
+        `Phòng "${full.name}" đã có ${formatCount(DRESSING_OFF_MAX)} món bày sẵn được sửa hoặc xoá, chưa nhận thêm được. Món đã được đặt về như cũ.`,
+      ],
     });
   }
 

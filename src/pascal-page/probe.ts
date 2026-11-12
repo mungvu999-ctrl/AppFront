@@ -102,11 +102,11 @@ if (window.__pascalProbe) {
 }
 
 
-// Biến thể theo phòng / bộ ghế (vòng 11 b1, `?enable=roomvariety,chairset,varietyai`, `roomVariety.ts`): có số cả khi không cờ.
-// { flags, byRole{vai: {items, rooms, models, maxRoomsOneModel, folders}}, tables{bàn: {chairs, models, folders}}, changes{id: {from, to, rule}} }.
+// Bộ nội thất theo phòng (vòng 12 làn S, `?enable=roomset`, `roomSet.ts`): phòng → { anchor, items[{id, role, from, to, rule, cost, why}] }.
+// Rỗng khi cờ tắt. `rule: 'keep'` kèm `why` = lý do giữ mẫu cũ.
 if (window.__pascalProbe) {
-  void import('@/lib/pascal/sceneVariety').then(({ roomVarietyReport }) => {
-    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { roomVariety: roomVarietyReport });
+  void import('@/lib/pascal/sceneVariety').then(({ roomSetReport }) => {
+    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { roomSet: roomSetReport });
   });
 }
 

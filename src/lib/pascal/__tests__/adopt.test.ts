@@ -1,6 +1,6 @@
 /**
- * V4 — sửa một món bày biện sinh ra thì cả bộ của phòng thành đồ thật; đồ
- * dời sang phòng khác thì `roomId` theo sang.
+ * V4 — sửa một món bày biện sinh ra thì RIÊNG món ấy thành đồ thật (id suy từ id sinh, id sinh vào `dressingOff`),
+ * anh em vẫn là đồ sinh; đồ dời sang phòng khác thì `roomId` theo sang.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -11,7 +11,7 @@ import type { Furniture, SpatialGraph } from '@/domain/spatial/types';
 
 import { fixtureF2 } from '../__fixtures__';
 import { createPascalEditCommand } from '../fromPascal';
-import { isGeneratedLightId } from '../sceneDressing';
+import { adoptedFurnitureIdOf, isGeneratedLightId } from '../sceneDressing';
 import { toPascalScene } from '../toPascal';
 import { adoptableRoomOf, type PascalIdBook } from '../toSpatial';
 import type { PascalItemNode, PascalNode, PascalScene } from '../types';
@@ -49,32 +49,28 @@ const adopt = (idBook: PascalIdBook = new Map()) =>
     idBook,
   });
 
+const furnitureOf = (changes: readonly { kind: string; after?: unknown }[]): Furniture[] =>
+  changes.filter((change) => change.kind === 'furniture').map((change) => change.after as Furniture);
+
 describe('nhận nuôi đồ bày biện sinh ra', () => {
-  it('dời một món: cả bộ của phòng thành đồ thật, id F-, chưa duyệt', () => {
+  it('dời một món: riêng món đó thành đồ thật (id suy từ id sinh, chưa duyệt, mẫu đang thấy); phòng ghi dressingOff', () => {
     const result = adopt();
 
     if (!result.ok) throw new Error(result.error.reasons.join(' '));
 
-    const added = result.data.changes.map((change) => change.after as Furniture);
+    const added = furnitureOf(result.data.changes);
+    const dressId = target.id.slice('item_'.length);
 
-    expect(
-      result.data.changes.every((change) => change.kind === 'furniture' && change.before === null),
-    ).toBe(true);
-    expect(added).toHaveLength(dressOf(scene, roomId).length);
-
-    for (const item of added) {
-      expect(item.id).toMatch(/^F-/);
-      expect(item).toMatchObject({ source: 'human', reviewed: false, confidence: 1, roomId });
-      // W3b: variant/heightMm/liftMm theo món sinh ra; khe/mẫu chưa sơn chưa thay thì vắng.
-      // Đồ trang trí AppFront (D) giữ mẫu của nó (`model` appfront-decor-*), còn khe theo phong cách thì vắng.
-      expect(item).not.toHaveProperty('slots');
-      if (!(item.model?.id ?? '').startsWith('appfront-decor-')) expect(item).not.toHaveProperty('model');
-    }
-
-    expect(added.some((item) => item.centre.x === Math.round(moved.position[0] * 1000))).toBe(true);
+    expect(added).toHaveLength(1);
+    expect(result.data.changes.filter((change) => change.kind === 'furniture').every((change) => change.before === null)).toBe(true);
+    expect(added[0]).toMatchObject({ id: adoptedFurnitureIdOf(dressId), source: 'human', reviewed: false, confidence: 1, roomId });
+    expect(added[0]).not.toHaveProperty('slots');
+    expect(added[0]?.model?.src).toMatch(/^\/items\/[a-z0-9_-]+\/model\.glb$/);
+    expect(added[0]?.centre.x).toBe(Math.round(moved.position[0] * 1000));
+    expect(result.data.changes.find((change) => change.kind === 'room')?.after).toMatchObject({ dressingOff: [dressId] });
   });
 
-  it('F-02: đổi mẫu một món chưa dời cũng nhận cả bộ, mẫu mới được lưu', () => {
+  it('F-02: đổi mẫu một món chưa dời: riêng món đó được nhận, mẫu mới được lưu', () => {
     const swapped: PascalNode = { ...target, asset: { ...target.asset, id: 'single-bed', src: '/items/single-bed/model.glb' } };
     const result = createPascalEditCommand({
       graph: normalizeSpatial(graph),
@@ -84,9 +80,9 @@ describe('nhận nuôi đồ bày biện sinh ra', () => {
     });
 
     if (!result.ok) throw new Error(result.error.reasons.join(' '));
-    const added = result.data.changes.map((change) => change.after as Furniture);
-    expect(added).toHaveLength(dressOf(scene, roomId).length);
-    expect(added.some((item) => item.model?.src === '/items/single-bed/model.glb')).toBe(true);
+    const added = furnitureOf(result.data.changes);
+    expect(added).toHaveLength(1);
+    expect(added[0]?.model?.src).toBe('/items/single-bed/model.glb');
   });
 
   it('đèn trần không bao giờ được nhận nuôi', () => {
@@ -95,20 +91,28 @@ describe('nhận nuôi đồ bày biện sinh ra', () => {
     expect(adoptableRoomOf(light)).toBeNull();
   });
 
-  it('nạp lại sau khi nhận: cùng vị trí, không mọc thêm bộ thứ hai', () => {
+  it('nạp lại sau khi nhận: cùng vị trí, anh em vẫn là đồ sinh, không mọc bản thứ hai của món đã nhận', () => {
     const result = adopt();
 
     if (!result.ok) throw new Error('phải nhận được');
 
-    const adopted = result.data.changes.map((change) => change.after as Furniture);
-    const reloaded = toPascalScene({ ...graph, furniture: [...graph.furniture, ...adopted] }, { furnish: 'on' }).scene;
+    const adopted = furnitureOf(result.data.changes);
+    const room = result.data.changes.find((change) => change.kind === 'room')?.after as SpatialGraph['rooms'][number];
+    const reloaded = toPascalScene(
+      { ...graph, furniture: [...graph.furniture, ...adopted], rooms: graph.rooms.map((r) => (r.id === room.id ? room : r)) },
+      { furnish: 'on' },
+    ).scene;
     const spots = (of: PascalItemNode[]): string[] =>
       of.map((node) => `${node.position[0].toFixed(3)},${node.position[2].toFixed(3)}`).sort();
+    // Đồ trang trí đặt trên/cạnh một món (chủ là đồ, không phải phòng) dựng lại theo chỗ mới của món đã nhận — có thể
+    // dịch hoặc hết chỗ đặt (chăn trên giường sát dãy tủ vừa dời); món bày theo phòng và đồ thật giữ nguyên chỗ.
+    const onTarget = (node: PascalItemNode): boolean => /^item_DRESS-[A-Za-z]+-(DRESS|F)-/.test(node.id);
     const inRoom = (of: PascalScene): PascalItemNode[] =>
-      items(of).filter((node) => node.metadata?.appfront?.fields?.['roomId'] === roomId);
+      items(of).filter((node) => node.metadata?.appfront?.fields?.['roomId'] === roomId && !onTarget(node));
 
     expect(spots(inRoom(reloaded))).toEqual(spots(inRoom(editedScene)));
-    expect(dressOf(reloaded, roomId)).toHaveLength(0);
+    expect(dressOf(reloaded, roomId).filter((node) => !onTarget(node))).toHaveLength(dressOf(scene, roomId).filter((node) => !onTarget(node)).length - 1);
+    expect(reloaded.nodes[target.id]).toBeUndefined();
   });
 
   it('cùng sổ id: lượt sau nhớ id đã cấp', () => {
@@ -124,18 +128,19 @@ describe('nhận nuôi đồ bày biện sinh ra', () => {
 });
 
 describe('N1 — sửa tiếp sau khi đã nhận nuôi (cảnh vẫn giữ node sinh ra)', () => {
-  it('lượt thứ hai trên món khác của cùng phòng: một lần sửa, không thêm lại cả bộ', () => {
+  it('sửa tiếp chính món đã nhận: một lần sửa đồ thật ấy, không thêm lại', () => {
     const book: PascalIdBook = new Map();
     const first = adopt(book);
 
     if (!first.ok) throw new Error(first.error.reasons.join(' '));
 
+    const room = first.data.changes.find((change) => change.kind === 'room')?.after as SpatialGraph['rooms'][number];
     const saved: SpatialGraph = {
       ...graph,
-      furniture: [...graph.furniture, ...first.data.changes.map((change) => change.after as Furniture)],
+      furniture: [...graph.furniture, ...furnitureOf(first.data.changes)],
+      rooms: graph.rooms.map((r) => (r.id === room.id ? room : r)),
     };
-    const other = dressOf(scene, roomId)[1] as PascalItemNode;
-    const shifted: PascalNode = { ...other, position: [other.position[0], other.position[1], other.position[2] + 0.2] };
+    const shifted: PascalNode = { ...target, position: [target.position[0] + 0.1, target.position[1], target.position[2] + 0.2] };
     const second = createPascalEditCommand({
       graph: normalizeSpatial(saved),
       scene: { ...editedScene, nodes: { ...editedScene.nodes, [shifted.id]: shifted } },

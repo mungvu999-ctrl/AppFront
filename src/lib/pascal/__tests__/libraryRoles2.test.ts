@@ -181,7 +181,8 @@ describe('vòng tròn lưu (review Codex B1 #1)', () => {
     const moved: PascalItemNode = { ...lamp, position: [lamp.position[0] + 0.05, lamp.position[1], lamp.position[2]] };
     const result = edit({ ...scene, nodes: { ...scene.nodes, [moved.id]: moved } }, [moved.id]);
     if (!result.ok) throw new Error(result.error.reasons.join(' '));
-    const saved = result.data.changes.map((c) => c.after as Furniture);
+    const saved = result.data.changes.filter((c) => c.kind === 'furniture').map((c) => c.after as Furniture);
+    const rooms = result.data.changes.filter((c) => c.kind === 'room').map((c) => c.after as SpatialGraph['rooms'][number]);
     const savedLamp = saved.find((f) => f.variant === 'tableLamp');
     // Lưu: đường cố định của id chuẩn, `model.id` giữ tiền tố (provenance để đèn đã nhận còn sáng sau tải lại).
     expect(savedLamp?.model).toEqual({ id: `${LIBROLES2_MODEL_PREFIX}${pick}`, src: `/items/${pick}/model.glb` });
@@ -189,7 +190,12 @@ describe('vòng tròn lưu (review Codex B1 #1)', () => {
     // Không món đã lưu nào mang URL ký.
     expect(saved.every((f) => f.model === undefined || /^\/items\/[a-z0-9_-]+\/model\.glb$/.test(f.model.src))).toBe(true);
 
-    const reloaded = itemsOf(toPascalScene({ ...graph, furniture: [...graph.furniture, ...saved] }, { furnish: 'on' }).scene).find(
+    const reloaded = itemsOf(
+      toPascalScene(
+        { ...graph, furniture: [...graph.furniture, ...saved], rooms: graph.rooms.map((r) => rooms.find((x) => x.id === r.id) ?? r) },
+        { furnish: 'on' },
+      ).scene,
+    ).find(
       (n) => n.id === `item_${savedLamp?.id}`,
     );
     expect(reloaded?.asset.id).toBe(`${LIBROLES2_MODEL_PREFIX}${pick}`);
