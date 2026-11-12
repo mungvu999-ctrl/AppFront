@@ -1152,7 +1152,7 @@ export const roomSetOf = (
     // còn khi lý do cấm là an toàn/chất lượng hoặc không có mẫu dựng sẵn hợp lệ. Cỡ người dùng xác nhận không dựng cỡ thật.
     const forceable = cur === null || forbid === 'va chạm' || (forbid?.startsWith(FUNC_REJECT) ?? false);
     const stDims = st === undefined ? undefined : ctx.dimsOf(st);
-    if (forceable && st !== undefined && st !== cur && stDims !== undefined && b !== undefined && m.sizeFrom !== 'user') {
+    if (forceable && st !== undefined && stDims !== undefined && b !== undefined && m.sizeFrom !== 'user') {
       const cm = conceptMissOf(st);
       if (forbiddenOf(realMemberOf(m), st, cm === 'va chạm' ? undefined : cm) === undefined) {
         const forced = [forbid ?? 'không mẫu luật cũ', ...(clear(realRectOf(m, b, stDims)) ? [] : ['va chạm'])].filter((x, i, a) => a.indexOf(x) === i).join(', ');

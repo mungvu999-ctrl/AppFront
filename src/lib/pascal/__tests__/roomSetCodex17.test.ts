@@ -280,6 +280,13 @@ describe('Điều phối M17-2 — null chỉ vì va chạm / ngoài công năng
     expect(roomSetOf('r', [m], new Map(), ctx, [ALL]).get('s')).toMatchObject({ to: 'sofa', uniform: 'real', forced: expect.stringContaining('không mẫu luật cũ') });
   });
 
+  it('mẫu luật cũ CHÍNH LÀ mẫu dựng sẵn, trượt → vẫn được dựng cỡ thật (đổi phép khớp, cùng mẫu) — Codex M17-3 #1', () => {
+    const m = mem('s', 'sofa', [], { current: 'sofa', stock: 'sofa', box: BOX, shownOf: (f) => DIMS[f] });
+    const d = roomSetOf('r', [m], new Map(), ctx, [ALL]).get('s');
+    expect(d?.to).toBe('sofa');
+    expect(d?.uniform).toBe('real');
+  });
+
   it('mẫu dựng sẵn cỡ thật vượt trần → vẫn null (trần không được bỏ qua)', () => {
     // Trần 1,2 − 0,3 = 0,9: luật cũ cao 0,85 qua trần nhưng va chạm; mẫu dựng sẵn cao 0,95 không.
     const m = mem('s', 'sofa', [], { current: 'sofa-old', stock: 'sofa-tall', box: BOX, ceilingM: 1.2, shownOf: (f) => DIMS[f] });

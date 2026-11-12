@@ -46,7 +46,13 @@ import { EXTERIOR_SKIRTING, isDetailsEnabled } from '@/pascal-page/realism/detai
 
 import { designAdditionsOf } from './designStyles';
 import { applyFloorTransforms, floorDisplayTransformsOf } from './floorAlignment';
-import { CATALOG_MODELS, VARIANT_MODEL, isServerModel, modelSrcOf, thumbnailOf } from './furnitureCatalog';
+import {
+  CATALOG_MODELS,
+  VARIANT_MODEL,
+  isServerModel,
+  modelSrcOf,
+  thumbnailOf,
+} from './furnitureCatalog';
 import { bodyOfPascalId, BUILDING_NODE_ID, SITE_NODE_ID, toPascalId } from './ids';
 import { expandKitchenRuns, isKitchenRunHost, KITCHEN_RUN_ID_PREFIX } from './kitchenRuns';
 import { libRoles2Apply, libRoles2LampOf } from './libraryRoles2';
@@ -89,10 +95,28 @@ import {
   type SceneRepair,
 } from './sceneLayer';
 import { itemFitOf, REAL_BACK_SHIFT_FIELD, REAL_FIT_FIELD, realFitModelIdOf } from './itemFit';
-import { furnishingUsageOf, isPlausibleStair, lShapedRunArms, orphanWallIds, weldWallEnds } from './structureFixes';
+import {
+  furnishingUsageOf,
+  isPlausibleStair,
+  lShapedRunArms,
+  orphanWallIds,
+  weldWallEnds,
+} from './structureFixes';
 import { doorSwingRects, wallRects } from './placement';
 import { planRectOf, ROOMSET_VERSION, roomSetKeysOf, type SetZone } from './roomSet';
-import { addRoomSetMembers, contextRolesOf, finishRoomSet, isThinHob, isThinSink, modelFolderOf, roleOf, roomSetSwapOf, roomSetUniformOf, setRoomSetKeys, withoutOverlaps } from './sceneVariety';
+import {
+  addRoomSetMembers,
+  contextRolesOf,
+  finishRoomSet,
+  isThinHob,
+  isThinSink,
+  modelFolderOf,
+  roleOf,
+  roomSetSwapOf,
+  roomSetUniformOf,
+  setRoomSetKeys,
+  withoutOverlaps,
+} from './sceneVariety';
 import type {
   AppFrontOrigin,
   PascalDoorNode,
@@ -189,24 +213,43 @@ const skip = (id: string, kind: string, reason: string): SkippedEntity => ({ id,
 
 /** Thêm trường vào `metadata.appfront.fields` (lớp cảnh v1); node chưa có `appfront` (đèn trần) thì mang khung trung tính. */
 const withFields = <N extends PascalNode>(node: N, extra: Readonly<Record<string, unknown>>): N => {
-  const origin: AppFrontOrigin = node.metadata?.appfront ?? { confidence: 1, source: 'ai', reviewed: false };
-  return { ...node, metadata: { ...node.metadata, appfront: { ...origin, fields: { ...origin.fields, ...extra } } } };
+  const origin: AppFrontOrigin = node.metadata?.appfront ?? {
+    confidence: 1,
+    source: 'ai',
+    reviewed: false,
+  };
+  return {
+    ...node,
+    metadata: { ...node.metadata, appfront: { ...origin, fields: { ...origin.fields, ...extra } } },
+  };
 };
 
 /** Món `roomset` đổi mẫu: ghi `prov.model` (đồ sinh giữ luật sinh; đồ AI mang prov hạng `ai`). */
 const withRoomSetProv = <N extends PascalNode>(node: N, furnitureId: string): N => {
   const swap = roomSetSwapOf(furnitureId);
   if (swap === undefined) return node;
-  const prov = (node.metadata?.appfront?.fields?.[PROV_FIELD] as SceneProvenance | undefined) ?? { cls: 'ai', rule: 'roomset', version: SCENE_LAYER_VERSION };
-  return withFields(node, { [PROV_FIELD]: { ...prov, model: { rule: 'roomset', version: ROOMSET_VERSION, from: swap.from } } });
+  const prov = (node.metadata?.appfront?.fields?.[PROV_FIELD] as SceneProvenance | undefined) ?? {
+    cls: 'ai',
+    rule: 'roomset',
+    version: SCENE_LAYER_VERSION,
+  };
+  return withFields(node, {
+    [PROV_FIELD]: {
+      ...prov,
+      model: { rule: 'roomset', version: ROOMSET_VERSION, from: swap.from },
+    },
+  });
 };
 
 /** Vai nhúng trong id món sinh `DRESS-<vai>-…`. */
-const roleInId = (id: string): string => id.slice(GENERATED_DRESS_PREFIX.length).split('-')[0] ?? '';
+const roleInId = (id: string): string =>
+  id.slice(GENERATED_DRESS_PREFIX.length).split('-')[0] ?? '';
 
 /** Id chủ dài nhất nằm trong id món sinh (`DRESS-tableLamp-DRESS-nightstand-R-1` → `DRESS-nightstand-R-1`, không phải `R-1`). */
 const hostIn = (id: string, pool: readonly string[]): string | undefined =>
-  pool.filter((hostId) => hostId !== id && id.includes(hostId)).sort((a, b) => b.length - a.length)[0];
+  pool
+    .filter((hostId) => hostId !== id && id.includes(hostId))
+    .sort((a, b) => b.length - a.length)[0];
 
 /** Họ luật chạy ở MỌI lượt (không phụ thuộc `furnish`/`additions`): id của chúng vắng mặt = phần tử gốc đã mất. */
 const ALWAYS_RUN_PREFIXES = [
@@ -295,7 +338,10 @@ const wallNodeNameOf = (wall: Wall, ordinal: number): string => {
  * Vách giữa hai phòng (cả hai phía trong) để trống như Pascal: vẫn đứng nguyên. Sân decking
  * tính là ngoài nhà, như `swingDirectionOf`.
  */
-const wallSidesOf = (wall: Wall, rooms: readonly Room[]): Pick<PascalWallNode, 'frontSide' | 'backSide'> => {
+const wallSidesOf = (
+  wall: Wall,
+  rooms: readonly Room[],
+): Pick<PascalWallNode, 'frontSide' | 'backSide'> => {
   const { start, end } = wall.centreline;
   const length = Math.hypot(end.x - start.x, end.y - start.y);
   if (!(length > 0)) return {};
@@ -305,7 +351,9 @@ const wallSidesOf = (wall: Wall, rooms: readonly Room[]): Pick<PascalWallNode, '
   const mid = arcApex(start, end, wall.curveOffsetMm);
   const inside = (sign: number): boolean => {
     const p = { x: mid.x + normal.x * reach * sign, y: mid.y + normal.y * reach * sign };
-    return rooms.some((r) => r.levelId === wall.levelId && r.finish !== 'decking' && insideOutline(p, r.outline));
+    return rooms.some(
+      (r) => r.levelId === wall.levelId && r.finish !== 'decking' && insideOutline(p, r.outline),
+    );
   };
   const front = inside(1);
   const back = inside(-1);
@@ -317,8 +365,13 @@ const wallSidesOf = (wall: Wall, rooms: readonly Room[]): Pick<PascalWallNode, '
  * Lan can lô gia: tường bao thẳng, không ô mở, một phía là phòng `loggia`, phía kia ngoài căn (không
  * phòng nào). Dò như `wallSidesOf`. Người dùng đã chọn tường kính thì giữ tường kính cao đủ tầng.
  */
-export const isLoggiaRailing = (wall: Wall, rooms: readonly Room[], hasOpenings: boolean): boolean => {
-  if (wall.kind !== 'envelope' || hasOpenings || wall.curveOffsetMm || isGlassWall(wall)) return false;
+export const isLoggiaRailing = (
+  wall: Wall,
+  rooms: readonly Room[],
+  hasOpenings: boolean,
+): boolean => {
+  if (wall.kind !== 'envelope' || hasOpenings || wall.curveOffsetMm || isGlassWall(wall))
+    return false;
   const { start, end } = wall.centreline;
   const length = Math.hypot(end.x - start.x, end.y - start.y);
   if (!(length > 0)) return false;
@@ -342,7 +395,13 @@ const OPEN_RAILING_THICKNESS_MM = 100;
  * (lượt về đọc `height` của tường) nhưng ẩn; lan can là đồ sinh ra `DRESS-`, chỉ lưu khi người dùng sửa (thành đồ thật) hoặc xoá (`dressingOff`).
  */
 const railingNodeOf = (
-  { anchor, levelId, start, end, thicknessMm }: { anchor: string; levelId: Wall['levelId'] } & Segment & { thicknessMm: number },
+  {
+    anchor,
+    levelId,
+    start,
+    end,
+    thicknessMm,
+  }: { anchor: string; levelId: Wall['levelId'] } & Segment & { thicknessMm: number },
   levelNodeId: PascalNodeId,
   levelHeightMm: number,
   style: SceneStyle,
@@ -369,8 +428,15 @@ const railingNodeOf = (
     0,
     'rectangular-carpet',
   );
-  const slots = Object.fromEntries(Object.keys(node.slots ?? { a: '' }).map((key) => [key, RAILING_GLASS_REF]));
-  return { ...node, name: 'Lan can lô gia', slots, metadata: { ...node.metadata, generated: 'part' } };
+  const slots = Object.fromEntries(
+    Object.keys(node.slots ?? { a: '' }).map((key) => [key, RAILING_GLASS_REF]),
+  );
+  return {
+    ...node,
+    name: 'Lan can lô gia',
+    slots,
+    metadata: { ...node.metadata, generated: 'part' },
+  };
 };
 
 /**
@@ -381,7 +447,11 @@ const railingNodeOf = (
  * `skirting.exterior` (luật vá scripts/realism/r9u-skirt-sides.mjs). Lượt về không đọc `skirting`: sửa
  * phào của một tường trong phiên không lưu được, tải lại thì về như cũ.
  */
-const exteriorSkirtingOf = (wall: Wall, style: SceneStyle, rooms: readonly Room[]): Pick<PascalWallNode, 'skirting'> => {
+const exteriorSkirtingOf = (
+  wall: Wall,
+  style: SceneStyle,
+  rooms: readonly Room[],
+): Pick<PascalWallNode, 'skirting'> => {
   const interior = wallDressingOf(wall, style).skirting;
   if (!isDetailsEnabled() || interior === undefined) return {};
   const { frontSide, backSide } = wallSidesOf(wall, rooms);
@@ -415,7 +485,10 @@ const wallNodeOf = (
   ...exteriorSkirtingOf(wall, style, rooms),
   // W3a — khe của phong cách (chưa sơn): lượt về chỉ ghi `Wall.paint` cho mặt khác cái này.
   metadata: {
-    appfront: originOf(wall, { kind: wall.kind, styleSlots: wallDressingOf({ kind: wall.kind, heightMm: wall.heightMm }, style).slots }),
+    appfront: originOf(wall, {
+      kind: wall.kind,
+      styleSlots: wallDressingOf({ kind: wall.kind, heightMm: wall.heightMm }, style).slots,
+    }),
   },
 });
 
@@ -496,7 +569,12 @@ const doorLeafOf = (
 const windowStyleOf = (
   opening: Opening,
 ): Pick<PascalWindowNode, 'openingKind' | 'windowType' | 'casementStyle' | 'hingesSide'> => {
-  const fixed = { openingKind: 'window', windowType: 'fixed', casementStyle: 'single', hingesSide: 'left' } as const;
+  const fixed = {
+    openingKind: 'window',
+    windowType: 'fixed',
+    casementStyle: 'single',
+    hingesSide: 'left',
+  } as const;
   switch (opening.swing) {
     case 'sliding':
       return { ...fixed, windowType: 'sliding' };
@@ -571,7 +649,10 @@ const slabNodeOf = (room: Room, levelNodeId: PascalNodeId, style: SceneStyle): P
     appfront: originOf(room, {
       usage: room.usage,
       style: style.id,
-      styleSurface: floorMaterialOf({ usage: room.usage, ...(room.finish === undefined ? {} : { finish: room.finish }) }, style),
+      styleSurface: floorMaterialOf(
+        { usage: room.usage, ...(room.finish === undefined ? {} : { finish: room.finish }) },
+        style,
+      ),
     }),
   },
 });
@@ -582,7 +663,11 @@ const slabNodeOf = (room: Room, levelNodeId: PascalNodeId, style: SceneStyle): P
  * công năng" với chiều cao sai (23R-A-014/020). `Room` không có số phòng nên
  * `roomNumber` để mặc định.
  */
-const zoneNodeOf = (room: Room, levelNodeId: PascalNodeId, levelHeightMm: number): PascalZoneNode => ({
+const zoneNodeOf = (
+  room: Room,
+  levelNodeId: PascalNodeId,
+  levelHeightMm: number,
+): PascalZoneNode => ({
   object: 'node',
   id: toPascalId('zone', room.id),
   type: 'zone',
@@ -627,7 +712,11 @@ const WASHER_ROOM_USAGES: ReadonlySet<RoomUsage> = new Set(['bathroom', 'utility
  * Thư mục mô hình Pascal cho một món đồ theo phong cách (J7, `sceneVariety.ts`);
  * `null` = không có mô hình (thang) → chỗ giữ chỗ `asset://`.
  */
-const furnitureFolderOf = (furniture: Furniture, style: SceneStyle, usage: RoomUsage | undefined): string | null =>
+const furnitureFolderOf = (
+  furniture: Furniture,
+  style: SceneStyle,
+  usage: RoomUsage | undefined,
+): string | null =>
   furniture.kind === 'kitchenCabinet' &&
   furniture.variant === 'cabinet' &&
   usage !== undefined &&
@@ -643,7 +732,10 @@ const furnitureFolderOf = (furniture: Furniture, style: SceneStyle, usage: RoomU
 const isStrayRug = (f: Furniture, rooms: readonly Room[]): boolean => {
   const role = roleOf(f);
   if (role !== 'rug' && role !== 'roundRug') return false;
-  const homes = f.roomId === undefined ? rooms.filter((r) => r.levelId === f.levelId) : rooms.filter((r) => r.id === f.roomId);
+  const homes =
+    f.roomId === undefined
+      ? rooms.filter((r) => r.levelId === f.levelId)
+      : rooms.filter((r) => r.id === f.roomId);
   return !homes.some((r) => insideOutline(f.centre, r.outline));
 };
 /** Tâm `p` nằm trong mặt bằng (đã xoay) của `host`. */
@@ -671,7 +763,13 @@ const sinkFolderOf = (
 ): string | undefined =>
   counter.kind === 'kitchenCabinet' &&
   roleOf(counter, usageOf(counter)) === 'counter' &&
-  all.some((s) => s !== counter && s.levelId === counter.levelId && isThinSink(s) && coversPoint(counter, s.centre))
+  all.some(
+    (s) =>
+      s !== counter &&
+      s.levelId === counter.levelId &&
+      isThinSink(s) &&
+      coversPoint(counter, s.centre),
+  )
     ? VARIANT_MODEL.sink?.folder
     : undefined;
 
@@ -820,13 +918,18 @@ const itemNodeOf = (
   const folder =
     furniture.model === undefined
       ? (folderOverride ?? furnitureFolderOf(furniture, style, usage))
-      : swappedFolder !== undefined && Object.prototype.hasOwnProperty.call(CATALOG_MODELS, swappedFolder)
+      : swappedFolder !== undefined &&
+          Object.prototype.hasOwnProperty.call(CATALOG_MODELS, swappedFolder)
         ? swappedFolder
         : null;
   const model =
     folder === null
       ? null
-      : { folder, liftMm: furniture.variant === undefined ? undefined : VARIANT_MODEL[furniture.variant]?.liftMm };
+      : {
+          folder,
+          liftMm:
+            furniture.variant === undefined ? undefined : VARIANT_MODEL[furniture.variant]?.liftMm,
+        };
 
   // Khớp mô hình vào hộp bao CỤC BỘ bằng `asset.scale` (`itemFitOf`, itemFit.ts) — `node.scale` phải giữ
   // [1, 1, 1] vì lượt về đọc lệch khỏi 1 là "người dùng vừa kéo" (toSpatial `isUnscaled`).
@@ -834,22 +937,44 @@ const itemNodeOf = (
   // Mẫu concept roomSet giữ dù lệch tỉ lệ hộp → co đều (không kéo giãn từng trục), kể cả khi thư mục đến qua vai ngữ cảnh
   // (`folderOverride` = kết quả modelFolderOf của chính món). Chỉ khi thư mục dựng ĐÚNG là quyết định co đều của sổ:
   // mẫu khác (chậu mỏng, mẫu luật đã lưu, món có `model`) giữ phép khớp cũ (Codex M16-3 #1).
-  const setUniform = model !== null && furniture.model === undefined && roomSetUniformOf(furniture.id, model.folder);
+  const setUniform =
+    model !== null && furniture.model === undefined && roomSetUniformOf(furniture.id, model.folder);
   // Cặp nhận đã lưu cỡ nhìn thấy + tâm đã gồm độ áp lưng: không dựng CỠ THẬT lần nữa (áp lưng hai lần = trôi mỗi lượt lưu).
   const uniform = exactFit && setUniform === 'real' ? false : setUniform;
-  const fit = model === null ? null : itemFitOf(model.folder, widthM, depthM, furniture.heightMm, levelHeightMm, exactFit, uniform);
+  const fit =
+    model === null
+      ? null
+      : itemFitOf(
+          model.folder,
+          widthM,
+          depthM,
+          furniture.heightMm,
+          levelHeightMm,
+          exactFit,
+          uniform,
+          // Codex M17-3 #2: cùng vai hiệu lực như roomSet.realRectOf (áp lưng tường của mẫu dựng sẵn).
+          uniform === 'real' ? roleOf(furniture, usage) : undefined,
+        );
   const heightM = fit?.heightM ?? heightOfFurniture(furniture, levelHeightMm);
   const liftMm = furniture.liftMm ?? model?.liftMm ?? baseLiftMm;
   const liftM = metresOf(liftMm);
   // Khe phong cách cho, rồi khe người dùng đã sơn đè lên (W3b `Furniture.slots`).
   const styleSlots = fit === null ? {} : itemSlotsOf(fit.folder, style);
-  const wholePaint = styleSlots?.[OUTLINE_PAINT_SLOT] === undefined ? furniture.slots?.[OUTLINE_PAINT_SLOT] : undefined;
+  const wholePaint =
+    styleSlots?.[OUTLINE_PAINT_SLOT] === undefined
+      ? furniture.slots?.[OUTLINE_PAINT_SLOT]
+      : undefined;
   const slots = {
     ...styleSlots,
-    ...(wholePaint === undefined ? {} : Object.fromEntries(Object.keys(styleSlots ?? {}).map((slot) => [slot, wholePaint]))),
+    ...(wholePaint === undefined
+      ? {}
+      : Object.fromEntries(Object.keys(styleSlots ?? {}).map((slot) => [slot, wholePaint]))),
     ...furniture.slots,
   };
-  const lampOf = fit === null ? undefined : (libRoles2LampOf(furniture, style) ?? lampInteractiveOf(fit.folder, style));
+  const lampOf =
+    fit === null
+      ? undefined
+      : (libRoles2LampOf(furniture, style) ?? lampInteractiveOf(fit.folder, style));
 
   return {
     object: 'node',
@@ -873,7 +998,8 @@ const itemNodeOf = (
       src:
         fit !== null && isServerModel(fit.folder)
           ? modelSrcOf(fit.folder)
-          : (furniture.model?.src ?? (fit === null ? `asset://appfront/${furniture.kind}` : modelSrcOf(fit.folder))),
+          : (furniture.model?.src ??
+            (fit === null ? `asset://appfront/${furniture.kind}` : modelSrcOf(fit.folder))),
       dimensions: [widthM, heightM, depthM],
       ...(fit === null ? {} : { offset: fit.offset, rotation: fit.rotation, scale: fit.scale }),
       // Đèn của bản vẽ (cây/bàn/trần/tường) phát sáng thật, bật sẵn, theo phong cách.
@@ -892,13 +1018,17 @@ const itemNodeOf = (
         ...(furniture.variant === undefined ? {} : { variant: furniture.variant }),
         ...(furniture.heightMm === undefined ? {} : { heightMm: furniture.heightMm }),
         ...(furniture.liftMm === undefined ? {} : { liftMm: furniture.liftMm }),
-        ...(uniform === 'real' && fit !== null && fit.backShiftM !== 0 ? { [REAL_BACK_SHIFT_FIELD]: fit.backShiftM } : {}),
+        ...(uniform === 'real' && fit !== null && fit.backShiftM !== 0
+          ? { [REAL_BACK_SHIFT_FIELD]: fit.backShiftM }
+          : {}),
         // Món AI cỡ thật: mẫu + cỡ hiển thị, để lượt về lưu đúng cỡ ấy khi người dùng sửa món (Codex M17-2 #3).
         ...(uniform === 'real' && fit !== null && !furniture.id.startsWith(GENERATED_DRESS_PREFIX)
           ? { [REAL_FIT_FIELD]: { folder: fit.folder, shownM: fit.shownM } }
           : {}),
         // Món sinh: mẫu đang dựng, để lượt về lưu đúng mẫu ấy khi món được nhận (`toSpatial`: `MODEL_FOLDER_FIELD` khi lưu, `SHOWN_SIZE_FIELD` trong `seenSizeM`).
-        ...(fit !== null && furniture.model === undefined && furniture.id.startsWith(GENERATED_DRESS_PREFIX)
+        ...(fit !== null &&
+        furniture.model === undefined &&
+        furniture.id.startsWith(GENERATED_DRESS_PREFIX)
           ? { [MODEL_FOLDER_FIELD]: fit.folder, [SHOWN_SIZE_FIELD]: fit.shownM }
           : {}),
       }),
@@ -937,14 +1067,19 @@ const suggestedOutlineOf = (
     0,
     'rectangular-carpet',
   );
-  const slots = Object.fromEntries(Object.keys(node.slots ?? { a: '' }).map((key) => [key, UNCONFIRMED_MATERIAL_REF]));
+  const slots = Object.fromEntries(
+    Object.keys(node.slots ?? { a: '' }).map((key) => [key, UNCONFIRMED_MATERIAL_REF]),
+  );
   const [widthM, , depthM] = node.asset.dimensions;
   return {
     ...node,
     name: `${node.name} (chưa xác nhận)`,
     slots,
     // Tấm mỏng do `asset.scale`; `dimensions` mang chiều cao thật để ô Cao của thẻ đọc đúng món đồ, không phải 4 mm.
-    asset: { ...node.asset, dimensions: [widthM, heightOfFurniture(furniture, levelHeightMm), depthM] },
+    asset: {
+      ...node.asset,
+      dimensions: [widthM, heightOfFurniture(furniture, levelHeightMm), depthM],
+    },
     metadata: { ...node.metadata, generated: 'part', unconfirmed: true },
   };
 };
@@ -975,7 +1110,15 @@ const longArmNodeOf = (
     },
     ...(origin === undefined
       ? {}
-      : { metadata: { ...armNode.metadata, appfront: { ...origin, fields: { ...origin.fields, boundingBox: furniture.boundingBox } } } }),
+      : {
+          metadata: {
+            ...armNode.metadata,
+            appfront: {
+              ...origin,
+              fields: { ...origin.fields, boundingBox: furniture.boundingBox },
+            },
+          },
+        }),
   };
 };
 
@@ -1100,7 +1243,9 @@ export const toPascalScene = (
   /* Chiều cao tầng: cái thang dựng cao trọn tầng, và trần của phòng. */
   const levelHeightMmOf = new Map<string, number>();
   /* Công năng để BÀY ĐỒ (V2): phòng `other` đoán theo tên; zone/slab/metadata vẫn giữ `room.usage`. */
-  const roomUsageOf = new Map<string, RoomUsage>(graph.rooms.map((room) => [room.id, furnishingUsageOf(room)]));
+  const roomUsageOf = new Map<string, RoomUsage>(
+    graph.rooms.map((room) => [room.id, furnishingUsageOf(room)]),
+  );
   /* Phòng và đồ thật đã dựng được: đồ sinh ra chỉ suy từ chúng (toạ độ hỏng thì không vào). */
   const builtWalls: Wall[] = [];
   const builtOpenings: Opening[] = [];
@@ -1135,14 +1280,26 @@ export const toPascalScene = (
     graph.walls.filter(
       (w) =>
         levelNodeIdOf.has(w.levelId) &&
-        isUsable(w.centreline.start.x, w.centreline.start.y, w.centreline.end.x, w.centreline.end.y, w.thicknessMm, w.heightMm),
+        isUsable(
+          w.centreline.start.x,
+          w.centreline.start.y,
+          w.centreline.end.x,
+          w.centreline.end.y,
+          w.thicknessMm,
+          w.heightMm,
+        ),
     ),
   );
 
   /* Tường trôi ngoài nhà: node vẫn có (thiếu = lượt lưu đọc thành xoá) nhưng ẩn, và không vào
      `builtWalls` để không ảnh hưởng bày đồ, cửa, khung bóng. */
   const orphanWalls = orphanWallIds(graph);
-  const addRailing = (span: Parameters<typeof railingNodeOf>[0], levelNodeId: PascalNodeId, levelHeightMm: number, hostId: string): void => {
+  const addRailing = (
+    span: Parameters<typeof railingNodeOf>[0],
+    levelNodeId: PascalNodeId,
+    levelHeightMm: number,
+    hostId: string,
+  ): void => {
     const rail = railingNodeOf(span, levelNodeId, levelHeightMm, style);
     if (offIds.has(bodyOfPascalId(rail.id))) return;
     nodes[rail.id] = withFields(rail, { [PROV_FIELD]: provenanceOf('railing', hostId) });
@@ -1153,7 +1310,13 @@ export const toPascalScene = (
     const levelNodeId = levelNodeIdOf.get(wall.levelId);
 
     if (levelNodeId === undefined) {
-      skipped.push(skip(wall.id, 'tường', `Tường thuộc tầng ${wall.levelId} mà tầng ấy không có trong bản vẽ.`));
+      skipped.push(
+        skip(
+          wall.id,
+          'tường',
+          `Tường thuộc tầng ${wall.levelId} mà tầng ấy không có trong bản vẽ.`,
+        ),
+      );
       continue;
     }
 
@@ -1167,14 +1330,23 @@ export const toPascalScene = (
         wall.heightMm,
       )
     ) {
-      skipped.push(skip(wall.id, 'tường', 'Trục tường hoặc kích thước tường không phải một số đo được.'));
+      skipped.push(
+        skip(wall.id, 'tường', 'Trục tường hoặc kích thước tường không phải một số đo được.'),
+      );
       continue;
     }
 
     const ordinal = (wallCountOfLevel.get(wall.levelId) ?? 0) + 1;
     wallCountOfLevel.set(wall.levelId, ordinal);
     const welded = weldedWallOf.get(wall.id);
-    const built = wallNodeOf(welded ?? wall, ordinal, levelNodeId, childrenFor(toPascalId('wall', wall.id)), style, graph.rooms);
+    const built = wallNodeOf(
+      welded ?? wall,
+      ordinal,
+      levelNodeId,
+      childrenFor(toPascalId('wall', wall.id)),
+      style,
+      graph.rooms,
+    );
     const origin = built.metadata?.appfront;
     /* Trục gốc + trục đã dồn (mm) để lượt về trả lại trục gốc khi người dùng chưa dời tường. */
     const node: PascalWallNode =
@@ -1184,7 +1356,14 @@ export const toPascalScene = (
             ...built,
             metadata: {
               ...built.metadata,
-              appfront: { ...origin, fields: { ...origin.fields, weldedFrom: wall.centreline, weldedTo: welded.centreline } },
+              appfront: {
+                ...origin,
+                fields: {
+                  ...origin.fields,
+                  weldedFrom: wall.centreline,
+                  weldedTo: welded.centreline,
+                },
+              },
             },
           };
 
@@ -1196,14 +1375,28 @@ export const toPascalScene = (
     }
 
     builtWalls.push(wall);
-    const railing = isLoggiaRailing(wall, graph.rooms, graph.openings.some((o) => o.wallId === wall.id));
+    const railing = isLoggiaRailing(
+      wall,
+      graph.rooms,
+      graph.openings.some((o) => o.wallId === wall.id),
+    );
     nodes[node.id] = railing ? { ...node, visible: false } : node;
     wallNodeIdOf.set(wall.id, node.id);
     adopt(levelNodeId, node.id);
     const levelHeightMm = levelHeightMmOf.get(wall.levelId);
     if (railing && levelHeightMm !== undefined) {
       const source = welded ?? wall;
-      addRailing({ anchor: wall.id, levelId: wall.levelId, ...source.centreline, thicknessMm: source.thicknessMm }, levelNodeId, levelHeightMm, wall.id);
+      addRailing(
+        {
+          anchor: wall.id,
+          levelId: wall.levelId,
+          ...source.centreline,
+          thicknessMm: source.thicknessMm,
+        },
+        levelNodeId,
+        levelHeightMm,
+        wall.id,
+      );
     }
   }
 
@@ -1213,13 +1406,19 @@ export const toPascalScene = (
 
     if (wallNodeId === undefined) {
       skipped.push(
-        skip(opening.id, 'ô mở', `Ô mở nằm trên tường ${opening.wallId} mà tường ấy không sang được.`),
+        skip(
+          opening.id,
+          'ô mở',
+          `Ô mở nằm trên tường ${opening.wallId} mà tường ấy không sang được.`,
+        ),
       );
       continue;
     }
 
     if (!isUsable(opening.offsetMm, opening.widthMm, opening.heightMm, opening.sillHeightMm)) {
-      skipped.push(skip(opening.id, 'ô mở', 'Vị trí hoặc kích thước ô mở không phải một số đo được.'));
+      skipped.push(
+        skip(opening.id, 'ô mở', 'Vị trí hoặc kích thước ô mở không phải một số đo được.'),
+      );
       continue;
     }
 
@@ -1236,23 +1435,36 @@ export const toPascalScene = (
     const levelHeightMm = levelHeightMmOf.get(room.levelId);
 
     if (levelNodeId === undefined || levelHeightMm === undefined) {
-      skipped.push(skip(room.id, 'phòng', `Phòng thuộc tầng ${room.levelId} mà tầng ấy không có trong bản vẽ.`));
+      skipped.push(
+        skip(
+          room.id,
+          'phòng',
+          `Phòng thuộc tầng ${room.levelId} mà tầng ấy không có trong bản vẽ.`,
+        ),
+      );
       continue;
     }
 
     if (room.outline.length < MIN_OUTLINE_POINTS) {
-      skipped.push(skip(room.id, 'phòng', 'Đường bao phòng có ít hơn ba điểm nên không thành đa giác.'));
+      skipped.push(
+        skip(room.id, 'phòng', 'Đường bao phòng có ít hơn ba điểm nên không thành đa giác.'),
+      );
       continue;
     }
 
     if (!room.outline.every((point) => isUsable(point.x, point.y))) {
-      skipped.push(skip(room.id, 'phòng', 'Đường bao phòng có điểm không phải một toạ độ đo được.'));
+      skipped.push(
+        skip(room.id, 'phòng', 'Đường bao phòng có điểm không phải một toạ độ đo được.'),
+      );
       continue;
     }
 
     builtRooms.push(room);
 
-    for (const node of [zoneNodeOf(room, levelNodeId, levelHeightMm), slabNodeOf(room, levelNodeId, style)]) {
+    for (const node of [
+      zoneNodeOf(room, levelNodeId, levelHeightMm),
+      slabNodeOf(room, levelNodeId, style),
+    ]) {
       nodes[node.id] = node;
       adopt(levelNodeId, node.id);
     }
@@ -1267,7 +1479,9 @@ export const toPascalScene = (
       nodes[ceiling.id] = lightOn ? ceiling : { ...ceiling, children: [] };
       adopt(levelNodeId, ceiling.id);
       if (lightOn) {
-        nodes[light.id] = withFields(light, { [PROV_FIELD]: provenanceOf('light:ceiling', room.id) });
+        nodes[light.id] = withFields(light, {
+          [PROV_FIELD]: provenanceOf('light:ceiling', room.id),
+        });
         roomsWithLight.add(room.id);
       }
     }
@@ -1277,15 +1491,30 @@ export const toPascalScene = (
   for (const room of builtRooms) {
     const levelNodeId = levelNodeIdOf.get(room.levelId);
     const levelHeightMm = levelHeightMmOf.get(room.levelId);
-    if (room.usage !== 'loggia' || levelNodeId === undefined || levelHeightMm === undefined) continue;
+    if (room.usage !== 'loggia' || levelNodeId === undefined || levelHeightMm === undefined)
+      continue;
     for (const { key, start, end } of loggiaOpenSpansOf(room, builtWalls, graph.rooms)) {
-      addRailing({ anchor: `${room.id}-${key}`, levelId: room.levelId, start, end, thicknessMm: OPEN_RAILING_THICKNESS_MM }, levelNodeId, levelHeightMm, room.id);
+      addRailing(
+        {
+          anchor: `${room.id}-${key}`,
+          levelId: room.levelId,
+          start,
+          end,
+          thicknessMm: OPEN_RAILING_THICKNESS_MM,
+        },
+        levelNodeId,
+        levelHeightMm,
+        room.id,
+      );
     }
   }
 
   /* Đồ AI chưa duyệt còn góc 0 quay theo bàn/tường (`orientDetected`); quầy bếp cỡ khối đặc tách thành dãy tủ
      sát tường (`kitchenRuns`) — cả hai chỉ ở cảnh, không ghi về BE khi chưa sửa. */
-  const expanded = expandKitchenRuns(orientDetectedFurniture(graph.furniture, graph.walls), builtWalls);
+  const expanded = expandKitchenRuns(
+    orientDetectedFurniture(graph.furniture, graph.walls),
+    builtWalls,
+  );
   const furnitureToBuild = expanded.filter((f) => !offIds.has(f.id));
   const graphFurnitureIds = graph.furniture.map((f) => f.id as string);
   /* V4 — món sinh đã thành đồ thật RIÊNG LẺ (`dressingOff` có `DRESS-x` + đồ thật id `adoptedFurnitureIdOf(x)`): lớp
@@ -1298,16 +1527,20 @@ export const toPascalScene = (
   const ruleAdopted = ruleAdoptedIdsOf(graph.rooms, graph.furniture);
   const isAdoptedPair = adoptedPairOf(graph.rooms);
   /** Món AI cỡ thật người dùng đã sửa (Codex M17-2 #3): hộp đã lưu là cỡ nhìn thấy → dựng khớp đúng hộp như cặp nhận. */
-  const isRealFit = (f: Pick<Furniture, 'kind' | 'model'>): boolean => f.model?.id === realFitModelIdOf(f.kind);
+  const isRealFit = (f: Pick<Furniture, 'kind' | 'model'>): boolean =>
+    f.model?.id === realFitModelIdOf(f.kind);
   /** Mẫu LUẬT CHỌN của món đã nhận (cặp chắc chắn, `ruleAdoptedIdsOf`; không phải mẫu người dùng đổi): thư mục, hoặc undefined. */
   const ruleFolderOf = (f: Furniture): string | undefined => {
     if (f.model === undefined || !(ruleAdopted.has(f.id) || isRealFit(f))) return undefined;
     const folder = SWAPPED_MODEL_SRC.exec(f.model.src)?.[1];
-    return folder !== undefined && Object.prototype.hasOwnProperty.call(CATALOG_MODELS, folder) ? folder : undefined;
+    return folder !== undefined && Object.prototype.hasOwnProperty.call(CATALOG_MODELS, folder)
+      ? folder
+      : undefined;
   };
 
   /* Vai trò theo ngữ cảnh phòng (bồn cầu thừa → lavabo, bàn nhỏ xa giường → bàn phụ): chỉ đổi mẫu. */
-  const contextUsageOf = (f: Pick<Furniture, 'roomId'>) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId));
+  const contextUsageOf = (f: Pick<Furniture, 'roomId'>) =>
+    f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId);
   // `roomset` băm theo nội dung phòng, không theo id (chép sang dự án khác giữ nguyên nội thất).
   // Trần phòng = chiều cao tầng dựng tường (`roomset` chừa hở trần cho món cao).
   // Vùng chặn của tầng (m): vùng mở cửa đi + thân tường — mẫu chọn không được lấn thêm vào đó (`roomSetOf`).
@@ -1316,24 +1549,35 @@ export const toPascalScene = (
   const zonesOf = (levelId: Room['levelId']): SetZone[] => {
     const hit = zonesOfLevel.get(levelId);
     if (hit !== undefined) return hit;
-    const zones = [...doorSwingRects(builtGraph, levelId), ...wallRects(builtGraph, levelId)].map((r) =>
-      planRectOf(r.cx / 1000, r.cy / 1000, r.w / 1000, r.d / 1000, r.rotationDeg),
+    const zones = [...doorSwingRects(builtGraph, levelId), ...wallRects(builtGraph, levelId)].map(
+      (r) => planRectOf(r.cx / 1000, r.cy / 1000, r.w / 1000, r.d / 1000, r.rotationDeg),
     );
     zonesOfLevel.set(levelId, zones);
     return zones;
   };
   setRoomSetKeys(
-    roomSetKeysOf(builtRooms.map((room) => ({ id: room.id, levelId: room.levelId, usage: roomUsageOf.get(room.id), outline: room.outline }))),
-    new Map(builtRooms.flatMap((room) => {
-      const mm = levelHeightMmOf.get(room.levelId);
-      return mm === undefined ? [] : [[room.id as string, mm / 1000] as const];
-    })),
+    roomSetKeysOf(
+      builtRooms.map((room) => ({
+        id: room.id,
+        levelId: room.levelId,
+        usage: roomUsageOf.get(room.id),
+        outline: room.outline,
+      })),
+    ),
+    new Map(
+      builtRooms.flatMap((room) => {
+        const mm = levelHeightMmOf.get(room.levelId);
+        return mm === undefined ? [] : [[room.id as string, mm / 1000] as const];
+      }),
+    ),
     new Map(builtRooms.map((room) => [room.id as string, zonesOf(room.levelId)] as const)),
   );
   // Món đã nhận còn mẫu luật chọn: twin đại diện trong sổ bộ (như trước khi nhận), không thành đồ cố định của bảng màu.
   const contextRoles = contextRolesOf(
     // Món AI cỡ thật đã sửa (`isRealFit`) vẫn vào sổ: đồ ghim, chiếm chỗ của nó.
-    furnitureToBuild.filter((f) => f.suggested !== true && !(ruleAdopted.has(f.id) && ruleFolderOf(f) !== undefined)),
+    furnitureToBuild.filter(
+      (f) => f.suggested !== true && !(ruleAdopted.has(f.id) && ruleFolderOf(f) !== undefined),
+    ),
     contextUsageOf,
     (f) => isAdoptedPair(f) || isRealFit(f),
   );
@@ -1344,9 +1588,16 @@ export const toPascalScene = (
     if (furniture.suggested === true) {
       skipped.push(skip(furniture.id, 'đồ đạc', 'Gợi ý của máy chưa được nhận.'));
       const outlineLevel = levelNodeIdOf.get(furniture.levelId);
-      const outline = suggestedOutlineOf(furniture, outlineLevel, levelHeightMmOf.get(furniture.levelId), style);
+      const outline = suggestedOutlineOf(
+        furniture,
+        outlineLevel,
+        levelHeightMmOf.get(furniture.levelId),
+        style,
+      );
       if (outline !== null && outlineLevel !== undefined) {
-        nodes[outline.id] = withFields(outline, { [PROV_FIELD]: provenanceOf('suggested', furniture.id) });
+        nodes[outline.id] = withFields(outline, {
+          [PROV_FIELD]: provenanceOf('suggested', furniture.id),
+        });
         adopt(outlineLevel, outline.id);
       }
       continue;
@@ -1359,7 +1610,11 @@ export const toPascalScene = (
 
     if (levelNodeId === undefined || levelHeightMm === undefined) {
       skipped.push(
-        skip(furniture.id, 'đồ đạc', `Đồ đạc thuộc tầng ${furniture.levelId} mà tầng ấy không có trong bản vẽ.`),
+        skip(
+          furniture.id,
+          'đồ đạc',
+          `Đồ đạc thuộc tầng ${furniture.levelId} mà tầng ấy không có trong bản vẽ.`,
+        ),
       );
       continue;
     }
@@ -1375,7 +1630,9 @@ export const toPascalScene = (
         furniture.boundingBox.max.y,
       )
     ) {
-      skipped.push(skip(furniture.id, 'đồ đạc', 'Vị trí, góc quay hoặc hộp bao không phải một số đo được.'));
+      skipped.push(
+        skip(furniture.id, 'đồ đạc', 'Vị trí, góc quay hoặc hộp bao không phải một số đo được.'),
+      );
       continue;
     }
 
@@ -1395,13 +1652,22 @@ export const toPascalScene = (
     const usage = furniture.roomId === undefined ? undefined : roomUsageOf.get(furniture.roomId);
     const room =
       builtRooms.find((r) => r.id === furniture.roomId) ??
-      builtRooms.find((r) => r.levelId === furniture.levelId && insideOutline(furniture.centre, r.outline));
-    const arms = lShapedRunArms(furniture, room, { ...graph, walls: builtWalls, openings: builtOpenings });
-    const usageOf = (f: Furniture) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId));
+      builtRooms.find(
+        (r) => r.levelId === furniture.levelId && insideOutline(furniture.centre, r.outline),
+      );
+    const arms = lShapedRunArms(furniture, room, {
+      ...graph,
+      walls: builtWalls,
+      openings: builtOpenings,
+    });
+    const usageOf = (f: Furniture) =>
+      f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId);
     const contextRole = contextRoles.get(furniture.id);
     const sinkFolder =
       sinkFolderOf(furniture, furnitureToBuild, usageOf) ??
-      (contextRole === undefined ? undefined : (modelFolderOf(furniture, style, usage, contextRole) ?? undefined));
+      (contextRole === undefined
+        ? undefined
+        : (modelFolderOf(furniture, style, usage, contextRole) ?? undefined));
     // Mẫu luật chọn của món đã nhận dựng như đồ sinh (cùng đường hoán đổi hiển thị) + ghi lại thư mục để lượt về giữ.
     const ruleFolder = ruleFolderOf(furniture);
     const built = ruleFolder === undefined ? furniture : withoutModel(furniture);
@@ -1410,38 +1676,68 @@ export const toPascalScene = (
     const exact = isAdoptedPair(furniture) || isRealFit(furniture);
     const rawNode =
       arms === null
-        ? itemNodeOf(built, levelNodeId, levelHeightMm, style, usage, counterTopMmOf(furniture, furnitureToBuild, style, usageOf), folderFor, exact)
+        ? itemNodeOf(
+            built,
+            levelNodeId,
+            levelHeightMm,
+            style,
+            usage,
+            counterTopMmOf(furniture, furnitureToBuild, style, usageOf),
+            folderFor,
+            exact,
+          )
         : longArmNodeOf(
             built,
             arms.long,
-            itemNodeOf({ ...built, ...arms.long }, levelNodeId, levelHeightMm, style, usage, 0, folderFor, exact),
+            itemNodeOf(
+              { ...built, ...arms.long },
+              levelNodeId,
+              levelHeightMm,
+              style,
+              usage,
+              0,
+              folderFor,
+              exact,
+            ),
           );
     const node = withFields(rawNode, {
       ...(ruleFolder === undefined ? {} : { [MODEL_FOLDER_FIELD]: ruleFolder }),
       ...(exact ? { [ADOPTED_FIT_FIELD]: true } : {}),
-      ...(ruleFolder !== undefined && isRealFit(furniture) ? { [REAL_FIT_FIELD]: { folder: ruleFolder } } : {}),
+      ...(ruleFolder !== undefined && isRealFit(furniture)
+        ? { [REAL_FIT_FIELD]: { folder: ruleFolder } }
+        : {}),
     });
 
     /* Hộp quầy gốc vẫn phải có node (thiếu = lượt lưu đọc thành xoá) nhưng ẩn; dãy tủ thay nó là đồ sinh ra.
        Thảm lạc ngoài phòng (`isStrayRug`) cũng vậy: giữ node để lưu không xoá, chỉ không trải ra sân trống. */
-    const shown = isKitchenRunHost(furniture) || isStrayRug(furniture, builtRooms)
-      ? { ...node, visible: false }
-      : isGeneratedNodeId(node.id)
-        ? withFields(
-            { ...node, metadata: { ...node.metadata, generated: 'dressing' } },
-            { [PROV_FIELD]: provenanceOf(roleInId(furniture.id), hostIn(furniture.id, graphFurnitureIds)) },
-          )
-        : node;
+    const shown =
+      isKitchenRunHost(furniture) || isStrayRug(furniture, builtRooms)
+        ? { ...node, visible: false }
+        : isGeneratedNodeId(node.id)
+          ? withFields(
+              { ...node, metadata: { ...node.metadata, generated: 'dressing' } },
+              {
+                [PROV_FIELD]: provenanceOf(
+                  roleInId(furniture.id),
+                  hostIn(furniture.id, graphFurnitureIds),
+                ),
+              },
+            )
+          : node;
     const repair = repairs?.get(furniture.id);
     const provShown = withRoomSetProv(shown, furniture.id);
-    nodes[node.id] = repair === undefined ? provShown : withFields(provShown, { [REPAIR_FIELD]: repair });
+    nodes[node.id] =
+      repair === undefined ? provShown : withFields(provShown, { [REPAIR_FIELD]: repair });
     adopt(levelNodeId, node.id);
 
     /* V1 — nhánh thứ hai của dãy tủ chữ L: đồ sinh ra (`isGeneratedNodeId`). */
     if (arms !== null && !offIds.has(arms.leg.id)) {
       const leg = itemNodeOf(arms.leg, levelNodeId, levelHeightMm, style, usage);
 
-      nodes[leg.id] = withFields({ ...leg, metadata: { ...leg.metadata, generated: 'dressing' } }, { [PROV_FIELD]: provenanceOf('runLeg', furniture.id) });
+      nodes[leg.id] = withFields(
+        { ...leg, metadata: { ...leg.metadata, generated: 'dressing' } },
+        { [PROV_FIELD]: provenanceOf('runLeg', furniture.id) },
+      );
       adopt(levelNodeId, leg.id);
     }
   }
@@ -1487,7 +1783,10 @@ export const toPascalScene = (
     (f) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId)),
     (f) => (twinIds.has(f.id) ? builtById.get(adoptedFurnitureIdOf(f.id)) : undefined),
   );
-  const dressedAll = furnish === 'on' ? dressingOf({ ...usable, furniture: [...baseFurniture, ...furnished] }, style) : [];
+  const dressedAll =
+    furnish === 'on'
+      ? dressingOf({ ...usable, furniture: [...baseFurniture, ...furnished] }, style)
+      : [];
   // Sổ `roomset` đủ mục (phòng chỉ có món ghim) — không đổi mẫu nào đã dựng.
   finishRoomSet(style);
   const dressed = dressedAll.filter(inLayer);
@@ -1500,7 +1799,9 @@ export const toPascalScene = (
   /* Provenance: bày phòng trống = vai + phòng; đồ AI = phòng; trang trí = vai + món/ô mở/phòng chủ (id dài nhất khớp). */
   const furnishedIds = new Set<string>(furnishedAll.map((f) => f.id));
   const aiIds = new Set<string>(aiAll.map((f) => f.id));
-  const hostPool = [...builtFurniture, ...furnished, ...builtOpenings, ...builtRooms].map((e) => e.id as string);
+  const hostPool = [...builtFurniture, ...furnished, ...builtOpenings, ...builtRooms].map(
+    (e) => e.id as string,
+  );
   const provOfGenerated = (f: Furniture): SceneProvenance =>
     furnishedIds.has(f.id)
       ? provenanceOf(`furnish:${roleInId(f.id)}`, f.roomId)
@@ -1512,15 +1813,22 @@ export const toPascalScene = (
   /* Chặn chồng: twin không dự (đồ thật dựng thay; anh em giữ nguyên dù người dùng dời món sát chúng). Món đã nhận mà
      twin không còn sinh (đổi công năng phòng…) là đồ thật thường: đồ sinh mới không được chồng lên nó. */
   // Twin còn được sinh ở đâu đó lượt này: lớp dẫn xuất hoặc dãy tủ tách từ quầy (`expanded`).
-  const layerIds = new Set<string>([...furnished, ...dressed, ...aiAdded, ...expanded].map((f) => f.id));
-  const orphans = builtFurniture.filter((f) => adoptedIds.has(f.id) && ![...twinIds].some((id) => layerIds.has(id) && adoptedFurnitureIdOf(id) === f.id));
+  const layerIds = new Set<string>(
+    [...furnished, ...dressed, ...aiAdded, ...expanded].map((f) => f.id),
+  );
+  const orphans = builtFurniture.filter(
+    (f) =>
+      adoptedIds.has(f.id) &&
+      ![...twinIds].some((id) => layerIds.has(id) && adoptedFurnitureIdOf(id) === f.id),
+  );
   const generatedAll = withoutOverlaps(
     [...furnished, ...dressed, ...aiAdded].filter((f) => notOff(f) && !isStrayRug(f, builtRooms)),
     [...baseFurniture, ...orphans],
   );
   /* Chậu/mặt bếp sinh ra nằm trên mặt đá dãy tủ sinh ra (hoặc thật), như đường đồ thật ở trên. */
   const counterPool = [...builtFurniture, ...generatedAll];
-  const usageOfGenerated = (f: Furniture) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId));
+  const usageOfGenerated = (f: Furniture) =>
+    f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId);
 
   // Vòng 11 b2 `?enable=libroles2`: đèn sinh dựng bằng mẫu thư viện có texture lọt chỗ đặt (`libraryRoles2.ts`).
   for (const furniture of libRoles2Apply(generatedAll, style)) {
@@ -1541,11 +1849,15 @@ export const toPascalScene = (
     );
 
     nodes[node.id] = withRoomSetProv(
-      withFields({ ...node, metadata: { ...node.metadata, generated: 'dressing' } }, { [PROV_FIELD]: provOfGenerated(furniture) }),
+      withFields(
+        { ...node, metadata: { ...node.metadata, generated: 'dressing' } },
+        { [PROV_FIELD]: provOfGenerated(furniture) },
+      ),
       furniture.id,
     );
     adopt(levelNodeId, node.id);
-    if (furniture.roomId !== undefined) dressIdsOf.set(furniture.roomId, [...(dressIdsOf.get(furniture.roomId) ?? []), furniture.id]);
+    if (furniture.roomId !== undefined)
+      dressIdsOf.set(furniture.roomId, [...(dressIdsOf.get(furniture.roomId) ?? []), furniture.id]);
   }
 
   /* Món sinh ra không `roomId` (lan can, dãy tủ, nhánh chữ L, đồ trang trí) cũng phải có phòng khai hộ, không
@@ -1554,13 +1866,20 @@ export const toPascalScene = (
   const declared = new Set([...builtRoomIds].flatMap((roomId) => dressIdsOf.get(roomId) ?? []));
 
   for (const node of Object.values(nodes)) {
-    if (node.type !== 'item' || !isGeneratedNodeId(node.id) || isGeneratedLightId(node.id) || node.metadata?.unconfirmed === true) continue;
+    if (
+      node.type !== 'item' ||
+      !isGeneratedNodeId(node.id) ||
+      isGeneratedLightId(node.id) ||
+      node.metadata?.unconfirmed === true
+    )
+      continue;
     const dressId = bodyOfPascalId(node.id);
     if (declared.has(dressId)) continue;
     const onLevel = builtRooms.filter((room) => levelNodeIdOf.get(room.levelId) === node.parentId);
     const centre = { x: node.position[0] * 1000, y: node.position[2] * 1000 };
     const holder = onLevel.find((room) => insideOutline(centre, room.outline)) ?? onLevel[0];
-    if (holder !== undefined) dressIdsOf.set(holder.id, [...(dressIdsOf.get(holder.id) ?? []), dressId]);
+    if (holder !== undefined)
+      dressIdsOf.set(holder.id, [...(dressIdsOf.get(holder.id) ?? []), dressId]);
   }
 
   /* H4 — zone mang danh sách món tự bày của phòng (`dressIds`, kể cả đèn trần) và danh sách đã bỏ (`dressingOff`):
@@ -1570,13 +1889,18 @@ export const toPascalScene = (
      đã tắt) hay món bị đồ khác chặn tạm vẫn giữ trạng thái tắt. Họ luật không chạy lượt này (tự bày tắt vì có concept,
      không có đồ AI) thì giữ nguyên: vắng mặt không có nghĩa là gốc đã mất. */
   const ranFor = (id: string): boolean =>
-    id.startsWith(AI_ID_PREFIX) ? additions.length > 0 : furnish === 'on' || ALWAYS_RUN_PREFIXES.some((prefix) => id.startsWith(prefix));
-  const sourceIds = new Set<string>([...graph.rooms, ...graph.openings, ...graph.walls, ...graph.furniture].map((e) => e.id));
+    id.startsWith(AI_ID_PREFIX)
+      ? additions.length > 0
+      : furnish === 'on' || ALWAYS_RUN_PREFIXES.some((prefix) => id.startsWith(prefix));
+  const sourceIds = new Set<string>(
+    [...graph.rooms, ...graph.openings, ...graph.walls, ...graph.furniture].map((e) => e.id),
+  );
   /** Có phần tử gốc nào trong đồ thị nằm trong id (khớp trọn đoạn giữa các dấu `-`, nên `R-1` không khớp `R-10`). */
   const hasSource = (id: string): boolean => {
     const parts = id.split('-');
     for (let from = 0; from < parts.length; from += 1) {
-      for (let to = from + 1; to <= parts.length; to += 1) if (sourceIds.has(parts.slice(from, to).join('-'))) return true;
+      for (let to = from + 1; to <= parts.length; to += 1)
+        if (sourceIds.has(parts.slice(from, to).join('-'))) return true;
     }
     return false;
   };
@@ -1594,7 +1918,10 @@ export const toPascalScene = (
           ...origin,
           fields: {
             ...origin.fields,
-            dressIds: [...(dressIdsOf.get(room.id) ?? []), ...(roomsWithLight.has(room.id) ? [lightOffIdOf(room.id)] : [])],
+            dressIds: [
+              ...(dressIdsOf.get(room.id) ?? []),
+              ...(roomsWithLight.has(room.id) ? [lightOffIdOf(room.id)] : []),
+            ],
             dressingOff: (room.dressingOff ?? []).filter((id) => !ranFor(id) || hasSource(id)),
           },
         },
@@ -1606,7 +1933,13 @@ export const toPascalScene = (
     const levelNodeId = levelNodeIdOf.get(axis.levelId);
 
     if (levelNodeId === undefined) {
-      skipped.push(skip(axis.id, 'trục định vị', `Trục thuộc tầng ${axis.levelId} mà tầng ấy không có trong bản vẽ.`));
+      skipped.push(
+        skip(
+          axis.id,
+          'trục định vị',
+          `Trục thuộc tầng ${axis.levelId} mà tầng ấy không có trong bản vẽ.`,
+        ),
+      );
       continue;
     }
 
@@ -1628,7 +1961,9 @@ export const toPascalScene = (
     const levelNodeId = levelNodeIdOf.get(roof.levelId);
 
     if (levelNodeId === undefined) {
-      skipped.push(skip(roof.id, 'mái', `Mái thuộc tầng ${roof.levelId} mà tầng ấy không có trong bản vẽ.`));
+      skipped.push(
+        skip(roof.id, 'mái', `Mái thuộc tầng ${roof.levelId} mà tầng ấy không có trong bản vẽ.`),
+      );
       continue;
     }
 
@@ -1644,11 +1979,19 @@ export const toPascalScene = (
   }
 
   for (const dimension of graph.dimensions) {
-    skipped.push(skip(dimension.id, 'kích thước', 'Kích thước của bản vẽ chưa được chuyển sang Pascal ở bản đầu.'));
+    skipped.push(
+      skip(
+        dimension.id,
+        'kích thước',
+        'Kích thước của bản vẽ chưa được chuyển sang Pascal ở bản đầu.',
+      ),
+    );
   }
 
   for (const note of graph.notes) {
-    skipped.push(skip(note.id, 'ghi chú', 'Ghi chú gắn với đối tượng chưa được chuyển sang Pascal ở bản đầu.'));
+    skipped.push(
+      skip(note.id, 'ghi chú', 'Ghi chú gắn với đối tượng chưa được chuyển sang Pascal ở bản đầu.'),
+    );
   }
 
   nodes[BUILDING_NODE_ID] = {
@@ -1684,10 +2027,13 @@ export const toPascalScene = (
     // (`scripts/pascal-render.mjs` luật 5) — nhà mẫu trang đăng nhập không có ranh đất.
   };
 
-
-  const materials = Object.fromEntries([...SCENE_MATERIALS, ...SCENE_STYLE_MATERIALS].map((material) => [material.id, material]));
+  const materials = Object.fromEntries(
+    [...SCENE_MATERIALS, ...SCENE_STYLE_MATERIALS].map((material) => [material.id, material]),
+  );
   /* Báo cáo 2.8.2: tầng căn được theo lưới trục chung thì xoay + dời khi HIỂN THỊ; lượt về gỡ ra. */
-  applyFloorTransforms(nodes, floorDisplayTransformsOf(graph), (levelId) => toPascalId('level', levelId));
+  applyFloorTransforms(nodes, floorDisplayTransformsOf(graph), (levelId) =>
+    toPascalId('level', levelId),
+  );
   /* M5 làn 3c — thử nghiệm `?buildx=trim|win` (mặc định không đổi gì). */
   applyBuildx(nodes);
 
@@ -1696,7 +2042,8 @@ export const toPascalScene = (
   for (const node of Object.values(nodes)) {
     const fields = node.metadata?.appfront?.fields;
     const prov = fields?.[PROV_FIELD] as SceneProvenance | undefined;
-    if (prov !== undefined && prov.cls === 'generated') generatedByRule[prov.rule] = (generatedByRule[prov.rule] ?? 0) + 1;
+    if (prov !== undefined && prov.cls === 'generated')
+      generatedByRule[prov.rule] = (generatedByRule[prov.rule] ?? 0) + 1;
     if (fields?.[REPAIR_FIELD] !== undefined) repaired += 1;
   }
 

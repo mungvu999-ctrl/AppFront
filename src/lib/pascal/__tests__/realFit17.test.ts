@@ -30,6 +30,12 @@ vi.mock('../libraryQuality', async (importOriginal) => {
 });
 
 describe('itemFitOf cỡ thật', () => {
+  it('mẫu dựng sẵn (không dữ liệu chất lượng) áp lưng tường theo vai hiệu lực — Codex M17-3 #2', () => {
+    const cd = CATALOG_MODELS['sofa']?.dimensions[2] ?? 0;
+    const fit = itemFitOf('sofa', 1.4, 0.5, undefined, 2700, false, 'real', 'sofa');
+    expect(fit?.backShiftM).toBeCloseTo(-(0.5 - cd) / 2, 6);
+    expect(itemFitOf('sofa', 1.4, 0.5, undefined, 2700, false, 'real')?.backShiftM ?? 0).toBe(0);
+  });
   it('#1: hộp AI nhỏ không bóp món cỡ thật (chỉ trần chặn)', () => {
     const [cw, ch, cd] = CATALOG_MODELS['sofa']?.dimensions ?? [0, 0, 0];
     const fit = itemFitOf('sofa', 0.36, 0.41, undefined, 2700, false, 'real');
