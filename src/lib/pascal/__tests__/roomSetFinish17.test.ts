@@ -108,7 +108,9 @@ describe('I2 — phương án cuối', () => {
   });
 
   it('mẫu dựng sẵn cũng méo → giữ luật cũ (méo dáng là ngoại lệ được phép), sổ ghi luật cũ trượt', () => {
-    const block: SetZone = { cx: 0, cy: 0, w: 6, d: 6, rotationDeg: 0 };
+    // Codex M17-2 #1 (đổi có chủ đích): luật cũ cũng qua kiểm va chạm — vật cản chỉ chặn phần cỡ thật rộng 2 m nhô ra
+    // (x > 0,75), không chặn luật cũ rộng 1,4 m (cũ: khối 6 × 6 m phủ cả hộp, nay luật cũ bị chặn → null).
+    const block: SetZone = { cx: 1.9, cy: 0, w: 2.3, d: 6, rotationDeg: 0 };
     // Codex M17-1 #2 (đổi có chủ đích): luật cũ phải trong công năng mới được giữ — méo (1,4 × 1,0 từ 2,0 × 0,9) nhưng rộng
     // 1,4, sâu 1,0 trong phạm vi sofa (cũ: rộng 1,0 ngoài công năng mà vẫn giữ).
     const m = mem('s', 'sofa', ['sofa-deep'], { current: 'sofa-old', stock: 'sofa', box: { cx: 0, cy: 0, w: 2, d: 0.85, rot: 0 }, shownOf: () => [1.4, 0.85, 1.0] });

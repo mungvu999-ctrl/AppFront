@@ -217,3 +217,52 @@ describe('#3 — vai trung tính không ra mẫu giường (mọi đường mẫ
     expect(BEDS).not.toContain(entry?.from);
   });
 });
+
+describe('Codex M17-2 #1, #2 — luật cũ / mẫu dựng sẵn ở phương án cuối', () => {
+  it('#1: luật cũ chồng vùng chặn → null, sổ ghi va chạm (không vùng chặn → giữ luật cũ)', () => {
+    const m = mem('s', 'sofa', [], { current: 'sofa-old', box: BOX, shownOf: (f) => DIMS[f] });
+    expect(roomSetOf('r', [m], new Map(), ctx).get('s')?.to).toBe('sofa-old');
+    const d = roomSetOf('r', [m], new Map(), ctx, [ALL]).get('s');
+    expect(d?.to).toBeNull();
+    expect(d?.why).toMatch(/bị cấm \(va chạm\)/);
+  });
+
+  it('#1: cỡ người dùng xác nhận — hộp đã chồng vùng chặn, luật cũ trong hộp không chồng thêm → giữ luật cũ', () => {
+    const m = mem('s', 'sofa', [], { current: 'sofa-old', box: BOX, sizeFrom: 'user', shownOf: (f) => DIMS[f] });
+    expect(roomSetOf('r', [m], new Map(), ctx, [ALL]).get('s')?.to).toBe('sofa-old');
+  });
+
+  it('#1: luật cũ chồng vùng chặn nhưng mẫu dựng sẵn hẹp không chồng → mẫu dựng sẵn', () => {
+    // Vật cản x ∈ [0,8; 1,5]: luật cũ rộng 2 m chồng, mẫu dựng sẵn rộng 1,5 m (x ∈ [−0,75; 0,75]) không.
+    const post: SetZone = { cx: 1.15, cy: 0, w: 0.7, d: 2, rotationDeg: 0 };
+    const m = mem('s', 'sofa', [], { current: 'sofa', stock: 'sofa-old', box: BOX, shownOf: (f) => DIMS[f] });
+    const d = roomSetOf('r', [m], new Map(), ctx, [post]).get('s');
+    expect(d?.to).toBe('sofa-old');
+    expect(d?.why).toMatch(/luật cũ trượt \(va chạm\)/);
+  });
+
+  // Tủ áo AI chưa xác nhận cao 2,4 m (cao hiển thị = heightM), nâng 0,5 m, trần 2,7 m: 2,9 m > 2,7 − 0,3.
+  const closetDims: Record<string, Dims> = { 'closet-old': [1.2, 2.0, 0.6], 'closet-stock': [1.2, 2.2, 0.6] };
+  const cctx: SetContext = { ...ctx, dimsOf: (id) => closetDims[id] };
+  const closet = (sizeFrom: 'ai' | 'user'): SetMember =>
+    mem('c', 'closet', [], {
+      current: 'closet-old',
+      stock: 'closet-stock',
+      box: { cx: 0, cy: 0, w: 1.2, d: 0.6, rot: 0 },
+      heightM: 2.4,
+      liftM: 0.5,
+      ceilingM: 2.7,
+      sizeFrom,
+      shownOf: (f) => (closetDims[f] === undefined ? undefined : [closetDims[f][0], 2.4, closetDims[f][2]]),
+    });
+
+  it('#2: món AI chưa xác nhận có heightM rõ → luật cũ và mẫu dựng sẵn vượt trần đều bị cấm → null', () => {
+    const d = roomSetOf('r', [closet('ai')], new Map(), cctx).get('c');
+    expect(d?.to).toBeNull();
+    expect(d?.why).toMatch(/chạm gần trần/);
+  });
+
+  it('#2: cỡ người dùng xác nhận được miễn kiểm trần → vẫn dựng (không null)', () => {
+    expect(roomSetOf('r', [closet('user')], new Map(), cctx).get('c')?.to).not.toBeNull();
+  });
+});

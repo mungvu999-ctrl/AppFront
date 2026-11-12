@@ -17,10 +17,12 @@ import type { LayerStyle } from '../sceneVariety';
 import type { PascalItemNode, PascalScene } from '../types';
 
 /** Bàn làm việc sinh (hộp 1,2 × 0,6 m, mẫu ~1,51 × 0,62 m) dựng CỠ THẬT, vai tựa tường — dựng tay, không phụ thuộc lượt chọn mẫu của roomSet. */
-const REAL = vi.hoisted(() => ({ on: false }));
+const REAL = vi.hoisted(() => ({ on: false, sofa: false }));
+/** Sofa AI thường (không phải món sinh / cặp nhận) dựng CỠ THẬT (Codex M17-2 #3). */
+const AI_SOFA = 'F-00000AISOFA7';
 vi.mock('../sceneVariety', async (importOriginal) => {
   const real = await importOriginal<{ roomSetUniformOf: (id: string, folder: string) => boolean | 'real' }>();
-  return { ...real, roomSetUniformOf: (id: string, folder: string) => (REAL.on && id.startsWith('DRESS-desk-') ? 'real' : real.roomSetUniformOf(id, folder)) };
+  return { ...real, roomSetUniformOf: (id: string, folder: string) => ((REAL.on && id.startsWith('DRESS-desk-')) || (REAL.sofa && id === AI_SOFA) ? 'real' : real.roomSetUniformOf(id, folder)) };
 });
 vi.mock('../libraryQuality', async (importOriginal) => {
   const real = await importOriginal<{ qualityOf: (id: string) => unknown }>();
@@ -135,4 +137,67 @@ describe('#5: món cỡ thật áp lưng tường — nhận / lưu-tải lại 
       }
     });
   }
+});
+
+describe('Codex M17-2 #3: món AI thường dựng cỡ thật, người dùng co giãn → lưu-tải lại giữ cỡ hiển thị', () => {
+  const withSofa = (): SpatialGraph => {
+    const g = bedroom();
+    const sofa = {
+      source: 'ai',
+      reviewed: false,
+      confidence: 0.8,
+      id: AI_SOFA,
+      levelId: LVL,
+      roomId: ROOM,
+      kind: 'other',
+      variant: 'sofa',
+      centre: { x: 2500, y: 2000 },
+      boundingBox: { min: { x: 2300, y: 1800 }, max: { x: 2700, y: 2200 } },
+      rotationDeg: 0,
+    } as unknown as Furniture;
+    return { ...g, furniture: [sofa] };
+  };
+  const nodeId = `item_${AI_SOFA}`;
+  /** Cỡ mặt bằng nhìn thấy [rộng, sâu] m: cỡ catalog × `asset.scale` (bỏ scale riêng của catalog) × `node.scale`. */
+  const seenSize = (n: PascalItemNode, folder: string): [number, number] => {
+    const cat = CATALOG_MODELS[folder]!;
+    const s = n.asset.scale ?? [1, 1, 1];
+    const k = cat.scale ?? [1, 1, 1];
+    return [(cat.dimensions[0] * s[0] * n.scale[0]) / k[0], (cat.dimensions[2] * s[2] * n.scale[2]) / k[2]];
+  };
+
+  it('co giãn ×1,2 hai trục mặt bằng: tải lại đúng cỡ + tâm nhìn thấy (≤ 1 mm), mở không ghi, lưu lại không trôi', () => {
+    REAL.sofa = true;
+    try {
+      const graph = withSofa();
+      const scene = sceneOf(graph);
+      const sofa = scene.nodes[nodeId] as PascalItemNode;
+      const fit = sofa.metadata?.appfront?.fields?.['realFit'] as { folder: string; shownM: number[] } | undefined;
+      expect(fit, 'món AI cỡ thật mang REAL_FIT_FIELD').toBeDefined();
+      const folder = fit!.folder;
+      // Cỡ thật vượt hộp AI 0,4 × 0,4 m.
+      expect(seenSize(sofa, folder)[0]).toBeGreaterThan(0.8);
+      // Mở không ghi: node chưa sửa không sinh thay đổi nào cho món.
+      expect(() => commit(graph, scene, [nodeId])).toThrow(/không có gì để ghi/);
+
+      const edited = { ...sofa, scale: [1.2, 1, 1.2] } as PascalItemNode;
+      const before = { centre: seenCentre(edited), size: seenSize(edited, folder) };
+      const saved = apply(graph, commit(graph, { ...scene, nodes: { ...scene.nodes, [nodeId]: edited } }, [nodeId]));
+      const stored = saved.furniture.find((f) => f.id === AI_SOFA)!;
+      expect(stored.model?.id).toBe('appfront-fit-other');
+      const reloaded = sceneOf(saved);
+      const real = reloaded.nodes[nodeId] as PascalItemNode;
+      near(seenCentre(real), before.centre);
+      near(seenSize(real, folder), before.size);
+      // Tải lại rồi lưu không sửa: không thay đổi (không trôi, không đổi mẫu).
+      expect(() => commit(saved, reloaded, [nodeId])).toThrow(/không có gì để ghi/);
+      // Dời tiếp 10 mm: tâm đi đúng 10 mm, cỡ giữ nguyên.
+      const nudged = { ...real, position: [real.position[0] + 0.01, real.position[1], real.position[2]] } as PascalItemNode;
+      const again = sceneOf(apply(saved, commit(saved, { ...reloaded, nodes: { ...reloaded.nodes, [nodeId]: nudged } }, [nodeId]))).nodes[nodeId] as PascalItemNode;
+      near(seenCentre(again), [before.centre[0] + 0.01, before.centre[1]]);
+      near(seenSize(again, folder), before.size);
+    } finally {
+      REAL.sofa = false;
+    }
+  });
 });

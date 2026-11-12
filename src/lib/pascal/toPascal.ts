@@ -88,7 +88,7 @@ import {
   type SceneProvenance,
   type SceneRepair,
 } from './sceneLayer';
-import { itemFitOf, REAL_BACK_SHIFT_FIELD } from './itemFit';
+import { itemFitOf, REAL_BACK_SHIFT_FIELD, REAL_FIT_FIELD, realFitModelIdOf } from './itemFit';
 import { furnishingUsageOf, isPlausibleStair, lShapedRunArms, orphanWallIds, weldWallEnds } from './structureFixes';
 import { doorSwingRects, wallRects } from './placement';
 import { planRectOf, ROOMSET_VERSION, roomSetKeysOf, type SetZone } from './roomSet';
@@ -893,6 +893,10 @@ const itemNodeOf = (
         ...(furniture.heightMm === undefined ? {} : { heightMm: furniture.heightMm }),
         ...(furniture.liftMm === undefined ? {} : { liftMm: furniture.liftMm }),
         ...(uniform === 'real' && fit !== null && fit.backShiftM !== 0 ? { [REAL_BACK_SHIFT_FIELD]: fit.backShiftM } : {}),
+        // Món AI cỡ thật: mẫu + cỡ hiển thị, để lượt về lưu đúng cỡ ấy khi người dùng sửa món (Codex M17-2 #3).
+        ...(uniform === 'real' && fit !== null && !furniture.id.startsWith(GENERATED_DRESS_PREFIX)
+          ? { [REAL_FIT_FIELD]: { folder: fit.folder, shownM: fit.shownM } }
+          : {}),
         // Món sinh: mẫu đang dựng, để lượt về lưu đúng mẫu ấy khi món được nhận (`toSpatial`: `MODEL_FOLDER_FIELD` khi lưu, `SHOWN_SIZE_FIELD` trong `seenSizeM`).
         ...(fit !== null && furniture.model === undefined && furniture.id.startsWith(GENERATED_DRESS_PREFIX)
           ? { [MODEL_FOLDER_FIELD]: fit.folder, [SHOWN_SIZE_FIELD]: fit.shownM }
@@ -1293,9 +1297,11 @@ export const toPascalScene = (
   const adoptedIds = new Set<string>([...twinIds].map(adoptedFurnitureIdOf));
   const ruleAdopted = ruleAdoptedIdsOf(graph.rooms, graph.furniture);
   const isAdoptedPair = adoptedPairOf(graph.rooms);
+  /** Món AI cỡ thật người dùng đã sửa (Codex M17-2 #3): hộp đã lưu là cỡ nhìn thấy → dựng khớp đúng hộp như cặp nhận. */
+  const isRealFit = (f: Pick<Furniture, 'kind' | 'model'>): boolean => f.model?.id === realFitModelIdOf(f.kind);
   /** Mẫu LUẬT CHỌN của món đã nhận (cặp chắc chắn, `ruleAdoptedIdsOf`; không phải mẫu người dùng đổi): thư mục, hoặc undefined. */
   const ruleFolderOf = (f: Furniture): string | undefined => {
-    if (!ruleAdopted.has(f.id) || f.model === undefined) return undefined;
+    if (f.model === undefined || !(ruleAdopted.has(f.id) || isRealFit(f))) return undefined;
     const folder = SWAPPED_MODEL_SRC.exec(f.model.src)?.[1];
     return folder !== undefined && Object.prototype.hasOwnProperty.call(CATALOG_MODELS, folder) ? folder : undefined;
   };
@@ -1326,9 +1332,10 @@ export const toPascalScene = (
   );
   // Món đã nhận còn mẫu luật chọn: twin đại diện trong sổ bộ (như trước khi nhận), không thành đồ cố định của bảng màu.
   const contextRoles = contextRolesOf(
-    furnitureToBuild.filter((f) => f.suggested !== true && ruleFolderOf(f) === undefined),
+    // Món AI cỡ thật đã sửa (`isRealFit`) vẫn vào sổ: đồ ghim, chiếm chỗ của nó.
+    furnitureToBuild.filter((f) => f.suggested !== true && !(ruleAdopted.has(f.id) && ruleFolderOf(f) !== undefined)),
     contextUsageOf,
-    isAdoptedPair,
+    (f) => isAdoptedPair(f) || isRealFit(f),
   );
 
   for (const furniture of furnitureToBuild) {
@@ -1400,7 +1407,7 @@ export const toPascalScene = (
     const built = ruleFolder === undefined ? furniture : withoutModel(furniture);
     const folderFor = ruleFolder ?? sinkFolder;
     // Cặp nhận: hộp đã lưu là cỡ nhìn thấy (`toSpatial`) → dựng khớp đúng hộp, giữ cỡ người dùng co giãn.
-    const exact = isAdoptedPair(furniture);
+    const exact = isAdoptedPair(furniture) || isRealFit(furniture);
     const rawNode =
       arms === null
         ? itemNodeOf(built, levelNodeId, levelHeightMm, style, usage, counterTopMmOf(furniture, furnitureToBuild, style, usageOf), folderFor, exact)
@@ -1412,6 +1419,7 @@ export const toPascalScene = (
     const node = withFields(rawNode, {
       ...(ruleFolder === undefined ? {} : { [MODEL_FOLDER_FIELD]: ruleFolder }),
       ...(exact ? { [ADOPTED_FIT_FIELD]: true } : {}),
+      ...(ruleFolder !== undefined && isRealFit(furniture) ? { [REAL_FIT_FIELD]: { folder: ruleFolder } } : {}),
     });
 
     /* Hộp quầy gốc vẫn phải có node (thiếu = lượt lưu đọc thành xoá) nhưng ẩn; dãy tủ thay nó là đồ sinh ra.

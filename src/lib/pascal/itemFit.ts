@@ -58,6 +58,14 @@ export const WALL_BACK_ROLES: ReadonlySet<string> = new Set(['sofa', 'doubleBed'
  * Lượt về (`toSpatial.collectItem`) cộng nó vào tâm khi lưu cỡ nhìn thấy, để món không nhảy sau nhận/tải lại (Codex M17-1 #5).
  */
 export const REAL_BACK_SHIFT_FIELD = 'realBackShiftM';
+/**
+ * Trường siêu dữ liệu node món AI dựng CỠ THẬT: `{ folder, shownM }` (mẫu + cỡ hiển thị [rộng, cao, sâu] m). Người dùng sửa
+ * món → lượt về lưu cỡ hiển thị (× co giãn), mẫu đang thấy với id `realFitModelIdOf(kind)` và tâm đã cộng độ áp lưng; lượt
+ * dựng sau khớp ĐÚNG hộp (Codex M17-2 #3). Node dựng lại từ món đã lưu như vậy chỉ mang `{ folder }`.
+ */
+export const REAL_FIT_FIELD = 'realFit';
+/** `model.id` của món AI cỡ thật người dùng đã sửa: dựng khớp đúng hộp, không chọn lại mẫu (tiền tố `appfront-` = không phải "Đổi mẫu"). */
+export const realFitModelIdOf = (kind: string): string => `appfront-fit-${kind}`;
 
 export interface ItemFit {
   readonly folder: string;

@@ -1053,15 +1053,16 @@ export const roomSetOf = (
    * của chính mẫu trượt vì lý do trong BANNED, và ngoài công năng ở cỡ hiển thị. Kiểm từng lý do riêng — lý do đầu của
    * hardRejectOf (vd hình dáng) không được che lý do cấm. "Thiếu dữ liệu chất lượng" KHÔNG cấm ở đây: mẫu dựng sẵn/luật cũ
    * Pascal không có dữ liệu thư viện. Ngoại lệ được phép (méo dáng, chi phí > FAIL_COST) không nằm ở đây.
-   * Trần và công năng chỉ cấm khi do MẪU gây ra: cỡ người dùng xác nhận, hoặc cao hiển thị không vượt cao đã cho (`heightM`,
-   * mọi mẫu đều hiện đúng cao ấy) → không cấm (tủ áo người dùng cao 2,3 m dưới trần 2,6 m vẫn dựng — F1-ext).
+   * Trần và công năng chỉ miễn với cỡ NGƯỜI DÙNG xác nhận (tủ áo người dùng cao 2,3 m dưới trần 2,6 m vẫn dựng — F1-ext).
+   * Món chưa xác nhận luôn kiểm hở trần kể độ nâng, kể cả khi cao hiển thị = `heightM` AI cho (Codex M17-2 #2: tủ áo AI 2,4 m
+   * nâng 0,5 m dưới trần 2,7 m).
    */
   const forbiddenOf = (m: SetMember, f: string, conceptMiss: string | undefined): string | undefined => {
     const q = (ctx.qualityOf ?? defaultQualityOf)(f);
     const dims = ctx.dimsOf(f);
     const shown = m.shownOf?.(f) ?? dims;
     const h = shown?.[1];
-    const byModel = m.sizeFrom !== 'user' && h !== undefined && (m.heightM === undefined || h > m.heightM + 1e-6);
+    const byModel = m.sizeFrom !== 'user' && h !== undefined;
     return (
       (q !== undefined && (q.issues ?? []).length > 0 ? 'có lỗi QC' : undefined) ??
       (q !== undefined && textureBroken(q) ? 'vân vỡ' : undefined) ??
@@ -1081,7 +1082,7 @@ export const roomSetOf = (
    *     → tên (Codex M17-1 #7): mẫu to hợp bộ hơn chút không thắng mẫu nhỏ trong dải, mẫu nhỏ lạc tông ngoài dải không thắng.
    * (b) Luật cũ trượt (cấm / méo dáng / chi phí > FAIL_COST / thiếu dữ liệu) → mẫu DỰNG SẴN của vai ở cỡ hiển thị, nếu nó không
    *     méo, trong công năng, không cấm, và qua cùng kiểm va chạm + hở trần (Codex M17-1 #4).
-   * (c) Mẫu luật cũ nếu nó KHÔNG bị cấm (`forbiddenOf`) — ngoại lệ được phép: méo dáng, chi phí > FAIL_COST (ghi sổ).
+   * (c) Mẫu luật cũ nếu nó KHÔNG bị cấm (`forbiddenOf`) và không va chạm (`clear`, Codex M17-2 #1) — ngoại lệ được phép: méo dáng, chi phí > FAIL_COST (ghi sổ).
    * (d) Còn lại `null`: sổ ghi lý do; toPascal không dựng mẫu thư viện nào cho món (chỗ giữ chỗ `asset://`), không bao giờ
    *     mẫu của vai gốc (vai hiệu lực do sceneVariety tính). Không bao giờ chọn mẫu co dưới phạm vi.
    */
@@ -1092,7 +1093,8 @@ export const roomSetOf = (
   ): { readonly to: string | null; readonly uniform?: 'real'; readonly why: string } => {
     const b = m.box;
     const zones = m.lifted === true || b === undefined ? [] : [...placed, ...pendingOf(m)].filter((z) => !tucked(m.kind, z.kind));
-    const clear = (rect: PlanRect | undefined): boolean => rect === undefined || zones.reduce((s, z) => s + overlapAreaM2(rect, z), 0) <= ROOM_OVERLAP_TOL_M2;
+    const hitOf = (rect: PlanRect | undefined): number => (rect === undefined ? 0 : zones.reduce((s, z) => s + overlapAreaM2(rect, z), 0));
+    const clear = (rect: PlanRect | undefined, budget = 0): boolean => hitOf(rect) <= budget + ROOM_OVERLAP_TOL_M2;
     if (b !== undefined && m.sizeFrom !== 'user') {
       const real = realMemberOf(m);
       const fits = m.pool.flatMap((f) => {
@@ -1102,6 +1104,7 @@ export const roomSetOf = (
         return c <= FAIL_COST ? [{ f, c, a: d[0] * d[2] }] : [];
       });
       const best = Math.min(...fits.map((x) => x.c));
+      // Dải hợp bộ TRƯỚC, nhỏ nhất SAU (điều phối M17-2 #4): "nhỏ hơn đúng loại" nhưng không quay lại mẫu lạc tông ngoài dải.
       const pick = fits.filter((x) => x.c <= r9(best + SHARE_BAND)).sort((x, y) => x.a - y.a || x.c - y.c || x.f.localeCompare(y.f))[0];
       if (pick !== undefined) {
         return { to: pick.f, uniform: 'real', why: 'phương án cuối: mẫu nhỏ nhất đúng vai trong dải hợp bộ, ở cỡ thật (vượt hộp AI), không va chạm' };
@@ -1109,7 +1112,10 @@ export const roomSetOf = (
     }
     const cur = m.current;
     const conceptMissOf = (f: string): string | undefined => (ev.concept?.f === f ? ev.concept.miss : undefined);
-    const forbid = cur === null ? undefined : forbiddenOf(m, cur, conceptMissOf(cur));
+    // Codex M17-2 #1: luật cũ cũng qua cùng kiểm va chạm (mặt bằng hiển thị, `clear`) như mẫu dựng sẵn / cỡ thật. Cỡ người
+    // dùng xác nhận: hộp là bố cục của người dùng — mẫu chỉ không được chồng THÊM quá phần hộp đã chồng.
+    const userHit = m.sizeFrom === 'user' && b !== undefined ? hitOf(boxRectOf(b)) : 0;
+    const forbid = cur === null ? undefined : (forbiddenOf(m, cur, conceptMissOf(cur)) ?? (clear(shownRectOf(m, cur), userHit) ? undefined : 'va chạm'));
     const dims = cur === null ? undefined : ctx.dimsOf(cur);
     const shown = cur === null ? undefined : (m.shownOf?.(cur) ?? dims);
     const r = cur === null ? undefined : hardRejectOf(m, cur, ctx);
