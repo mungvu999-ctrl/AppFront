@@ -252,8 +252,14 @@ export interface SetMember {
   readonly current: string | null;
   /** Ứng viên: mẫu thư viện của vai đã lọc QC/hướng, KHÔNG lọc theo cỡ luật cũ (rỗng = không đổi được). */
   readonly pool: readonly string[];
-  /** Ghim (mẫu người dùng chọn, khe vật liệu, mẫu concept, twin của cặp đã nhận): không đổi, làm chuẩn. */
+  /** Ghim (mẫu người dùng chọn, khe vật liệu, twin của cặp đã nhận): không đổi, làm chuẩn. Mẫu concept không phải ghim. */
   readonly fixed: boolean;
+  /**
+   * Mẫu concept AI chọn cho vai (món chưa ghim): ứng viên ƯU TIÊN — qua mọi ràng buộc cứng của món (như `pool`, kể cả va
+   * chạm) thì chọn nó không so chi phí (`cause: 'concept'`); không qua thì đi đường chọn bình thường. `reject` = lý do bên
+   * gọi đã biết là trượt (QC loại).
+   */
+  readonly concept?: { readonly folder: string; readonly reject?: string };
   /** Loại đồ (`Furniture.kind`) — ghế kê dưới bàn/quầy không tính va chạm (`tuckedSeat`). */
   readonly kind?: string;
   /** Cao đã cho của món (m, `heightMm`); vắng = cao theo mẫu (chuẩn cao = trung vị pool vai). */
@@ -296,9 +302,10 @@ export interface SetContext {
 type SetRule = 'roomset' | 'keep';
 /**
  * Vì sao món ra mẫu này (QA tách A/B/C): `selector` = đánh giá chọn mẫu khác luật cũ; `same` = đánh giá chọn trùng luật
- * cũ; `fallback` = không ứng viên qua ràng buộc cứng → luật cũ; `pinned` = món ghim, không chọn.
+ * cũ; `fallback` = không ứng viên qua ràng buộc cứng → luật cũ; `pinned` = món ghim, không chọn; `concept` = mẫu concept
+ * AI qua mọi ràng buộc cứng của món, chọn không so chi phí.
  */
-export type SetCause = 'selector' | 'same' | 'fallback' | 'fail-keep' | 'pinned';
+export type SetCause = 'selector' | 'same' | 'fallback' | 'fail-keep' | 'pinned' | 'concept';
 export interface SetDecision {
   readonly id: string;
   readonly role: string;
@@ -815,7 +822,18 @@ export const roomSetOf = (
         if (hit <= minHit + ROOM_OVERLAP_TOL_M2) legacyShape = r;
       }
     }
-    return { pass, rejects, ...(legacyShape === undefined ? {} : { legacyShape }) };
+    // Mẫu concept: cùng ràng buộc cứng + cùng ngân sách va chạm như ứng viên của pool (không vào `pass`: đường chọn
+    // bình thường giữ nguyên khi concept trượt).
+    let concept: { readonly f: string; readonly cost?: number; readonly miss?: string } | undefined;
+    if (m.concept !== undefined) {
+      const f = m.concept.folder;
+      const r = m.concept.reject ?? hardRejectOf(m, f, ctx);
+      const rect = r !== undefined || near.length === 0 ? undefined : shownRectOf(m, f);
+      const hit = rect === undefined ? 0 : near.reduce((s, z) => s + overlapAreaM2(rect, z), 0);
+      const miss = r ?? (hit > minHit + ROOM_OVERLAP_TOL_M2 ? 'va chạm' : undefined);
+      concept = miss === undefined ? { f, cost: costFor(m, f) } : { f, miss };
+    }
+    return { pass, rejects, ...(legacyShape === undefined ? {} : { legacyShape }), ...(concept === undefined ? {} : { concept }) };
   };
 
   for (const role of roles) {
@@ -878,14 +896,56 @@ export const roomSetOf = (
     // Khoá băm theo nội dung, không theo id (chép dự án sinh id mới): thứ hạng vị trí của bàn / món trong phòng.
     const tableRank = new Map([...tables].sort(byPlace).map((t, i) => [t.id, i] as const));
     const groupHash = (key: string): string => `${roomKey}|${role}|g${key === '' ? '-' : (tableRank.get(key) ?? '?')}`;
-    const roomShared = bestFor(todo, `${roomKey}|${role}`);
-    const keys = [...new Set(todo.map((m) => keyOf.get(m.id) ?? ''))];
-    for (const key of keys) {
-      const todoG = todo.filter((m) => keyOf.get(m.id) === key);
-      const pinned = group
+    const pinnedOf = (key: string): string | undefined =>
+      group
         .filter((m) => keyOf.get(m.id) === key)
         .map((m) => folderOfFixed(m) ?? m.pinTo ?? null)
         .find((f): f is string => f !== null);
+    // Mẫu concept trước (vòng 16): món qua mọi ràng buộc cứng → concept, không so chi phí. Nhóm ghế quanh bàn: concept là
+    // mẫu chung chỉ khi qua cho MỌI ghế của bàn. Nhóm có mẫu ghim/đã chốt → mẫu ấy dẫn nhóm như cũ (một kiểu mỗi bàn).
+    const conceptMiss = new Map<string, string>();
+    const byConcept = new Set<string>();
+    for (const key of new Set(todo.map((m) => keyOf.get(m.id) ?? ''))) {
+      if (pinnedOf(key) !== undefined) continue;
+      const holders = todo.filter((m) => keyOf.get(m.id) === key && m.pinTo === undefined && evals.get(m.id)?.concept !== undefined);
+      const missOf = (m: SetMember): string | undefined => evals.get(m.id)?.concept?.miss;
+      const first = key !== '' && SEAT_GROUP_ROLES.has(role) ? holders.find((m) => missOf(m) !== undefined) : undefined;
+      for (const m of holders) {
+        const miss = missOf(m) ?? (first === undefined ? undefined : `${missOf(first) ?? ''} (ghế ${first.id} cùng bàn)`);
+        if (miss === undefined) byConcept.add(m.id);
+        else conceptMiss.set(m.id, miss);
+      }
+    }
+    for (const m of todo) {
+      if (!byConcept.has(m.id)) continue;
+      const ev = evals.get(m.id);
+      const c = ev?.concept as { readonly f: string; readonly cost?: number };
+      const fromCost = m.current === null ? undefined : ev?.pass.get(m.current);
+      const key = keyOf.get(m.id) ?? '';
+      out.set(m.id, {
+        id: m.id,
+        role,
+        from: m.current,
+        to: c.f,
+        rule: c.f === m.current ? 'keep' : 'roomset',
+        cause: 'concept',
+        anchor,
+        ...(c.cost === undefined ? {} : { cost: c.cost }),
+        ...(fromCost === undefined ? {} : { fromCost }),
+        ...(m.sizeFrom === undefined ? {} : { by: m.sizeFrom }),
+        ...(key === '' ? {} : { group: key }),
+        pool: m.pool.length,
+        why: `concept: qua mọi ràng buộc cứng${c.cost === undefined ? '' : ` (${c.cost.toFixed(2)})`}`,
+        ...(ev !== undefined && Object.keys(ev.rejects).length > 0 ? { rejects: ev.rejects } : {}),
+      });
+      placeOf(m, c.f);
+    }
+    const open = todo.filter((m) => !byConcept.has(m.id));
+    const roomShared = bestFor(open, `${roomKey}|${role}`);
+    const keys = [...new Set(open.map((m) => keyOf.get(m.id) ?? ''))];
+    for (const key of keys) {
+      const todoG = open.filter((m) => keyOf.get(m.id) === key);
+      const pinned = pinnedOf(key);
       const roomOk = roomShared !== undefined && todoG.every((m) => okFor(m, roomShared.f));
       const shared = pinned !== undefined ? { f: pinned, n: 0, band: 1 } : roomOk ? roomShared : bestFor(todoG, groupHash(key));
       // Món không hợp mẫu chung: gom tiếp thành mẫu chung thứ hai, thứ ba… của phần còn lại (ít kiểu nhất trong nhóm).
@@ -932,11 +992,11 @@ export const roomSetOf = (
         const via =
           sharedOk && pinned !== undefined
             ? 'cùng mẫu món ghim/đã chốt của nhóm'
-            : sharedOk && todo.length > 1
-              ? `mẫu chung ${roomOk ? 'phòng' : 'nhóm'} (chấp nhận ${shared.n}/${roomOk ? todo.length : todoG.length})`
+            : sharedOk && open.length > 1
+              ? `mẫu chung ${roomOk ? 'phòng' : 'nhóm'} (chấp nhận ${shared.n}/${roomOk ? open.length : todoG.length})`
               : anchor
                 ? `neo, dải ${pick?.band ?? 0}`
-                : todo.length > 1
+                : open.length > 1
                   ? `mẫu chung không hợp món: mẫu chung phụ (chấp nhận ${pick?.n ?? 0})`
                   : 'tốt nhất';
         // Ngưỡng hỏng = "không làm tệ hơn" (Codex SEL-4 #1): chỉ giữ mẫu luật cũ khi chính nó qua ràng buộc cứng VÀ cùng ngân
@@ -946,6 +1006,7 @@ export const roomSetOf = (
         const legacyShape = (ev as { legacyShape?: string }).legacyShape;
         const failKeep = over !== undefined && (legacyOk || legacyShape !== undefined);
         const to = pick === undefined || failKeep ? m.current : pick.f;
+        const miss = conceptMiss.get(m.id);
         out.set(m.id, {
           id: m.id,
           role,
@@ -960,7 +1021,8 @@ export const roomSetOf = (
           ...(key === '' ? {} : { group: key }),
           pool: m.pool.length,
           why:
-            m.pinTo !== undefined
+            (miss === undefined ? '' : `concept trượt: ${miss}; `) +
+            (m.pinTo !== undefined
               ? 'cặp đã nhận: mẫu của món thật, chốt đúng lượt vai'
               : cost === undefined
                 ? 'không ứng viên qua ràng buộc cứng — mẫu luật cũ'
@@ -970,7 +1032,7 @@ export const roomSetOf = (
                   ? `giữ mẫu luật cũ: mẫu chung của nhóm ${pick?.f ?? ''} trung bình ${(over as number).toFixed(2)} > ngưỡng hỏng ${FAIL_COST}`
                   : over !== undefined
                     ? `${via}; ${cost.toFixed(2)} > ngưỡng hỏng ${FAIL_COST} nhưng mẫu luật cũ không hợp lệ (ràng buộc cứng/va chạm) — giữ ứng viên hợp lệ`
-                    : `${via}; ${cost.toFixed(2)} (${old})`,
+                    : `${via}; ${cost.toFixed(2)} (${old})`),
           ...(Object.keys(ev.rejects).length > 0 ? { rejects: ev.rejects } : {}),
           ...(top.length > 0 ? { top } : {}),
         });

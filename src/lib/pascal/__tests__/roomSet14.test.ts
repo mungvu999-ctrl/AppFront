@@ -541,3 +541,125 @@ describe('Codex SEL-1', () => {
     expect(run('p1', 'p2')).toBe(run('p2', 'p1'));
   });
 });
+
+/* ---- Vòng 16: mẫu concept AI không còn là ghim — ứng viên ưu tiên, chỉ chọn khi qua mọi ràng buộc cứng của món ---- */
+
+describe('vòng 16 — mẫu concept là ứng viên ưu tiên, không phải ghim', () => {
+  const table = (extra: Partial<SetMember> = {}): SetMember => at('t', 'diningTable', null, 1.6, 0.9, 0, 0, extra);
+
+  it('concept qua mọi ràng buộc cứng → chọn concept (cause concept), không so chi phí', () => {
+    const base = roomSetOf('R', [table()], new Map(), ctx).get('t');
+    const concept = base?.top?.find(([f]) => f !== base.to)?.[0] as string;
+    expect(concept).toBeDefined();
+    const d = roomSetOf('R', [table({ concept: { folder: concept } })], new Map(), ctx).get('t');
+    expect(d).toMatchObject({ to: concept, cause: 'concept', why: expect.stringContaining('concept') });
+  });
+
+  it('concept méo / không vừa hộp → bộ chọn chọn mẫu khác như không có concept, không kéo giãn concept', () => {
+    const m = table();
+    const bad = m.pool.find((f) => ['méo dáng', 'sai tỉ lệ thật', 'vượt hộp chỗ đặt'].includes(hardRejectOf(m, f, ctx) ?? '')) as string;
+    expect(bad).toBeDefined();
+    const base = roomSetOf('R', [m], new Map(), ctx).get('t');
+    const d = roomSetOf('R', [table({ concept: { folder: bad } })], new Map(), ctx).get('t');
+    expect(d?.to).toBe(base?.to);
+    expect(d?.to).not.toBe(bad);
+    expect(d?.cause).not.toBe('concept');
+    expect(d?.why).toContain(`concept trượt: ${hardRejectOf(m, bad, ctx) ?? ''}`);
+  });
+
+  it('nhóm ghế quanh bàn: concept là mẫu chung khi qua cho MỌI ghế; một ghế trượt → cả nhóm đi đường thường, một mẫu', () => {
+    const chairs = (extra: Partial<SetMember> = {}): SetMember[] => [
+      pinnedAt('A', 'diningTable', 'table-oak-light-tapered-legs', 1.6, 0.9, 0, 0),
+      at('a1', 'diningChair', null, 0.48, 0.5, -0.4, -0.7, extra),
+      at('a2', 'diningChair', null, 0.48, 0.5, 0.4, -0.7, extra),
+      at('a3', 'diningChair', null, 0.48, 0.5, 0, 0.7, extra),
+    ];
+    const base = roomSetOf('R', chairs(), new Map(), ctx);
+    const concept = base.get('a1')?.top?.find(([f]) => f !== base.get('a1')?.to)?.[0] as string;
+    const all = roomSetOf('R', chairs({ concept: { folder: concept } }), new Map(), ctx);
+    for (const id of ['a1', 'a2', 'a3']) expect(all.get(id)).toMatchObject({ to: concept, cause: 'concept', group: 'A' });
+    // Ghế thứ tư dò thành dải 1,16 × 0,29 m: concept méo ở ghế này → không ghế nào của bàn lấy concept.
+    const strip = at('bad', 'diningChair', null, 1.16, 0.29, 0, -1.1, { concept: { folder: concept } });
+    const out = roomSetOf('R', [...chairs({ concept: { folder: concept } }), strip], new Map(), ctx);
+    expect(out.get('bad')?.why).toContain('concept trượt');
+    for (const id of ['a1', 'a2', 'a3']) {
+      expect(out.get(id)?.cause).not.toBe('concept');
+      expect(out.get(id)?.why).toContain('(ghế bad cùng bàn)');
+    }
+    expect(new Set(['a1', 'a2', 'a3'].map((id) => out.get(id)?.to)).size).toBe(1);
+  });
+
+  describe('qua đường dựng thật (sceneVariety)', () => {
+    const ROOM = 'R-CONCEPT';
+    const usage = (): RoomUsage => 'livingRoom';
+    const furniture = (id: string, kind: Furniture['kind'], w: number, d: number, x: number, y: number, extra: Partial<Furniture> = {}): Furniture =>
+      ({
+        id,
+        levelId: 'L-1',
+        roomId: ROOM,
+        kind,
+        centre: { x, y },
+        boundingBox: { min: { x: x - w / 2, y: y - d / 2 }, max: { x: x + w / 2, y: y + d / 2 } },
+        rotationDeg: 0,
+        source: 'ai',
+        reviewed: false,
+        confidence: 1,
+        ...extra,
+      }) as Furniture;
+    const CHAIRS = ['chair-white-windsor-spindle', 'chair-dining-grey-scandi-b', 'chair-dining-oak-rope-arm-b'];
+    const OTHER_TABLE = 'table-walnut-medium-splayed-legs';
+    const userTable = furniture('F-T', 'table', 1600, 900, 0, 0, { model: { id: 't', src: '/items/table-oak-light-tapered-legs/model.glb' } });
+    const chair = furniture('F-C', 'chair', 480, 500, 0, -700);
+    const strip = furniture('F-S', 'chair', 1160, 290, 3000, 3000);
+    const base: LayerStyle = { ...am, roomSet: true, layout: new Set(), rulesOff: new Set(), woodTone: 'l' };
+    const withConcept = (chairPick: string): LayerStyle => ({ ...base, prefer: { ...base.prefer, diningChair: [chairPick], diningTable: [OTHER_TABLE] } });
+    const pick = (items: readonly Furniture[], id: string, style: LayerStyle): string | null => {
+      setRoomSetKeys(new Map(), new Map([[ROOM, CEIL]]));
+      contextRolesOf(items, usage);
+      return modelFolderOf(items.find((f) => f.id === id) as Furniture, style, 'livingRoom');
+    };
+    const entry = (id: string) => roomSetReport()[ROOM]?.items.find((d) => d.id === id);
+    beforeAll(() => {
+      clearServerLibrary();
+      registerServerLibrary(
+        [...CHAIRS, 'table-oak-light-tapered-legs', OTHER_TABLE].map((id) => {
+          const u = real(id)?.useMm ?? [1000, 1000, 1000];
+          return { id, widthMm: u[0], heightMm: u[1], depthMm: u[2], modelUrl: `https://x.test/${id}.glb` };
+        }),
+      );
+    });
+    afterAll(() => {
+      clearServerLibrary();
+      registerServerLibrary(
+        ROLES.flatMap((role) => pool(role)).map((id) => {
+          const u = real(id)?.useMm ?? [1000, 1000, 1000];
+          return { id, widthMm: u[0], heightMm: u[1], depthMm: u[2], modelUrl: `https://x.test/${id}.glb` };
+        }),
+      );
+    });
+
+    it('concept hợp lệ → chọn concept; món có `model` người dùng vẫn ghim dù concept vai ấy khác', () => {
+      const selected = pick([userTable, chair], 'F-C', base);
+      const legacy = entry('F-C')?.from;
+      const concept = CHAIRS.find((c) => c !== selected && entry('F-C')?.top?.some(([f]) => f === c)) as string;
+      expect(concept).toBeDefined();
+      expect(pick([userTable, chair], 'F-C', withConcept(concept))).toBe(concept);
+      expect(entry('F-C')).toMatchObject({ cause: 'concept', to: concept });
+      // `from` = luật cũ KHÔNG chứa concept (cùng mẫu như khi phong cách không có concept).
+      expect(entry('F-C')?.from).toBe(legacy);
+      // Món có `model` dựng bằng mẫu đã lưu (không hỏi modelFolderOf): sổ ghi ghim, mẫu đã lưu, không phải concept bàn.
+      expect(entry('F-T')).toMatchObject({ cause: 'pinned', to: 'table-oak-light-tapered-legs' });
+    });
+
+    it('concept méo trong hộp → không trả concept, cả qua đường fallback (luật cũ không chứa concept); roomSet tắt → như cũ (concept)', () => {
+      const off: LayerStyle = { ...base, roomSet: false };
+      const legacy = pick([strip], 'F-S', off);
+      const concept = CHAIRS.find((c) => c !== legacy) as string;
+      const got = pick([strip], 'F-S', withConcept(concept));
+      expect(got).not.toBe(concept);
+      expect(entry('F-S')?.why).toContain('concept trượt');
+      expect(entry('F-S')?.from).not.toBe(concept);
+      expect(pick([strip], 'F-S', { ...withConcept(concept), roomSet: false })).toBe(concept);
+    });
+  });
+});

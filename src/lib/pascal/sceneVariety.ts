@@ -569,7 +569,11 @@ export const modelFolderOf = (
   return baseFolderOf(f, style, usage, roleOverride);
 };
 
-const baseFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, roleOverride?: FurnitureRole): string | null => {
+/** Mẫu concept AI chọn cho vai (`sceneStyleFromConcept` đặt đầu `prefer`): mẫu thư viện máy chủ đầu tiên; vắng = không có. */
+const conceptOf = (role: FurnitureRole, style: SceneStyle): string | undefined => (style.prefer[role] ?? []).find(isServerModel);
+
+/** `noConcept`: bỏ mẫu concept khỏi `prefer` — mẫu luật cũ của món chưa ghim khi bộ chọn bật (concept là ứng viên ưu tiên của `roomSetOf`, không phải luật cũ). */
+const baseFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, roleOverride?: FurnitureRole, noConcept = false): string | null => {
   const role = roleOverride ?? roleOf(f, usage);
   const catalogue = ROLE_MODELS[role];
   const best = Math.min(...catalogue.map((folder) => sizeCostOf(f, folder)));
@@ -577,7 +581,7 @@ const baseFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, role
   /* AID-01: mẫu thư viện máy chủ mà AI chọn cho vai trò (`sceneStyleFromConcept`) không nằm trong
      `ROLE_MODELS` — máy chủ đã lọc theo loại, cỡ khớp bằng `asset.scale`, nên không qua ngưỡng cỡ. */
   const preferred = (style.prefer[role] ?? []).filter((folder) =>
-    catalogue.includes(folder) ? isNearBest(folder) : isServerModel(folder),
+    catalogue.includes(folder) ? isNearBest(folder) : !noConcept && isServerModel(folder),
   );
   const key = PER_ITEM_ROLES.has(role) ? f.id : `${f.roomId ?? 'none'}|${role}`;
   const hashed = (folders: readonly string[]): string => folders[fnv1a(key) % folders.length] as string;
@@ -701,12 +705,11 @@ type SetInput = FolderInput & Partial<Pick<Furniture, 'edited' | 'slots' | 'cent
 /** Twin của cặp đã nhận → mẫu đã lưu của món thật (`addRoomSetMembers`): ghim, không chấm như đồ sinh. */
 const SET_PINNED = new Map<string, string>();
 /**
- * Món GHIM (vòng 14): mẫu người dùng chọn / cặp đã nhận (`model`), khe vật liệu theo mẫu đang có (`slots`), twin của cặp
- * đã nhận, mẫu concept AI chọn cho vai (`style.prefer`). Mọi món vai bộ còn lại — đồ sinh, AI chưa/đã xác nhận, người dùng
- * nhập, `edited` chưa gán mẫu — lấy mẫu từ MỘT đánh giá (`roomSetOf`); luật cũ chỉ còn là phương án cuối.
+ * Món GHIM: mẫu người dùng chọn / cặp đã nhận (`model`), khe vật liệu theo mẫu đang có (`slots`), twin của cặp đã nhận.
+ * Mẫu concept AI chọn cho vai (`style.prefer`) KHÔNG phải ghim (vòng 16): là ứng viên ưu tiên của `roomSetOf`, chỉ được
+ * chọn khi qua mọi ràng buộc cứng của món. Mọi món vai bộ còn lại lấy mẫu từ MỘT đánh giá; luật cũ chỉ là phương án cuối.
  */
-const isPinned = (f: SetInput, role: FurnitureRole, style: SceneStyle): boolean =>
-  f.model !== undefined || f.slots !== undefined || SET_PINNED.has(f.id) || (style.prefer[role] ?? []).some(isServerModel);
+const isPinned = (f: SetInput): boolean => f.model !== undefined || f.slots !== undefined || SET_PINNED.has(f.id);
 /** Nguồn cỡ của món chưa ghim: đồ sinh / AI chưa xác nhận / người dùng đã xác nhận (hộp không bao giờ đổi). */
 const sizeFromOf = (f: SetInput): NonNullable<SetMember['sizeFrom']> =>
   isGenerated(f) ? 'generated' : f.reviewed === false && f.source !== 'human' && f.edited !== true ? 'ai' : 'user';
@@ -873,7 +876,8 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
   });
   const members: SetMember[] = [...room.members.values()].map(({ f, role, override }) => {
     const twinPin = SET_PINNED.get(f.id);
-    const pinned = twinPin === undefined && isPinned(f, role, style);
+    const pinned = twinPin === undefined && isPinned(f);
+    const concept = pinned || twinPin !== undefined ? undefined : conceptOf(role, style);
     const pin = twinPin ?? (f.model === undefined ? undefined : (SAVED_FOLDER.exec(f.model.src)?.[1] ?? null));
     const [short, long] = footprintOf(f);
     const box = setBoxOf(f);
@@ -888,9 +892,11 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
       short,
       long,
       // Món chưa ghim: mẫu luật cũ CHỈ là phương án cuối + để sổ so (`from`).
-      current: pin !== undefined ? pin : baseFolderOf(f, style, room.usage, override),
+      // Mẫu luật cũ của món chưa ghim không chứa mẫu concept: concept trượt ràng buộc cứng thì không quay lại qua `fallback`/`fail-keep`.
+      current: pin !== undefined ? pin : baseFolderOf(f, style, room.usage, override, !pinned),
       pool: pinned || twinPin !== undefined ? [] : setPoolOf(f, role, style),
       fixed: pinned,
+      ...(concept === undefined ? {} : { concept: { folder: concept, ...(QC_EXCLUDED.has(concept) ? { reject: 'QC loại' } : {}) } }),
       ...(twinPin === undefined ? {} : { pinTo: twinPin }),
       ...(ceilingM === undefined
         ? {}
@@ -943,7 +949,7 @@ const roomSetFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, r
       }
     }
     const decision = plan.get(f.id);
-    if (decision !== undefined && !isPinned(f, role, style)) folder = decision.to;
+    if (decision !== undefined && !isPinned(f)) folder = decision.to;
   }
   if (folder !== current) SET_APPLIED.add(f.id);
   else SET_APPLIED.delete(f.id);
