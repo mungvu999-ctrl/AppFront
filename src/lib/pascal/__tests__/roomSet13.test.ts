@@ -218,7 +218,7 @@ describe('vòng 13 — lớp vải chỉ đếm lớp trên nệm', () => {
   });
 });
 
-describe('vòng 14 — mẫu chung của nhóm: lọt nhiều món nhất trước, rồi chi phí trung bình', () => {
+describe('vòng 14 — mẫu chung của nhóm: chấp nhận được cho nhiều món nhất trước, rồi chi phí trung bình', () => {
   it('phòng hai giường: mẫu A lọt cả hai, rẻ hơn trung bình → cả hai giường một mẫu dù riêng giường hẹp B rẻ hơn', () => {
     const bedding = [part('frame', 0.4, [70, 4, 18], 'wood'), part('bedding', 0.3, [88, 0, 1], 'fabric'), part('bedding', 0.3, [60, 0, 2], 'fabric')];
     const table = {
@@ -235,7 +235,7 @@ describe('vòng 14 — mẫu chung của nhóm: lọt nhiều món nhất trư�
     expect(out.get('b1')?.to).toBe('A');
     // A trong hộp sâu 1,75 m co 0,875 (phạt ≈ 0,07) — vẫn lọt; trung bình A < B → mẫu chung A cho cả hai.
     expect(out.get('b2')).toMatchObject({ to: 'A', rule: 'roomset', cause: 'selector' });
-    expect(out.get('b2')?.why).toContain('mẫu chung nhóm (lọt 2/2)');
+    expect(out.get('b2')?.why).toContain('mẫu chung phòng (chấp nhận 2/2)');
   });
 });
 

@@ -8,21 +8,26 @@
  * hợp với neo và với nhau; món cùng vai trong phòng dùng một mẫu. Ràng buộc CỨNG loại trước (dữ liệu chất lượng v1,
  * `libraryQuality.ts`: thiếu = chưa biết = loại), rồi điểm mềm từng món so với BẢNG MÀU PHÒNG (tường, tông gỗ của căn,
  * đồ cố định, neo): hạng phong cách, ΔE gỗ tới gỗ tham chiếu, độ sáng phần bọc, món ngồi tối đậm, độ rực, họ nhấn
- * (`itemCostOf`). Lượt 2 (chấm ảnh mù 9 căn): mẫu cũ thắng trừ khi mẫu mới hơn RÕ (`MIN_GAIN`). Tất định.
+ * (`itemCostOf`). Tất định.
+ *
+ * Vòng 14: MỘT đường chọn mẫu — mọi món vai bộ chưa ghim (đồ sinh, AI chưa/đã xác nhận, người dùng nhập chưa gán mẫu) lấy
+ * mẫu từ đánh giá này; luật thư viện cũ không còn chọn trước rồi để bộ chọn "sửa" (bỏ MIN_GAIN), chỉ là phương án cuối
+ * khi không ứng viên nào qua ràng buộc cứng. Ràng buộc là tuyệt đối (hộp, tỉ lệ thật, chuẩn cao của vai, trần, va chạm),
+ * không so với mẫu luật cũ. Thiết kế + vết đường cũ: F:/runs/m15/sel/DESIGN.md.
  *
  * Cờ `?enable=roomset` / `?disable=roomset`; `ROOMSET_DEFAULT` là hằng duy nhất để lật mặc định.
  */
 
-import { qualityOf as defaultQualityOf, type ModelQuality, type QualityPart } from './libraryQuality';
 import type { Furniture } from '@/domain/spatial/types';
 
+import { qualityOf as defaultQualityOf, type ModelQuality, type QualityPart } from './libraryQuality';
 import { overlapAreaMm2, rectsOverlap, tuckedSeat, type Rect } from './placement';
 import { SCENE_STYLE_MATERIALS, type SceneStyle } from './sceneStyles';
 
 /** HẰNG LẬT MẶC ĐỊNH (điều phối viên lật sau QA ảnh). */
 export const ROOMSET_DEFAULT = true;
-/** Phiên bản luật, ghi vào provenance của món đổi mẫu. */
-export const ROOMSET_VERSION = 1;
+/** Phiên bản luật, ghi vào provenance của món đổi mẫu. 2 = vòng 14: một đường chọn mẫu (không còn mẫu đương nhiệm). */
+export const ROOMSET_VERSION = 2;
 
 const listOf = (search: string, key: string): string[] => (new URLSearchParams(search).get(key) ?? '').split(',');
 export const roomSetOnOf = (search: string, defaults: boolean = ROOMSET_DEFAULT): boolean =>
@@ -47,22 +52,22 @@ export const SET_ROLES: readonly string[] = [
 ];
 const BED_ROLES: ReadonlySet<string> = new Set(['doubleBed', 'singleBed']);
 
-/** Cao mẫu mới ≤ cao mẫu cũ × chừng này. */
+/** Cao hiển thị ≤ chuẩn cao × chừng này; chuẩn = `heightMm` của món, không có thì trung vị (trên) cao mẫu của pool vai. */
 export const HEIGHT_GROW_MAX = 1.15;
-/** Món cao (mẫu cũ ≥ chừng này, m: tủ áo, kệ): ứng viên không cao hơn mẫu cũ — chấm mù lượt 4: tủ thay "chạm gần trần". */
+/** Món cao (chuẩn ≥ chừng này, m: tủ áo, kệ): ứng viên không cao hơn chuẩn — chấm mù vòng 12 lượt 4: tủ "chạm gần trần". */
 export const TALL_M = 2.0;
 /** Khoảng hở tối thiểu tới trần phòng (m) khi đầu vào có `ceilingM`. */
 export const CEILING_GAP_M = 0.3;
 /**
- * Dung sai mặt bằng HIỂN THỊ (m) so với HỘP CHỖ ĐẶT của món (vòng 13): ứng viên được lớn hơn mẫu cũ — mẫu cũ không phải
- * chuẩn đúng — nhưng không vượt hộp. Hộp là chỗ lớp tự sinh đã chừa (đã kiểm chồng đồ, lối đi, ô mở) hoặc cỡ AI dò CHƯA
- * xác nhận; cỡ người dùng xác nhận không vào bộ chọn. Va chạm sau khi chọn kiểm lại trên cả phòng (`ROOM_OVERLAP_TOL_M2`).
+ * Dung sai mặt bằng HIỂN THỊ (m) so với HỘP CHỖ ĐẶT của món (vòng 13): ứng viên không vượt hộp. Hộp là chỗ lớp tự sinh
+ * đã chừa (đã kiểm chồng đồ, lối đi, ô mở), cỡ AI dò, hoặc cỡ người dùng xác nhận (vòng 14: hộp không bao giờ đổi, thêm
+ * `USER_FILL`). Va chạm kiểm trên cả phòng (`ROOM_OVERLAP_TOL_M2`).
  */
 export const SHOWN_TOL_M = 0.02;
 /**
  * Tỉ lệ thật: mẫu co/giãn đều (trung bình nhân hai trục mặt bằng hiển thị / cỡ thật) ra ngoài [SCALE_MIN; SCALE_MAX] là
- * sai cỡ đồ thật (ghế co 0,75 thành đồ chơi) → loại; trong dải thì phạt SCALE_W × |ln g| (mẫu cũ cũng chịu) — mẫu vừa
- * hộp tự nhiên thắng mẫu bị co mạnh.
+ * sai cỡ đồ thật (ghế co 0,75 thành đồ chơi) → loại; hai trục lệch nhau quá SCALE_MAX/SCALE_MIN → loại "méo dáng"; trong
+ * dải thì phạt SCALE_W × (|ln sx| + |ln sz|)/2 — mẫu vừa hộp tự nhiên thắng mẫu bị co mạnh hoặc méo một trục.
  */
 export const SCALE_MIN = 0.8;
 export const SCALE_MAX = 1.25;
@@ -76,7 +81,7 @@ export const fitsSpot = (dims: readonly [number, number, number], short: number,
   return Math.sqrt(Math.min(1, short / Math.min(w, d)) * Math.min(1, long / Math.max(w, d))) >= SCALE_MIN;
 };
 
-/** Va chạm cả phòng (m²): một lần đổi không được làm diện tích chồng (mặt bằng hiển thị) với đồ khác tăng quá chừng này. */
+/** Va chạm cả phòng (m²): chồng của ứng viên được vượt mức nhỏ nhất đạt được trong các ứng viên của món chừng này. */
 export const ROOM_OVERLAP_TOL_M2 = 0.002;
 /**
  * Độ sáng/tương phản theo đồ ĐÃ CÓ trong phòng (vòng 13, ca xấu vòng 12): bề mặt cứng (khung, mặt — mọi chất liệu, kể cả
@@ -112,13 +117,17 @@ export const USER_FILL = 0.9;
 /** Ghế gom theo bàn: hộp bàn nở chừng này (m) chạm hộp ghế (chỗ kéo ghế của lớp bày phòng = 0,6 m). */
 export const CHAIR_REACH_M = 0.6;
 /**
- * Ghế cạnh bàn GỖ ẤM (ca xấu vòng 13: ghế trắng/xám lạnh cạnh sồi): bàn có gỗ ≥ PAIR_WOOD_SHARE bề mặt → mọi phần thân
- * ghế (không kim loại/kính) phạt tỉ phần × max(0, ΔE(phần, gỗ bàn) − PAIR_TOL)/PAIR_REF. Luật cũ chỉ chấm PHẦN GỖ của ghế,
- * ghế không gỗ thì 0 phạt.
+ * Ghế cạnh bàn GỖ (ca xấu vòng 13: ghế trắng/xám lạnh cạnh sồi ấm): bàn của nhóm có gỗ ≥ PAIR_WOOD_SHARE bề mặt → phần
+ * thân KHÔNG gỗ của ghế (không kim loại/kính) chấm đúng như phần gỗ (`woodDeltaOf`, WOOD_TOL, WOOD_DE_REF) so với gỗ bàn.
+ * Trước đây chỉ phần GỖ của ghế được so: ghế trắng/xám không gỗ thì 0 phạt dù lệch hẳn bàn.
  */
 export const PAIR_WOOD_SHARE = 0.5;
-export const PAIR_TOL = 25;
-export const PAIR_REF = 20;
+/**
+ * Mẫu chung của nhóm (cùng vai trong phòng / quanh một bàn) chỉ dùng cho món mà nó không đắt hơn mẫu tốt nhất của CHÍNH món
+ * quá chừng này — cùng mức nhiễu dữ liệu suy luận đo ở vòng 12 (chênh < 0,25 không phân biệt được trên ảnh, MIN_GAIN cũ).
+ * Không có trần này, "lọt nhiều món nhất" từng kéo cả bộ ghế về một mẫu chi phí 4,2 chỉ vì nó lọt một hộp dò lỗi.
+ */
+export const SHARE_BAND = 0.25;
 /** Gỗ: ΔE (L* tối hơn tham chiếu tính đủ, sáng hơn tính nửa) trong dung sai này coi là cùng tông; vượt thì /WOOD_DE_REF. */
 export const WOOD_TOL = 15;
 export const WOOD_DE_REF = 20;
@@ -353,6 +362,13 @@ export const hardRejectOf = (m: SetMember, folder: string, ctx: SetContext): str
     if (m.box !== undefined && (shown[0] > m.box.w + SHOWN_TOL_M || shown[2] > m.box.d + SHOWN_TOL_M)) return 'vượt hộp chỗ đặt';
     const g = scaleOf(dims, shown);
     if (g !== undefined && (g < SCALE_MIN || g > SCALE_MAX)) return 'sai tỉ lệ thật';
+    // Méo dáng: hai trục mặt bằng co/giãn lệch nhau quá dải mà chính `itemFitOf` cho phép (SCALE_MAX/SCALE_MIN) — hộp hẹp
+    // hơn mẫu trên một trục thì trục ấy bị bóp không chặn dưới (hộp dò 1,16 × 0,29 m: ghế bị kéo 1,37 và bóp 0,48).
+    if (dims[0] > 0 && dims[2] > 0) {
+      const sx = shown[0] / dims[0];
+      const sz = shown[2] / dims[2];
+      if (Math.max(sx, sz) / Math.min(sx, sz) > SCALE_MAX / SCALE_MIN + 1e-9) return 'méo dáng';
+    }
     if (m.sizeFrom === 'user' && m.box !== undefined && (shown[0] < m.box.w * USER_FILL || shown[2] < m.box.d * USER_FILL)) return 'không giữ cỡ người dùng';
   } else if (!fitsSpot(dims, m.short, m.long)) return 'không lọt chỗ';
   const h = shown?.[1] ?? dims[1];
@@ -385,7 +401,7 @@ interface Feat {
   readonly other: readonly QualityPart[];
   /** Bề mặt cứng (`isHard`): độ sáng/tương phản với đồ đã có trong phòng. */
   readonly hard: readonly QualityPart[];
-  /** Phần thân (không kim loại/kính): so với gỗ bàn của nhóm ghế (`PAIR_*`). */
+  /** Phần thân KHÔNG gỗ (không kim loại/kính): chấm như gỗ so với gỗ bàn của nhóm ghế (`PAIR_WOOD_SHARE`). */
   readonly body: readonly QualityPart[];
   /** Tổng tỉ phần tông gỗ. */
   readonly woodShare: number;
@@ -438,7 +454,7 @@ const featOf = (folder: string, ctx: SetContext, memo: Memo): Feat => {
     soft: parts.filter((p) => p.kind === 'upholstery' || p.kind === 'bedding'),
     loud: other.filter((p) => isLoud(p.lab) && p.share >= ACCENT_MIN_SHARE),
     hard: parts.filter(isHard),
-    body: parts.filter((p) => p.kind !== 'metal' && p.kind !== 'glass' && p.material !== 'metal' && p.material !== 'glass'),
+    body: other.filter((p) => p.kind !== 'metal' && p.kind !== 'glass' && p.material !== 'metal' && p.material !== 'glass'),
     woodShare: share,
     other,
     dark: parts.reduce((s, p) => s + (p.lab[0] < DARK_L ? p.share : 0), 0),
@@ -518,9 +534,7 @@ const itemCostOf = (folder: string, role: string, refs: ItemRefs, ctx: SetContex
     hardL === undefined ? 0 : f.hard.reduce((s, p) => s + (p.share * Math.max(0, Math.abs(p.lab[0] - hardL) - CONTRAST_TOL)) / CONTRAST_REF, 0);
   const pairLab = refs.pair;
   const pair =
-    pairLab === undefined
-      ? 0
-      : f.body.reduce((s, p) => s + (p.share * Math.max(0, Math.hypot(p.lab[0] - pairLab[0], p.lab[1] - pairLab[1], p.lab[2] - pairLab[2]) - PAIR_TOL)) / PAIR_REF, 0);
+    pairLab === undefined ? 0 : W_WOOD * f.body.reduce((s, p) => s + (p.share * Math.max(0, woodDeltaOf(p.lab, pairLab) - WOOD_TOL)) / WOOD_DE_REF, 0);
   return {
     style,
     wood,
@@ -750,18 +764,13 @@ export const roomSetOf = (
     const todo = group.filter((m) => !m.fixed && !decided.has(m.id));
     if (todo.length === 0) continue;
     const anchor = role === anchorRole;
-    const groups = new Map<string, SetMember[]>();
-    for (const m of group) {
-      const key = tableOf(m)?.id ?? '';
-      groups.set(key, [...(groups.get(key) ?? []), m]);
-    }
-    for (const [key, ms] of groups) {
-      const todoG = ms.filter((m) => todo.includes(m));
-      if (todoG.length === 0) continue;
+    const keyOf = new Map(group.map((m) => [m.id, tableOf(m)?.id ?? ''] as const));
+    /** Ngữ cảnh chấm theo nhóm (bàn của nhóm ghế): gỗ tham chiếu + gỗ bàn cho `pair`. */
+    const refsOf = (key: string): ItemRefs => {
       const table = key === '' ? undefined : inSet.find((m) => m.id === key);
       const tableFolder = table === undefined ? null : (out.get(table.id)?.to ?? folderOfFixed(table) ?? table.current);
       const tf = tableFolder === null ? undefined : featOf(tableFolder, ctx, memo);
-      const refs: ItemRefs = {
+      return {
         wood:
           tf?.woodLab ??
           (SEAT_GROUP_ROLES.has(role) ? woodByRole.get('diningTable') : undefined) ??
@@ -773,27 +782,42 @@ export const roomSetOf = (
         ...(hardShare > 0 ? { hardL: hardSum / hardShare } : {}),
         ...(tf?.woodLab !== undefined && tf.woodShare >= PAIR_WOOD_SHARE ? { pair: tf.woodLab } : {}),
       };
-      const costFor = (m: SetMember, folder: string): number => itemCostOf(folder, role, refs, ctx, memo).total + scaleCostOf(m, folder);
-      const evals = new Map(todoG.map((m) => [m.id, evalOf(m, costFor)] as const));
-      const passOf = (m: SetMember): ReadonlyMap<string, number> => evals.get(m.id)?.pass ?? new Map<string, number>();
-      /** Mẫu lọt nhiều món nhất của `list`, rồi chi phí trung bình (trên các món lọt) nhỏ nhất; neo rút trong dải theo băm. */
-      const bestFor = (list: readonly SetMember[]): { f: string; n: number; band: number } | undefined => {
-        const ranked = [...new Set(list.flatMap((m) => [...passOf(m).keys()]))]
-          .map((f) => {
-            const costs = list.flatMap((m) => {
-              const c = passOf(m).get(f);
-              return c === undefined ? [] : [c];
-            });
-            return { f, n: costs.length, cost: costs.reduce((s, c) => s + c, 0) / costs.length };
-          })
-          .sort((a, b) => b.n - a.n || a.cost - b.cost || a.f.localeCompare(b.f));
-        const best = ranked[0];
-        if (best === undefined) return undefined;
-        const band = anchor ? ranked.filter((r) => r.n === best.n && r.cost <= best.cost + ANCHOR_BAND) : [best];
-        return { f: (band[fnv1a(`${roomKey}|${role}`) % band.length] as { f: string }).f, n: best.n, band: band.length };
-      };
-      const pinned = ms.map(folderOfFixed).find((f): f is string => f !== null);
-      const shared = pinned !== undefined ? { f: pinned, n: 0, band: 1 } : bestFor(todoG);
+    };
+    const evals = new Map(
+      todo.map((m) => {
+        const refs = refsOf(keyOf.get(m.id) ?? '');
+        return [m.id, evalOf(m, (x, f) => itemCostOf(f, role, refs, ctx, memo).total + scaleCostOf(x, f))] as const;
+      }),
+    );
+    const passOf = (m: SetMember): ReadonlyMap<string, number> => evals.get(m.id)?.pass ?? new Map<string, number>();
+    const ownBest = new Map(todo.map((m) => [m.id, Math.min(...passOf(m).values())] as const));
+    /** Mẫu `f` CHẤP NHẬN được cho món: lọt và không đắt hơn mẫu tốt nhất của chính món quá SHARE_BAND. */
+    const okFor = (m: SetMember, f: string): boolean => {
+      const c = passOf(m).get(f);
+      return c !== undefined && c <= (ownBest.get(m.id) ?? Infinity) + SHARE_BAND + 1e-9;
+    };
+    /** Mẫu chấp nhận được cho NHIỀU món nhất của `list`, rồi chi phí trung bình nhỏ nhất; neo rút trong dải theo băm. */
+    const bestFor = (list: readonly SetMember[]): { f: string; n: number; band: number } | undefined => {
+      const ranked = [...new Set(list.flatMap((m) => [...passOf(m).keys()]))]
+        .map((f) => {
+          const costs = list.flatMap((m) => (okFor(m, f) ? [passOf(m).get(f) as number] : []));
+          return { f, n: costs.length, cost: costs.reduce((s, c) => s + c, 0) / costs.length };
+        })
+        .filter((r) => r.n > 0)
+        .sort((a, b) => b.n - a.n || a.cost - b.cost || a.f.localeCompare(b.f));
+      const best = ranked[0];
+      if (best === undefined) return undefined;
+      const band = anchor ? ranked.filter((r) => r.n === best.n && r.cost <= best.cost + ANCHOR_BAND) : [best];
+      return { f: (band[fnv1a(`${roomKey}|${role}`) % band.length] as { f: string }).f, n: best.n, band: band.length };
+    };
+    // Mẫu chung cả phòng; nhóm (bàn) dùng nó khi nó chấp nhận được cho MỌI món của nhóm, không thì mẫu chung của nhóm.
+    const roomShared = bestFor(todo);
+    const keys = [...new Set(todo.map((m) => keyOf.get(m.id) ?? ''))];
+    for (const key of keys) {
+      const todoG = todo.filter((m) => keyOf.get(m.id) === key);
+      const pinned = group.filter((m) => keyOf.get(m.id) === key).map(folderOfFixed).find((f): f is string => f !== null);
+      const roomOk = roomShared !== undefined && todoG.every((m) => okFor(m, roomShared.f));
+      const shared = pinned !== undefined ? { f: pinned, n: 0, band: 1 } : roomOk ? roomShared : bestFor(todoG);
       for (const m of todoG) {
         const ev = evals.get(m.id) ?? { pass: new Map<string, number>(), rejects: {} };
         const fromCost = m.current === null ? undefined : ev.pass.get(m.current);
@@ -801,19 +825,20 @@ export const roomSetOf = (
           .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))
           .slice(0, 3)
           .map(([f, c]) => [f, +c.toFixed(3)] as const);
-        const sharedOk = shared !== undefined && ev.pass.has(shared.f);
+        // Mẫu ghim của nhóm: chỉ cần lọt; mẫu chung: phải chấp nhận được cho chính món.
+        const sharedOk = shared !== undefined && (pinned !== undefined ? ev.pass.has(shared.f) : okFor(m, shared.f));
         const pick = sharedOk ? shared : bestFor([m]);
         const cost = pick === undefined ? undefined : ev.pass.get(pick.f);
         const old = fromCost === undefined ? 'luật cũ trượt/không có' : `luật cũ ${fromCost.toFixed(2)}`;
         const via =
           sharedOk && pinned !== undefined
             ? 'cùng mẫu món ghim/đã chốt của nhóm'
-            : sharedOk && todoG.length > 1
-              ? `mẫu chung nhóm (lọt ${shared.n}/${todoG.length})`
+            : sharedOk && todo.length > 1
+              ? `mẫu chung ${roomOk ? 'phòng' : 'nhóm'} (chấp nhận ${shared.n}/${roomOk ? todo.length : todoG.length})`
               : anchor
                 ? `neo, dải ${pick?.band ?? 0}`
-                : todoG.length > 1
-                  ? 'không lọt mẫu chung nhóm: tốt nhất của món'
+                : todo.length > 1
+                  ? 'mẫu chung không hợp món: tốt nhất của món'
                   : 'tốt nhất';
         const to = pick === undefined ? m.current : pick.f;
         out.set(m.id, {
