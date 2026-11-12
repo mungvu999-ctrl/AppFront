@@ -1097,7 +1097,10 @@ export const roomSetOf = (
     m: SetMember,
     ev: { readonly legacyCost?: number; readonly concept?: { readonly f: string; readonly miss?: string } },
     costOf: (f: string) => number,
+    lead?: string,
   ): { readonly to: string | null; readonly uniform?: 'real'; readonly forced?: string; readonly why: string } => {
+    // F5 (vòng 17): `lead` = mẫu ghế của nhóm (một bàn một bộ) — chỉ thử đúng mẫu ấy (cỡ thật / hiển thị / cỡ thật cưỡng bức).
+    const pool = lead === undefined ? m.pool : [lead];
     const b = m.box;
     const zones = m.lifted === true || b === undefined ? [] : [...placed, ...pendingOf(m)].filter((z) => !tucked(m.kind, z.kind));
     const hitOf = (rect: PlanRect | undefined): number => (rect === undefined ? 0 : zones.reduce((s, z) => s + overlapAreaM2(rect, z), 0));
@@ -1106,7 +1109,7 @@ export const roomSetOf = (
     const grows = (box: SetBox, d: Dims): boolean => d[0] <= box.w + REAL_GROW_M + 1e-9 && d[2] <= box.d + REAL_GROW_M + 1e-9;
     if (b !== undefined && m.sizeFrom !== 'user') {
       const real = realMemberOf(m);
-      const fits = m.pool.flatMap((f) => {
+      const fits = pool.flatMap((f) => {
         const d = ctx.dimsOf(f);
         if (d === undefined || !grows(b, d) || hardRejectOf(real, f, ctx, CONCEPT_LENIENT) !== undefined || !clear(realRectOf(m, b, d))) return [];
         const c = r9(costOf(f));
@@ -1135,7 +1138,7 @@ export const roomSetOf = (
       (dims !== undefined && shown !== undefined && distorted(dims, shown) ? 'méo dáng' : undefined) ??
       (ev.legacyCost !== undefined && ev.legacyCost > FAIL_COST ? `chi phí ${ev.legacyCost.toFixed(2)} > ${FAIL_COST}` : undefined);
     const slip = forbid ?? soft;
-    const st = m.stock;
+    const st = lead ?? m.stock;
     if ((cur === null || slip !== undefined) && st !== undefined && st !== cur) {
       const sd = ctx.dimsOf(st);
       const ss = m.shownOf?.(st) ?? sd;
@@ -1361,20 +1364,44 @@ export const roomSetOf = (
         const avg = r9(cs.reduce((s, c) => s + c, 0) / cs.length);
         return avg > FAIL_COST ? avg : undefined;
       };
-      for (const m of todoG) {
+      // F5 (vòng 17) — một bàn một bộ ghế: ghế (SEAT_GROUP_ROLES) không nhận mẫu chung của nhóm (mẫu chung phụ / phương án
+      // cuối chọn riêng) theo MẪU DẪN của nhóm: mẫu của món cùng nhóm ngoài lượt (concept / ghim / đã chốt) — dẫn cả nhóm —
+      // không thì mẫu phổ biến nhất đã chốt trong lượt (món theo mẫu chung chốt trước). Lọt ràng buộc cứng → dùng; không thì
+      // phương án cuối chỉ với mẫu dẫn (cỡ thật / hiển thị / cỡ thật cưỡng bức như mẫu dựng sẵn). Không được → luồng cũ.
+      const seat = SEAT_GROUP_ROLES.has(role);
+      const onShared = (m: SetMember): boolean => pickOf(m) !== undefined && pickOf(m)?.f === shared?.f;
+      const todoIds = new Set(todoG.map((m) => m.id));
+      const mostOf = (fs: readonly string[]): string | undefined =>
+        [...new Set(fs)].sort((a, b) => fs.filter((x) => x === b).length - fs.filter((x) => x === a).length || a.localeCompare(b))[0];
+      const groupFolders = (inner: boolean): string[] =>
+        group.flatMap((x) => {
+          if (keyOf.get(x.id) !== key || todoIds.has(x.id) !== inner) return [];
+          const f = out.get(x.id)?.to ?? decided.get(x.id)?.to ?? folderOfFixed(x);
+          return typeof f === 'string' ? [f] : [];
+        });
+      const outerLead = seat ? mostOf(groupFolders(false)) : undefined;
+      for (const m of seat ? [...todoG.filter(onShared), ...todoG.filter((x) => !onShared(x))] : todoG) {
         const ev = evals.get(m.id) ?? { pass: new Map<string, number>(), rejects: {} };
+        const lead = !seat || m.pinTo !== undefined ? undefined : (outerLead ?? (onShared(m) ? undefined : mostOf(groupFolders(true))));
+        const leadPass = lead !== undefined && pickOf(m)?.f !== lead && ev.pass.has(lead);
+        const leadFb =
+          lead !== undefined && pickOf(m)?.f !== lead && !leadPass
+            ? fallbackOf(m, ev, (f) => itemCostOf(f, role, refsOf(key), ctx, memo).total, lead)
+            : undefined;
+        const byLead = leadPass || (leadFb !== undefined && leadFb.to === lead);
         const fromCost = m.current === null ? undefined : ev.pass.get(m.current);
         const top = [...ev.pass]
           .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))
           .slice(0, 3)
           .map(([f, c]) => [f, +c.toFixed(3)] as const);
         // Mẫu ghim của nhóm: chỉ cần lọt; mẫu chung: phải chấp nhận được cho chính món.
-        const sharedOk = shared !== undefined && (pinned !== undefined ? ev.pass.has(shared.f) : okFor(m, shared.f));
-        const pick = pickOf(m);
+        const sharedOk = !byLead && shared !== undefined && (pinned !== undefined ? ev.pass.has(shared.f) : okFor(m, shared.f));
+        const pick = leadPass ? { f: lead as string, n: 0, band: 1 } : leadFb !== undefined && byLead ? undefined : pickOf(m);
         const cost = pick === undefined ? undefined : ev.pass.get(pick.f);
         const old = fromCost === undefined ? 'luật cũ trượt/không có' : `luật cũ ${fromCost.toFixed(2)}`;
-        const via =
-          sharedOk && pinned !== undefined
+        const via = leadPass
+          ? 'mẫu dẫn của nhóm ghế (một bàn một bộ)'
+          : sharedOk && pinned !== undefined
             ? 'cùng mẫu món ghim/đã chốt của nhóm'
             : sharedOk && open.length > 1
               ? `mẫu chung ${roomOk ? 'phòng' : 'nhóm'} (chấp nhận ${shared.n}/${roomOk ? open.length : todoG.length})`
@@ -1390,9 +1417,11 @@ export const roomSetOf = (
         const legacyShape = (ev as { legacyShape?: string }).legacyShape;
         const failKeep = over !== undefined && (legacyOk || legacyShape !== undefined);
         const fb =
-          pick === undefined
-            ? fallbackOf(m, ev, (f) => itemCostOf(f, role, refsOf(keyOf.get(m.id) ?? ''), ctx, memo).total)
-            : undefined;
+          leadFb !== undefined && byLead
+            ? { ...leadFb, why: `${leadFb.why}; mẫu dẫn của nhóm ghế (một bàn một bộ)` }
+            : pick === undefined
+              ? fallbackOf(m, ev, (f) => itemCostOf(f, role, refsOf(keyOf.get(m.id) ?? ''), ctx, memo).total)
+              : undefined;
         const to = fb !== undefined ? fb.to : failKeep ? m.current : (pick as { f: string }).f;
         const miss = conceptMiss.get(m.id);
         out.set(m.id, {
