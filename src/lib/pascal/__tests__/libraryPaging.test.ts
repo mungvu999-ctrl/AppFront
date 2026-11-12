@@ -345,6 +345,70 @@ describe('ensureSceneLibraryFor — mẫu đã lưu ngoài danh sách', () => {
     expect(isServerModel('shared-p')).toBe(true);
   });
 
+  it('Codex-2 #1: đổi chủ lúc vào → lượt ĐẦU của người mới vẫn resolve theo id (không bị bỏ vì thế hệ tăng)', async () => {
+    await ensureSceneLibrary();
+    signIn('u2');
+    await ensureSceneLibraryFor(saved('shared-r'));
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(isServerModel('shared-r')).toBe(true);
+  });
+
+  it('Codex-2 #3: rời cảnh khi hàng chờ đầy → lượt đã bỏ không gửi request, cảnh mới được chỗ', async () => {
+    const releases: (() => void)[] = [];
+    read.mockImplementation(async ({ libraryItemId }: { libraryItemId: string }) => {
+      await new Promise<void>((r) => releases.push(r));
+      return { ok: true, data: item(libraryItemId, 1) };
+    });
+    const getApi = async () => ({ list, listPage, read });
+    await ensureSceneLibrary(getApi);
+    const old = ensureSceneLibraryFor(saved(...ids(6, 'old')), getApi);
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(4));
+    abandonAssetRefresh();
+    const fresh = ensureSceneLibraryFor(saved('fresh-1'), getApi);
+    releases.splice(0).forEach((r) => r());
+    await old;
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(5));
+    releases.splice(0).forEach((r) => r());
+    await fresh;
+    expect(read.mock.calls.map(([input]) => (input as { libraryItemId: string }).libraryItemId)).not.toContain('old-00004');
+    expect(isServerModel('fresh-1')).toBe(true);
+    expect(isServerModel('old-00000')).toBe(false);
+  });
+
+  it('Codex-2 #4: mẫu theo id vào rồi rời danh sách → vẫn còn (giá trị theo id), gia hạn đi đường #15', async () => {
+    await ensureSceneLibraryFor(saved('shared-a'));
+    server.ids.push('shared-a');
+    server.revision = 2;
+    server.sig = 3;
+    await refreshAssetUrl(modelSrcOf('srv-00001'), 403, undefined, noWait);
+    expect(modelSrcOf('shared-a')).toContain('sig=3');
+    server.ids.pop();
+    server.revision = 3;
+    server.sig = 4;
+    await refreshAssetUrl(modelSrcOf('srv-00002'), 403, undefined, noWait);
+    expect(isServerModel('shared-a')).toBe(true);
+    expect(modelSrcOf('shared-a')).toContain('sig=1');
+    expect(libraryLoadStatus().resolvedById).toEqual(['shared-a']);
+    listPage.mockClear();
+    read.mockClear();
+    const fresh = await refreshAssetUrl(modelSrcOf('shared-a'), 403, undefined, noWait);
+    expect(fresh).toContain('sig=4');
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(listPage).not.toHaveBeenCalled();
+  });
+
+  it('Codex-2 #5: danh sách cài được mục từng hỏng theo id → xoá kết cục thiếu + câu báo', async () => {
+    await ensureSceneLibraryFor(saved('locked-c'));
+    expect(assetRefreshStatus().notice).toBe(SAVED_MODEL_MISSING_NOTICE);
+    server.ids.push('locked-c');
+    server.revision = 2;
+    server.sig = 2;
+    await refreshAssetUrl(modelSrcOf('srv-00001'), 403, undefined, noWait);
+    expect(isServerModel('locked-c')).toBe(true);
+    expect(libraryLoadStatus().missingById).toEqual([]);
+    expect(assetRefreshStatus()).toMatchObject({ failures: [], notice: null });
+  });
+
   it('Codex #5: rời cảnh trong lúc chờ thư viện → lượt cũ không hỏi theo id (thế hệ chụp lúc vào)', async () => {
     let release: () => void = () => undefined;
     const gate = new Promise<void>((r) => (release = r));
