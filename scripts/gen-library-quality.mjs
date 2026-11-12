@@ -1,7 +1,7 @@
 /**
- * Sinh `src/lib/pascal/libraryQuality.json` (schema v1, xem `libraryQuality.ts`) theo lô cho mọi mẫu có vai.
+ * Sinh `src/lib/pascal/libraryQuality.json` (schema v2, xem `libraryQuality.ts`) theo lô cho mọi mẫu có vai.
  *
- *   node scripts/gen-library-quality.mjs [--out-dir F:/runs/m12/q]
+ *   node scripts/gen-library-quality.mjs [--out-dir F:/runs/m13/q]
  *
  * Nguồn: GLB gốc (tìm theo `model_sha256` của `files.json` backend), `profiles.jsonl`, `libraryRoles*.json`,
  * `libraryQc.json`, nhãn ảnh `visual-tags.jsonl` (nếu có). Đo cho cả 883 mẫu (bản đầy đủ ghi ở out-dir), bundle chỉ
@@ -14,7 +14,7 @@
  */
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
@@ -27,14 +27,16 @@ import sharp from 'sharp';
 
 const FE = 'src/lib/pascal';
 export const SRC = {
-  files: 'F:/worktrees/AppBack/m2-ql/packages/domain/library/files.json',
+  files: 'F:/worktrees/AppBack/m14-catalog/packages/domain/library/files.json',
   profiles: 'F:/runs/library-profiles/profiles.jsonl',
   roles: `${FE}/libraryRoles.json`,
   roles2: `${FE}/libraryRoles2.json`,
   qc: `${FE}/libraryQc.json`,
-  tags: 'F:/runs/m12/q/visual-tags.jsonl',
+  tags: 'F:/runs/m13/q/visual-tags-v2.jsonl',
 };
 export const GLB_DIRS = [
+  'F:/runs/library-import-4/abo/out',
+  'F:/runs/library-import-4/objaverse/out',
   'F:/runs/library-import-3/pack4/all',
   'F:/runs/library-import-3/pack3',
   'F:/runs/library-import-3/plants',
@@ -126,6 +128,90 @@ function materialInfo(mat) {
 
 const BARY = [[1 / 3, 1 / 3, 1 / 3], [0.6, 0.2, 0.2], [0.2, 0.6, 0.2], [0.2, 0.2, 0.6]];
 
+// ---------- hướng mặt trước, đối xứng, dáng chữ L (đo trên bản đồ độ cao nhìn từ trên) ----------
+/** Lưới G×G trên hộp bao XZ; ô = Y lớn nhất / cao hộp (0..1), -1 = trống. Hàng j theo z (j = 0 ở −Z), cột i theo x. */
+export const HMAP_GRID = 24;
+/** Chênh tối thiểu (theo tỉ lệ chiều cao) giữa dải cao nhất phía −Z và +Z để coi là có lưng / đầu giường rõ. */
+export const FRONT_MARGIN = 0.12;
+/** Hàng/cột cần ít nhất số ô có hình này mới tính vào hồ sơ độ cao. */
+export const PROFILE_MIN_CELLS = 2;
+/** Độ giống sau khi xoay (1 − Σ|a−b| / Σ(a+b)) tối thiểu để coi là đối xứng. */
+export const SYM_MIN = 0.9;
+/** Đối xứng 90° chỉ xét khi hộp bao gần vuông (rộng/sâu trong khoảng này). */
+export const SYM_SQUARE = [0.9, 1.1];
+/** Chữ L: cột "sâu" chạm ≥ 90 % chiều sâu lưới, cột "nông" ≤ 75 %; mỗi đầu chiếm ≥ 25 % bề rộng. */
+export const L_DEEP = 0.9;
+export const L_SHALLOW = 0.75;
+export const L_MIN_RUN = 0.25;
+const SEAT_BED = new Set(['sofa', 'armchair', 'diningChair', 'bench', 'doubleBed', 'singleBed']);
+/** Vai có mặt trước có nghĩa nhưng bản đồ độ cao không cho tín hiệu (ngăn kéo, cánh tủ) → giữ quy ước nhập. */
+const FRONTED = new Set(['desk', 'nightstand', 'dresser', 'cabinet', 'closet', 'bookshelf', 'tv', 'fridge', 'washer', 'basin', 'toilet', 'bathtub', 'shower']);
+export const FRONT_RULE = `heightmap ${HMAP_GRID}x${HMAP_GRID} max-Y over XZ bbox; seats+beds: per-row/col mean height (rows with >=${PROFILE_MIN_CELLS} cells), band = max over a third; dz = band(-Z) - band(+Z), dx = |band(-X) - band(+X)|; dz>=${FRONT_MARGIN} & dz>dx -> ok measured; -dz>=${FRONT_MARGIN} & -dz>dx or dx>=${FRONT_MARGIN} & dx>|dz| -> suspect measured; else import. Other roles except fronted (${[...FRONTED].join(',')}): sim=1-sum|a-b|/sum(a+b) on occ*(0.3+0.7h); rot90 sim>=${SYM_MIN} & bbox w/d in [${SYM_SQUARE}] -> sym all; rot180 sim>=${SYM_MIN} -> sym rot180 (measured); else import`;
+export const SHAPE_RULE = `sofa: per-column front extent (rows); deep >= ${L_DEEP}, shallow <= ${L_SHALLOW} of grid; L when a deep run at one end and a shallow run at the other each cover >= ${L_MIN_RUN} of width`;
+
+const bandProfiles = (hm, G = HMAP_GRID) => {
+  const row = new Array(G).fill(null), col = new Array(G).fill(null);
+  for (let k = 0; k < G; k++) {
+    let rs = 0, rn = 0, cs = 0, cn = 0;
+    for (let t = 0; t < G; t++) {
+      const r = hm[k * G + t], c = hm[t * G + k];
+      if (r >= 0) { rs += r; rn++; }
+      if (c >= 0) { cs += c; cn++; }
+    }
+    if (rn >= PROFILE_MIN_CELLS) row[k] = rs / rn;
+    if (cn >= PROFILE_MIN_CELLS) col[k] = cs / cn;
+  }
+  const third = Math.floor(G / 3);
+  const band = (p, lo, hi) => Math.max(0, ...p.slice(lo, hi).filter((v) => v !== null));
+  return { zNeg: band(row, 0, third), zPos: band(row, G - third, G), xNeg: band(col, 0, third), xPos: band(col, G - third, G) };
+};
+
+/** Độ giống của bản đồ với chính nó sau phép xoay `rot` (chỉ số → chỉ số). */
+const similarity = (hm, rot, G = HMAP_GRID) => {
+  const v = (x) => (x >= 0 ? 0.3 + 0.7 * x : 0);
+  let diff = 0, sum = 0;
+  for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) { const a = v(hm[j * G + i]), b = v(hm[rot(i, j)]); diff += Math.abs(a - b); sum += a + b; }
+  return sum ? 1 - diff / sum : 0;
+};
+
+/**
+ * Hướng mặt trước từ bản đồ độ cao (luật chung theo vai, không theo id). `prevCheck` = kết quả kiểm ảnh trước đó,
+ * giữ nguyên khi không đo được. `aspect` = rộng/sâu của hộp bao.
+ */
+export function frontOf(hm, role, prevCheck = 'ok', aspect = 1) {
+  const G = HMAP_GRID;
+  const metrics = {};
+  if (SEAT_BED.has(role)) {
+    const b = bandProfiles(hm);
+    const dz = b.zNeg - b.zPos, dx = Math.abs(b.xNeg - b.xPos);
+    Object.assign(metrics, { dz: +dz.toFixed(3), dx: +dx.toFixed(3) });
+    if (dz >= FRONT_MARGIN && dz > dx) return { front: { axis: '+z', check: 'ok', by: 'measured' }, metrics };
+    if ((-dz >= FRONT_MARGIN && -dz > dx) || (dx >= FRONT_MARGIN && dx > Math.abs(dz))) return { front: { axis: '+z', check: 'suspect', by: 'measured' }, metrics };
+    return { front: { axis: '+z', check: prevCheck, by: 'import' }, metrics };
+  }
+  if (!FRONTED.has(role)) {
+    const s180 = similarity(hm, (i, j) => (G - 1 - j) * G + (G - 1 - i));
+    const s90 = similarity(hm, (i, j) => i * G + (G - 1 - j));
+    Object.assign(metrics, { s180: +s180.toFixed(3), s90: +s90.toFixed(3) });
+    const square = aspect >= SYM_SQUARE[0] && aspect <= SYM_SQUARE[1];
+    if (square && s90 >= SYM_MIN && s180 >= SYM_MIN) return { front: { axis: '+z', check: prevCheck, by: 'measured', sym: 'all' }, metrics };
+    if (s180 >= SYM_MIN) return { front: { axis: '+z', check: prevCheck, by: 'measured', sym: 'rot180' }, metrics };
+  }
+  return { front: { axis: '+z', check: prevCheck, by: 'import' }, metrics };
+}
+
+/** Dáng chữ L cho sofa: một đầu sâu hơn rõ rệt so với đầu kia (≥ 25 % bề rộng mỗi đầu). */
+export function shapeOf(hm, role) {
+  if (role !== 'sofa') return undefined;
+  const G = HMAP_GRID;
+  const depth = Array.from({ length: G }, (_, i) => { let d = 0; for (let j = 0; j < G; j++) if (hm[j * G + i] >= 0) d = j + 1; return d / G; });
+  const run = (pred, from, step) => { let n = 0; for (let i = from; i >= 0 && i < G && pred(depth[i]); i += step) n++; return n / G; };
+  const deep = (d) => d >= L_DEEP, shallow = (d) => d > 0 && d <= L_SHALLOW;
+  const minRun = L_MIN_RUN - 1e-9;
+  const l = (run(deep, 0, 1) >= minRun && run(shallow, G - 1, -1) >= minRun) || (run(deep, G - 1, -1) >= minRun && run(shallow, 0, 1) >= minRun);
+  return l ? 'L' : undefined;
+}
+
 /**
  * Đo hình học + màu theo diện tích. Trả về hộp bao (m), số tam giác, và các cụm màu (theo vật liệu) với đặc trưng
  * trung bình theo diện tích. `imageMean` = màu trung bình CẢ ảnh base (chỉ để so sánh, không dùng làm phần).
@@ -151,6 +237,18 @@ export async function measureDocument(doc) {
   const imgCache = new Map();
   const img = async (tex) => { if (!tex) return null; if (!imgCache.has(tex)) imgCache.set(tex, await decodeImage(tex)); return imgCache.get(tex); };
   const mats = new Map(); // material → { info, names:Set, bins:Map }
+  const G = HMAP_GRID, hmap = new Float32Array(G * G).fill(-1);
+  // Lấy mẫu tam giác theo lưới barycentric bước ≤ 1 ô (chiếu XZ) để tam giác lớn phủ đủ các ô nó đi qua.
+  const stamp = (pa, pb, pc) => {
+    const ax = (pa[0] - mn[0]) / W * G, az = (pa[2] - mn[2]) / D * G, bx = (pb[0] - mn[0]) / W * G, bz = (pb[2] - mn[2]) / D * G, qx = (pc[0] - mn[0]) / W * G, qz = (pc[2] - mn[2]) / D * G;
+    const ns = Math.min(64, Math.ceil(Math.max(Math.hypot(bx - ax, bz - az), Math.hypot(qx - bx, qz - bz), Math.hypot(ax - qx, az - qz))) || 1);
+    for (let s = 0; s <= ns; s++) for (let t = 0; t <= ns - s; t++) {
+      const u = s / ns, v = t / ns, w = 1 - u - v;
+      const i = Math.min(G - 1, Math.max(0, Math.floor(w * ax + u * bx + v * qx))), j = Math.min(G - 1, Math.max(0, Math.floor(w * az + u * bz + v * qz)));
+      const y = ((w * pa[1] + u * pb[1] + v * pc[1]) - mn[1]) / H;
+      if (y > hmap[j * G + i]) hmap[j * G + i] = Math.max(0, y);
+    }
+  };
   let tris = 0, ktx2 = false, totalArea = 0;
   const a = [0, 0, 0], b = [0, 0, 0], c = [0, 0, 0], tx = [0, 0, 0, 0], tm = [0, 0, 0, 0];
   for (const { node, mesh, m, prim, pos } of prims) {
@@ -176,6 +274,7 @@ export async function measureDocument(doc) {
       const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
       const len = Math.hypot(nx, ny, nz);
       tris++;
+      stamp(a, b, c);
       if (!(len > 0)) continue;
       const area = len / 2;
       totalArea += area;
@@ -228,7 +327,7 @@ export async function measureDocument(doc) {
     }
   }
   clusters.sort((x, y) => y.area - x.area);
-  return { size, tris, totalArea, clusters, ktx2, imageMean, nMats: mats.size, textures: textures.length, maxTex };
+  return { size, tris, totalArea, clusters, ktx2, imageMean, nMats: mats.size, textures: textures.length, maxTex, hmap };
 }
 
 /** k-means theo diện tích trên Lab của các ngăn màu một vật liệu; k nhỏ nhất đủ giải thích màu (k ≤ 4). */
@@ -396,7 +495,10 @@ function compact(models) {
     const [pre, rest] = prefixOf(q.source);
     const row = { u: q.useMm, d: [q.detail.tris, q.detail.kb, q.detail.textures, q.detail.maxTex, TIER_CODES.indexOf(q.detail.tier)], l: ix(lic, q.licence), o: [ix(src, pre), rest] };
     if (q.role) row.r = q.role;
-    if (q.front.check !== 'ok') row.f = 1;
+    // Cờ hướng: 1 = suspect, 2 = đo (measured), 4 = sym rot180, 8 = sym all (hàng v1 chỉ có 1 hoặc vắng).
+    const f = (q.front.check !== 'ok' ? 1 : 0) | (q.front.by === 'measured' ? 2 : 0) | (q.front.sym === 'rot180' ? 4 : q.front.sym === 'all' ? 8 : 0);
+    if (f) row.f = f;
+    if (q.shape) row.h = q.shape;
     if (q.completeness) row.c = q.completeness.v[0] + q.completeness.by;
     // Hàng phần: [kind, share%, L, a, b, material?, finish?]; material = -1 khi vắng mà có finish; finish 1 = mirror.
     if (q.parts) row.p = q.parts.map((p) => [KIND_CODES.indexOf(p.kind), Math.round(p.share * 100), ...p.lab, ...(p.material || p.finish ? [p.material ? MAT_CODES.indexOf(p.material) : -1] : []), ...(p.finish ? [1] : [])]);
@@ -409,7 +511,8 @@ function compact(models) {
 }
 
 async function main() {
-  const outDir = process.argv.includes('--out-dir') ? process.argv[process.argv.indexOf('--out-dir') + 1] : 'F:/runs/m12/q';
+  const outDir = process.argv.includes('--out-dir') ? process.argv[process.argv.indexOf('--out-dir') + 1] : 'F:/runs/m13/q';
+  mkdirSync(outDir, { recursive: true });
   for (const p of [SRC.files, SRC.profiles, ...GLB_DIRS]) if (!existsSync(p)) throw new Error(`Thiếu nguồn: ${p}`);
   const files = JSON.parse(readFileSync(SRC.files, 'utf8'));
   const profiles = new Map(readJsonl(SRC.profiles).map((p) => [p.id, p]));
@@ -424,7 +527,7 @@ async function main() {
   const byHash = new Map(), dirHash = {};
   for (const f of glbs) { const h = sha(readFileSync(f)); byHash.set(h, f); const d = GLB_DIRS.find((x) => f.startsWith(x)); (dirHash[d] ??= []).push(h); }
   const io = await makeIO();
-  const all = {}, features = [], sizeWarn = [], missing = [];
+  const all = {}, features = [], sizeWarn = [], missing = [], hmaps = [];
   let ktx2 = 0, n = 0;
   const t0 = Date.now();
   for (const entry of files) {
@@ -440,10 +543,16 @@ async function main() {
     const kb = Math.round(statSync(file).size / 1024);
     const tag = tags.get(id);
     const issues = [...(prof?.qc?.issues ?? []), ...(qc[id]?.reasons ?? []).map((r) => `qc:${r}`)];
+    // Mẫu chưa có vai (chỉ ở bản đầy đủ) đo theo `type` của profiles — cùng bộ tên vai.
+    const shapeRole = role ?? prof?.type;
+    const { front, metrics } = frontOf(ms.hmap, shapeRole, prof?.frontCheck === 'suspect' ? 'suspect' : 'ok', ms.size[0] / (ms.size[2] || 1));
+    const shape = shapeOf(ms.hmap, shapeRole);
+    hmaps.push(JSON.stringify({ id, role, aspect: +(ms.size[0] / (ms.size[2] || 1)).toFixed(3), hm: Array.from(ms.hmap, (v) => (v < 0 ? -1 : Math.round(v * 100))) }));
     const q = {
       ...(role ? { role } : {}),
       useMm,
-      front: { axis: '+z', check: prof?.frontCheck === 'suspect' ? 'suspect' : 'ok' },
+      front,
+      ...(shape ? { shape } : {}),
       ...(tag ? { completeness: { v: tag, by: 'i' } } : {}),
       ...(parts ? { parts } : {}),
       ...(prof?.styles?.length ? { styles: prof.styles } : {}),
@@ -455,7 +564,7 @@ async function main() {
     };
     all[id] = q;
     const main0 = parts?.[0];
-    features.push({ id, role, file, ktx2: ms.ktx2, imageMean: ms.imageMean?.map((v) => +v.toFixed(1)), mainLab: main0?.lab, mainShare: main0?.share, dEmainVsImage: ms.imageMean && main0 ? +dE(ms.imageMean, main0.lab).toFixed(1) : null, nClusters: ms.clusters.length, nMats: ms.nMats, bedNames: BED_SIGNAL_NAME.test(ms.clusters.map((c) => c.names).join(' ')), bedding: parts?.filter((p) => p.kind === 'bedding').reduce((s, p) => s + p.share, 0) ?? null, nBedding: parts?.filter((p) => p.kind === 'bedding').length ?? null, clusters: ms.clusters.slice(0, 8).map((c) => ({ s: +c.share.toFixed(3), lab: linToLab(c.lin).map(Math.round), m: +c.metal.toFixed(2), r: +c.rough.toFixed(2), y: +c.y.toFixed(2), z: +c.z.toFixed(2), up: +c.up.toFixed(2), ...(c.finish ? { finish: c.finish } : {}), names: c.names.slice(0, 60) })) });
+    features.push({ id, role, file, front: metrics, ktx2: ms.ktx2, imageMean: ms.imageMean?.map((v) => +v.toFixed(1)), mainLab: main0?.lab, mainShare: main0?.share, dEmainVsImage: ms.imageMean && main0 ? +dE(ms.imageMean, main0.lab).toFixed(1) : null, nClusters: ms.clusters.length, nMats: ms.nMats, bedNames: BED_SIGNAL_NAME.test(ms.clusters.map((c) => c.names).join(' ')), bedding: parts?.filter((p) => p.kind === 'bedding').reduce((s, p) => s + p.share, 0) ?? null, nBedding: parts?.filter((p) => p.kind === 'bedding').length ?? null, clusters: ms.clusters.slice(0, 8).map((c) => ({ s: +c.share.toFixed(3), lab: linToLab(c.lin).map(Math.round), m: +c.metal.toFixed(2), r: +c.rough.toFixed(2), y: +c.y.toFixed(2), z: +c.z.toFixed(2), up: +c.up.toFixed(2), ...(c.finish ? { finish: c.finish } : {}), names: c.names.slice(0, 60) })) });
     if (++n % 100 === 0) console.log(n, `${((Date.now() - t0) / 1000).toFixed(0)} s`);
   }
   const inputs = {
@@ -467,18 +576,20 @@ async function main() {
     [SRC.tags]: existsSync(SRC.tags) ? `rows=${tagRows.length} sha=${sha(readFileSync(SRC.tags)).slice(0, 12)}` : 'absent',
   };
   for (const d of GLB_DIRS) inputs[d] = `glb=${dirHash[d]?.length ?? 0} sha=${sha((dirHash[d] ?? []).sort().join('')).slice(0, 12)}`;
-  const rules = { tier: TIER_RULE, parts: `area-weighted UV samples, split by material x mirror flag (metal>=${MIRROR_METAL} & rough<=${MIRROR_ROUGH} per sample, not transmissive) then k-means, merge same kind+material dE<12, drop share<${MIN_SHARE}, max ${MAX_PARTS}`, completeness: 'visual-tags: drop unsure; value with >=2 votes and no rival with >=2' };
-  const head = (models) => ({ schema: 1, rev: sha(stable(models)).slice(0, 16), generatedBy: 'scripts/gen-library-quality.mjs', inputs, rules });
+  const rules = { tier: TIER_RULE, parts: `area-weighted UV samples, split by material x mirror flag (metal>=${MIRROR_METAL} & rough<=${MIRROR_ROUGH} per sample, not transmissive) then k-means, merge same kind+material dE<12, drop share<${MIN_SHARE}, max ${MAX_PARTS}`, completeness: 'visual-tags: drop unsure; value with >=2 votes and no rival with >=2', front: FRONT_RULE, shape: SHAPE_RULE };
+  const head = (models) => ({ schema: 2, rev: sha(stable(models)).slice(0, 16), generatedBy: 'scripts/gen-library-quality.mjs', inputs, rules });
   const bundleModels = Object.fromEntries(Object.entries(all).filter(([id]) => roleOf.has(id)).sort(([x], [y]) => (x < y ? -1 : 1)));
   writeFileSync(join(outDir, 'libraryQuality-all.json'), JSON.stringify({ ...head(all), models: all }));
   writeFileSync(join(outDir, 'features.jsonl'), features.map((f) => JSON.stringify(f)).join('\n'));
+  // Bản đồ độ cao (0..100, -1 trống) để chỉnh ngưỡng mà không đo lại GLB.
+  writeFileSync(join(outDir, 'hmaps.jsonl'), hmaps.join('\n'));
   writeFileSync(join(outDir, 'size-mismatch.json'), JSON.stringify(sizeWarn, null, 1));
   // Kiểm chứng "không phải trung bình texture": mẫu atlas (một vật liệu duy nhất, có ảnh base), phần chính ≥ 50 %,
   // ΔE lớn nhất giữa phần chính và trung bình cả ảnh × baseColorFactor.
   const atlas = features.filter((f) => roleOf.has(f.id) && f.nMats === 1 && f.dEmainVsImage != null && f.mainShare >= 0.5).sort((x, y) => y.dEmainVsImage - x.dEmainVsImage)[0];
   if (atlas) writeFileSync(join(outDir, 'atlas-check.json'), JSON.stringify({ id: atlas.id, file: atlas.file, role: atlas.role, profMats: profiles.get(atlas.id)?.materials ?? [], mainLab: atlas.mainLab, imageMean: atlas.imageMean, dE: atlas.dEmainVsImage }, null, 1));
   const { dict, rows } = compact(bundleModels);
-  const json = JSON.stringify({ ...head(bundleModels), format: 'compact-1', dict, models: rows });
+  const json = JSON.stringify({ ...head(bundleModels), format: 'compact-2', dict, models: rows });
   writeFileSync(`${FE}/libraryQuality.json`, `${json}\n`);
   const missingRole = [...roleOf.keys()].filter((id) => !all[id]);
   console.log(JSON.stringify({ measured: n, bundle: Object.keys(bundleModels).length, bundleKb: +(json.length / 1024).toFixed(1), ktx2, missing, missingRole, sizeWarn: sizeWarn.length, tags: tags.size, s: Math.round((Date.now() - t0) / 1000) }));

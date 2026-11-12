@@ -15,8 +15,9 @@ import { CATALOG_MODELS, isServerModel, VARIANT_MODEL } from './furnitureCatalog
 import LIBRARY_QC_JSON from './libraryQc.json' with { type: 'json' };
 import LIBRARY_ROLES_JSON from './libraryRoles.json' with { type: 'json' };
 import { itemFitOf } from './itemFit';
+import { qualityOf } from './libraryQuality';
 import { rectOfFurniture, rectsOverlap } from './placement';
-import { fnv1a, paletteOf, ROOMSET_ON, roomSetOf, SET_ROLES, type SetDecision, type SetMember } from './roomSet';
+import { type Dims, fnv1a, paletteOf, planRectOf, ROOMSET_ON, roomSetOf, SET_ROLES, type SetDecision, type SetMember } from './roomSet';
 import { GENERATED_DRESS_PREFIX } from './sceneDressing';
 import { accentKeyOf, harmonyKeyOf, LAYOUT_FLAGS_ON, roomHarmonyPlanOf, type LayoutFlag, type RoomHarmonyPlan } from './sceneHarmony';
 import { SCENE_RULES_OFF } from './sceneLayer';
@@ -321,12 +322,20 @@ const styleTierOf = (folder: string, wanted: readonly string[]): number => {
  * các món hợp nhau, cuối cùng vừa cỡ. Cùng vai trò ra cùng mẫu khắp căn (bộ đồng bộ); cây/thảm thì đổi
  * theo từng món trong nhóm hợp nhất. null = thư viện chưa nạp mẫu nào của vai trò.
  */
+/** Giường dưới chuẩn hoàn thiện (`libraryQuality`: nhãn khác `full`); lỗi QC đã do `QC_EXCLUDED` (`libraryQc.json`) lo. */
+const belowQuality = (folder: string, role: FurnitureRole): boolean => {
+  const q = qualityOf(folder);
+  if (q === undefined) return false;
+  return (role === 'doubleBed' || role === 'singleBed') && q.completeness !== undefined && q.completeness.v !== 'full';
+};
 const libraryModelOf = (f: Shaped & Pick<Furniture, 'id'> & Partial<Pick<Furniture, 'roomId'>>, role: FurnitureRole, style: SceneStyle): string | null => {
   const all = libraryFoldersOf(role, f.variant).filter(isServerModel);
   const pick = rankedLibraryPickOf(f, role, style, all);
-  if (pick === null || !QC_EXCLUDED.has(pick)) return pick;
-  // Mẫu bị loại (libraryQc.json): xếp hạng lại trên phần còn lại; cả vai hết mẫu hợp lệ thì giữ hành vi cũ.
-  const ok = all.filter((folder) => !QC_EXCLUDED.has(folder));
+  if (pick === null || (!QC_EXCLUDED.has(pick) && !belowQuality(pick, role))) return pick;
+  // Mẫu bị loại (libraryQc.json) hoặc dưới chuẩn hoàn thiện (vòng 13: giường chưa đủ chăn gối): xếp hạng
+  // lại trên phần còn lại; cả vai hết mẫu đạt thì giữ hành vi cũ. Áp cho MỌI món (kể cả món đã xác nhận nhưng chưa gán mẫu):
+  // thư viện lớn lên không được kéo lựa chọn mặc định xuống mẫu kém hơn.
+  const ok = all.filter((folder) => !QC_EXCLUDED.has(folder) && !belowQuality(folder, role));
   if (ok.length === 0) return pick;
   const replacement = rankedLibraryPickOf(f, role, style, ok);
   if (replacement !== null) QC_SWAPS.set(f.id, { from: pick, to: replacement, role });
@@ -606,11 +615,17 @@ type Placed = Shaped & Pick<Furniture, 'id' | 'centre' | 'roomId' | 'confidence'
 export const contextRolesOf = (
   items: readonly Placed[],
   usageOf: (f: Placed) => RoomUsage | undefined,
+  /** Món dựng KHỚP ĐÚNG hộp (cặp đã nhận, `adoptedPairOf`): bộ chọn đo cỡ hiển thị của nó đúng như lúc dựng. */
+  exactFitOf: (f: Placed) => boolean = () => false,
 ): ReadonlyMap<string, FurnitureRole> => {
   // Điểm vào một lượt dựng cảnh: `toPascalScene` gọi đúng một lần, trước vòng chọn mẫu → sổ thay mẫu chỉ giữ lượt này.
   QC_SWAPS.clear();
   SET_ROOMS.clear();
+  SET_OBSTACLES.clear();
+  SET_EXACT.clear();
+  for (const f of items) if (exactFitOf(f)) SET_EXACT.add(f.id);
   SET_LOG.clear();
+  SET_TIMING = { ms: 0, rooms: 0 };
   SET_APPLIED.clear();
   setPlans = new WeakMap();
   const roles = new Map<string, FurnitureRole>();
@@ -639,10 +654,12 @@ export const contextRolesOf = (
 };
 
 /** Món nằm trên sàn (không nâng, không thảm, không chậu/mặt bếp mỏng trên mặt đá): chiếm chỗ, không được chồng. */
+/** Độ nâng khỏi sàn (mm): `liftMm` của món, không có thì độ nâng mặc định của biến thể (đèn bàn, đồ treo tường). */
+const liftOf = (f: Pick<Furniture, 'liftMm' | 'variant'>): number =>
+  f.liftMm ?? (f.variant === undefined ? undefined : VARIANT_MODEL[f.variant]?.liftMm) ?? 0;
 const isFloorStanding = (f: Furniture): boolean => {
   const role = roleOf(f);
-  const lift = f.liftMm ?? (f.variant === undefined ? undefined : VARIANT_MODEL[f.variant]?.liftMm) ?? 0;
-  return lift === 0 && role !== 'rug' && role !== 'roundRug' && !isThinHob(f) && !isThinSink(f);
+  return liftOf(f) === 0 && role !== 'rug' && role !== 'roundRug' && !isThinHob(f) && !isThinSink(f);
 };
 
 /**
@@ -663,7 +680,7 @@ export const withoutOverlaps = (generated: readonly Furniture[], fixed: readonly
 /* ---- Bộ nội thất theo phòng (`?enable=roomset`, `roomSet.ts`, vòng 12 làn S) ---- */
 
 const roomSetOn = (style: SceneStyle): boolean => (style as LayerStyle).roomSet ?? ROOMSET_ON;
-type SetInput = FolderInput & Partial<Pick<Furniture, 'edited' | 'slots'>>;
+type SetInput = FolderInput & Partial<Pick<Furniture, 'edited' | 'slots' | 'centre' | 'liftMm'>>;
 /** Phạm vi đổi mẫu: đồ sinh chưa gán mẫu, đồ AI chưa xác nhận chưa gán mẫu; không `edited`, không `slots`. */
 const inSetScope = (f: SetInput): boolean =>
   f.model === undefined && f.slots === undefined && f.edited !== true && (isGenerated(f) || isAuto(f));
@@ -678,6 +695,21 @@ interface SetRoom {
 }
 /** Sổ phòng của lượt dựng: đồ đã lưu (`contextRolesOf`) + đồ bày phòng trống (`addRoomSetMembers`, trước lớp trang trí). */
 const SET_ROOMS = new Map<string, SetRoom>();
+/** Phòng → đồ ĐỨNG SÀN không thuộc bộ (tủ lạnh, bồn cầu, cây…) — vật cản khi kiểm va chạm cả phòng (đo ở `planRoom`). */
+const SET_OBSTACLES = new Map<string, Map<string, { readonly f: SetInput; readonly usage: RoomUsage | undefined; readonly override?: FurnitureRole }>>();
+/** Id món dựng khớp đúng hộp trong lượt dựng (cặp đã nhận) — `shownOf` dùng cùng phép khớp với `toPascal`. */
+const SET_EXACT = new Set<string>();
+/** Hộp chỗ đặt của món (m): tâm + cạnh theo khung riêng + góc xoay; vắng tâm = không kiểm hộp/va chạm. */
+const setBoxOf = (f: SetInput): SetMember['box'] =>
+  f.centre === undefined
+    ? undefined
+    : {
+        cx: metresOf(f.centre.x),
+        cy: metresOf(f.centre.y),
+        w: metresOf(f.boundingBox.max.x - f.boundingBox.min.x),
+        d: metresOf(f.boundingBox.max.y - f.boundingBox.min.y),
+        rot: f.rotationDeg,
+      };
 /** Đang trong `planRoom` (chặn đệ quy). */
 let setPlanning = false;
 /** Id phòng → khoá nội dung (`roomSetKeysOf`) của lượt dựng; vắng thì băm theo id. */
@@ -695,6 +727,8 @@ let setPlans = new WeakMap<SceneStyle, Map<string, SetDecision>>();
 const SET_LOG = new Map<string, SetDecision & { readonly roomId: string }>();
 /** Món thật sự dựng bằng mẫu `roomset` trong lượt (quyết định có thể bị bỏ khi mẫu luật cũ khác lúc chấm). */
 const SET_APPLIED = new Set<string>();
+/** Thời gian chọn bộ (ms) của lượt dựng hiện tại: tổng `roomSetOf` + số phòng (đầu dò `roomSetTiming`). */
+let SET_TIMING = { ms: 0, rooms: 0 };
 
 const addSetMembers = <T extends SetInput>(
   items: readonly T[],
@@ -706,7 +740,16 @@ const addSetMembers = <T extends SetInput>(
     const usage = usageOf(f);
     const override = roles?.get(f.id);
     const role = override ?? roleOf(f, usage);
-    if (!SET_ROLES.includes(role)) continue;
+    if (!SET_ROLES.includes(role)) {
+      // Vật cản: đứng sàn (không nâng, không thảm, không chậu/bếp mỏng trên mặt đá), có toạ độ.
+      const box = setBoxOf(f);
+      if (box !== undefined && liftOf(f) === 0 && role !== 'rug' && role !== 'roundRug' && !isThinHob(f) && !isThinSink(f)) {
+        const room = SET_OBSTACLES.get(f.roomId) ?? new Map();
+        room.set(f.id, { f, usage, ...(override === undefined ? {} : { override }) });
+        SET_OBSTACLES.set(f.roomId, room);
+      }
+      continue;
+    }
     const room = SET_ROOMS.get(f.roomId) ?? { usage, members: new Map() };
     SET_ROOMS.set(f.roomId, room);
     room.members.set(f.id, { f, role, ...(override === undefined ? {} : { override }), sig: setSigOf(f) });
@@ -730,13 +773,38 @@ const setPoolOf = (f: SetInput, role: FurnitureRole, style: SceneStyle): readonl
 const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: ReadonlyMap<string, SetDecision>): Map<string, SetDecision> => {
   const wanted = style.libraryStyles ?? [];
   const ceilingM = SET_ROOM_CEILINGS.get(roomId);
+  /** Cỡ HIỂN THỊ [rộng, cao, sâu] m của mẫu `x` trong hộp của món — đúng phép khớp dựng cảnh (`itemFitOf`, cặp nhận khớp đúng). */
+  const shownIn = (f: SetInput, x: string): Dims | undefined =>
+    ceilingM === undefined
+      ? undefined
+      : itemFitOf(
+          x,
+          metresOf(f.boundingBox.max.x - f.boundingBox.min.x),
+          metresOf(f.boundingBox.max.y - f.boundingBox.min.y),
+          f.heightMm,
+          ceilingM * 1000,
+          SET_EXACT.has(f.id),
+        )?.shownM;
+  // Vật cản: mặt bằng HIỂN THỊ của mẫu đang dựng (đã lưu, không thì mẫu luật); không xác định được mẫu → hộp.
+  const obstacles = [...(SET_OBSTACLES.get(roomId)?.values() ?? [])].flatMap(({ f, usage, override }) => {
+    const box = setBoxOf(f);
+    if (box === undefined) return [];
+    const saved = f.model === undefined ? undefined : (SAVED_FOLDER.exec(f.model.src)?.[1] ?? null);
+    const folder = saved !== undefined ? saved : baseFolderOf(f, style, usage, override);
+    const shown = folder === null ? undefined : shownIn(f, folder);
+    return [planRectOf(box.cx, box.cy, shown?.[0] ?? box.w, shown?.[2] ?? box.d, box.rot)];
+  });
   const members: SetMember[] = [...room.members.values()].map(({ f, role, override }) => {
     const scoped = inSetScope(f);
     const saved = f.model === undefined ? undefined : (SAVED_FOLDER.exec(f.model.src)?.[1] ?? null);
     const [short, long] = footprintOf(f);
+    const box = setBoxOf(f);
     return {
       id: f.id,
       role,
+      ...(box === undefined ? {} : { box }),
+      ...(liftOf(f) === 0 ? {} : { lifted: true }),
+      ...(scoped ? { sizeFrom: isGenerated(f) ? ('generated' as const) : ('ai' as const) } : {}),
       short,
       long,
       current: saved !== undefined ? saved : baseFolderOf(f, style, room.usage, override),
@@ -747,18 +815,19 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
         : {
             ceilingM,
             // Cỡ hiển thị = đúng phép co dựng cảnh (`itemFitOf`) trong hộp của món, trần tầng làm chặn cao.
-            shownOf: (x: string) =>
-              itemFitOf(x, metresOf(f.boundingBox.max.x - f.boundingBox.min.x), metresOf(f.boundingBox.max.y - f.boundingBox.min.y), f.heightMm, ceilingM * 1000)?.shownM,
+            shownOf: (x: string) => shownIn(f, x),
           }),
     };
   });
   const tone = rulesOffOf(style).has('tone') ? undefined : (style as LayerStyle).woodTone;
+  const t0 = performance.now();
   const plan = roomSetOf(SET_ROOM_KEYS.get(roomId) ?? roomId, members, decided, {
     tierOf: (x) => styleTierOf(x, wanted),
     tiers: wanted.length,
     dimsOf: (x) => CATALOG_MODELS[x]?.dimensions,
     palette: paletteOf(style, tone),
-  });
+  }, obstacles);
+  SET_TIMING = { ms: SET_TIMING.ms + performance.now() - t0, rooms: SET_TIMING.rooms + 1 };
   for (const [id, d] of plan) SET_LOG.set(id, { ...d, roomId });
   return plan;
 };
@@ -794,6 +863,9 @@ export const roomSetSwapOf = (id: string): SetDecision | undefined => {
   const d = SET_LOG.get(id);
   return d?.rule === 'roomset' && SET_APPLIED.has(id) ? d : undefined;
 };
+
+/** Đầu dò `__pascalProbe.roomSetTiming()`: thời gian chọn bộ của lượt dựng gần nhất (ms, số phòng). */
+export const roomSetTiming = (): { readonly ms: number; readonly rooms: number } => ({ ...SET_TIMING });
 
 type RoomSetEntry = SetDecision & { readonly roomId: string };
 /** Đầu dò `__pascalProbe.roomSet()`: phòng → neo + từng món (vai, mẫu cũ → mới, luật, chi phí, lý do giữ/chọn). */

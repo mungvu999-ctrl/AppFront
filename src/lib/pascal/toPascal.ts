@@ -1307,6 +1307,7 @@ export const toPascalScene = (
   const contextRoles = contextRolesOf(
     furnitureToBuild.filter((f) => f.suggested !== true && ruleFolderOf(f) === undefined),
     contextUsageOf,
+    isAdoptedPair,
   );
 
   for (const furniture of furnitureToBuild) {
