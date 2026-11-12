@@ -1134,7 +1134,7 @@ export const roomSetOf = (
       // Dải hợp bộ TRƯỚC, gần cỡ hộp nhất SAU (R7; trước: nhỏ nhất, điều phối M17-2 #4): "nhỏ hơn đúng loại" nhưng không quay lại mẫu lạc tông ngoài dải.
       const pick = fits.filter((x) => x.c <= r9(best + SHARE_BAND)).sort((x, y) => x.a - y.a || x.c - y.c || x.f.localeCompare(y.f))[0];
       if (pick !== undefined) {
-        return { to: pick.f, uniform: 'real', why: 'phương án cuối: mẫu nhỏ nhất đúng vai trong dải hợp bộ, ở cỡ thật (vượt hộp AI), không va chạm' };
+        return { to: pick.f, uniform: 'real', why: 'phương án cuối: mẫu đúng vai gần cỡ hộp nhất trong dải hợp bộ, ở cỡ thật, không va chạm' };
       }
     }
     const cur = m.current;

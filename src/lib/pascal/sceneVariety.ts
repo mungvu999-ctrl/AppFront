@@ -210,6 +210,9 @@ const shapeRoleOf = (f: Shaped, usage?: RoomUsage): FurnitureRole => {
  */
 const BED_MIN_SHORT_M = 0.75;
 const BED_MIN_LONG_M = 1.6;
+/** Phòng ngủ: giường đơn cỡ thật 0,9 × 1,9 m trừ trần vượt hộp 0,4 m (roomSet REAL_GROW_M). */
+const BEDROOM_MIN_SHORT_M = 0.5;
+const BEDROOM_MIN_LONG_M = 1.5;
 const BED_ROLES: ReadonlySet<FurnitureRole> = new Set(['doubleBed', 'singleBed']);
 /** L2 — vai đặc thù chỉ hợp các công năng này (vắng công năng = không xét); bếp mở nằm trong phòng khách, WC riêng trong phòng ngủ. */
 const BED_USAGES: ReadonlySet<RoomUsage> = new Set(['bedroom', 'other']);
@@ -255,7 +258,10 @@ export const roleDoubtOf = (f: Shaped, usage?: RoomUsage): string | undefined =>
   if (!isUnconfirmedAi(f)) return undefined;
   const role = shapeRoleOf(f, usage);
   const [short, long] = footprintOf(f);
-  if (BED_ROLES.has(role) && (short < BED_MIN_SHORT_M || long < BED_MIN_LONG_M))
+  // R7 (set17 nt03t: hộp 0,70 × 1,71 m trong phòng ngủ thành đôn — "phòng ngủ không giường"): trong phòng ngủ nhãn giường là
+  // bằng chứng mạnh; chỉ nghi khi cả giường đơn cỡ thật (0,9 × 1,9 m) cũng vượt hộp quá REAL_GROW_M (0,4 m).
+  const bedroom = usage === 'bedroom';
+  if (BED_ROLES.has(role) && (short < (bedroom ? BEDROOM_MIN_SHORT_M : BED_MIN_SHORT_M) || long < (bedroom ? BEDROOM_MIN_LONG_M : BED_MIN_LONG_M)))
     return `chưa xác định: hộp ${fmt(short)} × ${fmt(long)} m không đủ cỡ giường`;
   const allowed = ROLE_USAGES[role];
   if (allowed === undefined || usage === undefined || allowed.has(usage)) return undefined;

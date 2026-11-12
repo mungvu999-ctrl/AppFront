@@ -141,3 +141,17 @@ describe('R7 — bàn nhỏ sát sofa trong phòng khách là bàn trà (lỗi �
     expect(contextRolesOf([sofa, table], () => 'kitchen').get(table.id)).toBeUndefined();
   });
 });
+
+describe('R7 — phòng ngủ: nhãn giường là bằng chứng mạnh (set17 nt03t)', () => {
+  it('hộp 0,70 × 1,71 m trong phòng ngủ vẫn là giường đơn; cùng hộp trong phòng khách → vai trung tính', () => {
+    const b = ai('nt03t', 'bed', 700, 1710, { confidence: 0.6 });
+    expect(roleOf(b, 'bedroom')).toBe('singleBed');
+    expect(BEDS.has(roleOf(b, 'livingRoom'))).toBe(false);
+  });
+
+  it('hộp quá nhỏ cả trong phòng ngủ (0,59 × 1,34 m) → vai trung tính, sổ ghi lý do', () => {
+    const b = ai('m17sc', 'bed', 590, 1340, { confidence: 0.6 });
+    expect(BEDS.has(roleOf(b, 'bedroom'))).toBe(false);
+    expect(roleDoubtOf(b, 'bedroom')).toMatch(/không đủ cỡ giường/);
+  });
+});
