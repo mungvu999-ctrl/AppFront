@@ -111,19 +111,19 @@ describe('InvitationPreviewSchema (N10b)', () => {
 
 describe('notifications.listPage (B7)', () => {
   it('gửi limit/cursor, đọc X-Next-Cursor', async () => {
-    const response = new Response('[]', { headers: { 'X-Next-Cursor': 'n2' } });
+    const response = { headers: new Headers({ 'X-Next-Cursor': 'n2' }), text: '[]' };
     const { get, http } = httpReturning(response);
     const result = await createApiClient(http).notifications.listPage({ cursor: 'n1', limit: 20 });
 
     expect(get).toHaveBeenCalledWith('/notifications', {
       query: { cursor: 'n1', limit: 20 },
-      responseType: 'response',
+      responseType: 'textWithHeaders',
     });
     expect(result).toStrictEqual({ ok: true, data: { items: [], nextCursor: 'n2' } });
   });
 
   it('không có header nghĩa là hết', async () => {
-    const { http } = httpReturning(new Response('[]'));
+    const { http } = httpReturning({ headers: new Headers(), text: '[]' });
     const result = await createApiClient(http).notifications.listPage();
     expect(result).toStrictEqual({ ok: true, data: { items: [] } });
   });

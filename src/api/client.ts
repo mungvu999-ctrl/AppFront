@@ -1,5 +1,5 @@
 import type { AppError } from '@/lib/errors';
-import type { HttpClient, HttpError, HttpRequestOptions, Result } from '@/lib/http';
+import type { HttpClient, HttpError, HttpRequestOptions, Result, TextWithHeaders } from '@/lib/http';
 import { z, type ZodTypeAny } from 'zod';
 import type { Furniture, Opening, Roof, Room, Wall } from '@/domain/spatial/types';
 import {
@@ -1007,6 +1007,15 @@ const decodeSingle = <S extends ZodTypeAny>(
   return decode(schema, result.data, source) as ApiResult<z.output<S>>;
 };
 
+/** Thân trang (đọc sẵn trong vòng đời request): không phải JSON → `null`, `decodeList` báo lỗi giải mã. */
+const parseJsonOrNull = (text: string): unknown => {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+};
+
 const decodeList = <S extends ZodTypeAny>(
   result: Result<unknown, HttpError>,
   schema: S,
@@ -1280,12 +1289,12 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
     list: async (options) =>
       decodeList(await callGet<unknown>(http, ENDPOINTS.library.list, options?.signal), LibraryItemSchema, 'library.list'),
     listPage: async ({ cursor, limit, signal } = {}) => {
-      const raw = await http.get<Response>(ENDPOINTS.library.list, {
+      const raw = await http.get<TextWithHeaders>(ENDPOINTS.library.list, {
         query: {
           ...(cursor !== undefined ? { cursor } : {}),
           ...(limit !== undefined ? { limit } : {}),
         },
-        responseType: 'response',
+        responseType: 'textWithHeaders',
         ...(signal !== undefined ? { signal } : {}),
       });
 
@@ -1295,14 +1304,8 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
 
       const nextCursor = raw.data.headers.get('X-Next-Cursor') ?? '';
       const revision = raw.data.headers.get('X-Library-Revision') ?? '';
-      const text = await raw.data.text();
-      let body: unknown = null;
-      try {
-        body = JSON.parse(text) as unknown;
-      } catch {
-        // Thân không phải JSON: `decodeList` báo lỗi giải mã như mọi lượt đọc khác.
-      }
-      const items = decodeList({ ok: true, data: body }, LibraryItemSchema, 'library.listPage');
+      const { text } = raw.data;
+      const items = decodeList({ ok: true, data: parseJsonOrNull(text) }, LibraryItemSchema, 'library.listPage');
 
       if (!items.ok) {
         return items;
@@ -1416,12 +1419,12 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
         'notifications.list',
       ),
     listPage: async ({ cursor, limit, signal } = {}) => {
-      const raw = await http.get<Response>(ENDPOINTS.notifications.list, {
+      const raw = await http.get<TextWithHeaders>(ENDPOINTS.notifications.list, {
         query: {
           ...(cursor !== undefined ? { cursor } : {}),
           ...(limit !== undefined ? { limit } : {}),
         },
-        responseType: 'response',
+        responseType: 'textWithHeaders',
         ...(signal !== undefined ? { signal } : {}),
       });
 
@@ -1431,7 +1434,7 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
 
       const nextCursor = raw.data.headers.get('X-Next-Cursor') ?? '';
       const items = decodeList(
-        { ok: true, data: (await raw.data.json()) as unknown },
+        { ok: true, data: parseJsonOrNull(raw.data.text) },
         NotificationSchema,
         'notifications.listPage',
       );

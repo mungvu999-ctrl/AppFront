@@ -15,6 +15,7 @@ export type {
   HttpMethod,
   HttpRequestOptions,
   HttpResponseType,
+  TextWithHeaders,
   HttpTimeoutMode,
   QueryParamValue,
   RequestLogEntry,

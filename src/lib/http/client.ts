@@ -255,6 +255,13 @@ const readResponseBody = async <TRes>(
     return response as TRes;
   }
 
+  if (responseType === 'textWithHeaders') {
+    if (shouldBlockTextRead(responseType, response)) {
+      throw Object.assign(new Error('Response body exceeds text parsing limit'), { name: 'PayloadTooLargeError' });
+    }
+    return { headers: response.headers, text: await response.text() } as TRes;
+  }
+
   if (response.status === 204 || response.status === 205) {
     return undefined as TRes;
   }

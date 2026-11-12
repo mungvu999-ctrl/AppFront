@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { HttpClient, HttpError, Result } from '@/lib/http';
+import { createHttpClient, REQUEST_TIMEOUT_MS, type HttpClient, type HttpError, type Result } from '@/lib/http';
 
 import { createApiClient, type LibraryItem } from '../client';
 import { ENDPOINTS } from '../endpoints';
@@ -323,17 +323,17 @@ describe('createMockApiClient().library', () => {
 });
 
 describe('createApiClient().library.listPage (M15)', () => {
-  const httpWith = (response: Response) => {
-    const get = vi.fn(async () => ({ ok: true as const, data: response }));
+  const httpWith = (text: string, headers: Record<string, string> = {}) => {
+    const get = vi.fn(async () => ({ ok: true as const, data: { headers: new Headers(headers), text } }));
     return { get, http: { get } as unknown as HttpClient };
   };
 
-  it('gửi limit/cursor, đọc X-Next-Cursor + X-Library-Revision + bytes', async () => {
+  it('gửi limit/cursor, đọc X-Next-Cursor + X-Library-Revision + bytes; thân đọc trong vòng đời request', async () => {
     const body = JSON.stringify([sampleWireItem]);
-    const { get, http } = httpWith(new Response(body, { headers: { 'X-Next-Cursor': 'c2', 'X-Library-Revision': 'r7' } }));
+    const { get, http } = httpWith(body, { 'X-Next-Cursor': 'c2', 'X-Library-Revision': 'r7' });
     const result = await createApiClient(http).library.listPage({ cursor: 'c1', limit: 500 });
 
-    expect(get).toHaveBeenCalledWith(ENDPOINTS.library.list, { query: { cursor: 'c1', limit: 500 }, responseType: 'response' });
+    expect(get).toHaveBeenCalledWith(ENDPOINTS.library.list, { query: { cursor: 'c1', limit: 500 }, responseType: 'textWithHeaders' });
     expect(result.ok && result.data.items.map((item) => item.id)).toEqual([sampleWireItem.id]);
     expect(result.ok && { nextCursor: result.data.nextCursor, revision: result.data.revision, bytes: result.data.bytes }).toEqual({
       nextCursor: 'c2',
@@ -343,14 +343,71 @@ describe('createApiClient().library.listPage (M15)', () => {
   });
 
   it('BE cũ không header: hết trang, không revision', async () => {
-    const { http } = httpWith(new Response('[]'));
+    const { http } = httpWith('[]');
     const result = await createApiClient(http).library.listPage({ limit: 500 });
     expect(result).toStrictEqual({ ok: true, data: { items: [], bytes: 2 } });
   });
 
   it('thân không phải JSON → lỗi giải mã, không ném', async () => {
-    const { http } = httpWith(new Response('<html>'));
+    const { http } = httpWith('<html>');
     const result = await createApiClient(http).library.listPage();
     expect(result.ok).toBe(false);
+  });
+
+  it('Codex #1: hai lượt cùng lúc trên client HTTP thật (single-flight) đều nhận đủ dữ liệu', async () => {
+    const body = JSON.stringify([sampleWireItem]);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    const fetchImpl = vi.fn(async () => {
+      await gate;
+      return new Response(body, { headers: { 'Content-Type': 'application/json', 'X-Library-Revision': 'r1' } });
+    });
+    const api = createApiClient(createHttpClient({ baseUrl: 'https://api.example.com', fetchImpl }));
+    const a = api.library.listPage({ limit: 500 });
+    const b = api.library.listPage({ limit: 500 });
+    release();
+    const [ra, rb] = await Promise.all([a, b]);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(ra.ok && ra.data.items).toHaveLength(1);
+    expect(rb.ok && rb.data.items).toHaveLength(1);
+    expect(rb.ok && rb.data.revision).toBe('r1');
+  });
+
+  /** Header về ngay, thân dừng ở `[` cho tới khi signal của fetch bị huỷ. */
+  const stallingFetch = () =>
+    vi.fn(async (_url: unknown, init?: RequestInit) => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('['));
+          init?.signal?.addEventListener('abort', () => controller.error(new DOMException('aborted', 'AbortError')));
+        },
+      });
+      return new Response(stream, { headers: { 'Content-Type': 'application/json' } });
+    });
+
+  it('Codex #2: header về nhưng thân treo → người gọi huỷ thì lượt đọc dừng với lỗi aborted', async () => {
+    const fetchImpl = stallingFetch();
+    const api = createApiClient(createHttpClient({ baseUrl: 'https://api.example.com', fetchImpl }));
+    const ctl = new AbortController();
+    const pending = api.library.listPage({ limit: 500, signal: ctl.signal });
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalled());
+    ctl.abort();
+    const result = await pending;
+    expect(!result.ok && result.error.kind).toBe('aborted');
+  });
+
+  it('Codex #2: header về nhưng thân treo, không ai huỷ → hết hạn request thì dừng với lỗi timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = stallingFetch();
+      const api = createApiClient(createHttpClient({ baseUrl: 'https://api.example.com', fetchImpl }));
+      const pending = api.library.listPage({ limit: 500 });
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS.default + 1);
+      const result = await pending;
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(!result.ok && result.error.kind).toBe('timeout');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
