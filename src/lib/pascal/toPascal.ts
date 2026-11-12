@@ -90,7 +90,8 @@ import {
 } from './sceneLayer';
 import { itemFitOf } from './itemFit';
 import { furnishingUsageOf, isPlausibleStair, lShapedRunArms, orphanWallIds, weldWallEnds } from './structureFixes';
-import { ROOMSET_VERSION, roomSetKeysOf } from './roomSet';
+import { doorSwingRects, wallRects } from './placement';
+import { planRectOf, ROOMSET_VERSION, roomSetKeysOf, type SetZone } from './roomSet';
 import { addRoomSetMembers, contextRolesOf, isThinHob, isThinSink, modelFolderOf, roleOf, roomSetSwapOf, setRoomSetKeys, withoutOverlaps } from './sceneVariety';
 import type {
   AppFrontOrigin,
@@ -1296,12 +1297,25 @@ export const toPascalScene = (
   const contextUsageOf = (f: Pick<Furniture, 'roomId'>) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId));
   // `roomset` băm theo nội dung phòng, không theo id (chép sang dự án khác giữ nguyên nội thất).
   // Trần phòng = chiều cao tầng dựng tường (`roomset` chừa hở trần cho món cao).
+  // Vùng chặn của tầng (m): vùng mở cửa đi + thân tường — mẫu chọn không được lấn thêm vào đó (`roomSetOf`).
+  const zonesOfLevel = new Map<string, SetZone[]>();
+  const builtGraph = { ...graph, walls: builtWalls, openings: builtOpenings };
+  const zonesOf = (levelId: Room['levelId']): SetZone[] => {
+    const hit = zonesOfLevel.get(levelId);
+    if (hit !== undefined) return hit;
+    const zones = [...doorSwingRects(builtGraph, levelId), ...wallRects(builtGraph, levelId)].map((r) =>
+      planRectOf(r.cx / 1000, r.cy / 1000, r.w / 1000, r.d / 1000, r.rotationDeg),
+    );
+    zonesOfLevel.set(levelId, zones);
+    return zones;
+  };
   setRoomSetKeys(
     roomSetKeysOf(builtRooms.map((room) => ({ id: room.id, levelId: room.levelId, usage: roomUsageOf.get(room.id), outline: room.outline }))),
     new Map(builtRooms.flatMap((room) => {
       const mm = levelHeightMmOf.get(room.levelId);
       return mm === undefined ? [] : [[room.id as string, mm / 1000] as const];
     })),
+    new Map(builtRooms.map((room) => [room.id as string, zonesOf(room.levelId)] as const)),
   );
   // Món đã nhận còn mẫu luật chọn: twin đại diện trong sổ bộ (như trước khi nhận), không thành đồ cố định của bảng màu.
   const contextRoles = contextRolesOf(
@@ -1452,7 +1466,15 @@ export const toPascalScene = (
   };
   const furnished = furnishedAll.filter(inLayer).map(atAdopted);
   // `roomset`: đồ bày phòng trống vào sổ bộ của phòng trước lớp trang trí (đèn bàn/chăn đọc mẫu món chủ).
-  addRoomSetMembers(furnished, (f) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId)));
+  // Twin của cặp đã nhận: ghim vào mẫu đã lưu của món thật (cặp đã nhận không bao giờ đổi mẫu).
+  addRoomSetMembers(
+    furnished,
+    (f) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId)),
+    (f) => {
+      const real = twinIds.has(f.id) ? builtById.get(adoptedFurnitureIdOf(f.id)) : undefined;
+      return real?.model === undefined ? undefined : SWAPPED_MODEL_SRC.exec(real.model.src)?.[1];
+    },
+  );
   const dressedAll = furnish === 'on' ? dressingOf({ ...usable, furniture: [...baseFurniture, ...furnished] }, style) : [];
   const dressed = dressedAll.filter(inLayer);
   const builtRoomIds = new Set(builtRooms.map((room) => room.id));

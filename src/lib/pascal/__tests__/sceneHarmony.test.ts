@@ -1,6 +1,7 @@
 /**
  * Thí nghiệm phối đồ `?layout=toneall|hue` (`sceneHarmony.ts` + `sceneVariety.ts`): không cờ = như cũ; chỉ đồ tự động
- * đổi mẫu; tất định; mẫu thiếu metadata không phạt không thưởng.
+ * đổi mẫu; tất định; mẫu thiếu metadata không phạt không thưởng. Vòng 14: các cờ này là cờ của LUẬT CŨ — khi bộ chọn
+ * (`roomset`) bật, mọi món vai bộ chưa ghim lấy mẫu từ một đánh giá; test chạy luật cũ (`roomSet: false`).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -23,6 +24,7 @@ const styleWith = (layout: LayoutFlag[], woodTone?: 'l' | 'd'): LayerStyle => ({
   libraryStyles: [],
   rulesOff: new Set(),
   layout: new Set(layout),
+  roomSet: false,
   ...(woodTone === undefined ? {} : { woodTone }),
 });
 
