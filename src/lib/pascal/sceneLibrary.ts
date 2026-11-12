@@ -105,6 +105,8 @@ const forget = (): void => {
   lastListing = null;
   resolvedById.clear();
   missingById.clear();
+  retryAt.clear();
+  listedIds.clear();
   pendingById.clear();
   clearServerLibrary();
 };
@@ -117,15 +119,47 @@ const forget = (): void => {
 let lastListing: LibraryListing | null = null;
 /** Mẫu đã lưu không có trong danh sách, đọc riêng bằng `GET /api/library/{id}`: giữ qua mọi lượt THAY danh sách. */
 const resolvedById = new Map<string, LibraryItem>();
-/** Mẫu đã lưu đọc theo id mà không có (404), không có quyền (403) — không hỏi lại tới khi đổi người — hoặc đọc hỏng (5xx/mạng: lượt dựng sau hỏi lại). */
+/**
+ * Mẫu đã lưu đọc theo id mà không có (404), không có quyền (403) — không hỏi lại tới khi đổi người — hoặc đọc hỏng
+ * (5xx/mạng: hỏi lại sau `SAVED_MODEL_RETRY_MS`).
+ */
 const missingById = new Map<string, SavedModelFailure>();
-const pendingById = new Map<string, Promise<void>>();
+/** Mốc (ms) được hỏi lại mẫu đọc hỏng (5xx/mạng). */
+const retryAt = new Map<string, number>();
+/** Id của danh sách đã ghi gần nhất: kết quả theo id về muộn KHÔNG ghi đè mục danh sách (danh sách thắng). */
+const listedIds = new Set<string>();
+/** Lượt đọc theo id đang chạy, gắn thế hệ: rời cảnh (`abandonLocal`) thì người gọi mới không bám lượt đã bị bỏ. */
+const pendingById = new Map<string, { readonly gen: number; readonly promise: Promise<void> }>();
+
+/** Ghi lại danh mục từ danh sách đã nhận + mẫu theo id (đồng bộ, không khung nào thấy danh mục rỗng). */
+const rebuildCatalog = (): number => replaceServerLibrary([...(lastListing?.items ?? []), ...resolvedById.values()]);
 
 /** THAY thư viện bằng danh sách đủ trang, giữ mẫu đã resolve theo id (mục nay có trong danh sách thì danh sách thắng). */
 const writeListing = (listing: LibraryListing): number => {
   lastListing = listing;
-  for (const item of listing.items) resolvedById.delete(item.id);
-  return replaceServerLibrary([...listing.items, ...resolvedById.values()]);
+  listedIds.clear();
+  for (const item of listing.items) {
+    listedIds.add(item.id);
+    resolvedById.delete(item.id);
+  }
+  return rebuildCatalog();
+};
+
+/** Câu báo mẫu đã lưu: một mục cho mỗi mẫu (không lặp khi lượt sau hỏng lại), gỡ khi mẫu resolve được. */
+const clearSavedFailure = (modelId: string): void => {
+  const before = assetLog.failures.length;
+  for (let k = assetLog.failures.length - 1; k >= 0; k -= 1) {
+    const f = assetLog.failures[k];
+    if (f !== undefined && f.modelId === modelId && SAVED_MODEL_FAILURES.has(f.reason)) assetLog.failures.splice(k, 1);
+  }
+  if (assetLog.failures.length !== before) notify();
+};
+const failSaved = (modelId: string, reason: SavedModelFailure): null => {
+  clearSavedFailure(modelId);
+  missingById.set(modelId, reason);
+  if (reason === 'read-failed') retryAt.set(modelId, Date.now() + SAVED_MODEL_RETRY_MS);
+  else retryAt.delete(modelId);
+  return fail(modelId, reason);
 };
 
 /**
@@ -186,6 +220,8 @@ export function ensureSceneLibrary(getApi: LibraryApiSource = defaultApi): Promi
         if (load.source !== 'server' && acceptWrite(seq)) {
           clearServerLibrary();
           resolvedById.clear();
+          listedIds.clear();
+          lastListing = null;
         }
         // Lượt đọc mới thành công: trần lượt gia hạn từng mẫu tính lại từ đầu.
         assetAttempts.clear();
@@ -213,8 +249,25 @@ export const sceneLibraryNow = (): SceneLibrary | null => settled;
 /* Mẫu đã lưu resolve theo id (#15), độc lập với phân trang                      */
 /* -------------------------------------------------------------------------- */
 
-/** Số lượt `GET /api/library/{id}` chạy cùng lúc. */
+/** Số lượt `GET /api/library/{id}` chạy cùng lúc trên CẢ module (resolve lúc dựng + gia hạn URL theo id). */
 export const SAVED_MODEL_CONCURRENCY = 4;
+/** Mẫu đọc theo id hỏng vì 5xx/mạng: hỏi lại sau chừng này (ms), không hỏi lại mỗi lượt dựng. */
+export const SAVED_MODEL_RETRY_MS = 30_000;
+
+let byIdSlots = SAVED_MODEL_CONCURRENCY;
+const byIdWaiters: (() => void)[] = [];
+/** Semaphore chung của mọi lượt đọc theo id. */
+const withByIdSlot = async <T>(work: () => Promise<T>): Promise<T> => {
+  if (byIdSlots > 0) byIdSlots -= 1;
+  else await new Promise<void>((resolve) => byIdWaiters.push(resolve));
+  try {
+    return await work();
+  } finally {
+    const next = byIdWaiters.shift();
+    if (next === undefined) byIdSlots += 1;
+    else next();
+  }
+};
 
 /** Lượt dựng không hỏi theo id khi máy chủ đã nói rõ không cho đọc thư viện / chưa có phiên / lượt đọc mất hiệu lực. */
 const NO_BY_ID_SOURCES: ReadonlySet<string> = new Set(['fallback:no-session', 'fallback:forbidden', 'fallback:notFound', STALE_SOURCE]);
@@ -225,7 +278,8 @@ type ByIdApi = Awaited<ReturnType<LibraryApiSource>>;
 const readById = async (modelId: string, api: ByIdApi, signal?: AbortSignal): Promise<LibraryItem | SavedModelFailure | 'no-session'> => {
   if (api === null) return 'no-session';
   if (api.read === undefined) return 'read-failed';
-  const result = await api.read({ libraryItemId: modelId, ...(signal === undefined ? {} : { signal }) }).catch(() => null);
+  const { read } = api;
+  const result = await withByIdSlot(() => read({ libraryItemId: modelId, ...(signal === undefined ? {} : { signal }) }).catch(() => null));
   if (result === null) return 'read-failed';
   if (result.ok) return result.data;
   const absence = absenceOf(result.error);
@@ -237,15 +291,16 @@ interface SavedFurniture {
   readonly model?: { readonly src: string } | undefined;
 }
 
-/** Máy chủ đã trả lời rõ (404/403): không hỏi lại. Đọc hỏng (5xx/mạng) thì lượt `ensureSceneLibraryFor` sau hỏi lại. */
+/** Không hỏi lại: máy chủ đã trả lời rõ (404/403), hoặc đọc hỏng (5xx/mạng) mà chưa tới mốc hỏi lại. */
 const answered = (id: string): boolean => {
   const reason = missingById.get(id);
-  return reason === 'not-found' || reason === 'forbidden';
+  if (reason === undefined) return false;
+  return reason !== 'read-failed' || Date.now() < (retryAt.get(id) ?? 0);
 };
 
 /**
  * Id mẫu mà món đã lưu tham chiếu nhưng danh mục ĐANG nạp (đóng gói + thư viện máy chủ) không có — mẫu ở ngoài danh sách
- * (thứ tự sau trần, mẫu riêng chia sẻ qua dự án…). Đã có câu trả lời 404/403 thì không vào lại.
+ * (thứ tự sau trần, mẫu riêng chia sẻ qua dự án…). Đã có câu trả lời 404/403, hoặc hỏng tạm chưa tới mốc hỏi lại, thì không vào.
  */
 export const savedModelIdsToResolve = (furniture: readonly SavedFurniture[]): string[] => {
   const ids = new Set<string>();
@@ -266,46 +321,45 @@ export async function ensureSceneLibraryFor(
   furniture: readonly SavedFurniture[],
   getApi: LibraryApiSource = defaultApi,
 ): Promise<SceneLibrary> {
-  const library = await ensureSceneLibrary(getApi);
-  if (NO_BY_ID_SOURCES.has(library.source)) return library;
+  // Thế hệ chụp NGAY khi vào (trước mọi await): rời cảnh trong lúc chờ thư viện thì lượt này không hỏi/ghi gì.
   const gen = generation;
+  const library = await ensureSceneLibrary(getApi);
+  if (NO_BY_ID_SOURCES.has(library.source) || gen !== generation) return library;
   const owner = settledOwner;
   if (currentOwner() !== owner) return library;
   const stale = (): boolean => gen !== generation || currentOwner() !== owner;
-  const queue = savedModelIdsToResolve(furniture);
-  if (queue.length === 0) return library;
+  const ids = savedModelIdsToResolve(furniture);
+  if (ids.length === 0) return library;
   const api = await getApi().catch(() => null);
+  if (stale()) return library;
   const resolveOne = async (modelId: string): Promise<void> => {
     const got = await readById(modelId, api);
     if (stale()) {
       assetLog.dropped += 1;
       return;
     }
-    if (got === 'no-session') return;
+    // Danh sách đã nhận mục này trong lúc chờ: danh sách thắng, kết quả theo id bỏ.
+    if (got === 'no-session' || listedIds.has(modelId)) return;
     if (typeof got === 'string') {
-      missingById.set(modelId, got);
-      fail(modelId, got);
+      failSaved(modelId, got);
       return;
     }
     missingById.delete(modelId);
+    retryAt.delete(modelId);
+    clearSavedFailure(modelId);
     resolvedById.set(modelId, got);
     registerServerLibrary([got]);
   };
-  const worker = async (): Promise<void> => {
-    for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
-      if (stale()) return;
-      let pending = pendingById.get(id);
-      if (pending === undefined) {
-        const modelId = id;
-        pending = resolveOne(modelId).finally(() => {
-          if (pendingById.get(modelId) === pending) pendingById.delete(modelId);
-        });
-        pendingById.set(modelId, pending);
-      }
-      await pending;
-    }
+  const join = (modelId: string): Promise<void> => {
+    const entry = pendingById.get(modelId);
+    if (entry !== undefined && entry.gen === gen) return entry.promise;
+    const promise = resolveOne(modelId).finally(() => {
+      if (pendingById.get(modelId)?.promise === promise) pendingById.delete(modelId);
+    });
+    pendingById.set(modelId, { gen, promise });
+    return promise;
   };
-  await Promise.all(Array.from({ length: Math.min(SAVED_MODEL_CONCURRENCY, queue.length) }, worker)).catch(() => undefined);
+  await Promise.all(ids.map(join)).catch(() => undefined);
   return library;
 }
 
@@ -579,12 +633,19 @@ async function refreshOnce(
     // Mẫu resolve theo id (không có trong danh sách): gia hạn bằng chính #15, không đọc lại cả thư viện.
     const got = await readById(modelId, await getApi().catch(() => null), signal);
     if (isStale()) return fail(modelId, 'stale');
-    if (typeof got === 'string') {
-      if (got !== 'read-failed') resolvedById.delete(modelId);
-      return fail(modelId, got === 'read-failed' ? 'failed' : got === 'no-session' ? 'no-session' : 'no-permission');
+    // Danh sách đã nhận mục này trong lúc chờ (gỡ khỏi `resolvedById`): danh sách thắng, URL lấy từ danh sách.
+    if (resolvedById.has(modelId)) {
+      if (got === 'no-session') return fail(modelId, 'no-session');
+      if (got === 'read-failed') return fail(modelId, 'failed');
+      if (typeof got === 'string') {
+        // 404/403: gỡ khỏi danh mục nhất quán (không còn "đã biết" mà không gia hạn được) + ghi kết cục.
+        resolvedById.delete(modelId);
+        rebuildCatalog();
+        return failSaved(modelId, got);
+      }
+      resolvedById.set(modelId, got);
+      registerServerLibrary([got]);
     }
-    resolvedById.set(modelId, got);
-    registerServerLibrary([got]);
   } else {
     let failure = await refreshLibrary(getApi, signal);
     // Lượt đọc chung bị huỷ bởi NGƯỜI KHỞI TẠO nó, còn mình chưa huỷ: tự đọc lại một lần.
@@ -616,6 +677,7 @@ const abandonLocal = (): void => {
   generation += 1;
   refreshing = null;
   inflight.clear();
+  pendingById.clear();
 };
 
 /** Gọi từ BẤT KỲ bó nào: vô hiệu mọi lượt gia hạn đang chạy của mọi bó trên tài liệu (review Codex-3 #5). */

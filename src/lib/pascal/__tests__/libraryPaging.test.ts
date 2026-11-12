@@ -4,6 +4,7 @@ import { resetAuthState, setAuthenticatedSession } from '@/lib/auth/state';
 
 import { isServerModel, modelSrcOf } from '../furnitureCatalog';
 import {
+  abandonAssetRefresh,
   assetRefreshStatus,
   ensureSceneLibrary,
   ensureSceneLibraryFor,
@@ -12,6 +13,7 @@ import {
   resetSceneLibraryForTests,
   SAVED_MODEL_CONCURRENCY,
   SAVED_MODEL_MISSING_NOTICE,
+  SAVED_MODEL_RETRY_MS,
   SIGNED_URL_MAX_AGE_MS,
 } from '../sceneLibrary';
 import { LIBRARY_MAX_PAGES, LIBRARY_PAGE_LIMIT, LIBRARY_READ_ATTEMPTS } from '../serverLibrary';
@@ -217,11 +219,39 @@ describe('URL ký hết hạn — đường gia hạn với thư viện nhiều 
     expect(libraryLoadStatus().resolvedById).toEqual(['shared-x']);
   });
 
-  it('mẫu theo id bị gỡ quyền khi gia hạn → báo, không thử lại vô hạn', async () => {
+  it('Codex #9: mẫu theo id bị gỡ quyền khi gia hạn → gỡ khỏi danh mục nhất quán, ghi kết cục, lượt dựng sau không hỏi lại', async () => {
     await ensureSceneLibraryFor([{ model: { src: '/items/shared-y/model.glb' } }]);
     read.mockResolvedValue({ ok: false, error: { kind: 'forbidden' } });
     expect(await refreshAssetUrl(modelSrcOf('shared-y'), 403, undefined, noWait)).toBeNull();
-    expect(assetRefreshStatus().failures).toEqual([{ modelId: 'shared-y', reason: 'no-permission' }]);
+    expect(assetRefreshStatus().failures).toEqual([{ modelId: 'shared-y', reason: 'forbidden' }]);
+    expect(isServerModel('shared-y')).toBe(false);
+    expect(modelSrcOf('shared-y')).toBe('/items/shared-y/model.glb');
+    expect(isServerModel('srv-02099')).toBe(true);
+    expect(libraryLoadStatus()).toMatchObject({ resolvedById: [], missingById: [{ modelId: 'shared-y', reason: 'forbidden' }] });
+    read.mockClear();
+    await ensureSceneLibraryFor([{ model: { src: '/items/shared-y/model.glb' } }]);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('Codex #3: kết quả gia hạn theo id về muộn không ghi đè mục mà danh sách vừa nhận (danh sách thắng)', async () => {
+    await ensureSceneLibraryFor([{ model: { src: '/items/shared-w/model.glb' } }]);
+    let release: () => void = () => undefined;
+    read.mockImplementationOnce(async ({ libraryItemId }: { libraryItemId: string }) => {
+      await new Promise<void>((r) => (release = r));
+      return { ok: true, data: item(libraryItemId, 7) };
+    });
+    const pending = refreshAssetUrl(modelSrcOf('shared-w'), 403, undefined, noWait);
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    // Danh sách nhận mục này (sig=3) trước khi lượt theo id về.
+    server.ids.push('shared-w');
+    server.revision = 2;
+    server.sig = 3;
+    await refreshAssetUrl(modelSrcOf('srv-00001'), 403, undefined, noWait);
+    expect(modelSrcOf('shared-w')).toContain('sig=3');
+    release();
+    expect(await pending).toContain('sig=3');
+    expect(modelSrcOf('shared-w')).toContain('sig=3');
+    expect(libraryLoadStatus().resolvedById).toEqual([]);
   });
 });
 
@@ -253,19 +283,82 @@ describe('ensureSceneLibraryFor — mẫu đã lưu ngoài danh sách', () => {
     expect(read).not.toHaveBeenCalled();
   });
 
-  it('5xx/mạng khi đọc theo id → có câu báo nhưng KHÔNG đánh dấu vĩnh viễn: lượt sau hỏi lại và resolve được', async () => {
+  it('Codex #7: 5xx/mạng khi đọc theo id → câu báo một mục, hỏi lại sau giãn cách (không mỗi lượt dựng), gỡ báo khi resolve', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(0);
     read.mockResolvedValueOnce({ ok: false, error: { kind: 'http', status: 503, requestId: 'r', retryable: true, raw: null } });
     read.mockRejectedValueOnce(new Error('offline'));
     await ensureSceneLibraryFor(saved('shared-flaky'));
     expect(libraryLoadStatus().missingById).toEqual([{ modelId: 'shared-flaky', reason: 'read-failed' }]);
     expect(assetRefreshStatus().notice).toBe(SAVED_MODEL_MISSING_NOTICE);
+    // Trong giãn cách: lượt dựng sau KHÔNG hỏi lại.
+    await ensureSceneLibraryFor(saved('shared-flaky'));
+    expect(read).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(SAVED_MODEL_RETRY_MS + 1);
     await ensureSceneLibraryFor(saved('shared-flaky'));
     expect(read).toHaveBeenCalledTimes(2);
     expect(isServerModel('shared-flaky')).toBe(false);
+    // Hỏng hai lần vẫn chỉ một mục báo.
+    expect(assetRefreshStatus().failures).toEqual([{ modelId: 'shared-flaky', reason: 'read-failed' }]);
+    vi.setSystemTime(2 * SAVED_MODEL_RETRY_MS + 2);
     await ensureSceneLibraryFor(saved('shared-flaky'));
     expect(read).toHaveBeenCalledTimes(3);
     expect(isServerModel('shared-flaky')).toBe(true);
     expect(libraryLoadStatus()).toMatchObject({ resolvedById: ['shared-flaky'], missingById: [] });
+    expect(assetRefreshStatus()).toMatchObject({ failures: [], notice: null });
+  });
+
+  it('Codex #6: giới hạn đọc theo id là CHUNG cả module — hai lượt chồng nhau với id khác nhau vẫn tối đa 4', async () => {
+    let live = 0;
+    let peak = 0;
+    read.mockImplementation(async ({ libraryItemId }: { libraryItemId: string }) => {
+      live += 1;
+      peak = Math.max(peak, live);
+      await new Promise((r) => setTimeout(r, 1));
+      live -= 1;
+      return { ok: true, data: item(libraryItemId, 1) };
+    });
+    // Client trực tiếp: hai `import()` động cùng lúc của module bị vi.mock có lúc nhận module thật (chỉ trong test).
+    const getApi = async () => ({ list, listPage, read });
+    await ensureSceneLibrary(getApi);
+    await Promise.all([ensureSceneLibraryFor(saved(...ids(6, 'left')), getApi), ensureSceneLibraryFor(saved(...ids(6, 'right')), getApi)]);
+    expect(read).toHaveBeenCalledTimes(12);
+    expect(peak).toBe(SAVED_MODEL_CONCURRENCY);
+  });
+
+  it('Codex #4: rời cảnh khi lượt theo id đang chạy → người gọi mới không bám lượt đã bị bỏ, tự đọc và resolve được', async () => {
+    await ensureSceneLibrary();
+    let release: () => void = () => undefined;
+    read.mockImplementationOnce(async ({ libraryItemId }: { libraryItemId: string }) => {
+      await new Promise<void>((r) => (release = r));
+      return { ok: true, data: item(libraryItemId, 1) };
+    });
+    const first = ensureSceneLibraryFor(saved('shared-p'));
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    abandonAssetRefresh();
+    await ensureSceneLibraryFor(saved('shared-p'));
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(isServerModel('shared-p')).toBe(true);
+    release();
+    await first;
+    expect(assetRefreshStatus().dropped).toBe(1);
+    expect(isServerModel('shared-p')).toBe(true);
+  });
+
+  it('Codex #5: rời cảnh trong lúc chờ thư viện → lượt cũ không hỏi theo id (thế hệ chụp lúc vào)', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    listPage.mockImplementation(async (input: { cursor?: string; limit?: number }) => {
+      await gate;
+      return serve(input);
+    });
+    const pending = ensureSceneLibraryFor(saved('shared-q'));
+    await vi.waitFor(() => expect(listPage).toHaveBeenCalled());
+    abandonAssetRefresh();
+    release();
+    await pending;
+    expect(read).not.toHaveBeenCalled();
+    expect(isServerModel('shared-q')).toBe(false);
   });
 
   it(`đọc theo id có giới hạn: tối đa ${SAVED_MODEL_CONCURRENCY} lượt cùng lúc`, async () => {
