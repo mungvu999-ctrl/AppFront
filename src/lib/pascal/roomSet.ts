@@ -186,11 +186,16 @@ export const SHARE_BAND = 0.25;
  */
 export const FAIL_COST = 0.9;
 /**
- * Lý do loại thuần HÌNH DÁNG (tỉ lệ thật, cỡ so hộp, chuẩn cao). Chính sách "không làm tệ hơn hiện trạng" (điều phối
- * 12/11): không ứng viên nào ≤ FAIL_COST mà mẫu luật cũ chỉ trượt các lý do này (vẫn qua va chạm, texture, trần, chất lượng)
- * → giữ mẫu luật cũ (`fail-keep`, "hiện trạng, trượt hình dáng").
+ * Mẫu dựng CỠ THẬT (`uniform: 'real'`) được vượt hộp AI chưa xác nhận tối đa chừng này (m) MỖI trục mặt bằng — cỡ sai số dò
+ * hộp. Vượt hơn nghĩa là hộp không phải món của vai ấy cỡ thường (điều phối M17-4, cn08: hộp cỡ ghế bành dựng sofa 2 m chắn
+ * lối đi cạnh cửa; lối đi không phải vùng chặn nên kiểm va chạm không bắt) → không dựng cỡ thật, khung giữ chỗ.
  */
-const SHAPE_REJECTS: ReadonlySet<string> = new Set(['sai tỉ lệ thật', 'méo dáng', 'vượt hộp chỗ đặt', 'không lọt chỗ', 'cao hơn chuẩn vai', 'nhỏ hơn cỡ vai', 'không giữ cỡ người dùng']);
+export const REAL_GROW_M = 0.4;
+/*
+ * Chính sách "không làm tệ hơn hiện trạng" (điều phối 12/11, mở rộng M17-4): không ứng viên nào ≤ FAIL_COST mà mẫu luật cũ
+ * chỉ trượt lý do MỀM (không bị `forbiddenOf` cấm, không chồng vùng chặn thêm) → giữ mẫu luật cũ (`fail-keep`, "hiện trạng,
+ * trượt hình dáng"). Xem `evalOf` (legacyShape).
+ */
 /**
  * Lý do hình dáng NHẸ không loại mẫu concept (điều phối 13/11): concept chỉ bị loại vì chất lượng/an toàn (giường chưa
  * hoàn chỉnh, vân vỡ, QC, va chạm, trần, méo dáng); lệch tỉ lệ/cỡ so với hộp thì giữ và dựng CO ĐỀU.
@@ -973,12 +978,6 @@ export const roomSetOf = (
         ? []
         : [x.kind === undefined ? boxRectOf(x.box) : { ...boxRectOf(x.box), kind: x.kind }],
     );
-  /** Mẫu `f` trong phạm vi công năng ở cỡ hiển thị của `mm` (cỡ người dùng xác nhận: luôn đạt — chỉ ghi sổ). */
-  const funcOk = (mm: SetMember, f: string): boolean => {
-    const dims = ctx.dimsOf(f);
-    const shown = mm.shownOf?.(f) ?? dims;
-    return mm.sizeFrom === 'user' || dims === undefined || shown === undefined || functionalMissOf(mm.role, dims, shown) === undefined;
-  };
   const evalOf = (m: SetMember, costFor: (m: SetMember, f: string) => number) => {
     const rejects: Record<string, number> = {};
     const box = m.box;
@@ -1005,15 +1004,15 @@ export const roomSetOf = (
     let legacyShape: string | undefined;
     if (cur !== null && !pass.has(cur)) {
       const r = hardRejectOf(m, cur, ctx);
-      const dims = ctx.dimsOf(cur);
-      const shown = m.shownOf?.(cur) ?? dims;
-      const ceilingOk = m.ceilingM === undefined || (shown !== undefined && (m.liftM ?? 0) + shown[1] <= m.ceilingM - CEILING_GAP_M);
-      // Vòng 17: hiện trạng cũng phải trong phạm vi công năng và không méo dáng (lý do đầu tiên của hardRejectOf có thể che).
-      const formOk = dims !== undefined && shown !== undefined && !distorted(dims, shown) && funcOk(m, cur);
-      if (r !== undefined && SHAPE_REJECTS.has(r) && ceilingOk && formOk) {
+      // Điều phối M17-4 (cn02: bàn sồi luật cũ méo nhẹ bị thay bằng ứng viên chi phí 1,85): hiện trạng chỉ trượt lý do MỀM
+      // (hình dáng, méo dáng, thiếu dữ liệu — cùng "ngoại lệ được phép" của fallbackOf) thì được giữ; chỉ lý do CẤM
+      // (`forbiddenOf`: QC, vân vỡ, giường chưa hoàn chỉnh, trần, ngoài công năng) hoặc chồng vùng chặn THÊM quá phần chính
+      // hộp đã chồng (và quá ngân sách của pool) mới không giữ.
+      if (forbiddenOf(m, cur, undefined) === undefined) {
         const rect = near.length === 0 ? undefined : shownRectOf(m, cur);
         const hit = rect === undefined ? 0 : near.reduce((s, z) => s + overlapAreaM2(rect, z), 0);
-        if (hit <= minHit + ROOM_OVERLAP_TOL_M2) legacyShape = r;
+        const boxHit = box === undefined || near.length === 0 ? 0 : near.reduce((s, z) => s + overlapAreaM2(boxRectOf(box), z), 0);
+        if (hit <= Math.max(minHit, boxHit) + ROOM_OVERLAP_TOL_M2) legacyShape = r ?? 'ngoài pool';
       }
     }
     // Mẫu concept: cùng ràng buộc cứng + cùng ngân sách va chạm như ứng viên của pool (không vào `pass`: đường chọn
@@ -1103,11 +1102,13 @@ export const roomSetOf = (
     const zones = m.lifted === true || b === undefined ? [] : [...placed, ...pendingOf(m)].filter((z) => !tucked(m.kind, z.kind));
     const hitOf = (rect: PlanRect | undefined): number => (rect === undefined ? 0 : zones.reduce((s, z) => s + overlapAreaM2(rect, z), 0));
     const clear = (rect: PlanRect | undefined, budget = 0): boolean => hitOf(rect) <= budget + ROOM_OVERLAP_TOL_M2;
+    /** Cỡ thật `d` vượt hộp không quá REAL_GROW_M mỗi trục mặt bằng. */
+    const grows = (box: SetBox, d: Dims): boolean => d[0] <= box.w + REAL_GROW_M + 1e-9 && d[2] <= box.d + REAL_GROW_M + 1e-9;
     if (b !== undefined && m.sizeFrom !== 'user') {
       const real = realMemberOf(m);
       const fits = m.pool.flatMap((f) => {
         const d = ctx.dimsOf(f);
-        if (d === undefined || hardRejectOf(real, f, ctx, CONCEPT_LENIENT) !== undefined || !clear(realRectOf(m, b, d))) return [];
+        if (d === undefined || !grows(b, d) || hardRejectOf(real, f, ctx, CONCEPT_LENIENT) !== undefined || !clear(realRectOf(m, b, d))) return [];
         const c = r9(costOf(f));
         return c <= FAIL_COST ? [{ f, c, a: d[0] * d[2] }] : [];
       });
@@ -1156,6 +1157,9 @@ export const roomSetOf = (
     if (forceable && st !== undefined && stDims !== undefined && b !== undefined && m.sizeFrom !== 'user') {
       const cm = conceptMissOf(st);
       if (forbiddenOf(realMemberOf(m), st, cm === 'va chạm' ? undefined : cm) === undefined) {
+        if (!grows(b, stDims)) {
+          return { to: null, why: `phương án cuối: hộp AI quá nhỏ cho vai — mẫu dựng sẵn cỡ thật vượt hộp quá ${REAL_GROW_M} m` };
+        }
         const forced = [forbid ?? 'không mẫu luật cũ', ...(clear(realRectOf(m, b, stDims)) ? [] : ['va chạm'])].filter((x, i, a) => a.indexOf(x) === i).join(', ');
         return { to: st, uniform: 'real', forced, why: `phương án cuối: mẫu dựng sẵn ở cỡ thật dù ${forced} (luật cũ không dùng được)` };
       }

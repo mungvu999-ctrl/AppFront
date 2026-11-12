@@ -8,7 +8,7 @@ import type { Furniture } from '@/domain/spatial/types';
 import { degrees, millimetres } from '@/domain/units/types';
 
 import type { ModelQuality, PartMaterial, QualityPart } from '../libraryQuality';
-import { FAIL_COST, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetMember, type SetZone } from '../roomSet';
+import { FAIL_COST, REAL_GROW_M, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetMember, type SetZone } from '../roomSet';
 import { SCENE_STYLES } from '../sceneStyles';
 import { contextRolesOf, modelFolderOf, roleOf, roomSetReport, type LayerStyle } from '../sceneVariety';
 
@@ -75,14 +75,19 @@ const BOX = { cx: 0, cy: 0, w: 2, d: 0.85, rot: 0 };
 const ALL: SetZone = { cx: 0, cy: 0, w: 9, d: 9, rotationDeg: 0 };
 /**
  * Điều phối M17-4: mẫu khớp TRONG hộp chỉ va chạm khi chồng THÊM quá phần chính hộp đã chồng — `ALL` chồng cả hộp nên mẫu
- * trong hộp không còn va chạm. Hộp hẹp 1,0 m kẹp giữa hai vùng chặn sát mép (hộp chồng 0): mẫu hiển thị rộng hơn hộp
- * (`shownOf` = cỡ catalog, vd sofa-old 1,5 m, sofa 2,0 m) chồng thêm → va chạm; cỡ thật cũng chồng.
+ * trong hộp không còn va chạm. Hộp hẹp 1,6 m kẹp giữa hai vùng chặn sát mép (hộp chồng 0): mẫu hiển thị rộng 2,0 m
+ * (`WIDE`) chồng thêm → va chạm; cỡ thật sofa 2,0 m cũng chồng và vượt hộp 0,4 m ≤ REAL_GROW_M (cỡ thật vẫn được dựng).
  */
-const NARROW = { ...BOX, w: 1.0 };
+const NARROW = { ...BOX, w: 1.6 };
 const FLANK: SetZone[] = [
-  { cx: 2.5, cy: 0, w: 4, d: 9, rotationDeg: 0 },
-  { cx: -2.5, cy: 0, w: 4, d: 9, rotationDeg: 0 },
+  { cx: 2.8, cy: 0, w: 4, d: 9, rotationDeg: 0 },
+  { cx: -2.8, cy: 0, w: 4, d: 9, rotationDeg: 0 },
 ];
+/** Cỡ hiển thị rộng 2,0 m (rộng hơn hộp NARROW), sâu/cao theo catalog. */
+const WIDE = (f: string): Dims | undefined => {
+  const d = DIMS[f];
+  return d === undefined ? undefined : [Math.max(d[0], 2.0), d[1], d[2]];
+};
 
 describe('#2 — phương án cuối không bao giờ trả mẫu cấm', () => {
   it('luật cũ có lỗi QC, không mẫu dựng sẵn → null, sổ ghi lý do (không trả mẫu QC)', () => {
@@ -93,7 +98,7 @@ describe('#2 — phương án cuối không bao giờ trả mẫu cấm', () => 
   });
 
   it('luật cũ vân vỡ → mẫu dựng sẵn khi nó đặt được, không thì null', () => {
-    const m = mem('s', 'sofa', [], { current: 'sofa-broken', stock: 'sofa', box: NARROW, shownOf: (f) => DIMS[f] });
+    const m = mem('s', 'sofa', [], { current: 'sofa-broken', stock: 'sofa', box: NARROW, shownOf: WIDE });
     expect(roomSetOf('r', [m], new Map(), ctx).get('s')?.to).toBe('sofa');
     const d = roomSetOf('r', [m], new Map(), ctx, FLANK).get('s');
     expect(d?.to).toBeNull();
@@ -170,8 +175,8 @@ describe('#6 — concept bị loại không góp màu; `to: null` đã quyết k
 });
 
 describe(`#7 — cỡ thật: dải SHARE_BAND (${SHARE_BAND}) quanh chi phí tốt nhất, rồi mẫu NHỎ NHẤT`, () => {
-  // Hộp 0,5 × 0,5 m: mọi mẫu khớp thường đều méo/vượt → phương án cuối cỡ thật.
-  const box = { cx: 0, cy: 0, w: 0.5, d: 0.5, rot: 0 };
+  // Điều phối M17-4: hộp 2,0 × 0,6 m (sofa-big 2,4 × 1,0 vượt đúng REAL_GROW_M) — hộp 0,5 m giờ quá nhỏ cho cỡ thật.
+  const box = { cx: 0, cy: 0, w: 2.0, d: 0.6, rot: 0 };
   const shown = (): Dims => [0.5, 0.85, 0.5];
   const run = (pool: string[]) => roomSetOf('r', [mem('s', 'sofa', pool, { current: null, box, shownOf: shown })], new Map(), ctx).get('s');
   const ref = mem('wall', 'sofa', [], { current: 'b-sofa-cream', fixed: true });
@@ -231,7 +236,7 @@ describe('#3 — vai trung tính không ra mẫu giường (mọi đường mẫ
 
 describe('Codex M17-2 #1, #2 — luật cũ / mẫu dựng sẵn ở phương án cuối', () => {
   it('#1: luật cũ chồng vùng chặn → null, sổ ghi va chạm (không vùng chặn → giữ luật cũ)', () => {
-    const m = mem('s', 'sofa', [], { current: 'sofa-old', box: NARROW, shownOf: (f) => DIMS[f] });
+    const m = mem('s', 'sofa', [], { current: 'sofa-old', box: NARROW, shownOf: WIDE });
     expect(roomSetOf('r', [m], new Map(), ctx).get('s')?.to).toBe('sofa-old');
     const d = roomSetOf('r', [m], new Map(), ctx, FLANK).get('s');
     expect(d?.to).toBeNull();
@@ -291,19 +296,19 @@ describe('Codex M17-2 #1, #2 — luật cũ / mẫu dựng sẵn ở phương á
 
 describe('Điều phối M17-2 — null chỉ vì va chạm / ngoài công năng → mẫu dựng sẵn CỠ THẬT (cờ forced)', () => {
   it('luật cũ chồng vùng chặn, có mẫu dựng sẵn → mẫu dựng sẵn cỡ thật dù va chạm, cause fallback + forced', () => {
-    const m = mem('s', 'sofa', [], { current: 'sofa-old', stock: 'sofa', box: NARROW, shownOf: (f) => DIMS[f] });
+    const m = mem('s', 'sofa', [], { current: 'sofa-old', stock: 'sofa', box: NARROW, shownOf: WIDE });
     const d = roomSetOf('r', [m], new Map(), ctx, FLANK).get('s');
     expect(d).toMatchObject({ to: 'sofa', uniform: 'real', cause: 'fallback', forced: 'va chạm' });
     expect(d?.why).toMatch(/cỡ thật dù va chạm/);
   });
 
   it('không mẫu luật cũ → mẫu dựng sẵn cỡ thật (forced ghi "không mẫu luật cũ")', () => {
-    const m = mem('s', 'sofa', [], { current: null, stock: 'sofa', box: NARROW, shownOf: (f) => DIMS[f] });
+    const m = mem('s', 'sofa', [], { current: null, stock: 'sofa', box: NARROW, shownOf: WIDE });
     expect(roomSetOf('r', [m], new Map(), ctx, FLANK).get('s')).toMatchObject({ to: 'sofa', uniform: 'real', forced: expect.stringContaining('không mẫu luật cũ') });
   });
 
   it('mẫu luật cũ CHÍNH LÀ mẫu dựng sẵn, trượt → vẫn được dựng cỡ thật (đổi phép khớp, cùng mẫu) — Codex M17-3 #1', () => {
-    const m = mem('s', 'sofa', [], { current: 'sofa', stock: 'sofa', box: NARROW, shownOf: (f) => DIMS[f] });
+    const m = mem('s', 'sofa', [], { current: 'sofa', stock: 'sofa', box: NARROW, shownOf: WIDE });
     const d = roomSetOf('r', [m], new Map(), ctx, FLANK).get('s');
     expect(d?.to).toBe('sofa');
     expect(d?.uniform).toBe('real');
@@ -311,14 +316,34 @@ describe('Điều phối M17-2 — null chỉ vì va chạm / ngoài công năng
 
   it('mẫu dựng sẵn cỡ thật vượt trần → vẫn null (trần không được bỏ qua)', () => {
     // Trần 1,2 − 0,3 = 0,9: luật cũ cao 0,85 qua trần nhưng va chạm; mẫu dựng sẵn cao 0,95 không.
-    const m = mem('s', 'sofa', [], { current: 'sofa-old', stock: 'sofa-tall', box: NARROW, ceilingM: 1.2, shownOf: (f) => DIMS[f] });
+    const m = mem('s', 'sofa', [], { current: 'sofa-old', stock: 'sofa-tall', box: NARROW, ceilingM: 1.2, shownOf: WIDE });
     expect(roomSetOf('r', [m], new Map(), ctx, FLANK).get('s')?.to).toBeNull();
   });
 
   it('lý do an toàn/chất lượng (có lỗi QC) → null dù có mẫu dựng sẵn; người dùng xác nhận không dựng cỡ thật', () => {
-    const qc = mem('s', 'sofa', [], { current: 'sofa-qc', stock: 'sofa', box: NARROW, shownOf: (f) => DIMS[f] });
+    const qc = mem('s', 'sofa', [], { current: 'sofa-qc', stock: 'sofa', box: NARROW, shownOf: WIDE });
     expect(roomSetOf('r', [qc], new Map(), ctx, FLANK).get('s')?.to).toBeNull();
-    const user = mem('s', 'sofa', [], { current: null, stock: 'sofa', box: NARROW, sizeFrom: 'user', shownOf: (f) => DIMS[f] });
+    const user = mem('s', 'sofa', [], { current: null, stock: 'sofa', box: NARROW, sizeFrom: 'user', shownOf: WIDE });
     expect(roomSetOf('r', [user], new Map(), ctx, FLANK).get('s')?.uniform).not.toBe('real');
+  });
+});
+
+describe(`Điều phối M17-4 — cỡ thật vượt hộp AI tối đa REAL_GROW_M (${REAL_GROW_M} m) mỗi trục (cn08)`, () => {
+  // Khớp thường luôn méo/ngoài công năng (cỡ hiển thị 0,5 × 0,5 m) → đi phương án cuối cỡ thật.
+  const shown = (): Dims => [0.5, 0.85, 0.5];
+  const sofa = (w: number, d: number, pool: string[]) => mem('s', 'sofa', pool, { current: null, stock: 'sofa', box: { cx: 0, cy: 0, w, d, rot: 0 }, shownOf: shown });
+
+  it('hộp 0,9 × 0,9 m vai sofa: không dựng sofa 2 m cỡ thật (cả nhánh cỡ thật lẫn mẫu dựng sẵn forced) → null, sổ ghi lý do', () => {
+    const d = roomSetOf('r', [sofa(0.9, 0.9, ['sofa-ok'])], new Map(), ctx).get('s');
+    expect(d?.to).toBeNull();
+    expect(d?.uniform).toBeUndefined();
+    expect(d?.forced).toBeUndefined();
+    expect(d?.why).toMatch(/hộp AI quá nhỏ cho vai/);
+  });
+
+  it('hộp 1,8 × 0,7 m: sofa cỡ thật 2,0 × 0,9 m vẫn được (vượt 0,2 m mỗi trục)', () => {
+    expect(roomSetOf('r', [sofa(1.8, 0.7, ['sofa-ok'])], new Map(), ctx).get('s')).toMatchObject({ to: 'sofa-ok', uniform: 'real' });
+    // Nhánh forced mẫu dựng sẵn (sofa 2,0 × 0,85 m) cũng được.
+    expect(roomSetOf('r', [sofa(1.8, 0.7, [])], new Map(), ctx).get('s')).toMatchObject({ to: 'sofa', uniform: 'real', forced: expect.stringContaining('không mẫu luật cũ') });
   });
 });

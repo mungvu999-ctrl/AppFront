@@ -222,7 +222,11 @@ describe('vòng 14 lượt 2 — ngưỡng hỏng FAIL_COST (ca thua rõ f-22/f-
     // Vòng 17: sâu hiển thị 0,26 (cũ 0,24 < 0,25 trượt "ngoài công năng"; fail-keep chỉ giữ hiện trạng trong công năng).
     expect(hardRejectOf(m, 'old', c)).toBe('sai tỉ lệ thật');
     const fridge = planRectOf(0.775, 0, 0.65, 0.6, 0);
-    expect(roomSetOf('R', [m], new Map(), c, [fridge]).get('s')).toMatchObject({ to: 'slim', cause: 'selector' });
+    // Điều phối M17-4: luật cũ nằm trong hộp chỉ chồng tủ lạnh ở phần chính hộp đã chồng → lý do mềm, giữ (fail-keep).
+    expect(roomSetOf('R', [m], new Map(), c, [fridge]).get('s')).toMatchObject({ to: 'old', cause: 'fail-keep' });
+    // Hộp hẹp 1,0 m (chồng tủ lạnh 0,05 × 0,4 = 0,02 m²), luật cũ hiện 1,2 m chồng 0,15 × 0,26 ≈ 0,039 m² — THÊM → không giữ.
+    const narrow: SetMember = { ...m, long: 1.0, box: { cx: 0, cy: 0, w: 1.0, d: 0.4, rot: 0 } };
+    expect(roomSetOf('R', [narrow], new Map(), c, [fridge]).get('s')).toMatchObject({ to: 'slim', cause: 'selector' });
     // Không vật cản: cùng hiện trạng được giữ.
     expect(roomSetOf('R', [m], new Map(), c).get('s')).toMatchObject({ to: 'old', cause: 'fail-keep' });
     // Chạm trần (mẫu luật cũ cao 2,2 m, trần 2,4 m → tối đa 2,1 m; ứng viên hẹp 1,8 m qua): không giữ.
@@ -260,14 +264,25 @@ describe('vòng 14 lượt 2 — ngưỡng hỏng FAIL_COST (ca thua rõ f-22/f-
     expect(roomSetOf('R', [m(['dark', 'legacy', 'oak'])], new Map(), c).get('d')).toMatchObject({ to: 'oak', cause: 'selector' });
   });
 
+  it('điều phối M17-4 (cn02 bàn sồi): luật cũ chỉ méo dáng nhẹ, ứng viên duy nhất chi phí 1,85 → giữ luật cũ (fail-keep)', () => {
+    // Luật cũ 1,0 × 0,6 m co vào hộp 0,6 × 0,6 m: tỉ lệ co 0,6 / 1,0 → méo dáng (lý do MỀM), không bị forbiddenOf cấm.
+    const c: SetContext = { ...ctxT('dresser', { dark: 185, legacy: 0 }), dimsOf: (x) => (x === 'legacy' ? [1.0, 0.8, 0.6] : [0.6, 0.8, 0.6]) };
+    const m = sq('d', 1, 0, 'legacy', ['dark', 'legacy']);
+    expect(['sai tỉ lệ thật', 'méo dáng']).toContain(hardRejectOf(m, 'legacy', c));
+    const d = roomSetOf('R', [m], new Map(), c).get('d');
+    expect(d).toMatchObject({ to: 'legacy', cause: 'fail-keep' });
+    expect(d?.why).toMatch(/> ngưỡng hỏng/);
+  });
+
   it('chi phí > FAIL_COST + va chạm: mẫu luật cũ chồng tủ lạnh (loại "va chạm") → KHÔNG khôi phục nó, giữ ứng viên hợp lệ đắt', () => {
     const c: SetContext = { ...ctxT('bookshelf', { wide: 5, slim: 100 }), dimsOf: (x) => (x === 'wide' ? [1.2, 1.8, 0.4] : [0.8, 1.8, 0.4]) };
     const m: SetMember = { id: 's', role: 'bookshelf', short: 0.4, long: 1.2, current: 'wide', pool: ['wide', 'slim'], fixed: false, box: { cx: 0, cy: 0, w: 1.2, d: 0.4, rot: 0 }, shownOf: (x) => (x === 'wide' ? [1.2, 1.8, 0.4] : [0.8, 1.8, 0.4]) };
     const d = roomSetOf('R', [m], new Map(), c, [planRectOf(0.775, 0, 0.65, 0.6, 0)]).get('s');
     expect(d?.rejects?.['va chạm']).toBe(1);
-    expect(d).toMatchObject({ to: 'slim', cause: 'selector' });
-    expect(d?.cost as number).toBeGreaterThan(FAIL_COST);
-    expect(d?.why).toContain('không hợp lệ');
+    // Điều phối M17-4: luật cũ hiện đúng bằng hộp, chỉ chồng tủ lạnh ở phần chính hộp đã chồng (sai số dò) → lý do mềm,
+    // giữ luật cũ thay ứng viên > FAIL_COST. Luật cũ chồng THÊM quá hộp → không giữ: xem ca hộp hẹp ở test kế.
+    expect(d).toMatchObject({ to: 'wide', cause: 'fail-keep' });
+    expect(d?.why).toContain('> ngưỡng hỏng');
   });
 
   it('ngưỡng theo NHÓM, lưng chừng: mẫu chung trung bình ≤ 0,9 dù một món riêng > 0,9 → cả nhóm cùng mẫu chung', () => {
