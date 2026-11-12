@@ -651,7 +651,9 @@ export const createHttpClient = ({
     if (shouldUseSingleFlight) {
       const singleFlightKey = options.singleFlightKey && options.singleFlightKey.length > 0
         ? options.singleFlightKey
-        : `${method}:${url.toString()}`;
+        : // responseType in the key: `list()` (JSON) and `listPage()` (text + headers) on one URL
+          // must not hand each other a result of the other shape.
+          `${method}:${options.responseType ?? 'auto'}:${url.toString()}`;
 
       const shared = await runSingleFlight(singleFlightKey, () =>
         executeRequest<TRes, TBody>(method, url, options),
