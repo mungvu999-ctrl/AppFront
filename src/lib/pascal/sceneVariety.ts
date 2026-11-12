@@ -791,33 +791,14 @@ const addSetMembers = <T extends SetInput>(
     const room = SET_ROOMS.get(f.roomId) ?? { usage, members: new Map() };
     SET_ROOMS.set(f.roomId, room);
     room.members.set(f.id, { f, role, ...(override === undefined ? {} : { override }), sig: setSigOf(f) });
-    // Món ghim theo dữ liệu (mẫu đã lưu / khe / twin): mục sổ ngay khi vào sổ — lập bộ (nếu có) ghi đè thêm nhóm, neo.
-    const pin = SET_PINNED.get(f.id) ?? (f.model === undefined ? undefined : (SAVED_FOLDER.exec(f.model.src)?.[1] ?? null));
-    if (pin !== undefined || f.slots !== undefined) {
-      const to = pin ?? null;
-      SET_LOG.set(f.id, {
-        id: f.id,
-        role,
-        from: to,
-        to,
-        rule: 'keep',
-        cause: 'pinned',
-        anchor: false,
-        by: sizeFromOf(f),
-        pool: 0,
-        why: to === null ? 'món ghim: mẫu ngoài thư viện / khe vật liệu' : 'món ghim: giữ mẫu đang dùng',
-        roomId: f.roomId,
-        rev: revOf(role),
-      });
-    }
   }
 };
 /**
  * toPascal: đồ bày phòng trống vào sổ bộ TRƯỚC lớp trang trí (đèn bàn/chăn đọc mẫu của món chủ). `realOf` = món thật của
  * twin (cặp đã nhận). MỘT đại diện cho mỗi cặp (Codex SEL-1 #2): món thật đã có trong sổ (người dùng đổi mẫu → nó đi qua
- * `contextRolesOf`) thì twin chỉ là bí danh, không vào va chạm/bảng màu; chưa có (mẫu luật đã lưu) thì twin đại diện (đứng
- * ở chỗ món thật, `atAdopted`) với mẫu của món thật, chốt ĐÚNG lượt vai của nó như khi còn là đồ sinh (`pinTo`) — anh em
- * thấy cùng ngữ cảnh như trước khi nhận. Twin luôn trả mẫu của món thật khi hỏi (`modelFolderOf`, chủ trang trí).
+ * `contextRolesOf`) thì twin chỉ là bí danh, không vào va chạm/bảng màu; chưa có (mẫu luật đã lưu) thì id twin đại diện
+ * với HÌNH HỌC và mẫu của món thật, chốt ĐÚNG lượt vai của nó như khi còn là đồ sinh (`pinTo`) — anh em thấy cùng thứ tự
+ * ngữ cảnh như trước khi nhận. Twin luôn trả mẫu của món thật khi hỏi (`modelFolderOf`, chủ trang trí).
  */
 export const addRoomSetMembers = (
   items: readonly Furniture[],
@@ -835,7 +816,10 @@ export const addRoomSetMembers = (
     if (folder !== undefined) SET_PINNED.set(f.id, folder);
     const registered = real.roomId !== undefined && (SET_ROOMS.get(real.roomId)?.members.has(real.id) === true || SET_OBSTACLES.get(real.roomId)?.has(real.id) === true);
     if (registered) continue;
-    own.push(f);
+    // Hình học THẬT của món thật (cỡ, cao, nâng, xoay — người dùng có thể đã co giãn/nâng) dưới id đại diện; cặp nhận
+    // dựng khớp đúng hộp (exact-fit) như `toPascal`. Thứ tự chốt vẫn theo lượt vai (`pinTo`), không cố định từ đầu.
+    SET_EXACT.add(f.id);
+    own.push({ ...real, id: f.id });
   }
   addSetMembers(own, usageOf);
 };
@@ -955,6 +939,25 @@ const roomSetFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, r
 export const roomSetSwapOf = (id: string): SetDecision | undefined => {
   const d = SET_LOG.get(id);
   return d?.rule === 'roomset' && d.by !== 'user' && SET_APPLIED.has(id) ? d : undefined;
+};
+
+/**
+ * toPascal, cuối lượt dựng: lập bộ cho mọi phòng còn món chưa có quyết định (phòng chỉ có món ghim, món dựng bằng mẫu đã
+ * lưu không bao giờ hỏi `modelFolderOf`) — sổ đủ mục ghim kèm neo/nhóm, độc lập với lượt tra mẫu. Roomset tắt: không làm gì.
+ */
+export const finishRoomSet = (style: SceneStyle): void => {
+  if (!roomSetOn(style)) return;
+  const plan = setPlans.get(style) ?? new Map<string, SetDecision>();
+  setPlans.set(style, plan);
+  for (const [roomId, room] of SET_ROOMS) {
+    if ([...room.members.keys()].every((id) => plan.has(id))) continue;
+    setPlanning = true;
+    try {
+      for (const [id, d] of planRoom(roomId, room, style, plan)) plan.set(id, d);
+    } finally {
+      setPlanning = false;
+    }
+  }
 };
 
 /** Đầu dò `__pascalProbe.roomSetPools()`: vai bộ → mẫu thư viện thấy được (QA so catalog giữa hai lượt, tách A/B/C). */

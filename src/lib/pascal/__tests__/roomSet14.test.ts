@@ -16,7 +16,7 @@ import { LIBRARY_QUALITY, type ModelQuality } from '../libraryQuality';
 import LIBRARY from '../libraryRoles.json' with { type: 'json' };
 import { ANCHOR_BAND, hardRejectOf, paletteOf, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetMember } from '../roomSet';
 import { sceneStyleOf } from '../sceneStyles';
-import { addRoomSetMembers, contextRolesOf, modelFolderOf, roomSetPools, roomSetReport, setRoomSetKeys, type LayerStyle } from '../sceneVariety';
+import { addRoomSetMembers, contextRolesOf, finishRoomSet, modelFolderOf, roomSetPools, roomSetReport, setRoomSetKeys, type LayerStyle } from '../sceneVariety';
 
 const roles = LIBRARY.roles as Record<string, string[]>;
 const libStyles = (LIBRARY as unknown as { models: Record<string, { s: string[] }> }).models;
@@ -347,10 +347,46 @@ describe('Codex SEL-1', () => {
     expect(build(['F-9', 'F-1', 'F-8', 'F-2', 'F-7'])).toEqual(a);
   });
 
-  it('#5 phòng chỉ có món ghim vẫn có mục sổ, kèm by/pool', () => {
-    const pinned = furniture('F-PIN', 'chair', 480, 500, 0, 0, { model: { id: 'p', src: '/items/chair-white-windsor-spindle/model.glb' } });
+  it('#5 / SEL-2 #3 phòng chỉ có món ghim: sổ đủ mục (neo, nhóm, by, pool) sau finishRoomSet, không cần tra mẫu; roomset tắt → không ghi', () => {
+    const table = furniture('F-PTAB', 'table', 1600, 900, 0, 0, { model: { id: 't', src: '/items/table-oak-light-tapered-legs/model.glb' } });
+    const pinned = furniture('F-PIN', 'chair', 480, 500, 0, -700, { model: { id: 'p', src: '/items/chair-white-windsor-spindle/model.glb' } });
     setRoomSetKeys(new Map(), new Map([[ROOM, CEIL]]));
-    contextRolesOf([pinned], usage);
-    expect(roomSetReport()[ROOM]?.items.find((d) => d.id === 'F-PIN')).toMatchObject({ cause: 'pinned', to: 'chair-white-windsor-spindle', by: 'user', pool: 0 });
+    contextRolesOf([table, pinned], usage);
+    finishRoomSet(style);
+    const report = roomSetReport()[ROOM];
+    expect(report?.anchor).toBe('F-PTAB');
+    expect(report?.items.find((d) => d.id === 'F-PIN')).toMatchObject({ cause: 'pinned', to: 'chair-white-windsor-spindle', by: 'user', pool: 0, group: 'F-PTAB' });
+    contextRolesOf([table, pinned], usage);
+    const off: LayerStyle = { ...style, roomSet: false };
+    finishRoomSet(off);
+    expect(roomSetReport()).toEqual({});
+  });
+
+  it('SEL-2 #1 đại diện cặp đã nhận mang hình học THẬT (người dùng dời + nới bàn): ghế cạnh chỗ thật gom vào bàn ấy', () => {
+    const chair = furniture('F-NEARC', 'chair', 480, 500, 3000, -700);
+    // Twin (chỗ sinh cũ) ở x = 0; món thật người dùng dời sang x = 3 m và nới 1,6 → 2,0 m.
+    const twin = furniture('DRESS-diningTable-R-SEL1-1', 'table', 1600, 900, 0, 0, { reviewed: false });
+    const real = furniture('F-REALT', 'table', 2000, 900, 3000, 0, { model: { id: 'r', src: '/items/table-oak-light-tapered-legs/model.glb' } });
+    const run = (rep: Furniture): string | undefined => {
+      setRoomSetKeys(new Map(), new Map([[ROOM, CEIL]]));
+      contextRolesOf([chair], usage);
+      addRoomSetMembers([twin], usage, (f) => (f.id === twin.id ? rep : undefined));
+      modelFolderOf(chair, style, 'livingRoom');
+      return roomSetReport()[ROOM]?.items.find((d) => d.id === 'F-NEARC')?.group;
+    };
+    expect(run(real)).toBe(twin.id);
+    // Hình học cũ của twin (bàn ở x = 0): ghế ở x = 3 m không thuộc bàn nào.
+    expect(run({ ...real, boundingBox: twin.boundingBox, centre: twin.centre })).toBeUndefined();
+    expect(roomSetReport()[ROOM]?.items.find((d) => d.id === twin.id)).toMatchObject({ cause: 'pinned', to: 'table-oak-light-tapered-legs' });
+  });
+
+  it('SEL-2 #2 hai kệ ghim chồng đúng chỗ, khác mẫu: đổi id cho nhau không đổi kết quả của kệ thứ ba', () => {
+    const q = (lab: [number, number, number]): ModelQuality => ({ role: 'bookshelf', useMm: [1, 1, 1], front: { axis: '+z', check: 'ok' }, parts: [{ kind: 'frame', share: 1, lab, material: 'wood', kindBy: 'm' }], detail: { tris: 1, kb: 1, textures: 0, maxTex: 0, tier: 'light' }, licence: 'CC0', source: 't' });
+    const table: Record<string, ModelQuality> = { a: q([60, 8, 24]), b: q([40, 8, 24]) };
+    const c: SetContext = { tierOf: () => 0, tiers: 3, dimsOf: () => [0.8, 1.8, 0.4], palette: { light: true, tone: 'l' }, qualityOf: (x) => table[x] };
+    const shelf = (id: string, current: string | null, fixed: boolean, x: number): SetMember => ({ id, role: 'bookshelf', short: 0.4, long: 0.8, current, pool: fixed ? [] : ['a', 'b'], fixed, box: { cx: x, cy: 0, w: 0.8, d: 0.4, rot: 0 } });
+    const run = (idA: string, idB: string): string | null | undefined =>
+      roomSetOf('R', [shelf(idA, 'a', true, 0), shelf(idB, 'b', true, 0), shelf('third', null, false, 3)], new Map(), c).get('third')?.to;
+    expect(run('p1', 'p2')).toBe(run('p2', 'p1'));
   });
 });

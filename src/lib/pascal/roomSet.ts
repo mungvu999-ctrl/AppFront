@@ -572,6 +572,10 @@ const byPlace = (a: SetMember, b: SetMember): number =>
   (a.box?.cy ?? 0) - (b.box?.cy ?? 0) ||
   (a.box?.w ?? a.long) - (b.box?.w ?? b.long) ||
   (a.box?.d ?? a.short) - (b.box?.d ?? b.short) ||
+  (a.box?.rot ?? 0) - (b.box?.rot ?? 0) ||
+  (a.liftM ?? 0) - (b.liftM ?? 0) ||
+  a.role.localeCompare(b.role) ||
+  (a.fixed ? (a.current ?? '') : (a.pinTo ?? '')).localeCompare(b.fixed ? (b.current ?? '') : (b.pinTo ?? '')) ||
   a.id.localeCompare(b.id);
 /** Làm tròn chi phí trước khi so/sắp: tổng dấu phẩy động theo thứ tự khác nhau không được lật dải hoà. */
 const r9 = (x: number): number => Math.round(x * 1e9) / 1e9;
@@ -713,7 +717,7 @@ export const roomSetOf = (
     if (b === undefined || !SEAT_GROUP_ROLES.has(m.role)) return undefined;
     const near = tables.filter((t) => rectsOverlap(boxRectOf(t.box as SetBox), boxRectOf(b), CHAIR_REACH_M));
     const dist = (t: SetMember): number => Math.hypot((t.box as SetBox).cx - b.cx, (t.box as SetBox).cy - b.cy);
-    return near.sort((x, y) => dist(x) - dist(y) || x.id.localeCompare(y.id))[0];
+    return near.sort((x, y) => dist(x) - dist(y) || byPlace(x, y))[0];
   };
   const out = new Map<string, SetDecision>();
   for (const m of inSet) {
@@ -894,7 +898,12 @@ export const roomSetOf = (
           ...(m.sizeFrom === undefined ? {} : { by: m.sizeFrom }),
           ...(key === '' ? {} : { group: key }),
           pool: m.pool.length,
-          why: cost === undefined ? 'không ứng viên qua ràng buộc cứng — mẫu luật cũ' : `${via}; ${cost.toFixed(2)} (${old})`,
+          why:
+            m.pinTo !== undefined
+              ? 'cặp đã nhận: mẫu của món thật, chốt đúng lượt vai'
+              : cost === undefined
+                ? 'không ứng viên qua ràng buộc cứng — mẫu luật cũ'
+                : `${via}; ${cost.toFixed(2)} (${old})`,
           ...(Object.keys(ev.rejects).length > 0 ? { rejects: ev.rejects } : {}),
           ...(top.length > 0 ? { top } : {}),
         });

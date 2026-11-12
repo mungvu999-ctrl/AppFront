@@ -92,7 +92,7 @@ import { itemFitOf } from './itemFit';
 import { furnishingUsageOf, isPlausibleStair, lShapedRunArms, orphanWallIds, weldWallEnds } from './structureFixes';
 import { doorSwingRects, wallRects } from './placement';
 import { planRectOf, ROOMSET_VERSION, roomSetKeysOf, type SetZone } from './roomSet';
-import { addRoomSetMembers, contextRolesOf, isThinHob, isThinSink, modelFolderOf, roleOf, roomSetSwapOf, setRoomSetKeys, withoutOverlaps } from './sceneVariety';
+import { addRoomSetMembers, contextRolesOf, finishRoomSet, isThinHob, isThinSink, modelFolderOf, roleOf, roomSetSwapOf, setRoomSetKeys, withoutOverlaps } from './sceneVariety';
 import type {
   AppFrontOrigin,
   PascalDoorNode,
@@ -1473,6 +1473,8 @@ export const toPascalScene = (
     (f) => (twinIds.has(f.id) ? builtById.get(adoptedFurnitureIdOf(f.id)) : undefined),
   );
   const dressedAll = furnish === 'on' ? dressingOf({ ...usable, furniture: [...baseFurniture, ...furnished] }, style) : [];
+  // Sổ `roomset` đủ mục (phòng chỉ có món ghim) — không đổi mẫu nào đã dựng.
+  finishRoomSet(style);
   const dressed = dressedAll.filter(inLayer);
   const builtRoomIds = new Set(builtRooms.map((room) => room.id));
   const aiAll = designAdditionsOf(
