@@ -933,6 +933,13 @@ export const addRoomSetMembers = (
 };
 
 /** Ứng viên của món chưa ghim: MỌI mẫu thư viện của vai (không lọc theo cỡ luật cũ), trừ QC loại; đồ sinh có mặt trước: bỏ mẫu nằm ngang hộp. */
+/** F8 (vòng 17): vai nhỏ hơn cùng nhóm đồ chứa, thử theo thứ tự khi không mẫu nào của vai vừa hộp ở cỡ thật (roomSet `smaller`). */
+const SMALLER_STORAGE: Partial<Record<FurnitureRole, readonly FurnitureRole[]>> = {
+  closet: ['bookshelf', 'dresser'],
+  dresser: ['nightstand'],
+  cabinet: ['nightstand'],
+};
+
 const setPoolOf = (f: SetInput, role: FurnitureRole, style: SceneStyle): readonly string[] => {
   const lib = visibleOf(role, f.variant).filter((x) => !QC_EXCLUDED.has(x));
   const orient = isGenerated(f) && !ROTATABLE_ROLES.has(role) && !rulesOffOf(style).has('orient');
@@ -989,6 +996,9 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
       // Mẫu dựng sẵn của vai: phương án cuối khi luật cũ trượt dáng/công năng (roomSet `fallbackOf`).
       ...(ROLE_MODELS[role][0] === undefined ? {} : { stock: ROLE_MODELS[role][0] }),
       pool: pinned || twinPin !== undefined ? [] : setPoolOf(f, role, style),
+      ...(pinned || twinPin !== undefined || SMALLER_STORAGE[role] === undefined
+        ? {}
+        : { smaller: SMALLER_STORAGE[role].map((r) => ({ role: r, pool: setPoolOf(f, r, style) })) }),
       fixed: pinned,
       ...(concept === undefined
         ? {}

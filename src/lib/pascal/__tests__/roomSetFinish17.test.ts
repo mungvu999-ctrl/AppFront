@@ -154,6 +154,46 @@ describe('F6 — tầng cưỡng bức thử mẫu thư viện trước mẫu d�
   });
 });
 
+describe('F8 — không mẫu nào của vai vừa hộp → mẫu nhỏ hơn cùng nhóm đồ chứa', () => {
+  const QS: Record<string, ModelQuality> = {
+    'wardrobe-wide': q('closet', [part('frame', 1, [90, 0, 3], 'wood')]),
+    'shelf-tall': q('bookshelf', [part('frame', 1, [60, 8, 25], 'wood')]),
+    'nightstand-a': q('nightstand', [part('frame', 1, [60, 8, 25], 'wood')]),
+  };
+  const DS: Record<string, Dims> = { 'wardrobe-wide': [0.86, 2.0, 0.6], 'shelf-tall': [0.6, 1.8, 0.35], 'nightstand-a': [0.34, 0.55, 0.35], closet: [1.2, 2.0, 0.6] };
+  const ctx8: SetContext = { tierOf: () => 0, tiers: 5, dimsOf: (id) => DS[id], palette: {}, qualityOf: (id) => QS[id] };
+  // R2–R4 s4pn: hộp tủ áo AI 0,41 × 0,45 m — tủ áo nhỏ nhất rộng 0,86 m (vượt 0,45 > 0,4) → cũ: ẩn món.
+  const box = { cx: 0, cy: 0, w: 0.41, d: 0.45, rot: 0 };
+  const closet = (extra: Partial<SetMember> = {}): SetMember =>
+    mem('w', 'closet', ['wardrobe-wide'], { current: null, stock: 'closet', box, shownOf: () => [0.41, 2.0, 0.45], smaller: [{ role: 'bookshelf', pool: ['shelf-tall'] }], ...extra });
+
+  it('tủ áo không vừa → kệ cao cỡ thật, sổ ghi vai bookshelf', () => {
+    const d = roomSetOf('r', [closet()], new Map(), ctx8, []).get('w');
+    expect(d).toMatchObject({ to: 'shelf-tall', uniform: 'real', role: 'bookshelf', cause: 'fallback' });
+  });
+
+  it('không có nhóm nhỏ hơn → vẫn ẩn (null) như cũ', () => {
+    expect(roomSetOf('r', [closet({ smaller: [] })], new Map(), ctx8, []).get('w')?.to).toBeNull();
+  });
+
+  it('mẫu nhỏ hơn cũng chồng thêm đồ đạc → ẩn, không đè', () => {
+    const sofa: SetZone = { cx: 0, cy: 0, w: 3, d: 3, rotationDeg: 0, kind: 'sofa' };
+    // Hộp tự chồng sofa 0,18 m², kệ cỡ thật chồng 0,21 m² → không nhận.
+    expect(roomSetOf('r', [closet()], new Map(), ctx8, [sofa]).get('w')?.to).toBeNull();
+  });
+});
+
+describe('Codex M17-9 P2 — ngân sách đồ đạc tách khỏi tường ở tầng cưỡng bức', () => {
+  it('cỡ thật bớt chồng tường nhưng chồng thêm đồ đạc → không nhận (ẩn)', () => {
+    // Hộp 2,4 × 0,6 tâm (0,0) chồng tường bên x ∈ [1,0; 1,4] (0,24 m²); sofa cỡ thật rộng 2,0 không chạm tường nhưng sâu 0,9
+    // chồng bàn (kind) y ∈ [0,5; 0,6] 0,2 m² ≤ 0,24 — luật gộp cũ nhận (đổi chồng tường lấy chồng đồ), luật tách không nhận.
+    const wall: SetZone = { cx: 1.2, cy: 0, w: 0.4, d: 3, rotationDeg: 0 };
+    const table: SetZone = { cx: 0, cy: 0.55, w: 2, d: 0.1, rotationDeg: 0, kind: 'table' };
+    const m = mem('s', 'sofa', ['sofa-deep'], { current: 'sofa-old', stock: 'sofa', box: { cx: 0, cy: 0, w: 2.4, d: 0.6, rot: 0 }, shownOf: () => [1.0, 0.6, 0.6] });
+    expect(roomSetOf('r', [m], new Map(), ctxOf(), [wall, table]).get('s')?.to).toBeNull();
+  });
+});
+
 describe('I2 — vai bench (giường cỡ nhỏ đổi vai)', () => {
   it('hộp 0,81 × 0,86: không ép băng dài 1,5 m vào hộp — ra đôn nhỏ ở cỡ thật', () => {
     const m = mem('b', 'bench', ['bench-long', 'ottoman'], { current: null, box: { cx: 0, cy: 0, w: 0.81, d: 0.86, rot: 0 }, shownOf: stretch(0.81, 0.86) });

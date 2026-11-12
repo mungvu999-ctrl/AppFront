@@ -362,6 +362,11 @@ export interface SetMember {
   readonly box?: SetBox;
   /** Nguồn kích thước: lớp tự sinh / AI dò chưa xác nhận / người dùng đã xác nhận (hộp giữ nguyên, `USER_FILL`). */
   readonly sizeFrom?: 'generated' | 'ai' | 'user';
+  /**
+   * F8 (vòng 17): vai NHỎ HƠN cùng nhóm đồ chứa (tủ áo → kệ cao / tủ ngăn kéo; tủ thấp → tủ đầu giường) + pool của vai ấy —
+   * tầng cuối khi không mẫu nào của vai vừa hộp AI ở cỡ thật ("không vừa → mẫu nhỏ hơn đúng loại", không thu nhỏ món).
+   */
+  readonly smaller?: readonly { readonly role: string; readonly pool: readonly string[] }[];
   /** Món nâng khỏi sàn (treo tường, đặt trên mặt khác): vẫn góp bảng màu, KHÔNG tính va chạm mặt sàn. */
   readonly lifted?: boolean;
   /** Độ nâng khỏi sàn (m); vắng = 0. Hở trần tính `liftM + cao hiển thị`. */
@@ -1103,7 +1108,7 @@ export const roomSetOf = (
     ev: { readonly legacyCost?: number; readonly concept?: { readonly f: string; readonly miss?: string } },
     costOf: (f: string) => number,
     lead?: string,
-  ): { readonly to: string | null; readonly uniform?: 'real'; readonly forced?: string; readonly why: string } => {
+  ): { readonly to: string | null; readonly uniform?: 'real'; readonly forced?: string; readonly role?: string; readonly why: string } => {
     // F5 (vòng 17): `lead` = mẫu ghế của nhóm (một bàn một bộ) — chỉ thử đúng mẫu ấy (cỡ thật / hiển thị / cỡ thật cưỡng bức).
     const pool = lead === undefined ? m.pool : [lead];
     const b = m.box;
@@ -1168,6 +1173,9 @@ export const roomSetOf = (
       const real = realMemberOf(m);
       const wallHit = (rect: PlanRect): number => structural.reduce((s, z) => s + overlapAreaM2(rect, z), 0);
       const wallOk = (d: Dims): boolean => m.lifted === true || wallHit(realRectOf(m, b, d)) <= wallHit(boxRectOf(b)) + ROOM_OVERLAP_TOL_M2;
+      // Codex M17-9 P2: ngân sách đồ đạc TÁCH khỏi tường — bớt chồng tường không được đổi lấy chồng đồ đạc.
+      const furnHit = (rect: PlanRect): number => hitOf(rect) - wallHit(rect);
+      const furnOk = (rect: PlanRect): boolean => m.lifted === true || furnHit(rect) <= furnHit(boxRectOf(b)) + ROOM_OVERLAP_TOL_M2;
       const stockOk = (f: string): boolean => {
         const cm = conceptMissOf(f);
         return forbiddenOf(real, f, cm === 'va chạm' ? undefined : cm) === undefined;
@@ -1176,7 +1184,7 @@ export const roomSetOf = (
         const d = ctx.dimsOf(f);
         // F7 (R3 ch07: tủ cỡ thật đè giường + bàn ăn): không chồng đồ đạc quá phần hộp AI đã chồng — món chưa xác nhận thà ẩn
         // còn hơn đè đồ khác (giám khảo mù R2/R3). Tầng này chỉ còn cưỡng bức lý do công năng / luật cũ, không cưỡng bức va chạm.
-        if (d === undefined || !grows(b, d) || !wallOk(d) || (m.lifted !== true && !clear(realRectOf(m, b, d), boxHit))) return [];
+        if (d === undefined || !grows(b, d) || !wallOk(d) || !furnOk(realRectOf(m, b, d))) return [];
         if (f === st ? !stockOk(f) : hardRejectOf(real, f, ctx, CONCEPT_LENIENT) !== undefined) return [];
         const c = f === st ? FAIL_COST : r9(costOf(f));
         return c <= FAIL_COST ? [{ f, d, c, a: d[0] * d[2] }] : [];
@@ -1189,6 +1197,21 @@ export const roomSetOf = (
       if (pick !== undefined) {
         const forced = [forbid ?? 'không mẫu luật cũ', ...(clear(realRectOf(m, b, pick.d)) ? [] : ['va chạm'])].filter((x, i, a) => a.indexOf(x) === i).join(', ');
         return { to: pick.f, uniform: 'real', forced, why: `phương án cuối: ${pick.f === st ? 'mẫu dựng sẵn' : 'mẫu thư viện nhỏ nhất trong dải hợp bộ'} ở cỡ thật dù ${forced} (luật cũ không dùng được)` };
+      }
+      // F8: không mẫu nào của vai vừa → mẫu NHỎ HƠN cùng nhóm đồ chứa, cùng kiểm (cỡ thật, ≤ REAL_GROW_M, không chồng tường/cửa/
+      // đồ đạc, chất lượng + công năng theo vai mới). Vai mới ghi vào sổ (`role`) để dựng cảnh áp lưng / đo công năng đúng vai.
+      for (const sib of lead === undefined ? (m.smaller ?? []) : []) {
+        const sm: SetMember = { ...real, role: sib.role };
+        const fit = sib.pool.flatMap((f) => {
+          const d = ctx.dimsOf(f);
+          if (d === undefined || !grows(b, d) || !wallOk(d) || !furnOk(realRectOf(sm, b, d))) return [];
+          return hardRejectOf(sm, f, ctx, CONCEPT_LENIENT) === undefined ? [{ f, c: r9(costOf(f)), a: d[0] * d[2] }] : [];
+        });
+        const cMin = Math.min(...fit.map((x) => x.c));
+        const sp = fit.filter((x) => x.c <= r9(cMin + SHARE_BAND)).sort((x, y) => x.a - y.a || x.c - y.c || x.f.localeCompare(y.f))[0];
+        if (sp !== undefined) {
+          return { to: sp.f, uniform: 'real', role: sib.role, forced: `không mẫu ${m.role} nào vừa hộp`, why: `phương án cuối: không mẫu ${m.role} nào vừa hộp AI ở cỡ thật — mẫu ${sib.role} nhỏ hơn cùng nhóm đồ chứa, cỡ thật` };
+        }
       }
       const stDims = st === undefined ? undefined : ctx.dimsOf(st);
       if (st !== undefined && stDims !== undefined && stockOk(st)) {
@@ -1456,7 +1479,7 @@ export const roomSetOf = (
         const miss = conceptMiss.get(m.id);
         out.set(m.id, {
           id: m.id,
-          role,
+          role: fb?.role ?? role,
           from: m.current,
           to,
           rule: to === m.current ? 'keep' : 'roomset',
