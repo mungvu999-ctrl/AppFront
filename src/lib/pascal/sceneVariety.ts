@@ -338,10 +338,21 @@ const libraryModelOf = (f: Shaped & Pick<Furniture, 'id'> & Partial<Pick<Furnitu
   // lại trên phần còn lại; cả vai hết mẫu đạt thì giữ hành vi cũ. Áp cho MỌI món (kể cả món đã xác nhận nhưng chưa gán mẫu):
   // thư viện lớn lên không được kéo lựa chọn mặc định xuống mẫu kém hơn.
   const ok = all.filter((folder) => !QC_EXCLUDED.has(folder) && !belowQuality(folder, role));
-  if (ok.length === 0) return pick;
+  if (ok.length === 0) {
+    // Hết mẫu đạt: giữ hành vi cũ, nhưng KHÔNG BAO GIỜ trả mẫu vân vỡ (Codex SEL-4 #2) — xếp lại trên phần không vỡ, hết
+    // thì null (bên gọi đi đường mẫu dựng sẵn như khi chưa có thư viện).
+    if (!textureBrokenOf(pick)) return pick;
+    const whole = all.filter((folder) => !textureBrokenOf(folder));
+    return whole.length === 0 ? null : rankedLibraryPickOf(f, role, style, whole);
+  }
   const replacement = rankedLibraryPickOf(f, role, style, ok);
   if (replacement !== null) QC_SWAPS.set(f.id, { from: pick, to: replacement, role });
   return replacement ?? pick;
+};
+/** Mẫu có cờ texture 'broken' (vân vỡ khi dựng) — không đường tự chọn nào trả nó. */
+const textureBrokenOf = (folder: string): boolean => {
+  const q = qualityOf(folder);
+  return q !== undefined && textureBroken(q);
 };
 
 interface QcSwap {
@@ -572,13 +583,15 @@ const baseFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, role
   const hashed = (folders: readonly string[]): string => folders[fnv1a(key) % folders.length] as string;
   /* Mẫu AI chọn bị loại (libraryQc.json, chỉ mẫu máy chủ): băm trên CẢ danh sách như cũ — món băm vào mẫu tốt giữ
      đúng mẫu ấy; chỉ món băm vào mẫu bị loại mới băm lại trên phần còn lại; danh sách lọc xong rỗng thì luật thư viện. */
-  const isRejected = (folder: string): boolean => QC_EXCLUDED.has(folder) && !catalogue.includes(folder);
-  const pickHashed = (folders: readonly string[]): string => {
+  // Mẫu vân vỡ (cờ texture) cũng bị loại khỏi mẫu concept chọn (Codex SEL-4 #2); hết lựa chọn → mẫu dựng sẵn của vai/variant.
+  const isRejected = (folder: string): boolean => (QC_EXCLUDED.has(folder) && !catalogue.includes(folder)) || textureBrokenOf(folder);
+  const builtIn = (roleOverride === undefined ? variantModelOf(f)?.folder : undefined) ?? catalogue[0] ?? null;
+  const pickHashed = (folders: readonly string[]): string | null => {
     const first = hashed(folders);
     if (!isRejected(first)) return first;
     const good = folders.filter((folder) => !isRejected(folder));
     const replacement = good.length > 0 ? hashed(good) : libraryModelOf(f, role, style);
-    if (replacement === null || isRejected(replacement)) return first;
+    if (replacement === null || isRejected(replacement)) return textureBrokenOf(first) ? builtIn : first;
     QC_SWAPS.set(f.id, { from: first, to: replacement, role });
     return replacement;
   };

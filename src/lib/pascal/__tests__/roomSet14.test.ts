@@ -14,7 +14,7 @@ import { clearServerLibrary, registerServerLibrary } from '../furnitureCatalog';
 import { itemFitOf } from '../itemFit';
 import { LIBRARY_QUALITY, type ModelQuality } from '../libraryQuality';
 import LIBRARY from '../libraryRoles.json' with { type: 'json' };
-import { ANCHOR_BAND, FAIL_COST, hardRejectOf, paletteOf, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetMember } from '../roomSet';
+import { ANCHOR_BAND, FAIL_COST, hardRejectOf, paletteOf, planRectOf, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetMember } from '../roomSet';
 import { sceneStyleOf } from '../sceneStyles';
 import { addRoomSetMembers, contextRolesOf, finishRoomSet, modelFolderOf, roomSetPools, roomSetReport, setRoomSetKeys, type LayerStyle } from '../sceneVariety';
 
@@ -203,12 +203,15 @@ describe('vòng 14 lượt 2 — ngưỡng hỏng FAIL_COST (ca thua rõ f-22/f-
     );
   });
 
-  it('dữ liệu thật: hộp giường AI 2,08 × 2,91 m — giường đủ chăn gối tốt không vừa, ứng viên còn lại > FAIL_COST → giữ mẫu luật cũ, cause fail-keep', () => {
+  it('dữ liệu thật f-22: hộp giường AI 2,08 × 2,91 m — mọi ứng viên > FAIL_COST, nhưng mẫu luật cũ TRƯỢT ràng buộc cứng ở hộp này → giữ ứng viên hợp lệ tốt nhất (không làm tệ hơn ≠ bỏ qua ràng buộc)', () => {
     const legacy = 'bed-double-white-duvet-light-oak-headboard';
-    const d = roomSetOf('R', [at('b', 'doubleBed', legacy, 2.081, 2.905, 0, 0, { kind: 'bed' })], new Map(), ctx).get('b');
+    const m = at('b', 'doubleBed', legacy, 2.081, 2.905, 0, 0, { kind: 'bed' });
+    expect(hardRejectOf(m, legacy, ctx)).toBeDefined();
+    const d = roomSetOf('R', [m], new Map(), ctx).get('b');
     expect(d?.top?.[0]?.[1] as number).toBeGreaterThan(FAIL_COST);
-    expect(d).toMatchObject({ to: legacy, cause: 'fail-keep', rule: 'keep' });
-    expect(d?.why).toContain('ngưỡng hỏng');
+    expect(d).toMatchObject({ to: d?.top?.[0]?.[0], cause: 'selector' });
+    expect(d?.why).toContain('mẫu luật cũ không hợp lệ');
+    expect(d?.to).not.toBe('bed-double-linen-pro2');
   });
 
   it('cùng luật mọi vai: ứng viên tốt nhất ≤ FAIL_COST thì vẫn đổi (hộp giường thường 1,8 × 2,1 m)', () => {
@@ -217,13 +220,85 @@ describe('vòng 14 lượt 2 — ngưỡng hỏng FAIL_COST (ca thua rõ f-22/f-
     expect(d?.cost as number).toBeLessThanOrEqual(FAIL_COST);
   });
 
-  it('thuần: chỉ còn ứng viên đắt (tối đậm trong phòng sáng) → giữ; có ứng viên rẻ → đổi', () => {
-    const q = (lab: [number, number, number]): ModelQuality => ({ role: 'dresser', useMm: [1, 1, 1], front: { axis: '+z', check: 'ok' }, parts: [{ kind: 'frame', share: 1, lab, material: 'wood', kindBy: 'm' }], detail: { tris: 1, kb: 1, textures: 0, maxTex: 0, tier: 'light' }, licence: 'CC0', source: 't' });
-    const table: Record<string, ModelQuality> = { dark: q([10, 20, 25]), oak: q([67, 5, 22]) };
-    const c: SetContext = { tierOf: () => 0, tiers: 3, dimsOf: () => [1, 0.8, 0.5], palette: { light: true, tone: 'l' }, qualityOf: (x) => table[x] };
-    const m = (p: string[]): SetMember => ({ id: 'd', role: 'dresser', short: 0.5, long: 1, current: 'legacy', pool: p, fixed: false });
-    expect(roomSetOf('R', [m(['dark'])], new Map(), c).get('d')).toMatchObject({ to: 'legacy', cause: 'fail-keep' });
-    expect(roomSetOf('R', [m(['dark', 'oak'])], new Map(), c).get('d')).toMatchObject({ to: 'oak', cause: 'selector' });
+  // Chi phí điều khiển bằng hạng phong cách (tier/100), phần gỗ trùng gỗ tham chiếu (phạt màu 0).
+  const qd = (role: string): ModelQuality => ({ role, useMm: [1, 1, 1], front: { axis: '+z', check: 'ok' }, parts: [{ kind: 'frame', share: 1, lab: [67, 5, 22], material: 'wood', kindBy: 'm' }], detail: { tris: 1, kb: 1, textures: 0, maxTex: 0, tier: 'light' }, licence: 'CC0', source: 't' });
+  const ctxT = (role: string, tiers: Record<string, number>, dims: Dims = [1, 0.8, 1]): SetContext => ({
+    tierOf: (x) => tiers[x] ?? 0,
+    tiers: 99,
+    dimsOf: () => dims,
+    palette: { light: true, tone: 'l' },
+    qualityOf: (x) => (x in tiers ? qd(role) : undefined),
+  });
+  /** Cỡ hiển thị: co đều mẫu 1 × 1 m vào hộp vuông cạnh `s`. */
+  const sq = (id: string, s: number, cx: number, current: string | null, pool: string[], extra: Partial<SetMember> = {}): SetMember => ({
+    id, role: 'dresser', short: s, long: s, current, pool, fixed: false, box: { cx, cy: 0, w: s, d: s, rot: 0 },
+    shownOf: () => [s, 0.8, s], ...extra,
+  });
+
+  it('thuần: mẫu luật cũ HỢP LỆ, mẫu tốt nhất > FAIL_COST → giữ mẫu luật cũ (fail-keep); có ứng viên rẻ → đổi', () => {
+    const c = ctxT('dresser', { dark: 100, legacy: 110, oak: 0 });
+    const m = (p: string[]): SetMember => sq('d', 1, 0, 'legacy', p);
+    expect(roomSetOf('R', [m(['dark', 'legacy'])], new Map(), c).get('d')).toMatchObject({ to: 'legacy', cause: 'fail-keep' });
+    expect(roomSetOf('R', [m(['dark', 'legacy', 'oak'])], new Map(), c).get('d')).toMatchObject({ to: 'oak', cause: 'selector' });
+  });
+
+  it('chi phí > FAIL_COST + va chạm: mẫu luật cũ chồng tủ lạnh (loại "va chạm") → KHÔNG khôi phục nó, giữ ứng viên hợp lệ đắt', () => {
+    const c: SetContext = { ...ctxT('bookshelf', { wide: 5, slim: 100 }), dimsOf: (x) => (x === 'wide' ? [1.2, 1.8, 0.4] : [0.8, 1.8, 0.4]) };
+    const m: SetMember = { id: 's', role: 'bookshelf', short: 0.4, long: 1.2, current: 'wide', pool: ['wide', 'slim'], fixed: false, box: { cx: 0, cy: 0, w: 1.2, d: 0.4, rot: 0 }, shownOf: (x) => (x === 'wide' ? [1.2, 1.8, 0.4] : [0.8, 1.8, 0.4]) };
+    const d = roomSetOf('R', [m], new Map(), c, [planRectOf(0.775, 0, 0.65, 0.6, 0)]).get('s');
+    expect(d?.rejects?.['va chạm']).toBe(1);
+    expect(d).toMatchObject({ to: 'slim', cause: 'selector' });
+    expect(d?.cost as number).toBeGreaterThan(FAIL_COST);
+    expect(d?.why).toContain('không hợp lệ');
+  });
+
+  it('ngưỡng theo NHÓM, lưng chừng: mẫu chung trung bình ≤ 0,9 dù một món riêng > 0,9 → cả nhóm cùng mẫu chung', () => {
+    // S hạng 81: món A (hộp vừa) 0,81; món B (co 0,85, phạt ≈ 0,16) 0,97; trung bình 0,89. L hạng 99 (luật cũ, hợp lệ).
+    const c = ctxT('dresser', { S: 81, L: 99 });
+    const out = roomSetOf('R', [sq('a', 1, 0, 'L', ['S', 'L']), sq('b', 0.85, 3, 'L', ['S', 'L'])], new Map(), c);
+    expect((out.get('b')?.cost as number) > FAIL_COST).toBe(true);
+    expect([out.get('a')?.to, out.get('b')?.to]).toEqual(['S', 'S']);
+  });
+
+  it('ngưỡng theo NHÓM: mẫu chung trung bình > 0,9 → cả nhóm giữ mẫu luật cũ (không lệch nhau); có món ghim trong nhóm → mẫu ghim dẫn cả nhóm', () => {
+    const c = ctxT('dresser', { S: 86, L: 99 });
+    const two = [sq('a', 1, 0, 'L', ['S', 'L']), sq('b', 0.85, 3, 'L', ['S', 'L'])];
+    const out = roomSetOf('R', two, new Map(), c);
+    expect([out.get('a'), out.get('b')].map((d) => [d?.to, d?.cause])).toEqual([['L', 'fail-keep'], ['L', 'fail-keep']]);
+    const withPin = roomSetOf('R', [...two, sq('p', 1, 6, 'S', [], { fixed: true })], new Map(), c);
+    expect([withPin.get('a')?.to, withPin.get('b')?.to]).toEqual(['S', 'S']);
+  });
+});
+
+describe('Codex SEL-4 #2 — luật cũ (mọi đường tự chọn) không trả mẫu vân vỡ', () => {
+  const BROKEN = 'bed-double-linen-pro2';
+  const style0: LayerStyle = { ...am, roomSet: false, layout: new Set(), rulesOff: new Set() };
+  const bed = { id: 'F-B', levelId: 'L-1', roomId: 'R-T', kind: 'bed', centre: { x: 0, y: 0 }, boundingBox: { min: { x: -900, y: -1050 }, max: { x: 900, y: 1050 } }, rotationDeg: 0, source: 'ai', reviewed: true, confidence: 1 } as unknown as Furniture;
+  const reg = (ids: string[]): void => {
+    clearServerLibrary();
+    registerServerLibrary(ids.map((id) => ({ id, widthMm: 1800, heightMm: 1000, depthMm: 2100, modelUrl: `https://x.test/${id}.glb` })));
+  };
+  afterAll(() => {
+    clearServerLibrary();
+    registerServerLibrary(ROLES.flatMap((role) => pool(role)).map((id) => {
+      const u = real(id)?.useMm ?? [1000, 1000, 1000];
+      return { id, widthMm: u[0], heightMm: u[1], depthMm: u[2], modelUrl: `https://x.test/${id}.glb` };
+    }));
+  });
+
+  it('tiền đề: dữ liệu chất lượng ghi mẫu này là vân vỡ', () => {
+    expect(real(BROKEN)?.texture?.v).toBe('broken');
+  });
+
+  it('pool vai chỉ còn mẫu vân vỡ → mẫu dựng sẵn, không phải mẫu vỡ', () => {
+    reg([BROKEN]);
+    expect(modelFolderOf(bed, style0, 'bedroom')).not.toBe(BROKEN);
+  });
+
+  it('mẫu concept (style.prefer) là mẫu vân vỡ → không trả nó', () => {
+    reg([BROKEN, 'bed-double-oak-pro']);
+    const pref: LayerStyle = { ...style0, prefer: { ...style0.prefer, doubleBed: [BROKEN] } };
+    expect(modelFolderOf(bed, pref, 'bedroom')).not.toBe(BROKEN);
   });
 });
 

@@ -874,6 +874,26 @@ export const roomSetOf = (
         for (const m of rest) if (okFor(m, next.f)) restPick.set(m.id, next);
         rest = rest.filter((m) => !restPick.has(m.id));
       }
+      // Ngưỡng hỏng theo NHÓM (Codex SEL-4 #3): mỗi mẫu chung của nhóm (mẫu chung / mẫu chung phụ / mẫu riêng) có chi phí
+      // trung bình trên các món nhận nó; > FAIL_COST thì cả nhóm đó giữ mẫu luật cũ — không để thành viên lệch nhau. Mẫu ghim
+      // của nhóm (người dùng chọn / cặp đã nhận) không bị ngưỡng đụng tới.
+      const pickOf = (m: SetMember): { f: string; n: number; band: number } | undefined => {
+        if (m.pinTo !== undefined) return { f: m.pinTo, n: 0, band: 1 };
+        const ok = shared !== undefined && (pinned !== undefined ? passOf(m).has(shared.f) : okFor(m, shared.f));
+        return ok ? shared : restPick.get(m.id);
+      };
+      const takers = new Map<string, number[]>();
+      for (const m of todoG) {
+        const p = pickOf(m);
+        const c = p === undefined ? undefined : passOf(m).get(p.f);
+        if (p !== undefined && c !== undefined && m.pinTo === undefined) takers.set(p.f, [...(takers.get(p.f) ?? []), c]);
+      }
+      const overOf = (f: string): number | undefined => {
+        const cs = takers.get(f);
+        if (cs === undefined || (pinned !== undefined && f === pinned)) return undefined;
+        const avg = r9(cs.reduce((s, c) => s + c, 0) / cs.length);
+        return avg > FAIL_COST ? avg : undefined;
+      };
       for (const m of todoG) {
         const ev = evals.get(m.id) ?? { pass: new Map<string, number>(), rejects: {} };
         const fromCost = m.current === null ? undefined : ev.pass.get(m.current);
@@ -883,7 +903,7 @@ export const roomSetOf = (
           .map(([f, c]) => [f, +c.toFixed(3)] as const);
         // Mẫu ghim của nhóm: chỉ cần lọt; mẫu chung: phải chấp nhận được cho chính món.
         const sharedOk = shared !== undefined && (pinned !== undefined ? ev.pass.has(shared.f) : okFor(m, shared.f));
-        const pick = m.pinTo !== undefined ? { f: m.pinTo, n: 0, band: 1 } : sharedOk ? shared : restPick.get(m.id);
+        const pick = pickOf(m);
         const cost = pick === undefined ? undefined : ev.pass.get(pick.f);
         const old = fromCost === undefined ? 'luật cũ trượt/không có' : `luật cũ ${fromCost.toFixed(2)}`;
         const via =
@@ -896,8 +916,11 @@ export const roomSetOf = (
                 : todo.length > 1
                   ? `mẫu chung không hợp món: mẫu chung phụ (chấp nhận ${pick?.n ?? 0})`
                   : 'tốt nhất';
-        // Ngưỡng hỏng: mẫu chọn (kể cả mẫu chung) đắt hơn FAIL_COST → giữ mẫu luật cũ.
-        const failKeep = m.pinTo === undefined && cost !== undefined && cost > FAIL_COST;
+        // Ngưỡng hỏng = "không làm tệ hơn" (Codex SEL-4 #1): chỉ giữ mẫu luật cũ khi chính nó qua ràng buộc cứng VÀ cùng ngân
+        // sách va chạm (có trong `pass`); không thì giữ ứng viên hợp lệ tốt nhất dù đắt.
+        const over = pick === undefined || m.pinTo !== undefined ? undefined : overOf(pick.f);
+        const legacyOk = m.current !== null && ev.pass.has(m.current);
+        const failKeep = over !== undefined && legacyOk;
         const to = pick === undefined || failKeep ? m.current : pick.f;
         out.set(m.id, {
           id: m.id,
@@ -918,8 +941,10 @@ export const roomSetOf = (
               : cost === undefined
                 ? 'không ứng viên qua ràng buộc cứng — mẫu luật cũ'
                 : failKeep
-                  ? `giữ mẫu luật cũ: mẫu tốt nhất ${cost.toFixed(2)} > ngưỡng hỏng ${FAIL_COST} (${pick?.f ?? ''})`
-                  : `${via}; ${cost.toFixed(2)} (${old})`,
+                  ? `giữ mẫu luật cũ: mẫu chung của nhóm ${pick?.f ?? ''} trung bình ${(over as number).toFixed(2)} > ngưỡng hỏng ${FAIL_COST}`
+                  : over !== undefined
+                    ? `${via}; ${cost.toFixed(2)} > ngưỡng hỏng ${FAIL_COST} nhưng mẫu luật cũ không hợp lệ (ràng buộc cứng/va chạm) — giữ ứng viên hợp lệ`
+                    : `${via}; ${cost.toFixed(2)} (${old})`,
           ...(Object.keys(ev.rejects).length > 0 ? { rejects: ev.rejects } : {}),
           ...(top.length > 0 ? { top } : {}),
         });
