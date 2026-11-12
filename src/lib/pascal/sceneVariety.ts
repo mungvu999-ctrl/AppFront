@@ -791,22 +791,53 @@ const addSetMembers = <T extends SetInput>(
     const room = SET_ROOMS.get(f.roomId) ?? { usage, members: new Map() };
     SET_ROOMS.set(f.roomId, room);
     room.members.set(f.id, { f, role, ...(override === undefined ? {} : { override }), sig: setSigOf(f) });
+    // Món ghim theo dữ liệu (mẫu đã lưu / khe / twin): mục sổ ngay khi vào sổ — lập bộ (nếu có) ghi đè thêm nhóm, neo.
+    const pin = SET_PINNED.get(f.id) ?? (f.model === undefined ? undefined : (SAVED_FOLDER.exec(f.model.src)?.[1] ?? null));
+    if (pin !== undefined || f.slots !== undefined) {
+      const to = pin ?? null;
+      SET_LOG.set(f.id, {
+        id: f.id,
+        role,
+        from: to,
+        to,
+        rule: 'keep',
+        cause: 'pinned',
+        anchor: false,
+        by: sizeFromOf(f),
+        pool: 0,
+        why: to === null ? 'món ghim: mẫu ngoài thư viện / khe vật liệu' : 'món ghim: giữ mẫu đang dùng',
+        roomId: f.roomId,
+        rev: revOf(role),
+      });
+    }
   }
 };
 /**
- * toPascal: đồ bày phòng trống vào sổ bộ TRƯỚC lớp trang trí (đèn bàn/chăn đọc mẫu của món chủ). `pinnedOf` = mẫu đã lưu
- * của món thật cho twin của cặp đã nhận (twin không dựng, nhưng là ngữ cảnh bộ + chủ trang trí).
+ * toPascal: đồ bày phòng trống vào sổ bộ TRƯỚC lớp trang trí (đèn bàn/chăn đọc mẫu của món chủ). `realOf` = món thật của
+ * twin (cặp đã nhận). MỘT đại diện cho mỗi cặp (Codex SEL-1 #2): món thật đã có trong sổ (người dùng đổi mẫu → nó đi qua
+ * `contextRolesOf`) thì twin chỉ là bí danh, không vào va chạm/bảng màu; chưa có (mẫu luật đã lưu) thì twin đại diện (đứng
+ * ở chỗ món thật, `atAdopted`) với mẫu của món thật, chốt ĐÚNG lượt vai của nó như khi còn là đồ sinh (`pinTo`) — anh em
+ * thấy cùng ngữ cảnh như trước khi nhận. Twin luôn trả mẫu của món thật khi hỏi (`modelFolderOf`, chủ trang trí).
  */
 export const addRoomSetMembers = (
   items: readonly Furniture[],
   usageOf: (f: Pick<Furniture, 'roomId'>) => RoomUsage | undefined,
-  pinnedOf: (f: Furniture) => string | undefined = () => undefined,
+  realOf: (f: Furniture) => Furniture | undefined = () => undefined,
 ): void => {
+  const own: Furniture[] = [];
   for (const f of items) {
-    const pin = pinnedOf(f);
-    if (pin !== undefined) SET_PINNED.set(f.id, pin);
+    const real = realOf(f);
+    if (real === undefined) {
+      own.push(f);
+      continue;
+    }
+    const folder = real.model === undefined ? undefined : SAVED_FOLDER.exec(real.model.src)?.[1];
+    if (folder !== undefined) SET_PINNED.set(f.id, folder);
+    const registered = real.roomId !== undefined && (SET_ROOMS.get(real.roomId)?.members.has(real.id) === true || SET_OBSTACLES.get(real.roomId)?.has(real.id) === true);
+    if (registered) continue;
+    own.push(f);
   }
-  addSetMembers(items, usageOf);
+  addSetMembers(own, usageOf);
 };
 
 /** Ứng viên của món chưa ghim: MỌI mẫu thư viện của vai (không lọc theo cỡ luật cũ), trừ QC loại; đồ sinh có mặt trước: bỏ mẫu nằm ngang hộp. */
@@ -842,8 +873,9 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
     return [{ ...planRectOf(box.cx, box.cy, shown?.[0] ?? box.w, shown?.[2] ?? box.d, box.rot), kind: f.kind }];
   });
   const members: SetMember[] = [...room.members.values()].map(({ f, role, override }) => {
-    const pinned = isPinned(f, role, style);
-    const pin = SET_PINNED.get(f.id) ?? (f.model === undefined ? undefined : (SAVED_FOLDER.exec(f.model.src)?.[1] ?? null));
+    const twinPin = SET_PINNED.get(f.id);
+    const pinned = twinPin === undefined && isPinned(f, role, style);
+    const pin = twinPin ?? (f.model === undefined ? undefined : (SAVED_FOLDER.exec(f.model.src)?.[1] ?? null));
     const [short, long] = footprintOf(f);
     const box = setBoxOf(f);
     return {
@@ -851,15 +883,16 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
       role,
       kind: f.kind,
       ...(box === undefined ? {} : { box }),
-      ...(liftOf(f) === 0 ? {} : { lifted: true }),
-      ...(pinned ? {} : { sizeFrom: sizeFromOf(f) }),
+      ...(liftOf(f) === 0 ? {} : { lifted: true, liftM: metresOf(liftOf(f)) }),
+      sizeFrom: sizeFromOf(f),
       ...(f.heightMm === undefined ? {} : { heightM: metresOf(f.heightMm) }),
       short,
       long,
       // Món chưa ghim: mẫu luật cũ CHỈ là phương án cuối + để sổ so (`from`).
       current: pin !== undefined ? pin : baseFolderOf(f, style, room.usage, override),
-      pool: pinned ? [] : setPoolOf(f, role, style),
+      pool: pinned || twinPin !== undefined ? [] : setPoolOf(f, role, style),
       fixed: pinned,
+      ...(twinPin === undefined ? {} : { pinTo: twinPin }),
       ...(ceilingM === undefined
         ? {}
         : {
@@ -894,25 +927,24 @@ const roomSetFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, r
   const member = room?.members.get(f.id);
   const role = roleOverride ?? roleOf(f, usage);
   let folder = current;
+  const pin = SET_PINNED.get(f.id);
   // Đang lập bộ (planRoom gọi mẫu luật cũ của từng món; `?layout=hue` hỏi mẫu neo qua modelFolderOf) → mẫu luật cũ, không đệ quy.
-  // Vai/ngữ cảnh khác lúc đăng ký (chữ ký, vai) → luật cũ.
-  if (!setPlanning && room !== undefined && member !== undefined && member.sig === setSigOf(f) && member.role === role) {
-    const pin = SET_PINNED.get(f.id);
-    if (pin !== undefined) folder = pin;
-    else if (!isPinned(f, role, style)) {
-      const plan = setPlans.get(style) ?? new Map<string, SetDecision>();
-      setPlans.set(style, plan);
-      if (!plan.has(f.id)) {
-        setPlanning = true;
-        try {
-          for (const [id, d] of planRoom(f.roomId as string, room, style, plan)) plan.set(id, d);
-        } finally {
-          setPlanning = false;
-        }
+  // Vai/ngữ cảnh khác lúc đăng ký (chữ ký, vai) → luật cũ. Twin của cặp đã nhận → mẫu của món thật.
+  if (pin !== undefined) folder = pin;
+  else if (!setPlanning && room !== undefined && member !== undefined && member.sig === setSigOf(f) && member.role === role) {
+    const plan = setPlans.get(style) ?? new Map<string, SetDecision>();
+    setPlans.set(style, plan);
+    // Lập bộ cả khi món hỏi là món ghim (sổ đủ mục cho phòng chỉ có món ghim — Codex SEL-1 #5).
+    if (!plan.has(f.id)) {
+      setPlanning = true;
+      try {
+        for (const [id, d] of planRoom(f.roomId as string, room, style, plan)) plan.set(id, d);
+      } finally {
+        setPlanning = false;
       }
-      const decision = plan.get(f.id);
-      if (decision !== undefined) folder = decision.to;
     }
+    const decision = plan.get(f.id);
+    if (decision !== undefined && !isPinned(f, role, style)) folder = decision.to;
   }
   if (folder !== current) SET_APPLIED.add(f.id);
   else SET_APPLIED.delete(f.id);

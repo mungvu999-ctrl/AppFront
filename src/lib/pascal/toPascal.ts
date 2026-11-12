@@ -1466,14 +1466,11 @@ export const toPascalScene = (
   };
   const furnished = furnishedAll.filter(inLayer).map(atAdopted);
   // `roomset`: đồ bày phòng trống vào sổ bộ của phòng trước lớp trang trí (đèn bàn/chăn đọc mẫu món chủ).
-  // Twin của cặp đã nhận: ghim vào mẫu đã lưu của món thật (cặp đã nhận không bao giờ đổi mẫu).
+  // Cặp đã nhận: MỘT đại diện (món thật, mẫu và hình hiện tại); twin ghim vào mẫu của món thật, không bao giờ đổi mẫu.
   addRoomSetMembers(
     furnished,
     (f) => (f.roomId === undefined ? undefined : roomUsageOf.get(f.roomId)),
-    (f) => {
-      const real = twinIds.has(f.id) ? builtById.get(adoptedFurnitureIdOf(f.id)) : undefined;
-      return real?.model === undefined ? undefined : SWAPPED_MODEL_SRC.exec(real.model.src)?.[1];
-    },
+    (f) => (twinIds.has(f.id) ? builtById.get(adoptedFurnitureIdOf(f.id)) : undefined),
   );
   const dressedAll = furnish === 'on' ? dressingOf({ ...usable, furniture: [...baseFurniture, ...furnished] }, style) : [];
   const dressed = dressedAll.filter(inLayer);

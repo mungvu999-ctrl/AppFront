@@ -262,6 +262,13 @@ export interface SetMember {
   readonly sizeFrom?: 'generated' | 'ai' | 'user';
   /** Món nâng khỏi sàn (treo tường, đặt trên mặt khác): vẫn góp bảng màu, KHÔNG tính va chạm mặt sàn. */
   readonly lifted?: boolean;
+  /** Độ nâng khỏi sàn (m); vắng = 0. Hở trần tính `liftM + cao hiển thị`. */
+  readonly liftM?: number;
+  /**
+   * Twin của cặp đã nhận: mẫu đã lưu của món thật, chốt đúng lượt vai của món (không phải đồ cố định từ đầu) — anh em thấy
+   * cùng ngữ cảnh như khi nó còn là đồ sinh; dẫn nhóm như món ghim.
+   */
+  readonly pinTo?: string;
 }
 
 export interface SetContext {
@@ -375,7 +382,7 @@ export const hardRejectOf = (m: SetMember, folder: string, ctx: SetContext): str
   // Chuẩn cao: cao đã cho, không thì trung vị pool vai; chuẩn ≥ TALL_M (tủ áo, kệ) thì không cao hơn chuẩn.
   const hRef = m.heightM ?? poolMedianHOf(m, ctx);
   if (hRef !== undefined && h > hRef * (hRef >= TALL_M ? 1 : HEIGHT_GROW_MAX) + 1e-9) return 'cao hơn chuẩn vai';
-  if (m.ceilingM !== undefined && h > m.ceilingM - CEILING_GAP_M) return 'chạm gần trần';
+  if (m.ceilingM !== undefined && (m.liftM ?? 0) + h > m.ceilingM - CEILING_GAP_M) return 'chạm gần trần';
   if (SIZE_FLOOR_ROLES.has(m.role)) {
     const shorts = m.pool.flatMap((x) => {
       const d = ctx.dimsOf(x);
@@ -556,7 +563,18 @@ const toneWoodOf = (palette: SetPalette): Lab => WOOD_LAB[palette.tone ?? (palet
 const wallFamiliesOf = (palette: SetPalette): number[] =>
   palette.wall !== undefined && isLoud(palette.wall) ? [hueOf(palette.wall)] : [];
 
-const byId = (a: { readonly id: string }, b: { readonly id: string }): number => a.id.localeCompare(b.id);
+/**
+ * Thứ tự NỘI DUNG (Codex SEL-1 #4): vị trí + cỡ hộp, id chỉ phá hoà cuối — đổi id (chép dự án) giữ cùng thứ tự cộng dồn,
+ * cùng thứ tự chốt món và cùng thứ hạng nhóm.
+ */
+const byPlace = (a: SetMember, b: SetMember): number =>
+  (a.box?.cx ?? 0) - (b.box?.cx ?? 0) ||
+  (a.box?.cy ?? 0) - (b.box?.cy ?? 0) ||
+  (a.box?.w ?? a.long) - (b.box?.w ?? b.long) ||
+  (a.box?.d ?? a.short) - (b.box?.d ?? b.short) ||
+  a.id.localeCompare(b.id);
+/** Làm tròn chi phí trước khi so/sắp: tổng dấu phẩy động theo thứ tự khác nhau không được lật dải hoà. */
+const r9 = (x: number): number => Math.round(x * 1e9) / 1e9;
 
 /** Cỡ ô của chữ ký phòng, mm (cạnh hộp bao) và mm² (diện tích 0,1 m²). */
 const KEY_GRID_MM = 100;
@@ -655,7 +673,7 @@ export const roomSetOf = (
   ctx: SetContext,
   zones: readonly SetZone[] = [],
 ): Map<string, SetDecision> => {
-  const inSet = members.filter((m) => SET_ROLES.includes(m.role)).sort(byId);
+  const inSet = members.filter((m) => SET_ROLES.includes(m.role)).sort(byPlace);
   const roles = SET_ROLES.filter((role) => inSet.some((m) => m.role === role));
   const anchorRole = roles[0];
   const memo: Memo = new Map();
@@ -688,6 +706,15 @@ export const roomSetOf = (
     if (lab !== undefined && !woodByRole.has(m.role)) woodByRole.set(m.role, lab);
   }
   let anchorWood: Lab | undefined;
+  const tables = inSet.filter((m) => TABLE_ROLES.has(m.role) && m.box !== undefined);
+  /** Bàn của ghế: bàn gần tâm nhất mà hộp nở CHAIR_REACH_M chạm hộp ghế; vắng = ghế lẻ. */
+  const tableOf = (m: SetMember): SetMember | undefined => {
+    const b = m.box;
+    if (b === undefined || !SEAT_GROUP_ROLES.has(m.role)) return undefined;
+    const near = tables.filter((t) => rectsOverlap(boxRectOf(t.box as SetBox), boxRectOf(b), CHAIR_REACH_M));
+    const dist = (t: SetMember): number => Math.hypot((t.box as SetBox).cx - b.cx, (t.box as SetBox).cy - b.cy);
+    return near.sort((x, y) => dist(x) - dist(y) || x.id.localeCompare(y.id))[0];
+  };
   const out = new Map<string, SetDecision>();
   for (const m of inSet) {
     if (!m.fixed) continue;
@@ -699,7 +726,10 @@ export const roomSetOf = (
       rule: 'keep',
       cause: 'pinned',
       anchor: m.role === anchorRole,
-      why: 'món ghim: giữ mẫu đang dùng',
+      ...(m.sizeFrom === undefined ? {} : { by: m.sizeFrom }),
+      ...(tableOf(m) === undefined ? {} : { group: (tableOf(m) as SetMember).id }),
+      pool: m.pool.length,
+      why: m.current === null ? 'món ghim: mẫu ngoài thư viện, giữ chỗ bằng cả hộp' : 'món ghim: giữ mẫu đang dùng',
     });
   }
   // Vùng chặn của lượt: `zones` + mặt bằng hiển thị của đồ ghim và món đã chốt (thêm sau mỗi vai).
@@ -711,6 +741,8 @@ export const roomSetOf = (
   for (const m of inSet) {
     const f = folderOfFixed(m);
     if (f !== null) placeOf(m, f);
+    // Codex SEL-1 #1: món ghim có mẫu ngoài thư viện (`current` null) vẫn chiếm chỗ — giữ bằng cả hộp.
+    else if (m.fixed && m.lifted !== true && m.box !== undefined) placed.push(m.kind === undefined ? boxRectOf(m.box) : { ...boxRectOf(m.box), kind: m.kind });
   }
   /** Phạt tỉ lệ của mẫu trong hộp của món (0 khi không có cỡ hiển thị): méo một trục cũng bị phạt. */
   const scaleCostOf = (m: SetMember, folder: string): number => {
@@ -748,15 +780,6 @@ export const roomSetOf = (
       else rejects['va chạm'] = (rejects['va chạm'] ?? 0) + 1;
     }
     return { pass, rejects };
-  };
-  const tables = inSet.filter((m) => TABLE_ROLES.has(m.role) && m.box !== undefined);
-  /** Bàn của ghế: bàn gần tâm nhất mà hộp nở CHAIR_REACH_M chạm hộp ghế; vắng = ghế lẻ. */
-  const tableOf = (m: SetMember): SetMember | undefined => {
-    const b = m.box;
-    if (b === undefined || !SEAT_GROUP_ROLES.has(m.role)) return undefined;
-    const near = tables.filter((t) => rectsOverlap(boxRectOf(t.box as SetBox), boxRectOf(b), CHAIR_REACH_M));
-    const dist = (t: SetMember): number => Math.hypot((t.box as SetBox).cx - b.cx, (t.box as SetBox).cy - b.cy);
-    return near.sort((x, y) => dist(x) - dist(y) || x.id.localeCompare(y.id))[0];
   };
 
   for (const role of roles) {
@@ -801,7 +824,7 @@ export const roomSetOf = (
       const ranked = [...new Set(list.flatMap((m) => [...passOf(m).keys()]))]
         .map((f) => {
           const costs = list.flatMap((m) => (okFor(m, f) ? [passOf(m).get(f) as number] : []));
-          return { f, n: costs.length, cost: costs.reduce((s, c) => s + c, 0) / costs.length };
+          return { f, n: costs.length, cost: r9(costs.reduce((s, c) => s + c, 0) / costs.length) };
         })
         .filter((r) => r.n > 0)
         .sort((a, b) => b.n - a.n || a.cost - b.cost || a.f.localeCompare(b.f));
@@ -809,20 +832,21 @@ export const roomSetOf = (
       if (best === undefined) return undefined;
       // Hoà trong nhiễu (≤ ANCHOR_BAND, cùng số món chấp nhận): rút theo băm khoá NỘI DUNG (phòng/nhóm/món), mọi vai —
       // tất định, không ép đa dạng; chỉ bỏ việc "tên thư mục nhỏ nhất thắng ở mọi phòng".
-      const band = ranked.filter((r) => r.n === best.n && r.cost <= best.cost + ANCHOR_BAND);
+      const band = ranked.filter((r) => r.n === best.n && r.cost <= r9(best.cost + ANCHOR_BAND)).sort((a, b) => a.f.localeCompare(b.f));
       return { f: (band[fnv1a(hashKey) % band.length] as { f: string }).f, n: best.n, band: band.length };
     };
     // Mẫu chung cả phòng; nhóm (bàn) dùng nó khi nó chấp nhận được cho MỌI món của nhóm, không thì mẫu chung của nhóm.
     // Khoá băm theo nội dung, không theo id (chép dự án sinh id mới): thứ hạng vị trí của bàn / món trong phòng.
-    const byPlace = (a: SetMember, b: SetMember): number =>
-      (a.box?.cx ?? 0) - (b.box?.cx ?? 0) || (a.box?.cy ?? 0) - (b.box?.cy ?? 0) || a.id.localeCompare(b.id);
     const tableRank = new Map([...tables].sort(byPlace).map((t, i) => [t.id, i] as const));
     const groupHash = (key: string): string => `${roomKey}|${role}|g${key === '' ? '-' : (tableRank.get(key) ?? '?')}`;
     const roomShared = bestFor(todo, `${roomKey}|${role}`);
     const keys = [...new Set(todo.map((m) => keyOf.get(m.id) ?? ''))];
     for (const key of keys) {
       const todoG = todo.filter((m) => keyOf.get(m.id) === key);
-      const pinned = group.filter((m) => keyOf.get(m.id) === key).map(folderOfFixed).find((f): f is string => f !== null);
+      const pinned = group
+        .filter((m) => keyOf.get(m.id) === key)
+        .map((m) => folderOfFixed(m) ?? m.pinTo ?? null)
+        .find((f): f is string => f !== null);
       const roomOk = roomShared !== undefined && todoG.every((m) => okFor(m, roomShared.f));
       const shared = pinned !== undefined ? { f: pinned, n: 0, band: 1 } : roomOk ? roomShared : bestFor(todoG, groupHash(key));
       // Món không hợp mẫu chung: gom tiếp thành mẫu chung thứ hai, thứ ba… của phần còn lại (ít kiểu nhất trong nhóm).
@@ -843,7 +867,7 @@ export const roomSetOf = (
           .map(([f, c]) => [f, +c.toFixed(3)] as const);
         // Mẫu ghim của nhóm: chỉ cần lọt; mẫu chung: phải chấp nhận được cho chính món.
         const sharedOk = shared !== undefined && (pinned !== undefined ? ev.pass.has(shared.f) : okFor(m, shared.f));
-        const pick = sharedOk ? shared : restPick.get(m.id);
+        const pick = m.pinTo !== undefined ? { f: m.pinTo, n: 0, band: 1 } : sharedOk ? shared : restPick.get(m.id);
         const cost = pick === undefined ? undefined : ev.pass.get(pick.f);
         const old = fromCost === undefined ? 'luật cũ trượt/không có' : `luật cũ ${fromCost.toFixed(2)}`;
         const via =
@@ -863,7 +887,7 @@ export const roomSetOf = (
           from: m.current,
           to,
           rule: to === m.current ? 'keep' : 'roomset',
-          cause: pick === undefined ? 'fallback' : to === m.current ? 'same' : 'selector',
+          cause: m.pinTo !== undefined ? 'pinned' : pick === undefined ? 'fallback' : to === m.current ? 'same' : 'selector',
           anchor,
           ...(cost === undefined ? {} : { cost }),
           ...(fromCost === undefined ? {} : { fromCost }),
