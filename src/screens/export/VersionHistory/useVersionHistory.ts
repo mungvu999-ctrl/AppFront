@@ -25,8 +25,15 @@
 import { useInfiniteQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { isEntityOfKind } from '@/domain/spatial/normalize';
 import { loadSceneConcept, type SceneConcept } from '@/lib/pascal/sceneConcept';
-import { abandonAssetRefresh, ensureSceneLibrary, sceneLibraryNow, type SceneLibrary } from '@/lib/pascal/sceneLibrary';
+import {
+  abandonAssetRefresh,
+  ensureSceneLibraryFor,
+  savedModelIdsToResolve,
+  sceneLibraryNow,
+  type SceneLibrary,
+} from '@/lib/pascal/sceneLibrary';
 import type { FloorVersionSummary } from '@/api/schemas/versions';
 import { flushAutosaves, useFloorLayerAutosave } from '@/hooks/useAutosave';
 import { formatDuration } from '@/lib/format/datetime';
@@ -376,14 +383,33 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
   );
   // Thư viện máy chủ chốt TRƯỚC khi dựng cảnh — cùng điểm vào/phiên bản/fallback với editor (`ensureSceneLibrary`).
   const [library, setLibrary] = useState<SceneLibrary | null>(sceneLibraryNow);
+  /* Mẫu đã lưu ngoài danh sách (của bản đang dựng) đọc theo id trước khi dựng; `resolvedGraph` = đồ thị đã đọc xong. */
+  const savedFurniture = useMemo(
+    () =>
+      sceneGraph === null
+        ? []
+        : sceneGraph.byKind.furniture.flatMap((id) => {
+            const entity = sceneGraph.byId[id];
+            return entity !== undefined && isEntityOfKind('furniture', entity) ? [entity] : [];
+          }),
+    [sceneGraph],
+  );
+  const [resolvedFor, setResolvedFor] = useState<typeof savedFurniture | null>(null);
   useEffect(() => {
-    if (library !== null) return undefined;
     let live = true;
-    void ensureSceneLibrary().then((loaded) => live && setLibrary(loaded));
+    // Đổi phiên bản/rời màn: rút người tiêu thụ này (việc đọc theo id đang chờ của bản cũ rời hàng ngay).
+    const scene = new AbortController();
+    void ensureSceneLibraryFor(savedFurniture, undefined, scene.signal).then((loaded) => {
+      if (!live) return;
+      setLibrary(loaded);
+      setResolvedFor(savedFurniture);
+    });
     return () => {
       live = false;
+      scene.abort();
     };
-  }, [library]);
+  }, [savedFurniture]);
+  const awaitingSavedModels = resolvedFor !== savedFurniture && savedModelIdsToResolve(savedFurniture).length > 0;
   /* Concept AI (N47) của dự án — cùng quy tắc với editor (`loadSceneConcept`): chờ kết quả, 403/404 im lặng, lỗi có
      câu báo. N47 chỉ có concept HIỆN HÀNH (không có lịch sử concept) nên chỉ bản hiện tại dùng nó; bản cũ dựng lại từ
      dữ liệu của chính phiên bản (`versionSceneOptions`). Kết quả của dự án cũ bị bỏ (`live`). */
@@ -408,8 +434,11 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
     [sceneConcept, sceneIsOld],
   );
   const scene = useMemo(
-    () => (library === null || versionScene === null ? NO_SCENE : convertScene(sceneGraph, versionScene.options)),
-    [sceneGraph, library, versionScene],
+    () =>
+      library === null || versionScene === null || awaitingSavedModels
+        ? NO_SCENE
+        : convertScene(sceneGraph, versionScene.options),
+    [sceneGraph, library, versionScene, awaitingSavedModels],
   );
   const plan = useMemo(
     () =>

@@ -1,4 +1,11 @@
-import type { ApiError, LibraryApi } from '@/api/client';
+import type { ApiError, LibraryItem } from '@/api/client';
+import {
+  LIBRARY_REVISION_UNSTABLE,
+  LIBRARY_TOO_MANY_PAGES,
+  readAllLibraryPages,
+  type LibraryListApi,
+  type LibraryListing,
+} from '@/api/libraryPages';
 import { readWireError } from '@/lib/errors/wireError';
 
 import { registerServerLibrary, type ServerLibraryModel } from './furnitureCatalog';
@@ -63,22 +70,50 @@ export const libraryReadFailed = (source: LibrarySource): boolean => source !== 
  * hết giờ thì API trả `ok:false` kind `timeout` → dự phòng có lý do. Không bao giờ ném.
  */
 export async function loadServerLibrary(
-  api: Pick<LibraryApi, 'list'>,
+  api: LibraryListApi,
   /**
-   * Ghi vào danh mục SAU khi phản hồi về — nơi gọi kiểm lượt đọc còn hiệu lực trước khi ghi (`sceneLibrary.ts`);
+   * Ghi vào danh mục SAU khi ĐỦ mọi trang về — nơi gọi kiểm lượt đọc còn hiệu lực trước khi ghi (`sceneLibrary.ts`);
    * `null` = lượt đọc mất hiệu lực, không ghi → nguồn `fallback:stale` (không giả `server` với danh mục rỗng).
    */
-  register: (items: Parameters<typeof registerServerLibrary>[0]) => number | null = registerServerLibrary,
+  register: (items: readonly LibraryItem[], listing: LibraryListing) => number | null = registerServerLibrary,
 ): Promise<LibraryLoad> {
   try {
-    const result = await api.list();
-    if (!result.ok) return { count: 0, source: `fallback:${absenceOf(result.error) ?? result.error.kind}`, version: BUNDLED_LIBRARY_VERSION };
-    const count = register(result.data);
+    const result = await readServerLibrary(api);
+    if (!result.ok) return { count: 0, source: `fallback:${result.reason}`, version: BUNDLED_LIBRARY_VERSION };
+    const count = register(result.data.items, result.data);
     if (count === null) return { count: 0, source: STALE_SOURCE, version: BUNDLED_LIBRARY_VERSION };
     return count > 0
-      ? { count, source: 'server', version: libraryVersionOf(result.data) }
+      ? { count, source: 'server', version: libraryVersionOf(result.data.items) }
       : { count, source: 'fallback:empty', version: BUNDLED_LIBRARY_VERSION };
   } catch {
     return { count: 0, source: 'fallback:threw', version: BUNDLED_LIBRARY_VERSION };
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Đọc theo trang: vòng đọc ở `@/api/libraryPages` (dùng chung với bảng thư viện) */
+/* -------------------------------------------------------------------------- */
+
+export {
+  LIBRARY_MAX_PAGES,
+  LIBRARY_PAGE_LIMIT,
+  LIBRARY_READ_ATTEMPTS,
+  type LibraryListApi,
+  type LibraryListing,
+} from '@/api/libraryPages';
+
+/** `reason` = `forbidden`/`notFound` (máy chủ trả lời rõ), kind lỗi của client, `revision` hoặc `pages`. */
+export type LibraryRead = { readonly ok: true; readonly data: LibraryListing } | { readonly ok: false; readonly reason: string };
+
+const reasonOf = (error: ApiError): string => {
+  const code = 'code' in error ? error.code : undefined;
+  if (code === LIBRARY_REVISION_UNSTABLE) return 'revision';
+  if (code === LIBRARY_TOO_MANY_PAGES) return 'pages';
+  return absenceOf(error) ?? error.kind;
+};
+
+/** Đọc HẾT thư viện (`readAllLibraryPages`), lỗi quy về `reason` của nguồn dự phòng. Có thể ném (nơi gọi bắt). */
+export async function readServerLibrary(api: LibraryListApi): Promise<LibraryRead> {
+  const result = await readAllLibraryPages(api);
+  return result.ok ? result : { ok: false, reason: reasonOf(result.error) };
 }

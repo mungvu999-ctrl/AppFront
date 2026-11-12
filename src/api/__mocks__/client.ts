@@ -1772,6 +1772,17 @@ export const createMockApiClient = (): ApiClient => {
      */
     library: {
       list: async () => ok(MOCK_LIBRARY_ITEMS.map(clone)),
+      listPage: async ({ cursor, limit = 500 } = {}) => {
+        const start = cursor === undefined ? 0 : Number(cursor);
+        const next = start + limit < MOCK_LIBRARY_ITEMS.length ? String(start + limit) : undefined;
+
+        return ok({
+          items: MOCK_LIBRARY_ITEMS.slice(start, start + limit).map(clone),
+          ...(next !== undefined ? { nextCursor: next } : {}),
+          revision: 'mock',
+          bytes: 0,
+        });
+      },
       read: async ({ libraryItemId }) =>
         ok(
           clone(

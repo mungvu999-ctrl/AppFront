@@ -92,6 +92,28 @@ describe('libraryListQueryOptions', () => {
 
     await expect(callQueryFn(libraryListQueryOptions(api))).rejects.toBe(httpError);
   });
+
+  it('M15: đọc ĐỦ trang (1200 mục, limit 500) — bảng thấy mục ở trang 3; lỗi một trang ném nguyên lỗi', async () => {
+    const all = Array.from({ length: 1200 }, (_, k) => ({ ...sampleItem, id: `library-${k}` }));
+    const listPage = vi.fn(async ({ cursor, limit = 500 }: { cursor?: string; limit?: number } = {}) => {
+      const start = cursor === undefined ? 0 : Number(cursor);
+      const next = start + limit < all.length ? String(start + limit) : undefined;
+      return { ok: true as const, data: { items: all.slice(start, start + limit), ...(next === undefined ? {} : { nextCursor: next }), revision: 'r1', bytes: 0 } };
+    });
+    const api = createLibraryApi({ listPage } as Partial<LibraryApi>);
+    const { signal } = new AbortController();
+
+    const items = await callQueryFn(libraryListQueryOptions(api), signal);
+    expect(items).toHaveLength(1200);
+    expect(items.some((item) => item.id === 'library-1100')).toBe(true);
+    expect(listPage).toHaveBeenCalledTimes(3);
+    expect(listPage).toHaveBeenLastCalledWith({ limit: 500, cursor: '1000', signal });
+    expect(api.list).not.toHaveBeenCalled();
+
+    listPage.mockImplementationOnce(async () => ({ ok: true as const, data: { items: all.slice(0, 500), nextCursor: '500', revision: 'r1', bytes: 0 } }));
+    listPage.mockImplementationOnce(async () => ({ ok: false, error: httpError }) as never);
+    await expect(callQueryFn(libraryListQueryOptions(api))).rejects.toBe(httpError);
+  });
 });
 
 describe('libraryDetailQueryOptions', () => {
