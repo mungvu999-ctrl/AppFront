@@ -93,7 +93,9 @@ describe('I2 — phương án cuối', () => {
   });
 
   it('luật cũ méo dáng, không cỡ thật nào đặt được → mẫu dựng sẵn của vai (không méo, trong công năng)', () => {
-    const block: SetZone = { cx: 0, cy: 0, w: 6, d: 6, rotationDeg: 0 };
+    // Codex M17-1 #4 (đổi có chủ đích): mẫu dựng sẵn cũng qua kiểm va chạm — vật cản chỉ chặn phần cỡ thật nhô ra trước hộp
+    // (y > 0,425), không chặn mặt bằng trong hộp (cũ: khối 6 × 6 m phủ cả hộp).
+    const block: SetZone = { cx: 0, cy: 0.715, w: 6, d: 0.57, rotationDeg: 0 };
     const m = mem('s', 'sofa', ['sofa-deep'], {
       current: 'sofa-old',
       stock: 'sofa',
@@ -105,12 +107,22 @@ describe('I2 — phương án cuối', () => {
     expect(d?.why).toMatch(/mẫu dựng sẵn/);
   });
 
-  it('mẫu dựng sẵn cũng méo → giữ luật cũ, sổ ghi luật cũ trượt', () => {
+  it('mẫu dựng sẵn cũng méo → giữ luật cũ (méo dáng là ngoại lệ được phép), sổ ghi luật cũ trượt', () => {
     const block: SetZone = { cx: 0, cy: 0, w: 6, d: 6, rotationDeg: 0 };
-    const m = mem('s', 'sofa', ['sofa-deep'], { current: 'sofa-old', stock: 'sofa', box: { cx: 0, cy: 0, w: 2, d: 0.85, rot: 0 }, shownOf: () => [1.0, 0.85, 0.85] });
+    // Codex M17-1 #2 (đổi có chủ đích): luật cũ phải trong công năng mới được giữ — méo (1,4 × 1,0 từ 2,0 × 0,9) nhưng rộng
+    // 1,4, sâu 1,0 trong phạm vi sofa (cũ: rộng 1,0 ngoài công năng mà vẫn giữ).
+    const m = mem('s', 'sofa', ['sofa-deep'], { current: 'sofa-old', stock: 'sofa', box: { cx: 0, cy: 0, w: 2, d: 0.85, rot: 0 }, shownOf: () => [1.4, 0.85, 1.0] });
     const d = roomSetOf('r', [m], new Map(), ctxOf(), [block]).get('s');
     expect(d?.to).toBe('sofa-old');
     expect(d?.why).toMatch(/luật cũ trượt/);
+  });
+
+  it('luật cũ ngoài công năng, mẫu dựng sẵn méo → null, sổ ghi ngoài công năng (không giữ luật cũ)', () => {
+    const block: SetZone = { cx: 0, cy: 0, w: 6, d: 6, rotationDeg: 0 };
+    const m = mem('s', 'sofa', ['sofa-deep'], { current: 'sofa-old', stock: 'sofa', box: { cx: 0, cy: 0, w: 2, d: 0.85, rot: 0 }, shownOf: () => [1.0, 0.85, 0.85] });
+    const d = roomSetOf('r', [m], new Map(), ctxOf(), [block]).get('s');
+    expect(d?.to).toBeNull();
+    expect(d?.why).toMatch(/ngoài công năng/);
   });
 });
 

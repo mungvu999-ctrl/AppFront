@@ -53,6 +53,11 @@ const OWN_HEIGHT_FOLDERS: ReadonlySet<string> = new Set(['hob-sf']);
 const SEAT_TABLE_ROLES: ReadonlySet<string> = new Set(['sofa', 'armchair', 'diningChair', 'bench', 'diningTable', 'desk', 'coffeeTable']);
 /** Vai tựa tường (lưng −z cục bộ): dựng CỠ THẬT (`uniform: 'real'`) thì áp lưng vào mép sau hộp, không canh tâm (I2 vòng 17). */
 export const WALL_BACK_ROLES: ReadonlySet<string> = new Set(['sofa', 'doubleBed', 'singleBed', 'closet', 'dresser', 'bookshelf', 'cabinet', 'desk', 'nightstand']);
+/**
+ * Trường siêu dữ liệu node (m, trục z cục bộ, trước `node.scale`): độ áp lưng của món CỠ THẬT nằm trong `asset.offset`.
+ * Lượt về (`toSpatial.collectItem`) cộng nó vào tâm khi lưu cỡ nhìn thấy, để món không nhảy sau nhận/tải lại (Codex M17-1 #5).
+ */
+export const REAL_BACK_SHIFT_FIELD = 'realBackShiftM';
 
 export interface ItemFit {
   readonly folder: string;
@@ -62,6 +67,8 @@ export interface ItemFit {
   readonly scale: PascalVec3;
   readonly offset: PascalVec3;
   readonly rotation: PascalVec3;
+  /** Độ áp lưng vào mép sau hộp (m, z cục bộ), đã nằm trong `offset[2]`. */
+  readonly backShiftM: number;
 }
 
 /**
@@ -120,8 +127,9 @@ export const itemFitOf = (
     const g = Math.sqrt(rx * rz);
     return [clampTo(rx, g * FIT_AXIS_MIN, g * FIT_AXIS_MAX), heightOf(g), clampTo(rz, g * FIT_AXIS_MIN, g * FIT_AXIS_MAX)];
   })();
-  const sx = Math.min(ax, rx);
-  const sz = Math.min(az, rz);
+  // 'real' bỏ cả hai kẹp mặt bằng: cỡ thật được vượt hộp AI (Codex M17-1 #1); chỉ chặn trần ở trên.
+  const sx = uniform === 'real' ? ax : Math.min(ax, rx);
+  const sz = uniform === 'real' ? az : Math.min(az, rz);
   // `asset.scale` nhân thẳng vào GLB gốc; catalog nào có scale riêng thì `dimensions`
   // là cỡ sau scale đó (cọ: GLB cao 11,9 m × 0,37) — phải nhân lại, không thì cao gấp đôi tường.
   const [kx, ky, kz] = catalog.scale ?? [1, 1, 1];
@@ -141,5 +149,6 @@ export const itemFitOf = (
     scale: [sx * kx, sy * ky, sz * kz] as PascalVec3,
     offset: [ox * sx, oy * sy, oz * sz + backShift] as PascalVec3,
     rotation: [...catalog.rotation] as PascalVec3,
+    backShiftM: backShift,
   };
 };

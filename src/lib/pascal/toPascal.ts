@@ -88,7 +88,7 @@ import {
   type SceneProvenance,
   type SceneRepair,
 } from './sceneLayer';
-import { itemFitOf } from './itemFit';
+import { itemFitOf, REAL_BACK_SHIFT_FIELD } from './itemFit';
 import { furnishingUsageOf, isPlausibleStair, lShapedRunArms, orphanWallIds, weldWallEnds } from './structureFixes';
 import { doorSwingRects, wallRects } from './placement';
 import { planRectOf, ROOMSET_VERSION, roomSetKeysOf, type SetZone } from './roomSet';
@@ -834,7 +834,9 @@ const itemNodeOf = (
   // Mẫu concept roomSet giữ dù lệch tỉ lệ hộp → co đều (không kéo giãn từng trục), kể cả khi thư mục đến qua vai ngữ cảnh
   // (`folderOverride` = kết quả modelFolderOf của chính món). Chỉ khi thư mục dựng ĐÚNG là quyết định co đều của sổ:
   // mẫu khác (chậu mỏng, mẫu luật đã lưu, món có `model`) giữ phép khớp cũ (Codex M16-3 #1).
-  const uniform = model !== null && furniture.model === undefined && roomSetUniformOf(furniture.id, model.folder);
+  const setUniform = model !== null && furniture.model === undefined && roomSetUniformOf(furniture.id, model.folder);
+  // Cặp nhận đã lưu cỡ nhìn thấy + tâm đã gồm độ áp lưng: không dựng CỠ THẬT lần nữa (áp lưng hai lần = trôi mỗi lượt lưu).
+  const uniform = exactFit && setUniform === 'real' ? false : setUniform;
   const fit = model === null ? null : itemFitOf(model.folder, widthM, depthM, furniture.heightMm, levelHeightMm, exactFit, uniform);
   const heightM = fit?.heightM ?? heightOfFurniture(furniture, levelHeightMm);
   const liftMm = furniture.liftMm ?? model?.liftMm ?? baseLiftMm;
@@ -890,6 +892,7 @@ const itemNodeOf = (
         ...(furniture.variant === undefined ? {} : { variant: furniture.variant }),
         ...(furniture.heightMm === undefined ? {} : { heightMm: furniture.heightMm }),
         ...(furniture.liftMm === undefined ? {} : { liftMm: furniture.liftMm }),
+        ...(uniform === 'real' && fit !== null && fit.backShiftM !== 0 ? { [REAL_BACK_SHIFT_FIELD]: fit.backShiftM } : {}),
         // Món sinh: mẫu đang dựng, để lượt về lưu đúng mẫu ấy khi món được nhận (`toSpatial`: `MODEL_FOLDER_FIELD` khi lưu, `SHOWN_SIZE_FIELD` trong `seenSizeM`).
         ...(fit !== null && furniture.model === undefined && furniture.id.startsWith(GENERATED_DRESS_PREFIX)
           ? { [MODEL_FOLDER_FIELD]: fit.folder, [SHOWN_SIZE_FIELD]: fit.shownM }

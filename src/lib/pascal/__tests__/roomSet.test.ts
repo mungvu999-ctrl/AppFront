@@ -138,13 +138,14 @@ describe('roomSetOf — hàm thuần', () => {
       nodata: 'thiếu dữ liệu chất lượng',
     });
     const d = roomSetOf('R-1', [m], new Map(), ctx).get(m.id);
-    // Vòng 17: nhánh fallback (b) ghi thêm lý do luật cũ trượt (BANNED) vào why.
-    expect(d).toMatchObject({ to: 'cur', rule: 'keep', cause: 'fallback', why: 'không ứng viên qua ràng buộc cứng — mẫu luật cũ; luật cũ trượt (giường chưa hoàn chỉnh)' });
+    // Codex M17-1 #2 (đổi có chủ đích): luật cũ bị cấm (giường chưa hoàn chỉnh) không bao giờ là kết quả → null + sổ ghi lý do.
+    expect(d).toMatchObject({ to: null, cause: 'fallback', why: expect.stringContaining('luật cũ bị cấm (giường chưa hoàn chỉnh)') });
   });
 
   it('dữ liệu chất lượng vắng hoàn toàn: mọi món giữ mẫu cũ', () => {
     const ms = [bedMember('b', 'x', ['x', 'y']), member('n1', 'nightstand', 'p', ['p', 'q'])];
-    const out = roomSetOf('R-1', ms, new Map(), ctxOf({}));
+    // Codex M17-1 #2: luật cũ ngoài công năng bị cấm — giường cần cỡ giường thật (cỡ mặc định 0,5 × 0,45 m của ctxOf thì không).
+    const out = roomSetOf('R-1', ms, new Map(), ctxOf({}, { x: BED_DIMS }));
     expect([...out.values()].map((d) => [d.id, d.to, d.rule])).toEqual([
       ['b', 'x', 'keep'],
       ['n1', 'p', 'keep'],
@@ -701,10 +702,12 @@ describe('roomset lượt 3 — mỗi món chỉ nhận mẫu qua ràng buộc c
       { id: 'b2', role: 'doubleBed', short: 2.0, long: 2.2, current: 'bed-double-grey-pro', pool: lib, fixed: false },
     ];
     const out = roomSetOf('R', beds, new Map(), ctx);
-    expect(out.get('b2')?.to).toBe('bed-double-grey-pro');
-    expect(out.get('b2')?.rule).toBe('keep');
-    // Giường 1: mẫu đủ chăn gối không lọt chỗ 1,45 × 1,95 m → giữ mẫu cũ của chính nó.
-    expect(out.get('b1')?.to).toBe('bed-drawers-greywash');
+    // Codex M17-1 #2 (đổi có chủ đích): cả hai mẫu luật cũ là giường chưa hoàn chỉnh (cấm) → không giữ, null + sổ ghi lý do;
+    // giường 2 vẫn không bị thay bằng giường trần của giường 1.
+    expect(out.get('b2')?.to).toBeNull();
+    expect(out.get('b2')?.to).not.toBe('bed-drawers-greywash');
+    expect(out.get('b2')?.why).toMatch(/giường chưa hoàn chỉnh/);
+    expect(out.get('b1')?.to).toBeNull();
   });
 
   it('bất biến trên 300 phòng sinh ngẫu nhiên (hạt cố định): mẫu chọn qua ràng buộc cứng của CHÍNH món; không ứng viên → mẫu luật cũ; món ghim không đổi', () => {
@@ -741,7 +744,9 @@ describe('roomset lượt 3 — mỗi món chỉ nhận mẫu qua ràng buộc c
         checked += 1;
         const m = members.find((x) => x.id === d.id) as SetMember;
         if (m.fixed) expect(d).toMatchObject({ cause: 'pinned', to: m.current });
-        if (d.cause === 'fallback') expect(d.to).toBe(m.current);
+        // Codex M17-1 #2: luật cũ bị cấm → null (sổ ghi lý do), không bao giờ mẫu cấm.
+        if (d.cause === 'fallback' && d.to === null) expect(d.why).toMatch(/bị cấm/);
+        else if (d.cause === 'fallback') expect(d.to).toBe(m.current);
         if (d.cause !== 'selector' && d.cause !== 'same') continue;
         if (d.rule === 'roomset') swaps += 1;
         expect(hardRejectOf(m, d.to as string, ctx)).toBeUndefined();

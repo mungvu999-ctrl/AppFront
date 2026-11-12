@@ -655,6 +655,9 @@ const conceptOf = (role: FurnitureRole, style: SceneStyle): string | undefined =
 /** `noConcept`: bỏ mẫu concept khỏi `prefer` — mẫu luật cũ của món chưa ghim khi bộ chọn bật (concept là ứng viên ưu tiên của `roomSetOf`, không phải luật cũ). */
 const baseFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, roleOverride?: FurnitureRole, noConcept = false): string | null => {
   const role = roleOverride ?? roleOf(f, usage);
+  // Codex M17-1 #3: vai đã trung tính hoá (`roleDoubtOf`) thì variant gốc (giường) không còn quyết mẫu — mọi đường mẫu
+  // (thư viện, ưu tiên, mặc định) theo VAI HIỆU LỰC, không ra mẫu giường thu nhỏ.
+  const variantOf = roleOverride === undefined && role === shapeRoleOf(f, usage) ? variantModelOf : (): null => null;
   const catalogue = ROLE_MODELS[role];
   const best = Math.min(...catalogue.map((folder) => sizeCostOf(f, folder)));
   const isNearBest = (folder: string): boolean => sizeCostOf(f, folder) <= best * STYLE_TIE + 1e-9;
@@ -676,7 +679,7 @@ const baseFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, role
      đúng mẫu ấy; chỉ món băm vào mẫu bị loại mới băm lại trên phần còn lại; danh sách lọc xong rỗng thì luật thư viện. */
   // Mẫu vân vỡ (cờ texture) cũng bị loại khỏi mẫu concept chọn (Codex SEL-4 #2); hết lựa chọn → mẫu dựng sẵn của vai/variant.
   const isRejected = (folder: string): boolean => (QC_EXCLUDED.has(folder) && !catalogue.includes(folder)) || textureBrokenOf(folder);
-  const builtIn = (roleOverride === undefined ? variantModelOf(f)?.folder : undefined) ?? catalogue[0] ?? null;
+  const builtIn = variantOf(f)?.folder ?? catalogue[0] ?? null;
   const pickHashed = (folders: readonly string[]): string | null => {
     const first = hashed(folders);
     if (!isRejected(first)) return first;
@@ -693,7 +696,7 @@ const baseFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, role
     if (library !== null) return library;
   }
 
-  const byVariant = roleOverride === undefined ? variantModelOf(f) : null;
+  const byVariant = variantOf(f);
   if (byVariant) {
     return preferred.some((folder) => folder !== byVariant.folder) ? pickHashed(preferred) : byVariant.folder;
   }

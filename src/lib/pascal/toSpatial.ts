@@ -71,6 +71,7 @@ import { isServerModel, modelSrcOf, namedFolderOf, serverKindOf, serverModelPath
 import { appFrontIdOf, bodyOfPascalId, BUILDING_NODE_ID, toPascalId } from './ids';
 import { LIBRARY_MATERIAL_IDS } from './libraryMaterialIds';
 import { libRoles2BaseIdOf } from './libraryRoles2';
+import { REAL_BACK_SHIFT_FIELD } from './itemFit';
 import { worldBoxOf } from './orientDetected';
 import { roofOf } from './roofs';
 import { DRESSING_OFF_MAX } from './sceneLayer';
@@ -857,9 +858,14 @@ const collectItem = (scene: PascalScene, item: PascalItemNode, levelId: LevelId,
   if (!isGeneratedNodeId(item.id) || adoptedOne) {
     const fields = fieldsOf(item);
     const knownId = appFrontIdOf('furniture', item.id);
+    // Món sinh vừa nhận / đồ thật của cặp nhận: lưu CỠ NHÌN THẤY (mẫu × khớp × co giãn của người dùng) cả ba trục.
+    const seen = roomAdopted || fields[ADOPTED_FIT_FIELD] === true ? seenSizeM(item) : null;
+    // Món CỠ THẬT áp lưng tường bằng `asset.offset`: lưu cỡ nhìn thấy thì tâm lưu = tâm nhìn thấy (dời z cục bộ × co
+    // giãn người dùng, xoay theo yaw) — lượt dựng lại khớp đúng hộp, không còn độ dời ấy (Codex M17-1 #5).
+    const back = seen === null ? 0 : (readNumber(fields, REAL_BACK_SHIFT_FIELD) ?? 0) * item.scale[2];
     const centre: Point = {
-      x: millimetresOf(item.position[0]),
-      y: millimetresOf(item.position[2]),
+      x: millimetresOf(item.position[0] + back * Math.sin(item.rotation[1])),
+      y: millimetresOf(item.position[2] + back * Math.cos(item.rotation[1])),
     };
     const min = readCorner(fields, 'min');
     const max = readCorner(fields, 'max');
@@ -871,8 +877,6 @@ const collectItem = (scene: PascalScene, item: PascalItemNode, levelId: LevelId,
     // không thành "đã sửa" chỉ vì cách hiển thị. Xoay rồi thì góc mới là của người dùng.
     const shownDeg = readNumber(fields, 'rotationDeg');
     const autoKept = fields['autoFacing'] === true && shownDeg !== null && rotationDeg === normaliseDegrees(asDegrees(shownDeg));
-    // Món sinh vừa nhận / đồ thật của cặp nhận: lưu CỠ NHÌN THẤY (mẫu × khớp × co giãn của người dùng) cả ba trục.
-    const seen = roomAdopted || fields[ADOPTED_FIT_FIELD] === true ? seenSizeM(item) : null;
 
     collector.furniture.push({
       ...reviewOf(item, knownId !== null),
