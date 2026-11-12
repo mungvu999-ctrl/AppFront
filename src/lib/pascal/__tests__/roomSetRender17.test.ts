@@ -14,7 +14,7 @@ import type { PascalItemNode } from '../types';
 
 const TABLE = 'F-0000ROLE17T';
 /** Giả lập sổ bộ chọn cho riêng bàn: `real` = dựng cỡ thật vai coffeeTable; `rejected` = từ chối mọi mẫu. */
-const SEL = vi.hoisted(() => ({ real: false, rejected: false, hidden: false }));
+const SEL = vi.hoisted(() => ({ real: false, rejected: false, hidden: false, hideDress: false }));
 vi.mock('../sceneVariety', async (importOriginal) => {
   interface Real {
     roomSetUniformOf: (id: string, folder: string) => boolean | 'real';
@@ -30,7 +30,7 @@ vi.mock('../sceneVariety', async (importOriginal) => {
     roomSetUniformOf: (id: string, folder: string) => (SEL.real && mine(id) ? 'real' : real.roomSetUniformOf(id, folder)),
     roomSetRoleOf: (id: string) => (SEL.real && mine(id) ? 'coffeeTable' : real.roomSetRoleOf(id)),
     roomSetRejectedOf: (id: string) => (SEL.rejected && mine(id)) || real.roomSetRejectedOf(id),
-    roomSetHiddenOf: (id: string) => (SEL.hidden && mine(id)) || real.roomSetHiddenOf(id),
+    roomSetHiddenOf: (id: string) => (SEL.hidden && mine(id)) || (SEL.hideDress && id.startsWith('DRESS-')) || real.roomSetHiddenOf(id),
     // Vai ngữ cảnh (`roleOverride`) của bàn: bộ chọn trả null. Đường mẫu vai gốc (không roleOverride) giữ thật.
     modelFolderOf: (f: { id: string }, ...rest: unknown[]) => (SEL.rejected && mine(f.id) && rest[2] !== undefined ? null : real.modelFolderOf(f, ...rest)),
   };
@@ -114,6 +114,18 @@ describe('Codex M17-4', () => {
     } finally {
       SEL.rejected = false;
       SEL.hidden = false;
+    }
+  });
+
+  it('đồ SINH bị từ chối mọi mẫu cũng ẩn (vòng lặp đồ sinh) — Codex M17-6 #1', () => {
+    SEL.hideDress = true;
+    try {
+      const scene = standardSceneOf(graph(), { style }).scene;
+      const dress = Object.values(scene.nodes).filter((n) => n.type === 'item' && n.id.startsWith('item_DRESS-'));
+      expect(dress.length, 'phòng ngủ trống có đồ sinh').toBeGreaterThan(0);
+      for (const n of dress) expect(n.visible, n.id).toBe(false);
+    } finally {
+      SEL.hideDress = false;
     }
   });
 });

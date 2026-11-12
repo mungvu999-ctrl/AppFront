@@ -1862,7 +1862,12 @@ export const toPascalScene = (
 
     nodes[node.id] = withRoomSetProv(
       withFields(
-        { ...node, metadata: { ...node.metadata, generated: 'dressing' } },
+        {
+          ...node,
+          // Codex M17-6 #1: đồ sinh bị bộ chọn từ chối mọi mẫu cũng ẩn (giữ node + dressIds), như vòng lặp đồ thật.
+          ...(roomSetHiddenOf(furniture.id) ? { visible: false } : {}),
+          metadata: { ...node.metadata, generated: 'dressing' },
+        },
         { [PROV_FIELD]: provOfGenerated(furniture) },
       ),
       furniture.id,
