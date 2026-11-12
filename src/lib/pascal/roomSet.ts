@@ -1052,6 +1052,7 @@ export const roomSetOf = (
   const fallbackOf = (
     m: SetMember,
     ev: { readonly legacyCost?: number; readonly concept?: { readonly f: string; readonly miss?: string } },
+    costOf: (f: string) => number,
   ): { readonly to: string | null; readonly uniform?: 'real'; readonly why: string } => {
     const b = m.box;
     if (b !== undefined && m.sizeFrom !== 'user') {
@@ -1061,14 +1062,21 @@ export const roomSetOf = (
         const d = ctx.dimsOf(f) as Dims;
         return d[0] * d[2];
       };
+      // Vòng 17: trong các mẫu cỡ thật không va chạm, lấy mẫu hợp bộ nhất (chi phí ≤ FAIL_COST), hoà → nhỏ hơn → tên.
+      const cost = new Map<string, number>();
       const fits = m.pool
         .filter((f) => ctx.dimsOf(f) !== undefined && hardRejectOf(real, f, ctx, CONCEPT_LENIENT) === undefined)
-        .sort((x, y) => area(x) - area(y) || x.localeCompare(y));
+        .filter((f) => {
+          const c = Math.round(costOf(f) * 1e9) / 1e9;
+          cost.set(f, c);
+          return c <= FAIL_COST;
+        })
+        .sort((x, y) => (cost.get(x) ?? 0) - (cost.get(y) ?? 0) || area(x) - area(y) || x.localeCompare(y));
       for (const f of fits) {
         const d = ctx.dimsOf(f) as Dims;
         const rect = realRectOf(m, b, d);
         if (zones.reduce((s, z) => s + overlapAreaM2(rect, z), 0) <= ROOM_OVERLAP_TOL_M2) {
-          return { to: f, uniform: 'real', why: 'phương án cuối: mẫu nhỏ nhất đúng vai ở cỡ thật (vượt hộp AI), không va chạm' };
+          return { to: f, uniform: 'real', why: 'phương án cuối: mẫu hợp bộ nhất đúng vai ở cỡ thật (vượt hộp AI), không va chạm' };
         }
       }
     }
@@ -1306,7 +1314,10 @@ export const roomSetOf = (
         const legacyOk = m.current !== null && ev.pass.has(m.current);
         const legacyShape = (ev as { legacyShape?: string }).legacyShape;
         const failKeep = over !== undefined && (legacyOk || legacyShape !== undefined);
-        const fb = pick === undefined ? fallbackOf(m, ev) : undefined;
+        const fb =
+          pick === undefined
+            ? fallbackOf(m, ev, (f) => itemCostOf(f, role, refsOf(keyOf.get(m.id) ?? ''), ctx, memo).total)
+            : undefined;
         const to = fb !== undefined ? fb.to : failKeep ? m.current : (pick as { f: string }).f;
         const miss = conceptMiss.get(m.id);
         out.set(m.id, {

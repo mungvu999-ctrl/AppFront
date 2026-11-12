@@ -763,7 +763,8 @@ describe('vòng 16 — mẫu concept là ứng viên ưu tiên, không phải gh
       const big = furniture('F-BIG', 'chair', 380, 380, 0, -700);
       const concept = 'chair-dining-oak-rope-arm-b';
       const got = pick([userTable, big], 'F-BIG', withConcept(concept));
-      expect(got).not.toBe(concept);
+      // Phương án cuối chọn mẫu hợp bộ nhất ở CỠ THẬT (không co): chính concept, vì nó chỉ trượt khi bị co.
+      expect(got).toBe(concept);
       expect(entry('F-BIG')).toMatchObject({ cause: 'fallback', uniform: 'real', why: expect.stringContaining('concept trượt: ngoài công năng') });
       expect(roomSetUniformOf('F-BIG', got as string)).toBe('real');
       expect(roomSetUniformOf('F-T', 'table-oak-light-tapered-legs')).toBe(false);
