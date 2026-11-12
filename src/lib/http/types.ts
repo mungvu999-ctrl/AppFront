@@ -50,7 +50,17 @@ export type QueryParamValue =
 
 export type HttpTimeoutMode = 'default' | 'file' | 'stream';
 
-export type HttpResponseType = 'auto' | 'json' | 'text' | 'blob' | 'arrayBuffer' | 'response';
+export type HttpResponseType = 'auto' | 'json' | 'text' | 'blob' | 'arrayBuffer' | 'response' | 'textWithHeaders';
+
+/**
+ * `responseType: 'textWithHeaders'`: thân đọc TRONG vòng đời request (timeout/huỷ vẫn cắt được lúc thân đang về) và
+ * single-flight chia sẻ dữ liệu đã đọc — không chia sẻ một `Response` mà chỉ người đầu đọc được thân (danh sách có
+ * con trỏ trong header: thông báo, thư viện).
+ */
+export interface TextWithHeaders {
+  readonly headers: Headers;
+  readonly text: string;
+}
 
 export interface HttpRequestOptions<TBody = undefined> {
   body?: TBody;

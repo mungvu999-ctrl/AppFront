@@ -164,13 +164,12 @@ vi.mock('@/lib/pascal/sceneStandard', async (importOriginal) => {
 const libraryGate = vi.hoisted(() => ({ gate: null as Promise<void> | null, items: [] as { id: string }[] }));
 vi.mock('@/lib/pascal/sceneLibrary', async () => {
   const { registerServerLibrary } = await import('@/lib/pascal/furnitureCatalog');
-  return {
-    ensureSceneLibrary: async () => {
-      await libraryGate.gate;
-      registerServerLibrary(libraryGate.items.map((item) => ({ ...item, widthMm: 1000, heightMm: 2000, depthMm: 600, modelUrl: `https://x/${item.id}.glb` })));
-      return { count: libraryGate.items.length, source: 'server', version: 'lib-test' };
-    },
+  const ensureSceneLibrary = async () => {
+    await libraryGate.gate;
+    registerServerLibrary(libraryGate.items.map((item) => ({ ...item, widthMm: 1000, heightMm: 2000, depthMm: 600, modelUrl: `https://x/${item.id}.glb` })));
+    return { count: libraryGate.items.length, source: 'server', version: 'lib-test' };
   };
+  return { ensureSceneLibrary, ensureSceneLibraryFor: ensureSceneLibrary };
 });
 
 vi.mock('@/screens/viewer/PascalViewer/usePascalEdits', () => ({

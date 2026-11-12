@@ -255,6 +255,13 @@ const readResponseBody = async <TRes>(
     return response as TRes;
   }
 
+  if (responseType === 'textWithHeaders') {
+    if (shouldBlockTextRead(responseType, response)) {
+      throw Object.assign(new Error('Response body exceeds text parsing limit'), { name: 'PayloadTooLargeError' });
+    }
+    return { headers: response.headers, text: await response.text() } as TRes;
+  }
+
   if (response.status === 204 || response.status === 205) {
     return undefined as TRes;
   }
@@ -644,7 +651,9 @@ export const createHttpClient = ({
     if (shouldUseSingleFlight) {
       const singleFlightKey = options.singleFlightKey && options.singleFlightKey.length > 0
         ? options.singleFlightKey
-        : `${method}:${url.toString()}`;
+        : // responseType in the key: `list()` (JSON) and `listPage()` (text + headers) on one URL
+          // must not hand each other a result of the other shape.
+          `${method}:${options.responseType ?? 'auto'}:${url.toString()}`;
 
       const shared = await runSingleFlight(singleFlightKey, () =>
         executeRequest<TRes, TBody>(method, url, options),

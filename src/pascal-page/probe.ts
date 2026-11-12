@@ -87,9 +87,10 @@ if (window.__pascalProbe) {
 }
 
 // Gia hạn URL ký mẫu thư viện (vòng 10, `sceneLibrary.ts`): trạng thái số lần gia hạn / hết lượt.
+// Tải thư viện theo trang (vòng 14): libraryLoad() → { pages, items, revision, restarts, ms, bytes, resolvedById, missingById }.
 if (window.__pascalProbe) {
-  void import('@/lib/pascal/sceneLibrary').then(({ assetRefreshStatus }) => {
-    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { assetRefresh: assetRefreshStatus });
+  void import('@/lib/pascal/sceneLibrary').then(({ assetRefreshStatus, libraryLoadStatus }) => {
+    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { assetRefresh: assetRefreshStatus, libraryLoad: libraryLoadStatus });
   });
 }
 

@@ -189,6 +189,34 @@ describe('http/client.ts', () => {
     expect(results.every((result) => result.ok)).toBe(true);
   });
 
+  // Codex FE-2 #2: `library.list()` (JSON) and `library.listPage()` (text + headers) on the
+  // same URL shared one flight and one got the other's shape.
+  it.each([
+    ['auto first', ['auto', 'textWithHeaders'] as const],
+    ['textWithHeaders first', ['textWithHeaders', 'auto'] as const],
+  ])('does not share a flight across response types (%s)', async (_label, order) => {
+    const fetchImpl = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          setTimeout(() => {
+            resolve(new Response('[1]', { headers: { 'Content-Type': 'application/json', 'X-Next-Cursor': 'c2' } }));
+          }, 10);
+        }),
+    );
+    const client = createHttpClient({ baseUrl: 'https://api.example.com', fetchImpl });
+
+    const pending = Promise.all(order.map((responseType) => client.get<unknown>('/library', { responseType })));
+    await vi.advanceTimersByTimeAsync(10);
+    const results = await pending;
+    const byType = Object.fromEntries(order.map((type, index) => [type, results[index]]));
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(byType.auto).toStrictEqual({ ok: true, data: [1] });
+    const paged = byType.textWithHeaders;
+    expect(paged?.ok && (paged.data as { text: string }).text).toBe('[1]');
+    expect(paged?.ok && (paged.data as { headers: Headers }).headers.get('X-Next-Cursor')).toBe('c2');
+  });
+
   it('respects Retry-After when present', async () => {
     vi.spyOn(Math, 'random').mockReturnValue(0);
 

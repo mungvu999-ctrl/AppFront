@@ -1,5 +1,5 @@
 import type { AppError } from '@/lib/errors';
-import type { HttpClient, HttpError, HttpRequestOptions, Result } from '@/lib/http';
+import type { HttpClient, HttpError, HttpRequestOptions, Result, TextWithHeaders } from '@/lib/http';
 import { z, type ZodTypeAny } from 'zod';
 import type { Furniture, Opening, Roof, Room, Wall } from '@/domain/spatial/types';
 import {
@@ -407,6 +407,23 @@ export interface ReadLibraryItemInput extends RequestOptions {
   libraryItemId: string;
 }
 
+/** M15 — `GET /api/library?limit&cursor` (`limit` 1..500); `cursor` = `nextCursor` của trang trước. */
+export interface ListLibraryPageInput extends RequestOptions {
+  cursor?: string;
+  limit?: number;
+}
+
+/**
+ * Một trang thư viện: `nextCursor` từ header `X-Next-Cursor` (vắng = hết), `revision` từ `X-Library-Revision`
+ * (BE cũ không gửi → vắng), `bytes` = độ dài thân phản hồi (đầu dò).
+ */
+export interface LibraryPage {
+  items: LibraryItem[];
+  nextCursor?: string;
+  revision?: string;
+  bytes: number;
+}
+
 /**
  * Quản trị người dùng — T-04/T-05.
  *
@@ -657,6 +674,8 @@ export interface SpatialApi {
  */
 export interface LibraryApi {
   list(options?: RequestOptions): Promise<ApiResult<LibraryItem[]>>;
+  /** Một trang theo con trỏ; thân vẫn là mảng trần, trang kế + phiên bản tập mục đi trong header. */
+  listPage(input?: ListLibraryPageInput): Promise<ApiResult<LibraryPage>>;
   read(input: ReadLibraryItemInput): Promise<ApiResult<LibraryItem>>;
 }
 
@@ -988,6 +1007,15 @@ const decodeSingle = <S extends ZodTypeAny>(
   return decode(schema, result.data, source) as ApiResult<z.output<S>>;
 };
 
+/** Thân trang (đọc sẵn trong vòng đời request): không phải JSON → `null`, `decodeList` báo lỗi giải mã. */
+const parseJsonOrNull = (text: string): unknown => {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+};
+
 const decodeList = <S extends ZodTypeAny>(
   result: Result<unknown, HttpError>,
   schema: S,
@@ -1260,6 +1288,39 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
   library: {
     list: async (options) =>
       decodeList(await callGet<unknown>(http, ENDPOINTS.library.list, options?.signal), LibraryItemSchema, 'library.list'),
+    listPage: async ({ cursor, limit, signal } = {}) => {
+      const raw = await http.get<TextWithHeaders>(ENDPOINTS.library.list, {
+        query: {
+          ...(cursor !== undefined ? { cursor } : {}),
+          ...(limit !== undefined ? { limit } : {}),
+        },
+        responseType: 'textWithHeaders',
+        ...(signal !== undefined ? { signal } : {}),
+      });
+
+      if (!raw.ok) {
+        return asApiResult(raw);
+      }
+
+      const nextCursor = raw.data.headers.get('X-Next-Cursor') ?? '';
+      const revision = raw.data.headers.get('X-Library-Revision') ?? '';
+      const { text } = raw.data;
+      const items = decodeList({ ok: true, data: parseJsonOrNull(text) }, LibraryItemSchema, 'library.listPage');
+
+      if (!items.ok) {
+        return items;
+      }
+
+      return {
+        ok: true,
+        data: {
+          items: items.data,
+          ...(nextCursor !== '' ? { nextCursor } : {}),
+          ...(revision !== '' ? { revision } : {}),
+          bytes: text.length,
+        },
+      };
+    },
     read: async ({ libraryItemId, signal }) =>
       decodeSingle(
         await callGet<unknown>(http, ENDPOINTS.library.detail(libraryItemId), signal),
@@ -1358,12 +1419,12 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
         'notifications.list',
       ),
     listPage: async ({ cursor, limit, signal } = {}) => {
-      const raw = await http.get<Response>(ENDPOINTS.notifications.list, {
+      const raw = await http.get<TextWithHeaders>(ENDPOINTS.notifications.list, {
         query: {
           ...(cursor !== undefined ? { cursor } : {}),
           ...(limit !== undefined ? { limit } : {}),
         },
-        responseType: 'response',
+        responseType: 'textWithHeaders',
         ...(signal !== undefined ? { signal } : {}),
       });
 
@@ -1373,7 +1434,7 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
 
       const nextCursor = raw.data.headers.get('X-Next-Cursor') ?? '';
       const items = decodeList(
-        { ok: true, data: (await raw.data.json()) as unknown },
+        { ok: true, data: parseJsonOrNull(raw.data.text) },
         NotificationSchema,
         'notifications.listPage',
       );
