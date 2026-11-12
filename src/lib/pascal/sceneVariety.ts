@@ -580,6 +580,13 @@ const baseFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, role
   const isNearBest = (folder: string): boolean => sizeCostOf(f, folder) <= best * STYLE_TIE + 1e-9;
   /* AID-01: mẫu thư viện máy chủ mà AI chọn cho vai trò (`sceneStyleFromConcept`) không nằm trong
      `ROLE_MODELS` — máy chủ đã lọc theo loại, cỡ khớp bằng `asset.scale`, nên không qua ngưỡng cỡ. */
+  // Luật cũ của món chưa ghim khi bộ chọn bật: không bao giờ ra mẫu concept, kể cả khi luật thư viện tự chọn trúng nó
+  // (Codex M16-1 #1) — concept chỉ vào cảnh qua `roomSetOf` khi qua ràng buộc cứng; hết lựa chọn → mẫu dựng sẵn.
+  const excluded = noConcept ? conceptOf(role, style) : undefined;
+  const libraryOf = (): string | null => {
+    const x = libraryModelOf(f, role, style);
+    return x === excluded ? null : x;
+  };
   const preferred = (style.prefer[role] ?? []).filter((folder) =>
     catalogue.includes(folder) ? isNearBest(folder) : !noConcept && isServerModel(folder),
   );
@@ -594,7 +601,7 @@ const baseFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, role
     const first = hashed(folders);
     if (!isRejected(first)) return first;
     const good = folders.filter((folder) => !isRejected(folder));
-    const replacement = good.length > 0 ? hashed(good) : libraryModelOf(f, role, style);
+    const replacement = good.length > 0 ? hashed(good) : libraryOf();
     if (replacement === null || isRejected(replacement)) return textureBrokenOf(first) ? builtIn : first;
     QC_SWAPS.set(f.id, { from: first, to: replacement, role });
     return replacement;
@@ -602,7 +609,7 @@ const baseFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, role
 
   // Mẫu đẹp của thư viện máy chủ thay mẫu Pascal low-poly cùng loại (khi thư viện đã nạp); mẫu AI chọn vẫn thắng.
   if (!preferred.some(isServerModel)) {
-    const library = libraryModelOf(f, role, style);
+    const library = libraryOf();
     if (library !== null) return library;
   }
 
@@ -932,6 +939,8 @@ const roomSetFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, r
   const member = room?.members.get(f.id);
   const role = roleOverride ?? roleOf(f, usage);
   let folder = current;
+  /** Mốc so "đã đổi do roomset": mẫu luật cũ của chính quyết định (`from`) khi áp quyết định (Codex M16-1 #3). */
+  let baseline = current;
   const pin = SET_PINNED.get(f.id);
   // Đang lập bộ (planRoom gọi mẫu luật cũ của từng món; `?layout=hue` hỏi mẫu neo qua modelFolderOf) → mẫu luật cũ, không đệ quy.
   // Vai/ngữ cảnh khác lúc đăng ký (chữ ký, vai) → luật cũ. Twin của cặp đã nhận → mẫu của món thật.
@@ -949,9 +958,12 @@ const roomSetFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, r
       }
     }
     const decision = plan.get(f.id);
-    if (decision !== undefined && !isPinned(f)) folder = decision.to;
+    if (decision !== undefined && !isPinned(f)) {
+      folder = decision.to;
+      baseline = decision.from;
+    }
   }
-  if (folder !== current) SET_APPLIED.add(f.id);
+  if (folder !== baseline) SET_APPLIED.add(f.id);
   else SET_APPLIED.delete(f.id);
   return folder;
 };

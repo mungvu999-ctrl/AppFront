@@ -830,7 +830,8 @@ export const roomSetOf = (
       const r = m.concept.reject ?? hardRejectOf(m, f, ctx);
       const rect = r !== undefined || near.length === 0 ? undefined : shownRectOf(m, f);
       const hit = rect === undefined ? 0 : near.reduce((s, z) => s + overlapAreaM2(rect, z), 0);
-      const miss = r ?? (hit > minHit + ROOM_OVERLAP_TOL_M2 ? 'va chạm' : undefined);
+      // Pool không còn ứng viên lọt: ngân sách va chạm = 0 chồng (+ dung sai), không phải vô hạn (Codex M16-1 #2).
+      const miss = r ?? (hit > (ok.length === 0 ? 0 : minHit) + ROOM_OVERLAP_TOL_M2 ? 'va chạm' : undefined);
       concept = miss === undefined ? { f, cost: costFor(m, f) } : { f, miss };
     }
     return { pass, rejects, ...(legacyShape === undefined ? {} : { legacyShape }), ...(concept === undefined ? {} : { concept }) };

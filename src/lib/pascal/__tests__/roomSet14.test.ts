@@ -16,7 +16,7 @@ import { LIBRARY_QUALITY, type ModelQuality } from '../libraryQuality';
 import LIBRARY from '../libraryRoles.json' with { type: 'json' };
 import { ANCHOR_BAND, FAIL_COST, hardRejectOf, paletteOf, planRectOf, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetMember } from '../roomSet';
 import { sceneStyleOf } from '../sceneStyles';
-import { addRoomSetMembers, contextRolesOf, finishRoomSet, modelFolderOf, roomSetPools, roomSetReport, setRoomSetKeys, type LayerStyle } from '../sceneVariety';
+import { addRoomSetMembers, contextRolesOf, finishRoomSet, modelFolderOf, roomSetPools, roomSetReport, roomSetSwapOf, setRoomSetKeys, type LayerStyle } from '../sceneVariety';
 
 const roles = LIBRARY.roles as Record<string, string[]>;
 const libStyles = (LIBRARY as unknown as { models: Record<string, { s: string[] }> }).models;
@@ -567,6 +567,18 @@ describe('vòng 16 — mẫu concept là ứng viên ưu tiên, không phải gh
     expect(d?.why).toContain(`concept trượt: ${hardRejectOf(m, bad, ctx) ?? ''}`);
   });
 
+  it('Codex M16-1 #2: pool không còn ứng viên lọt → ngân sách va chạm 0, concept chồng vật cản trượt', () => {
+    const base = roomSetOf('R', [table()], new Map(), ctx).get('t');
+    const concept = base?.to as string;
+    const zone = [planRectOf(0, 0, 0.5, 0.5, 0)];
+    const free = roomSetOf('R', [table({ pool: [], concept: { folder: concept } })], new Map(), ctx).get('t');
+    expect(free).toMatchObject({ cause: 'concept', to: concept });
+    const blocked = roomSetOf('R', [table({ pool: [], concept: { folder: concept } })], new Map(), ctx, zone).get('t');
+    expect(blocked?.cause).toBe('fallback');
+    expect(blocked?.to).not.toBe(concept);
+    expect(blocked?.why).toContain('concept trượt: va chạm');
+  });
+
   it('nhóm ghế quanh bàn: concept là mẫu chung khi qua cho MỌI ghế; một ghế trượt → cả nhóm đi đường thường, một mẫu', () => {
     const chairs = (extra: Partial<SetMember> = {}): SetMember[] => [
       pinnedAt('A', 'diningTable', 'table-oak-light-tapered-legs', 1.6, 0.9, 0, 0),
@@ -640,13 +652,12 @@ describe('vòng 16 — mẫu concept là ứng viên ưu tiên, không phải gh
 
     it('concept hợp lệ → chọn concept; món có `model` người dùng vẫn ghim dù concept vai ấy khác', () => {
       const selected = pick([userTable, chair], 'F-C', base);
-      const legacy = entry('F-C')?.from;
       const concept = CHAIRS.find((c) => c !== selected && entry('F-C')?.top?.some(([f]) => f === c)) as string;
       expect(concept).toBeDefined();
       expect(pick([userTable, chair], 'F-C', withConcept(concept))).toBe(concept);
       expect(entry('F-C')).toMatchObject({ cause: 'concept', to: concept });
-      // `from` = luật cũ KHÔNG chứa concept (cùng mẫu như khi phong cách không có concept).
-      expect(entry('F-C')?.from).toBe(legacy);
+      // `from` = luật cũ KHÔNG BAO GIỜ là concept (luật thư viện trúng concept → bỏ, Codex M16-1 #1).
+      expect(entry('F-C')?.from).not.toBe(concept);
       // Món có `model` dựng bằng mẫu đã lưu (không hỏi modelFolderOf): sổ ghi ghim, mẫu đã lưu, không phải concept bàn.
       expect(entry('F-T')).toMatchObject({ cause: 'pinned', to: 'table-oak-light-tapered-legs' });
     });
@@ -660,6 +671,37 @@ describe('vòng 16 — mẫu concept là ứng viên ưu tiên, không phải gh
       expect(entry('F-S')?.why).toContain('concept trượt');
       expect(entry('F-S')?.from).not.toBe(concept);
       expect(pick([strip], 'F-S', { ...withConcept(concept), roomSet: false })).toBe(concept);
+    });
+
+    it('Codex M16-1 #1: thư viện chỉ còn đúng mẫu concept, concept méo → luật cũ không trả nó (mẫu dựng sẵn), không fail-keep nó', () => {
+      const only = 'chair-white-windsor-spindle';
+      clearServerLibrary();
+      const u = real(only)?.useMm ?? [1000, 1000, 1000];
+      registerServerLibrary([{ id: only, widthMm: u[0], heightMm: u[1], depthMm: u[2], modelUrl: `https://x.test/${only}.glb` }]);
+      try {
+        const got = pick([strip], 'F-S', withConcept(only));
+        expect(got).not.toBe(only);
+        expect(entry('F-S')).toMatchObject({ cause: 'fallback', why: expect.stringContaining('concept trượt') });
+        expect(entry('F-S')?.from).not.toBe(only);
+      } finally {
+        clearServerLibrary();
+        registerServerLibrary(
+          [...CHAIRS, 'table-oak-light-tapered-legs', OTHER_TABLE].map((id) => {
+            const v = real(id)?.useMm ?? [1000, 1000, 1000];
+            return { id, widthMm: v[0], heightMm: v[1], depthMm: v[2], modelUrl: `https://x.test/${id}.glb` };
+          }),
+        );
+      }
+    });
+
+    it('Codex M16-1 #3: concept khác mẫu luật cũ (`from`) → roomSetSwapOf có quyết định (prov.model), cùng mốc với sổ', () => {
+      pick([userTable, chair], 'F-C', base);
+      const legacy = entry('F-C')?.from;
+      const concept = CHAIRS.find((c) => c !== legacy && entry('F-C')?.top?.some(([f]) => f === c)) as string;
+      expect(concept).toBeDefined();
+      expect(pick([userTable, chair], 'F-C', withConcept(concept))).toBe(concept);
+      expect(entry('F-C')).toMatchObject({ cause: 'concept', rule: 'roomset', from: legacy, to: concept });
+      expect(roomSetSwapOf('F-C')).toMatchObject({ from: legacy, to: concept });
     });
   });
 });
