@@ -203,15 +203,29 @@ describe('vòng 14 lượt 2 — ngưỡng hỏng FAIL_COST (ca thua rõ f-22/f-
     );
   });
 
-  it('dữ liệu thật f-22: hộp giường AI 2,08 × 2,91 m — mọi ứng viên > FAIL_COST, nhưng mẫu luật cũ TRƯỢT ràng buộc cứng ở hộp này → giữ ứng viên hợp lệ tốt nhất (không làm tệ hơn ≠ bỏ qua ràng buộc)', () => {
+  it('dữ liệu thật f-22: hộp giường AI 2,08 × 2,91 m — mọi ứng viên > FAIL_COST, mẫu luật cũ chỉ trượt HÌNH DÁNG (qua va chạm, texture, trần) → giữ hiện trạng (fail-keep)', () => {
     const legacy = 'bed-double-white-duvet-light-oak-headboard';
     const m = at('b', 'doubleBed', legacy, 2.081, 2.905, 0, 0, { kind: 'bed' });
-    expect(hardRejectOf(m, legacy, ctx)).toBeDefined();
+    expect(['sai tỉ lệ thật', 'méo dáng']).toContain(hardRejectOf(m, legacy, ctx));
     const d = roomSetOf('R', [m], new Map(), ctx).get('b');
     expect(d?.top?.[0]?.[1] as number).toBeGreaterThan(FAIL_COST);
-    expect(d).toMatchObject({ to: d?.top?.[0]?.[0], cause: 'selector' });
-    expect(d?.why).toContain('mẫu luật cũ không hợp lệ');
-    expect(d?.to).not.toBe('bed-double-linen-pro2');
+    expect(d).toMatchObject({ to: legacy, cause: 'fail-keep' });
+    expect(d?.why).toContain('hiện trạng, trượt hình dáng');
+  });
+
+  it('hiện trạng trượt hình dáng nhưng chồng vật cản / chạm trần → KHÔNG giữ, lấy ứng viên hợp lệ', () => {
+    const c: SetContext = { ...ctxT('bookshelf', { slim: 100, old: 5 }), dimsOf: (x) => (x === 'old' ? [2, 1.8, 0.4] : [0.8, 1.8, 0.4]) };
+    // Mẫu luật cũ 2,0 m co vào hộp 1,2 m (sai tỉ lệ thật) và hiện đủ 1,2 m → chồng tủ lạnh; ứng viên hẹp đắt 1,0.
+    const m: SetMember = { id: 's', role: 'bookshelf', short: 0.4, long: 1.2, current: 'old', pool: ['old', 'slim'], fixed: false, box: { cx: 0, cy: 0, w: 1.2, d: 0.4, rot: 0 }, shownOf: (x) => (x === 'old' ? [1.2, 1.8, 0.24] : [0.8, 1.8, 0.4]) };
+    expect(hardRejectOf(m, 'old', c)).toBe('sai tỉ lệ thật');
+    const fridge = planRectOf(0.775, 0, 0.65, 0.6, 0);
+    expect(roomSetOf('R', [m], new Map(), c, [fridge]).get('s')).toMatchObject({ to: 'slim', cause: 'selector' });
+    // Không vật cản: cùng hiện trạng được giữ.
+    expect(roomSetOf('R', [m], new Map(), c).get('s')).toMatchObject({ to: 'old', cause: 'fail-keep' });
+    // Chạm trần (mẫu luật cũ cao 2,2 m, trần 2,4 m → tối đa 2,1 m; ứng viên hẹp 1,8 m qua): không giữ.
+    const tall: SetContext = { ...c, dimsOf: (x) => (x === 'old' ? [2, 2.2, 0.4] : [0.8, 1.8, 0.4]) };
+    const mt: SetMember = { ...m, ceilingM: 2.4, heightM: 2.2, shownOf: (x) => (x === 'old' ? [1.2, 2.2, 0.24] : [0.8, 1.8, 0.4]) };
+    expect(roomSetOf('R', [mt], new Map(), tall).get('s')).toMatchObject({ to: 'slim', cause: 'selector' });
   });
 
   it('cùng luật mọi vai: ứng viên tốt nhất ≤ FAIL_COST thì vẫn đổi (hộp giường thường 1,8 × 2,1 m)', () => {

@@ -134,6 +134,12 @@ export const SHARE_BAND = 0.25;
  * cứng vẫn đắt hơn chừng này, đánh giá không có gì đáng chọn — giữ mẫu luật cũ (`cause: 'fail-keep'`), mọi vai.
  */
 export const FAIL_COST = 0.9;
+/**
+ * Lý do loại thuần HÌNH DÁNG (tỉ lệ thật, cỡ so hộp, chuẩn cao). Chính sách "không làm tệ hơn hiện trạng" (điều phối
+ * 12/11): không ứng viên nào ≤ FAIL_COST mà mẫu luật cũ chỉ trượt các lý do này (vẫn qua va chạm, texture, trần, chất lượng)
+ * → giữ mẫu luật cũ (`fail-keep`, "hiện trạng, trượt hình dáng").
+ */
+const SHAPE_REJECTS: ReadonlySet<string> = new Set(['sai tỉ lệ thật', 'méo dáng', 'vượt hộp chỗ đặt', 'không lọt chỗ', 'cao hơn chuẩn vai', 'nhỏ hơn cỡ vai', 'không giữ cỡ người dùng']);
 /** Gỗ: ΔE (L* tối hơn tham chiếu tính đủ, sáng hơn tính nửa) trong dung sai này coi là cùng tông; vượt thì /WOOD_DE_REF. */
 export const WOOD_TOL = 15;
 export const WOOD_DE_REF = 20;
@@ -795,7 +801,21 @@ export const roomSetOf = (
       if (o.hit <= minHit + ROOM_OVERLAP_TOL_M2) pass.set(o.f, o.cost);
       else rejects['va chạm'] = (rejects['va chạm'] ?? 0) + 1;
     }
-    return { pass, rejects };
+    // Hiện trạng (mẫu luật cũ) chỉ trượt HÌNH DÁNG nhưng qua va chạm, texture, trần: được giữ khi không gì ≤ FAIL_COST.
+    const cur = m.current;
+    let legacyShape: string | undefined;
+    if (cur !== null && !pass.has(cur)) {
+      const r = hardRejectOf(m, cur, ctx);
+      const dims = ctx.dimsOf(cur);
+      const shown = m.shownOf?.(cur) ?? dims;
+      const ceilingOk = m.ceilingM === undefined || (shown !== undefined && (m.liftM ?? 0) + shown[1] <= m.ceilingM - CEILING_GAP_M);
+      if (r !== undefined && SHAPE_REJECTS.has(r) && ceilingOk) {
+        const rect = near.length === 0 ? undefined : shownRectOf(m, cur);
+        const hit = rect === undefined ? 0 : near.reduce((s, z) => s + overlapAreaM2(rect, z), 0);
+        if (hit <= minHit + ROOM_OVERLAP_TOL_M2) legacyShape = r;
+      }
+    }
+    return { pass, rejects, ...(legacyShape === undefined ? {} : { legacyShape }) };
   };
 
   for (const role of roles) {
@@ -920,7 +940,8 @@ export const roomSetOf = (
         // sách va chạm (có trong `pass`); không thì giữ ứng viên hợp lệ tốt nhất dù đắt.
         const over = pick === undefined || m.pinTo !== undefined ? undefined : overOf(pick.f);
         const legacyOk = m.current !== null && ev.pass.has(m.current);
-        const failKeep = over !== undefined && legacyOk;
+        const legacyShape = (ev as { legacyShape?: string }).legacyShape;
+        const failKeep = over !== undefined && (legacyOk || legacyShape !== undefined);
         const to = pick === undefined || failKeep ? m.current : pick.f;
         out.set(m.id, {
           id: m.id,
@@ -940,7 +961,9 @@ export const roomSetOf = (
               ? 'cặp đã nhận: mẫu của món thật, chốt đúng lượt vai'
               : cost === undefined
                 ? 'không ứng viên qua ràng buộc cứng — mẫu luật cũ'
-                : failKeep
+                : failKeep && !legacyOk
+                  ? `giữ mẫu luật cũ: hiện trạng, trượt hình dáng (${legacyShape ?? ''}); mẫu chung ${pick?.f ?? ''} ${(over as number).toFixed(2)} > ngưỡng hỏng ${FAIL_COST}`
+                  : failKeep
                   ? `giữ mẫu luật cũ: mẫu chung của nhóm ${pick?.f ?? ''} trung bình ${(over as number).toFixed(2)} > ngưỡng hỏng ${FAIL_COST}`
                   : over !== undefined
                     ? `${via}; ${cost.toFixed(2)} > ngưỡng hỏng ${FAIL_COST} nhưng mẫu luật cũ không hợp lệ (ràng buộc cứng/va chạm) — giữ ứng viên hợp lệ`
