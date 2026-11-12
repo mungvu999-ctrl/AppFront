@@ -860,7 +860,7 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
   const wanted = style.libraryStyles ?? [];
   const ceilingM = SET_ROOM_CEILINGS.get(roomId);
   /** Cỡ HIỂN THỊ [rộng, cao, sâu] m của mẫu `x` trong hộp của món — đúng phép khớp dựng cảnh (`itemFitOf`, cặp nhận khớp đúng). */
-  const shownIn = (f: SetInput, x: string): Dims | undefined =>
+  const shownIn = (f: SetInput, x: string, uniform = false): Dims | undefined =>
     ceilingM === undefined
       ? undefined
       : itemFitOf(
@@ -870,6 +870,7 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
           f.heightMm,
           ceilingM * 1000,
           SET_EXACT.has(f.id),
+          uniform,
         )?.shownM;
   // Vùng chặn: vùng mở cửa + thân tường của tầng, và mặt bằng HIỂN THỊ của đồ đứng sàn ngoài bộ (mẫu đã lưu, không thì
   // mẫu luật — vai ngoài bộ); không xác định được mẫu → hộp.
@@ -903,7 +904,15 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
       current: pin !== undefined ? pin : baseFolderOf(f, style, room.usage, override, !pinned),
       pool: pinned || twinPin !== undefined ? [] : setPoolOf(f, role, style),
       fixed: pinned,
-      ...(concept === undefined ? {} : { concept: { folder: concept, ...(QC_EXCLUDED.has(concept) ? { reject: 'QC loại' } : {}) } }),
+      ...(concept === undefined
+        ? {}
+        : {
+            concept: {
+              folder: concept,
+              ...(QC_EXCLUDED.has(concept) ? { reject: 'QC loại' } : {}),
+              ...(ceilingM === undefined ? {} : { shownOf: (x: string) => shownIn(f, x, true) }),
+            },
+          }),
       ...(twinPin === undefined ? {} : { pinTo: twinPin }),
       ...(ceilingM === undefined
         ? {}
@@ -966,6 +975,12 @@ const roomSetFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, r
   if (folder !== baseline) SET_APPLIED.add(f.id);
   else SET_APPLIED.delete(f.id);
   return folder;
+};
+
+/** Món dựng mẫu concept bằng CO ĐỀU trong lượt dựng (concept giữ dù lệch tỉ lệ hộp, `roomSetOf`): toPascal khớp `uniform`. */
+export const roomSetUniformOf = (id: string, folder: string): boolean => {
+  const d = SET_LOG.get(id);
+  return d?.uniform === true && d.to === folder;
 };
 
 /** Món đổi mẫu do `roomset` trong lượt dựng hiện tại (toPascal ghi provenance; đồ người dùng xác nhận không mang prov `ai`). */

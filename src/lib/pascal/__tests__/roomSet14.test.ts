@@ -14,9 +14,9 @@ import { clearServerLibrary, registerServerLibrary } from '../furnitureCatalog';
 import { itemFitOf } from '../itemFit';
 import { LIBRARY_QUALITY, type ModelQuality } from '../libraryQuality';
 import LIBRARY from '../libraryRoles.json' with { type: 'json' };
-import { ANCHOR_BAND, FAIL_COST, hardRejectOf, paletteOf, planRectOf, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetMember } from '../roomSet';
+import { ANCHOR_BAND, CONCEPT_LENIENT, FAIL_COST, hardRejectOf, paletteOf, planRectOf, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetMember } from '../roomSet';
 import { sceneStyleOf } from '../sceneStyles';
-import { addRoomSetMembers, contextRolesOf, finishRoomSet, modelFolderOf, roomSetPools, roomSetReport, roomSetSwapOf, setRoomSetKeys, type LayerStyle } from '../sceneVariety';
+import { addRoomSetMembers, contextRolesOf, finishRoomSet, modelFolderOf, roomSetPools, roomSetReport, roomSetSwapOf, roomSetUniformOf, setRoomSetKeys, type LayerStyle } from '../sceneVariety';
 
 const roles = LIBRARY.roles as Record<string, string[]>;
 const libStyles = (LIBRARY as unknown as { models: Record<string, { s: string[] }> }).models;
@@ -555,16 +555,40 @@ describe('vòng 16 — mẫu concept là ứng viên ưu tiên, không phải gh
     expect(d).toMatchObject({ to: concept, cause: 'concept', why: expect.stringContaining('concept') });
   });
 
-  it('concept méo / không vừa hộp → bộ chọn chọn mẫu khác như không có concept, không kéo giãn concept', () => {
-    const m = table();
-    const bad = m.pool.find((f) => ['méo dáng', 'sai tỉ lệ thật', 'vượt hộp chỗ đặt'].includes(hardRejectOf(m, f, ctx) ?? '')) as string;
+  // Ghi chú (điều phối 13/11): trước đây concept lệch tỉ lệ hộp ("sai tỉ lệ thật"/"vượt hộp") cũng trượt; nay chỉ chất
+  // lượng/an toàn (méo dáng, va chạm, trần, giường, vân vỡ, QC) loại concept — lệch hộp thì giữ và dựng co đều.
+  const uniformOf = (w: number, d: number) => (x: string) => itemFitOf(x, w, d, undefined, CEIL * 1000, false, true)?.shownM;
+  it('concept méo dáng → bộ chọn chọn mẫu khác như không có concept, không kéo giãn concept', () => {
+    // Hộp hẹp dài: tìm hộp mà ít nhất một bàn méo dáng ở phép khớp thường.
+    const boxes: [number, number][] = [[1.6, 0.9], [1.6, 0.5], [2, 0.45], [1.2, 0.35]];
+    const [w, dd, bad] = boxes.flatMap(([bw, bd]) => {
+      const m0 = at('t', 'diningTable', null, bw, bd, 0, 0);
+      const f = m0.pool.find((x) => hardRejectOf(m0, x, ctx) === 'méo dáng');
+      return f === undefined ? [] : [[bw, bd, f] as const];
+    })[0] as readonly [number, number, string];
     expect(bad).toBeDefined();
-    const base = roomSetOf('R', [m], new Map(), ctx).get('t');
-    const d = roomSetOf('R', [table({ concept: { folder: bad } })], new Map(), ctx).get('t');
+    const base = roomSetOf('R', [at('t', 'diningTable', null, w, dd, 0, 0)], new Map(), ctx).get('t');
+    const d = roomSetOf('R', [at('t', 'diningTable', null, w, dd, 0, 0, { concept: { folder: bad, shownOf: uniformOf(w, dd) } })], new Map(), ctx).get('t');
     expect(d?.to).toBe(base?.to);
     expect(d?.to).not.toBe(bad);
     expect(d?.cause).not.toBe('concept');
-    expect(d?.why).toContain(`concept trượt: ${hardRejectOf(m, bad, ctx) ?? ''}`);
+    expect(d?.why).toContain('concept trượt: méo dáng');
+  });
+
+  it('concept chỉ lệch tỉ lệ hộp (sai tỉ lệ thật / vượt hộp, không méo) → GIỮ concept, dựng co đều (uniform), cỡ co đều vừa hộp', () => {
+    const m = table();
+    const lenient = m.pool.find((x) => {
+      const r = hardRejectOf(m, x, ctx);
+      return (r === 'sai tỉ lệ thật' || r === 'vượt hộp chỗ đặt') && hardRejectOf({ ...m, shownOf: uniformOf(1.6, 0.9) }, x, ctx, CONCEPT_LENIENT) === undefined;
+    }) as string;
+    expect(lenient).toBeDefined();
+    const d = roomSetOf('R', [table({ concept: { folder: lenient, shownOf: uniformOf(1.6, 0.9) } })], new Map(), ctx).get('t');
+    expect(d).toMatchObject({ to: lenient, cause: 'concept', uniform: true, why: expect.stringContaining('co đều') });
+    const fit = itemFitOf(lenient, 1.6, 0.9, undefined, CEIL * 1000, false, true);
+    const [sx, sy, sz] = fit?.scale ?? [0, 0, 0];
+    expect(sx).toBeCloseTo(sy, 9);
+    expect(sx).toBeCloseTo(sz, 9);
+    expect((fit?.shownM[0] ?? 9) <= 1.6 + 1e-9 && (fit?.shownM[2] ?? 9) <= 0.9 + 1e-9).toBe(true);
   });
 
   it('Codex M16-1 #2: pool không còn ứng viên lọt → ngân sách va chạm 0, concept chồng vật cản trượt', () => {
@@ -692,6 +716,17 @@ describe('vòng 16 — mẫu concept là ứng viên ưu tiên, không phải gh
           }),
         );
       }
+    });
+
+    it('concept lệch hộp qua sceneVariety: giữ concept, roomSetUniformOf = true (toPascal co đều); món có `model` không co đều', () => {
+      // Ghế ăn ở hộp 0,38 × 0,38 m cạnh bàn (hộp AI dò nhỏ): ghế thật ~0,55 m → sai tỉ lệ thật ở phép khớp thường, không méo.
+      const big = furniture('F-BIG', 'chair', 380, 380, 0, -700);
+      const concept = 'chair-dining-oak-rope-arm-b';
+      const got = pick([userTable, big], 'F-BIG', withConcept(concept));
+      expect(got).toBe(concept);
+      expect(entry('F-BIG')).toMatchObject({ cause: 'concept', uniform: true });
+      expect(roomSetUniformOf('F-BIG', concept)).toBe(true);
+      expect(roomSetUniformOf('F-T', 'table-oak-light-tapered-legs')).toBe(false);
     });
 
     it('Codex M16-1 #3: concept khác mẫu luật cũ (`from`) → roomSetSwapOf có quyết định (prov.model), cùng mốc với sổ', () => {
