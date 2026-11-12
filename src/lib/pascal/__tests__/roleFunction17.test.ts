@@ -111,3 +111,33 @@ describe('roleOf — vai đúng công năng (vòng 17)', () => {
     expect(entry?.doubt).toMatch(/chưa xác định/);
   });
 });
+
+describe('R7 — bàn nhỏ sát sofa trong phòng khách là bàn trà (lỗi ánh xạ vai, set17 cn21/cn22)', () => {
+  /** Dời hộp món tới góc (x, y) mm. */
+  const at = (f: Furniture, x: number, y: number): Furniture => {
+    const w = f.boundingBox.max.x - f.boundingBox.min.x;
+    const d = f.boundingBox.max.y - f.boundingBox.min.y;
+    return {
+      ...f,
+      centre: { x: millimetres(x + w / 2), y: millimetres(y + d / 2) },
+      boundingBox: { min: { x: millimetres(x), y: millimetres(y) }, max: { x: millimetres(x + w), y: millimetres(y + d) } },
+    };
+  };
+  const sofa = at(ai('sofa', 'chair', 2100, 900), 0, 0);
+  const table = at(ai('tbl', 'table', 840, 610), 600, 1200);
+
+  it('bàn 0,84 × 0,61 cách sofa 0,3 m, không ghế ăn → coffeeTable', () => {
+    expect(contextRolesOf([sofa, table], () => 'livingRoom').get(table.id)).toBe('coffeeTable');
+  });
+
+  it('có ghế ăn sát bàn → giữ vai bàn (không đổi)', () => {
+    const chair = at(ai('ch', 'chair', 450, 450), 1500, 1250);
+    expect(contextRolesOf([sofa, table, chair], () => 'livingRoom').get(table.id)).toBeUndefined();
+  });
+
+  it('bàn xa sofa (> 0,6 m) hoặc phòng khác → không đổi', () => {
+    const far = at(ai('far', 'table', 840, 610), 600, 2600);
+    expect(contextRolesOf([sofa, far], () => 'livingRoom').get(far.id)).toBeUndefined();
+    expect(contextRolesOf([sofa, table], () => 'kitchen').get(table.id)).toBeUndefined();
+  });
+});

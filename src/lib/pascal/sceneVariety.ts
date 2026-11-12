@@ -714,6 +714,13 @@ const baseFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, role
 const MAX_TOILETS_PER_ROOM = 2;
 /** Bàn nhỏ phòng ngủ là tủ đầu giường chỉ khi cách giường gần nhất ≤ chừng này (mm). */
 const NIGHTSTAND_MAX_GAP_MM = 300;
+/**
+ * R7 (set17 cn21/cn22: bàn 0,8 × 0,6 m sát sofa dựng thành bàn ăn cao 0,75 m): bàn nhỏ trong phòng khách sát sofa/ghế bành và
+ * không có ghế ăn quanh là bàn trà — lỗi ánh xạ vai, không đổi công năng phòng.
+ */
+const COFFEE_MAX_LONG_M = 1.3;
+const COFFEE_SOFA_GAP_MM = 600;
+const COFFEE_CHAIR_GAP_MM = 300;
 
 type Placed = Shaped & Pick<Furniture, 'id' | 'centre' | 'roomId' | 'confidence'>;
 
@@ -746,6 +753,12 @@ export const contextRolesOf = (
   for (const f of items) {
     const role = roleOf(f, usageOf(f));
     if (role === 'toilet' && f.roomId !== undefined) toiletsOf.set(f.roomId, [...(toiletsOf.get(f.roomId) ?? []), f]);
+    if ((role === 'diningTable' || role === 'desk') && usageOf(f) === 'livingRoom' && footprintOf(f)[1] <= COFFEE_MAX_LONG_M) {
+      const rect = rectOfFurniture(f);
+      const near = (r: FurnitureRole, gap: number): boolean =>
+        items.some((x) => x !== f && x.roomId === f.roomId && roleOf(x, usageOf(x)) === r && rectsOverlap(rect, rectOfFurniture(x), gap + 1));
+      if ((near('sofa', COFFEE_SOFA_GAP_MM) || near('armchair', COFFEE_SOFA_GAP_MM)) && !near('diningChair', COFFEE_CHAIR_GAP_MM)) roles.set(f.id, 'coffeeTable');
+    }
     if (role === 'nightstand') {
       const rect = rectOfFurniture(f);
       const nearBed = beds.some((bed) => rectsOverlap(rect, rectOfFurniture(bed), NIGHTSTAND_MAX_GAP_MM + 1));

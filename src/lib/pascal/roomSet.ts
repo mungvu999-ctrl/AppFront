@@ -1117,16 +1117,21 @@ export const roomSetOf = (
     const clear = (rect: PlanRect | undefined, budget = 0): boolean => hitOf(rect) <= budget + ROOM_OVERLAP_TOL_M2;
     /** Cỡ thật `d` vượt hộp không quá REAL_GROW_M mỗi trục mặt bằng. */
     const grows = (box: SetBox, d: Dims): boolean => d[0] <= box.w + REAL_GROW_M + 1e-9 && d[2] <= box.d + REAL_GROW_M + 1e-9;
+    /**
+     * R7 (set17: hộp sofa 2,1–2,8 m ra loveseat 1,4 m — cỡ thật mà vẫn như đồ thu nhỏ): trong dải hợp bộ chọn mẫu có cỡ thật GẦN
+     * hộp AI nhất (tổng lệch rộng + sâu), không phải nhỏ nhất. Trần REAL_GROW_M vẫn chặn mẫu to chắn lối (cn08).
+     */
+    const gapOf = (box: SetBox, d: Dims): number => Math.abs(d[0] - box.w) + Math.abs(d[2] - box.d);
     if (b !== undefined && m.sizeFrom !== 'user') {
       const real = realMemberOf(m);
       const fits = pool.flatMap((f) => {
         const d = ctx.dimsOf(f);
         if (d === undefined || !grows(b, d) || hardRejectOf(real, f, ctx, CONCEPT_LENIENT) !== undefined || !clear(realRectOf(m, b, d))) return [];
         const c = r9(costOf(f));
-        return c <= FAIL_COST ? [{ f, c, a: d[0] * d[2] }] : [];
+        return c <= FAIL_COST ? [{ f, c, a: gapOf(b, d) }] : [];
       });
       const best = Math.min(...fits.map((x) => x.c));
-      // Dải hợp bộ TRƯỚC, nhỏ nhất SAU (điều phối M17-2 #4): "nhỏ hơn đúng loại" nhưng không quay lại mẫu lạc tông ngoài dải.
+      // Dải hợp bộ TRƯỚC, gần cỡ hộp nhất SAU (R7; trước: nhỏ nhất, điều phối M17-2 #4): "nhỏ hơn đúng loại" nhưng không quay lại mẫu lạc tông ngoài dải.
       const pick = fits.filter((x) => x.c <= r9(best + SHARE_BAND)).sort((x, y) => x.a - y.a || x.c - y.c || x.f.localeCompare(y.f))[0];
       if (pick !== undefined) {
         return { to: pick.f, uniform: 'real', why: 'phương án cuối: mẫu nhỏ nhất đúng vai trong dải hợp bộ, ở cỡ thật (vượt hộp AI), không va chạm' };
@@ -1187,7 +1192,7 @@ export const roomSetOf = (
         if (d === undefined || !grows(b, d) || !wallOk(d) || !furnOk(realRectOf(m, b, d))) return [];
         if (f === st ? !stockOk(f) : hardRejectOf(real, f, ctx, CONCEPT_LENIENT) !== undefined) return [];
         const c = f === st ? FAIL_COST : r9(costOf(f));
-        return c <= FAIL_COST ? [{ f, d, c, a: d[0] * d[2] }] : [];
+        return c <= FAIL_COST ? [{ f, d, c, a: gapOf(b, d) }] : [];
       });
       // Thư viện trước (dải hợp bộ → nhỏ nhất, mức vượt hộp đã chặn ≤ REAL_GROW_M), mẫu dựng sẵn chỉ khi không còn mẫu thư viện.
       const lib = cands.filter((x) => x.f !== st);
@@ -1196,7 +1201,7 @@ export const roomSetOf = (
       const pick = from.filter((x) => x.c <= r9(cBest + SHARE_BAND)).sort((x, y) => x.a - y.a || x.c - y.c || x.f.localeCompare(y.f))[0];
       if (pick !== undefined) {
         const forced = [forbid ?? 'không mẫu luật cũ', ...(clear(realRectOf(m, b, pick.d)) ? [] : ['va chạm'])].filter((x, i, a) => a.indexOf(x) === i).join(', ');
-        return { to: pick.f, uniform: 'real', forced, why: `phương án cuối: ${pick.f === st ? 'mẫu dựng sẵn' : 'mẫu thư viện nhỏ nhất trong dải hợp bộ'} ở cỡ thật dù ${forced} (luật cũ không dùng được)` };
+        return { to: pick.f, uniform: 'real', forced, why: `phương án cuối: ${pick.f === st ? 'mẫu dựng sẵn' : 'mẫu thư viện gần cỡ hộp nhất trong dải hợp bộ'} ở cỡ thật dù ${forced} (luật cũ không dùng được)` };
       }
       // F8: không mẫu nào của vai vừa → mẫu NHỎ HƠN cùng nhóm đồ chứa, cùng kiểm (cỡ thật, ≤ REAL_GROW_M, không chồng tường/cửa/
       // đồ đạc, chất lượng + công năng theo vai mới). Vai mới ghi vào sổ (`role`) để dựng cảnh áp lưng / đo công năng đúng vai.
@@ -1208,7 +1213,7 @@ export const roomSetOf = (
           if (hardRejectOf(sm, f, ctx, CONCEPT_LENIENT) !== undefined) return [];
           // R5: cùng trần hợp bộ FAIL_COST như mọi tầng — kệ gỗ sẫm lạc bộ thà ẩn (giám khảo mù chê ch07/hin2).
           const c = r9(costOf(f));
-          return c <= FAIL_COST ? [{ f, c, a: d[0] * d[2] }] : [];
+          return c <= FAIL_COST ? [{ f, c, a: gapOf(b, d) }] : [];
         });
         const cMin = Math.min(...fit.map((x) => x.c));
         const sp = fit.filter((x) => x.c <= r9(cMin + SHARE_BAND)).sort((x, y) => x.a - y.a || x.c - y.c || x.f.localeCompare(y.f))[0];

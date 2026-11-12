@@ -195,6 +195,25 @@ describe('Codex M17-9 P2 — ngân sách đồ đạc tách khỏi tường ở 
   });
 });
 
+describe('R7 — cỡ thật: mẫu GẦN cỡ hộp nhất trong dải hợp bộ, không phải nhỏ nhất (set17 cn18–cn22)', () => {
+  const QS: Record<string, ModelQuality> = {
+    loveseat: q('sofa', [part('upholstery', 1, [80, 0, 5], 'fabric')]),
+    'sofa-3s': q('sofa', [part('upholstery', 1, [80, 0, 5], 'fabric')]),
+  };
+  const DS: Record<string, Dims> = { loveseat: [1.4, 0.85, 0.9], 'sofa-3s': [2.3, 0.85, 0.9] };
+  const ctx7: SetContext = { tierOf: () => 0, tiers: 5, dimsOf: (id) => DS[id], palette: {}, qualityOf: (id) => QS[id] };
+
+  it('hộp sofa 2,75 × 1,0 m: sofa 3 chỗ 2,3 m, không loveseat 1,4 m', () => {
+    const m = mem('s', 'sofa', ['loveseat', 'sofa-3s'], { current: null, box: { cx: 0, cy: 0, w: 2.75, d: 1.0, rot: 0 }, shownOf: stretch(2.75, 1.0) });
+    expect(roomSetOf('r', [m], new Map(), ctx7, []).get('s')).toMatchObject({ to: 'sofa-3s', uniform: 'real' });
+  });
+
+  it('hộp nhỏ 1,5 × 0,9 m: loveseat (gần hộp hơn), không sofa 3 chỗ', () => {
+    const m = mem('s', 'sofa', ['loveseat', 'sofa-3s'], { current: null, box: { cx: 0, cy: 0, w: 1.5, d: 0.6, rot: 0 }, shownOf: stretch(1.5, 0.6) });
+    expect(roomSetOf('r', [m], new Map(), ctx7, []).get('s')?.to).toBe('loveseat');
+  });
+});
+
 describe('I2 — vai bench (giường cỡ nhỏ đổi vai)', () => {
   it('hộp 0,81 × 0,86: không ép băng dài 1,5 m vào hộp — ra đôn nhỏ ở cỡ thật', () => {
     const m = mem('b', 'bench', ['bench-long', 'ottoman'], { current: null, box: { cx: 0, cy: 0, w: 0.81, d: 0.86, rot: 0 }, shownOf: stretch(0.81, 0.86) });
