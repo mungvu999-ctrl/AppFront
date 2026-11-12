@@ -112,6 +112,8 @@ import {
   isThinSink,
   modelFolderOf,
   roleOf,
+  roomSetRejectedOf,
+  roomSetRoleOf,
   roomSetSwapOf,
   roomSetUniformOf,
   setRoomSetKeys,
@@ -905,8 +907,8 @@ const itemNodeOf = (
   usage?: RoomUsage,
   /** Độ nâng khi cả món lẫn variant không có `liftMm` (mặt bếp trên mặt đá). */
   baseLiftMm = 0,
-  /** Mẫu thay cho mẫu tự chọn (dãy tủ có chậu mỏng nằm trên). */
-  folderOverride?: string,
+  /** Mẫu thay cho mẫu tự chọn (dãy tủ có chậu mỏng nằm trên). `null` = bộ chọn đã từ chối mọi mẫu (khung giữ chỗ), không chọn lại. */
+  folderOverride?: string | null,
   /** Cặp nhận: khớp đúng hộp bao + `heightMm` từng trục (hộp là cỡ nhìn thấy lúc lưu, kể cả khi người dùng co giãn). */
   exactFit = false,
 ): PascalItemNode => {
@@ -917,7 +919,9 @@ const itemNodeOf = (
   const swappedFolder = furniture.model?.src.match(SWAPPED_MODEL_SRC)?.[1];
   const folder =
     furniture.model === undefined
-      ? (folderOverride ?? furnitureFolderOf(furniture, style, usage))
+      ? folderOverride === undefined
+        ? furnitureFolderOf(furniture, style, usage)
+        : folderOverride
       : swappedFolder !== undefined &&
           Object.prototype.hasOwnProperty.call(CATALOG_MODELS, swappedFolder)
         ? swappedFolder
@@ -953,7 +957,9 @@ const itemNodeOf = (
           exactFit,
           uniform,
           // Codex M17-3 #2: cùng vai hiệu lực như roomSet.realRectOf (áp lưng tường của mẫu dựng sẵn).
-          uniform === 'real' ? roleOf(furniture, usage) : undefined,
+          uniform === 'real'
+            ? (roomSetRoleOf(furniture.id) ?? roleOf(furniture, usage))
+            : undefined,
         );
   const heightM = fit?.heightM ?? heightOfFurniture(furniture, levelHeightMm);
   const liftMm = furniture.liftMm ?? model?.liftMm ?? baseLiftMm;
@@ -1667,7 +1673,10 @@ export const toPascalScene = (
       sinkFolderOf(furniture, furnitureToBuild, usageOf) ??
       (contextRole === undefined
         ? undefined
-        : (modelFolderOf(furniture, style, usage, contextRole) ?? undefined));
+        : // Codex M17-4 #2: bộ chọn đã TỪ CHỐI rõ mọi mẫu (sổ `to: null`) → giữ null (khung giữ chỗ), không để itemNodeOf
+          // chọn lại theo vai gốc. `null` thường (dùng mẫu mặc định) vẫn như cũ.
+          (modelFolderOf(furniture, style, usage, contextRole) ??
+          (roomSetRejectedOf(furniture.id) ? null : undefined)));
     // Mẫu luật chọn của món đã nhận dựng như đồ sinh (cùng đường hoán đổi hiển thị) + ghi lại thư mục để lượt về giữ.
     const ruleFolder = ruleFolderOf(furniture);
     const built = ruleFolder === undefined ? furniture : withoutModel(furniture);

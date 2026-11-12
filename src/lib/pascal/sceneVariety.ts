@@ -1074,6 +1074,15 @@ export const roomSetUniformOf = (id: string, folder: string): boolean | 'real' =
   return d !== undefined && d.to === folder ? (d.uniform ?? false) : false;
 };
 
+/** Vai HIỆU LỰC bộ chọn đã dùng cho món trong lượt dựng (kể cả vai ngữ cảnh) — dựng cảnh áp lưng tường theo đúng vai này (Codex M17-4 #1). */
+export const roomSetRoleOf = (id: string): string | undefined => SET_LOG.get(id)?.role;
+
+/** Bộ chọn đã từ chối mọi mẫu cho món (phương án cuối `to: null`) trong lượt dựng hiện tại. */
+export const roomSetRejectedOf = (id: string): boolean => {
+  const d = SET_LOG.get(id);
+  return d !== undefined && d.to === null;
+};
+
 /** Món đổi mẫu do `roomset` trong lượt dựng hiện tại (toPascal ghi provenance; đồ người dùng xác nhận không mang prov `ai`). */
 export const roomSetSwapOf = (id: string): SetDecision | undefined => {
   const d = SET_LOG.get(id);

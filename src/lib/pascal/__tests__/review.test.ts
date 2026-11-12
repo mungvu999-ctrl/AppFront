@@ -117,6 +117,12 @@ describe('trạng thái duyệt chỉ đi qua `metadata.appfront`', () => {
 });
 
 describe('bề rộng bao nội thất theo `scale` (#21)', () => {
+  // Vòng 17: món dựng CỠ THẬT (`realFit`) lưu theo cỡ NHÌN THẤY × scale (realFit17.test.ts) — #21 kiểm phép đọc `scale`
+  // chung nên lấy món khớp hộp thường.
+  const firstItem = (scene: PascalScene): PascalItemNode =>
+    (Object.values(scene.nodes).find(
+      (n) => n.type === 'item' && !isGeneratedLightId(n.id) && n.metadata?.appfront?.fields?.['realFit'] === undefined,
+    ) as PascalItemNode | undefined) ?? firstOfType(scene, 'item');
   const widthOf = (furniture: Furniture): number =>
     furniture.boundingBox.max.x - furniture.boundingBox.min.x;
   const depthOf = (furniture: Furniture): number =>
@@ -134,7 +140,7 @@ describe('bề rộng bao nội thất theo `scale` (#21)', () => {
 
   it('tỉ lệ 1 giữ nguyên đúng số mm đã lưu, không qua mét rồi về', () => {
     const scene = sceneOf();
-    const item = firstOfType(scene, 'item');
+    const item = firstItem(scene);
     const stored = item.metadata?.appfront?.fields?.['boundingBox'] as Furniture['boundingBox'];
 
     expect(itemBack(scene, item).boundingBox).toEqual(stored);
@@ -142,7 +148,7 @@ describe('bề rộng bao nội thất theo `scale` (#21)', () => {
 
   it('kéo rộng gấp đôi thì bề rộng về gấp đôi, chiều sâu không đổi', () => {
     const scene = sceneOf();
-    const item = firstOfType(scene, 'item');
+    const item = firstItem(scene);
     const before = itemBack(scene, item);
 
     const wider = itemBack(scene, { ...item, scale: [2, 1, 1] });
@@ -153,7 +159,7 @@ describe('bề rộng bao nội thất theo `scale` (#21)', () => {
 
   it('kéo sâu gấp rưỡi thì chiều sâu về gấp rưỡi', () => {
     const scene = sceneOf();
-    const item = firstOfType(scene, 'item');
+    const item = firstItem(scene);
     const before = itemBack(scene, item);
 
     const deeper = itemBack(scene, { ...item, scale: [1, 1, 1.5] });
@@ -164,7 +170,7 @@ describe('bề rộng bao nội thất theo `scale` (#21)', () => {
 
   it('kéo vẫn giữ tâm món đồ tại chỗ', () => {
     const scene = sceneOf();
-    const item = firstOfType(scene, 'item');
+    const item = firstItem(scene);
     const before = itemBack(scene, item);
     const scaled = itemBack(scene, { ...item, scale: [2, 1, 2] });
 
@@ -179,7 +185,7 @@ describe('bề rộng bao nội thất theo `scale` (#21)', () => {
 
   it('món đồ Pascal vừa đặt (chưa có hộp đã lưu) lấy `dimensions × scale`', () => {
     const scene = sceneOf();
-    const item = firstOfType(scene, 'item');
+    const item = firstItem(scene);
     const fresh: PascalItemNode = {
       ...item,
       id: 'item_m3k8d1pq',

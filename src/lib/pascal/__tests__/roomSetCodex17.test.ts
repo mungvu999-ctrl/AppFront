@@ -73,6 +73,16 @@ const mem = (id: string, role: string, pool: string[], extra: Partial<SetMember>
 const BOX = { cx: 0, cy: 0, w: 2, d: 0.85, rot: 0 };
 /** Toàn phòng bị chặn: không cỡ thật nào đặt được → đi tới luật cũ / mẫu dựng sẵn. */
 const ALL: SetZone = { cx: 0, cy: 0, w: 9, d: 9, rotationDeg: 0 };
+/**
+ * Điều phối M17-4: mẫu khớp TRONG hộp chỉ va chạm khi chồng THÊM quá phần chính hộp đã chồng — `ALL` chồng cả hộp nên mẫu
+ * trong hộp không còn va chạm. Hộp hẹp 1,0 m kẹp giữa hai vùng chặn sát mép (hộp chồng 0): mẫu hiển thị rộng hơn hộp
+ * (`shownOf` = cỡ catalog, vd sofa-old 1,5 m, sofa 2,0 m) chồng thêm → va chạm; cỡ thật cũng chồng.
+ */
+const NARROW = { ...BOX, w: 1.0 };
+const FLANK: SetZone[] = [
+  { cx: 2.5, cy: 0, w: 4, d: 9, rotationDeg: 0 },
+  { cx: -2.5, cy: 0, w: 4, d: 9, rotationDeg: 0 },
+];
 
 describe('#2 — phương án cuối không bao giờ trả mẫu cấm', () => {
   it('luật cũ có lỗi QC, không mẫu dựng sẵn → null, sổ ghi lý do (không trả mẫu QC)', () => {
@@ -83,9 +93,9 @@ describe('#2 — phương án cuối không bao giờ trả mẫu cấm', () => 
   });
 
   it('luật cũ vân vỡ → mẫu dựng sẵn khi nó đặt được, không thì null', () => {
-    const m = mem('s', 'sofa', [], { current: 'sofa-broken', stock: 'sofa', box: BOX, shownOf: (f) => DIMS[f] });
+    const m = mem('s', 'sofa', [], { current: 'sofa-broken', stock: 'sofa', box: NARROW, shownOf: (f) => DIMS[f] });
     expect(roomSetOf('r', [m], new Map(), ctx).get('s')?.to).toBe('sofa');
-    const d = roomSetOf('r', [m], new Map(), ctx, [ALL]).get('s');
+    const d = roomSetOf('r', [m], new Map(), ctx, FLANK).get('s');
     expect(d?.to).toBeNull();
     expect(d?.why).toMatch(/vân vỡ/);
   });
@@ -107,9 +117,10 @@ describe('#2 — phương án cuối không bao giờ trả mẫu cấm', () => 
 });
 
 describe('#4 — mẫu dựng sẵn qua cùng kiểm va chạm và hở trần', () => {
-  // Luật cũ hẹp 1,5 m (thiếu dữ liệu chất lượng → thử mẫu dựng sẵn) ở giữa hộp 2 m; vật cản x ∈ [0,8; 1,5].
+  // Luật cũ 1,5 m (thiếu dữ liệu chất lượng → thử mẫu dựng sẵn) khớp hộp 1,5 m; vật cản x ∈ [0,8; 1,5] ngoài hộp. Mẫu dựng
+  // sẵn hiển thị 2 m vượt hộp, chồng vật cản THÊM so với hộp (điều phối M17-4: hộp 2 m chồng sẵn → mẫu 2 m không còn trượt).
   const post: SetZone = { cx: 1.15, cy: 0, w: 0.7, d: 2, rotationDeg: 0 };
-  const base = mem('s', 'sofa', [], { current: 'sofa-old', stock: 'sofa', box: BOX, shownOf: (f) => DIMS[f] });
+  const base = mem('s', 'sofa', [], { current: 'sofa-old', stock: 'sofa', box: { ...BOX, w: 1.5 }, shownOf: (f) => DIMS[f] });
 
   it('tiền đề: không vật cản → mẫu dựng sẵn', () => {
     expect(roomSetOf('r', [base], new Map(), ctx).get('s')?.to).toBe('sofa');
@@ -220,11 +231,22 @@ describe('#3 — vai trung tính không ra mẫu giường (mọi đường mẫ
 
 describe('Codex M17-2 #1, #2 — luật cũ / mẫu dựng sẵn ở phương án cuối', () => {
   it('#1: luật cũ chồng vùng chặn → null, sổ ghi va chạm (không vùng chặn → giữ luật cũ)', () => {
-    const m = mem('s', 'sofa', [], { current: 'sofa-old', box: BOX, shownOf: (f) => DIMS[f] });
+    const m = mem('s', 'sofa', [], { current: 'sofa-old', box: NARROW, shownOf: (f) => DIMS[f] });
     expect(roomSetOf('r', [m], new Map(), ctx).get('s')?.to).toBe('sofa-old');
-    const d = roomSetOf('r', [m], new Map(), ctx, [ALL]).get('s');
+    const d = roomSetOf('r', [m], new Map(), ctx, FLANK).get('s');
     expect(d?.to).toBeNull();
     expect(d?.why).toMatch(/bị cấm \(va chạm\)/);
+  });
+
+  it('điều phối M17-4: hộp AI tự chồng vùng chặn 0,1 m², luật cũ trong hộp không chồng thêm → giữ luật cũ (không forced, không null)', () => {
+    // Hộp 2 × 1 m (x ∈ [−1; 1]); vùng chặn x ∈ [0,9; 1,1] → hộp chồng 0,1 × 1 = 0,1 m². Luật cũ sofa-ok 2 × 0,9 m chồng
+    // 0,09 m² ≤ phần của hộp. Kiểm tuyệt đối (trước M17-4) → "va chạm" → mẫu dựng sẵn cỡ thật forced.
+    const wall: SetZone = { cx: 1, cy: 0, w: 0.2, d: 2, rotationDeg: 0 };
+    const m = mem('s', 'sofa', [], { current: 'sofa-ok', stock: 'sofa', box: { ...BOX, d: 1 }, shownOf: (f) => DIMS[f] });
+    const d = roomSetOf('r', [m], new Map(), ctx, [wall]).get('s');
+    expect(d?.to).toBe('sofa-ok');
+    expect(d?.forced).toBeUndefined();
+    expect(d?.uniform).not.toBe('real');
   });
 
   it('#1: cỡ người dùng xác nhận — hộp đã chồng vùng chặn, luật cũ trong hộp không chồng thêm → giữ luật cũ', () => {
@@ -233,9 +255,9 @@ describe('Codex M17-2 #1, #2 — luật cũ / mẫu dựng sẵn ở phương á
   });
 
   it('#1: luật cũ chồng vùng chặn nhưng mẫu dựng sẵn hẹp không chồng → mẫu dựng sẵn', () => {
-    // Vật cản x ∈ [0,8; 1,5]: luật cũ rộng 2 m chồng, mẫu dựng sẵn rộng 1,5 m (x ∈ [−0,75; 0,75]) không.
+    // Vật cản x ∈ [0,8; 1,5] ngoài hộp 1,5 m: luật cũ hiển thị 2 m chồng thêm, mẫu dựng sẵn rộng 1,5 m (x ∈ [−0,75; 0,75]) không.
     const post: SetZone = { cx: 1.15, cy: 0, w: 0.7, d: 2, rotationDeg: 0 };
-    const m = mem('s', 'sofa', [], { current: 'sofa', stock: 'sofa-old', box: BOX, shownOf: (f) => DIMS[f] });
+    const m = mem('s', 'sofa', [], { current: 'sofa', stock: 'sofa-old', box: { ...BOX, w: 1.5 }, shownOf: (f) => DIMS[f] });
     const d = roomSetOf('r', [m], new Map(), ctx, [post]).get('s');
     expect(d?.to).toBe('sofa-old');
     expect(d?.why).toMatch(/luật cũ trượt \(va chạm\)/);
@@ -269,34 +291,34 @@ describe('Codex M17-2 #1, #2 — luật cũ / mẫu dựng sẵn ở phương á
 
 describe('Điều phối M17-2 — null chỉ vì va chạm / ngoài công năng → mẫu dựng sẵn CỠ THẬT (cờ forced)', () => {
   it('luật cũ chồng vùng chặn, có mẫu dựng sẵn → mẫu dựng sẵn cỡ thật dù va chạm, cause fallback + forced', () => {
-    const m = mem('s', 'sofa', [], { current: 'sofa-old', stock: 'sofa', box: BOX, shownOf: (f) => DIMS[f] });
-    const d = roomSetOf('r', [m], new Map(), ctx, [ALL]).get('s');
+    const m = mem('s', 'sofa', [], { current: 'sofa-old', stock: 'sofa', box: NARROW, shownOf: (f) => DIMS[f] });
+    const d = roomSetOf('r', [m], new Map(), ctx, FLANK).get('s');
     expect(d).toMatchObject({ to: 'sofa', uniform: 'real', cause: 'fallback', forced: 'va chạm' });
     expect(d?.why).toMatch(/cỡ thật dù va chạm/);
   });
 
   it('không mẫu luật cũ → mẫu dựng sẵn cỡ thật (forced ghi "không mẫu luật cũ")', () => {
-    const m = mem('s', 'sofa', [], { current: null, stock: 'sofa', box: BOX, shownOf: (f) => DIMS[f] });
-    expect(roomSetOf('r', [m], new Map(), ctx, [ALL]).get('s')).toMatchObject({ to: 'sofa', uniform: 'real', forced: expect.stringContaining('không mẫu luật cũ') });
+    const m = mem('s', 'sofa', [], { current: null, stock: 'sofa', box: NARROW, shownOf: (f) => DIMS[f] });
+    expect(roomSetOf('r', [m], new Map(), ctx, FLANK).get('s')).toMatchObject({ to: 'sofa', uniform: 'real', forced: expect.stringContaining('không mẫu luật cũ') });
   });
 
   it('mẫu luật cũ CHÍNH LÀ mẫu dựng sẵn, trượt → vẫn được dựng cỡ thật (đổi phép khớp, cùng mẫu) — Codex M17-3 #1', () => {
-    const m = mem('s', 'sofa', [], { current: 'sofa', stock: 'sofa', box: BOX, shownOf: (f) => DIMS[f] });
-    const d = roomSetOf('r', [m], new Map(), ctx, [ALL]).get('s');
+    const m = mem('s', 'sofa', [], { current: 'sofa', stock: 'sofa', box: NARROW, shownOf: (f) => DIMS[f] });
+    const d = roomSetOf('r', [m], new Map(), ctx, FLANK).get('s');
     expect(d?.to).toBe('sofa');
     expect(d?.uniform).toBe('real');
   });
 
   it('mẫu dựng sẵn cỡ thật vượt trần → vẫn null (trần không được bỏ qua)', () => {
     // Trần 1,2 − 0,3 = 0,9: luật cũ cao 0,85 qua trần nhưng va chạm; mẫu dựng sẵn cao 0,95 không.
-    const m = mem('s', 'sofa', [], { current: 'sofa-old', stock: 'sofa-tall', box: BOX, ceilingM: 1.2, shownOf: (f) => DIMS[f] });
-    expect(roomSetOf('r', [m], new Map(), ctx, [ALL]).get('s')?.to).toBeNull();
+    const m = mem('s', 'sofa', [], { current: 'sofa-old', stock: 'sofa-tall', box: NARROW, ceilingM: 1.2, shownOf: (f) => DIMS[f] });
+    expect(roomSetOf('r', [m], new Map(), ctx, FLANK).get('s')?.to).toBeNull();
   });
 
   it('lý do an toàn/chất lượng (có lỗi QC) → null dù có mẫu dựng sẵn; người dùng xác nhận không dựng cỡ thật', () => {
-    const qc = mem('s', 'sofa', [], { current: 'sofa-qc', stock: 'sofa', box: BOX, shownOf: (f) => DIMS[f] });
-    expect(roomSetOf('r', [qc], new Map(), ctx, [ALL]).get('s')?.to).toBeNull();
-    const user = mem('s', 'sofa', [], { current: null, stock: 'sofa', box: BOX, sizeFrom: 'user', shownOf: (f) => DIMS[f] });
-    expect(roomSetOf('r', [user], new Map(), ctx, [ALL]).get('s')?.uniform).not.toBe('real');
+    const qc = mem('s', 'sofa', [], { current: 'sofa-qc', stock: 'sofa', box: NARROW, shownOf: (f) => DIMS[f] });
+    expect(roomSetOf('r', [qc], new Map(), ctx, FLANK).get('s')?.to).toBeNull();
+    const user = mem('s', 'sofa', [], { current: null, stock: 'sofa', box: NARROW, sizeFrom: 'user', shownOf: (f) => DIMS[f] });
+    expect(roomSetOf('r', [user], new Map(), ctx, FLANK).get('s')?.uniform).not.toBe('real');
   });
 });

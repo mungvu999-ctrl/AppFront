@@ -1120,10 +1120,11 @@ export const roomSetOf = (
     }
     const cur = m.current;
     const conceptMissOf = (f: string): string | undefined => (ev.concept?.f === f ? ev.concept.miss : undefined);
-    // Codex M17-2 #1: luật cũ cũng qua cùng kiểm va chạm (mặt bằng hiển thị, `clear`) như mẫu dựng sẵn / cỡ thật. Cỡ người
-    // dùng xác nhận: hộp là bố cục của người dùng — mẫu chỉ không được chồng THÊM quá phần hộp đã chồng.
-    const userHit = m.sizeFrom === 'user' && b !== undefined ? hitOf(boxRectOf(b)) : 0;
-    const forbid = cur === null ? undefined : (forbiddenOf(m, cur, conceptMissOf(cur)) ?? (clear(shownRectOf(m, cur), userHit) ? undefined : 'va chạm'));
+    // Codex M17-2 #1: luật cũ cũng qua cùng kiểm va chạm (mặt bằng hiển thị, `clear`) như mẫu dựng sẵn / cỡ thật. Mẫu khớp
+    // TRONG hộp (luật cũ, dựng sẵn) chỉ không được chồng THÊM quá phần chính hộp đã chồng (hộp AI chạm tường do sai số dò;
+    // hộp người dùng là bố cục của họ) — kiểm tuyệt đối từng đẩy bàn AI 0,8 m nằm gọn trong hộp sang cỡ thật to hơn, chồng hơn.
+    const boxHit = b !== undefined ? hitOf(boxRectOf(b)) : 0;
+    const forbid = cur === null ? undefined : (forbiddenOf(m, cur, conceptMissOf(cur)) ?? (clear(shownRectOf(m, cur), boxHit) ? undefined : 'va chạm'));
     const dims = cur === null ? undefined : ctx.dimsOf(cur);
     const shown = cur === null ? undefined : (m.shownOf?.(cur) ?? dims);
     const r = cur === null ? undefined : hardRejectOf(m, cur, ctx);
@@ -1142,7 +1143,7 @@ export const roomSetOf = (
         ss !== undefined &&
         !distorted(sd, ss) &&
         forbiddenOf(m, st, conceptMissOf(st)) === undefined &&
-        clear(m.lifted === true ? undefined : shownRectOf(m, st));
+        clear(m.lifted === true ? undefined : shownRectOf(m, st), boxHit);
       if (stockOk) {
         return { to: st, why: `phương án cuối: mẫu dựng sẵn của vai — ${cur === null ? 'không mẫu luật cũ' : `luật cũ trượt (${slip ?? ''})`}` };
       }
