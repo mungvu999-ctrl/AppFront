@@ -7,6 +7,7 @@
 import { millimetres, millimetresToMetres } from '@/domain/units/types';
 
 import { CATALOG_MODELS } from './furnitureCatalog';
+import { qualityOf } from './libraryQuality';
 import type { PascalVec3 } from './types';
 
 const metresOf = (valueMm: number): number => millimetresToMetres(millimetres(valueMm));
@@ -48,6 +49,8 @@ const FIT_HEIGHT_MAX = 1.1;
 const clampTo = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 /** `heightMm` là bề dày tấm trên bản vẽ (mặt bếp 20 mm), không phải cao mẫu: khớp theo mặt bằng, giữ cao thật. */
 const OWN_HEIGHT_FOLDERS: ReadonlySet<string> = new Set(['hob-sf']);
+/** Vai ngồi/bàn (libraryQuality): cao giữ thật khi không có `heightMm`. */
+const SEAT_TABLE_ROLES: ReadonlySet<string> = new Set(['sofa', 'armchair', 'diningChair', 'bench', 'diningTable', 'desk', 'coffeeTable']);
 
 export interface ItemFit {
   readonly folder: string;
@@ -71,7 +74,7 @@ export const itemFitOf = (
   heightMm: number | undefined,
   levelHeightMm: number,
   exactFit = false,
-  uniform = false,
+  uniform: boolean | 'real' = false,
 ): ItemFit | null => {
   const catalog = CATALOG_MODELS[folder];
   if (catalog === undefined) {
@@ -90,13 +93,17 @@ export const itemFitOf = (
   // quay theo `rotationDeg` — nên `rx`/`rz` so trục riêng với trục mẫu, không đụng `asset.rotation`.
   const rx = widthM / cw;
   const rz = depthM / cd;
+  // Vòng 17: đồ ngồi/bàn không có `heightMm` giữ CAO THẬT (sy = 1) — cao ngồi/mặt bàn không theo tỉ lệ mặt bằng (hộp nhỏ
+  // từng hạ bàn ăn còn 0,67 m).
+  const keepH = fixedH === undefined && SEAT_TABLE_ROLES.has(qualityOf(folder)?.role ?? '');
   const heightOf = (ref: number): number =>
-    fixedH === undefined ? Math.min(clampTo(ref, FIT_HEIGHT_MIN, FIT_HEIGHT_MAX), maxH / ch) : fixedH / ch;
+    fixedH === undefined ? Math.min(keepH ? 1 : clampTo(ref, FIT_HEIGHT_MIN, FIT_HEIGHT_MAX), maxH / ch) : fixedH / ch;
   // Không trục mặt bằng nào vượt hộp bao (FE-H): biên [0,8; 1,25] chỉ chống co thiếu — mẫu khác dáng
   // hộp (chậu, tủ đầu giường, kệ nông) từng phình gấp đôi hộp ở trục bị chặn.
   const [ax, sy, az] = ((): PascalVec3 => {
     if (uniform) {
-      const s = Math.min(rx, rz, 1, metresOf(levelHeightMm) / ch);
+      // 'real' (vòng 17, phương án cuối roomSet): CỠ THẬT, được vượt hộp AI chưa xác nhận; chỉ chặn trần.
+      const s = Math.min(uniform === 'real' ? 1 : Math.min(rx, rz), 1, metresOf(levelHeightMm) / ch);
       return [s, s, s];
     }
     if (exactFit) return [rx, heightMm === undefined ? heightOf(Math.sqrt(rx * rz)) : metresOf(heightMm) / ch, rz];

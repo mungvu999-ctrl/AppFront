@@ -101,7 +101,7 @@ const metresOf = (valueMm: number): number => millimetresToMetres(millimetres(va
 
 /** `reviewed`/`source`/`model` chỉ đọc khi có (đối tượng đầy đủ lúc dựng cảnh) — thiếu = coi như KHÔNG tự động. */
 type Shaped = Pick<Furniture, 'kind' | 'variant' | 'boundingBox' | 'rotationDeg'> &
-  Partial<Pick<Furniture, 'heightMm' | 'reviewed' | 'source' | 'model'>>;
+  Partial<Pick<Furniture, 'heightMm' | 'reviewed' | 'source' | 'model' | 'confidence' | 'edited' | 'slots'>>;
 
 /** Cạnh ngắn/dài của mặt bằng (m) — không phụ thuộc hộp đã xoay 90° hay chưa. */
 const footprintOf = (f: Shaped): readonly [number, number] => {
@@ -156,7 +156,7 @@ const DESK_USAGES: ReadonlySet<RoomUsage | undefined> = new Set([undefined, 'bed
  * theo hình hộp. C2 — chỉ đổi loại khi có bằng chứng: ghế dài là sofa/ghế băng ở mọi phòng,
  * tủ lạnh chỉ từ variant, tủ áo nông vẫn là tủ; bàn trà vẫn chỉ ở phòng khách.
  */
-export const roleOf = (f: Shaped, usage?: RoomUsage): FurnitureRole => {
+const shapeRoleOf = (f: Shaped, usage?: RoomUsage): FurnitureRole => {
   const byVariant = variantModelOf(f);
   if (byVariant) return roleOfFolder(byVariant.folder);
   const living = usage === 'livingRoom';
@@ -201,6 +201,86 @@ export const roleOf = (f: Shaped, usage?: RoomUsage): FurnitureRole => {
       if (usage === 'kitchen') return short >= KITCHEN_FRIDGE_MIN_M ? 'cabinet' : 'cooktop';
       return 'cabinet';
   }
+};
+
+/**
+ * L1 (vòng 17) — giường chỉ khi hộp đủ cỡ giường. Giường đơn hẹp nhất thực tế ~0,75 × 1,9 m (small single); cạnh dài
+ * cho dung sai hộp dò ~15 % (1,9 × 0,85 ≈ 1,6). Thư viện: profile `doubleBed` (libraryRoles.json) p-thấp dài 2031 /
+ * ngắn 1502 mm; `singleBed` chưa có profile (5 mẫu). Hộp 0,81 × 0,86 m hay 0,91 × 0,51 m không phải giường nào.
+ */
+const BED_MIN_SHORT_M = 0.75;
+const BED_MIN_LONG_M = 1.6;
+const BED_ROLES: ReadonlySet<FurnitureRole> = new Set(['doubleBed', 'singleBed']);
+/** L2 — vai đặc thù chỉ hợp các công năng này (vắng công năng = không xét); bếp mở nằm trong phòng khách, WC riêng trong phòng ngủ. */
+const BED_USAGES: ReadonlySet<RoomUsage> = new Set(['bedroom', 'other']);
+const KITCHEN_USAGES: ReadonlySet<RoomUsage> = new Set(['kitchen', 'livingRoom', 'other']);
+const WC_USAGES: ReadonlySet<RoomUsage> = new Set(['bathroom', 'bedroom', 'other']);
+const ROLE_USAGES: Partial<Record<FurnitureRole, ReadonlySet<RoomUsage>>> = {
+  doubleBed: BED_USAGES,
+  singleBed: BED_USAGES,
+  counter: KITCHEN_USAGES,
+  cooktop: KITCHEN_USAGES,
+  kitchenSink: KITCHEN_USAGES,
+  fridge: KITCHEN_USAGES,
+  toilet: WC_USAGES,
+  bathtub: WC_USAGES,
+  shower: WC_USAGES,
+};
+/** Món AI dưới độ tin cậy này ở phòng ngoài bảng → vai chưa chắc. */
+const ROLE_DOUBT_CONFIDENCE = 0.7;
+/** Hộp ngoài [p-thấp / 1,4; p-cao × 1,4] của profile vai (libraryRoles.json) → cỡ không phải vai ấy. */
+const PROFILE_SLACK = 1.4;
+const PROFILES = (LIBRARY_ROLES_JSON as { readonly profiles?: Readonly<Record<string, { readonly long: readonly number[]; readonly short: readonly number[] }>> })
+  .profiles ?? {};
+const outOfProfile = (f: Shaped, role: FurnitureRole): boolean => {
+  const p = PROFILES[role];
+  if (p === undefined) return false;
+  const [short, long] = footprintOf(f).map((m) => m * 1000) as [number, number];
+  const out = (v: number, band: readonly number[]): boolean =>
+    v < (band[0] as number) / PROFILE_SLACK || v > (band[band.length - 1] as number) * PROFILE_SLACK;
+  return out(long, p.long) || out(short, p.short);
+};
+/** Món AI chưa ai xác nhận (không reviewed/human/edited, không mẫu/khe người dùng): thiếu trường = coi như đã xác nhận. */
+const isUnconfirmedAi = (f: Shaped): boolean =>
+  f.reviewed === false && f.source !== 'human' && f.edited !== true && f.model === undefined && f.slots === undefined;
+const fmt = (m: number): string => m.toFixed(2).replace('.', ',');
+
+/**
+ * Lý do vai theo hình (`shapeRoleOf`) của món AI chưa xác nhận là CHƯA XÁC ĐỊNH (vắng = vai tin được):
+ * L1 hộp không đủ cỡ giường; L2 vai đặc thù ở phòng ngoài bảng `ROLE_USAGES` mà tin cậy < 0,7 hoặc cỡ ngoài profile vai.
+ * Món tin cậy cao, đúng cỡ (giường đôi 2,3 × 2,6 m trong phòng khách — có thể phòng đa năng) giữ vai.
+ * Sổ bộ phòng (`roomSetReport`, trường `doubt`) ghi lý do này.
+ */
+export const roleDoubtOf = (f: Shaped, usage?: RoomUsage): string | undefined => {
+  if (!isUnconfirmedAi(f)) return undefined;
+  const role = shapeRoleOf(f, usage);
+  const [short, long] = footprintOf(f);
+  if (BED_ROLES.has(role) && (short < BED_MIN_SHORT_M || long < BED_MIN_LONG_M))
+    return `chưa xác định: hộp ${fmt(short)} × ${fmt(long)} m không đủ cỡ giường`;
+  const allowed = ROLE_USAGES[role];
+  if (allowed === undefined || usage === undefined || allowed.has(usage)) return undefined;
+  const lowConf = f.confidence !== undefined && f.confidence < ROLE_DOUBT_CONFIDENCE;
+  if (!lowConf && !outOfProfile(f, role)) return undefined;
+  const why = lowConf ? `tin cậy ${fmt(f.confidence as number)}` : `hộp ${fmt(short)} × ${fmt(long)} m ngoài cỡ vai`;
+  return `chưa xác định: vai ${role} không hợp phòng ${usage}, ${why}`;
+};
+
+/**
+ * Vai trung tính của món vai chưa xác định: "giường" thấp (hoặc không rõ cao) → ghế đôn/băng; còn lại (giường cao, tủ bếp,
+ * thiết bị vệ sinh) → hộp tủ trung tính. Không sinh mẫu giường thu nhỏ.
+ */
+const NEUTRAL_LOW_MAX_M = 0.6;
+const neutralRoleOf = (f: Shaped, role: FurnitureRole): FurnitureRole =>
+  BED_ROLES.has(role) && (f.heightMm === undefined || metresOf(f.heightMm) < NEUTRAL_LOW_MAX_M) ? 'bench' : 'cabinet';
+
+/**
+ * Vai trò của một món: có mô hình variant thì theo mô hình đó, không thì theo hình hộp (`shapeRoleOf`); món AI chưa
+ * xác nhận có vai chưa xác định (`roleDoubtOf`, L1/L2 vòng 17) → vai trung tính. Một chỗ chung cho editor, viewer,
+ * toPascal, lớp bày/trang trí. Đồ người dùng xác nhận không đổi vai.
+ */
+export const roleOf = (f: Shaped, usage?: RoomUsage): FurnitureRole => {
+  const role = shapeRoleOf(f, usage);
+  return roleDoubtOf(f, usage) === undefined ? role : neutralRoleOf(f, role);
 };
 
 /**
@@ -776,7 +856,7 @@ export const setRoomSetKeys = (
 /** Quyết định đã chốt trong lượt dựng theo đối tượng phong cách (mỗi lượt một đối tượng); `contextRolesOf` làm mới. */
 let setPlans = new WeakMap<SceneStyle, Map<string, SetDecision>>();
 /** Sổ báo cáo (đầu dò): id món → quyết định + phòng + băm danh sách mẫu thấy được của vai. */
-const SET_LOG = new Map<string, SetDecision & { readonly roomId: string; readonly rev?: string }>();
+const SET_LOG = new Map<string, SetDecision & { readonly roomId: string; readonly rev?: string; readonly doubt?: string }>();
 /** Món thật sự dựng bằng mẫu `roomset` khác mẫu luật cũ trong lượt. */
 const SET_APPLIED = new Set<string>();
 /** Thời gian chọn bộ (ms) của lượt dựng hiện tại: tổng `roomSetOf` + số phòng (đầu dò `roomSetTiming`). */
@@ -880,7 +960,8 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
     const saved = f.model === undefined ? undefined : (SAVED_FOLDER.exec(f.model.src)?.[1] ?? null);
     const folder = saved !== undefined ? saved : baseFolderOf(f, style, usage, override);
     const shown = folder === null ? undefined : shownIn(f, folder);
-    return [{ ...planRectOf(box.cx, box.cy, shown?.[0] ?? box.w, shown?.[2] ?? box.d, box.rot), kind: f.kind }];
+    // `folder`: đồ ngoài bộ góp màu vào bảng màu bộ (vòng 17, `roomSet` SetRef).
+    return [{ ...planRectOf(box.cx, box.cy, shown?.[0] ?? box.w, shown?.[2] ?? box.d, box.rot), kind: f.kind, ...(folder === null ? {} : { folder }) }];
   });
   const members: SetMember[] = [...room.members.values()].map(({ f, role, override }) => {
     const twinPin = SET_PINNED.get(f.id);
@@ -938,7 +1019,11 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
     [...(SET_ROOM_ZONES.get(roomId) ?? []), ...obstacles],
   );
   SET_TIMING = { ms: SET_TIMING.ms + performance.now() - t0, rooms: SET_TIMING.rooms + 1 };
-  for (const [id, d] of plan) SET_LOG.set(id, { ...d, roomId, rev: revOf(d.role as FurnitureRole) });
+  for (const [id, d] of plan) {
+    const member = room.members.get(id);
+    const doubt = member === undefined ? undefined : roleDoubtOf(member.f, room.usage);
+    SET_LOG.set(id, { ...d, roomId, rev: revOf(d.role as FurnitureRole), ...(doubt === undefined ? {} : { doubt }) });
+  }
   return plan;
 };
 
@@ -978,9 +1063,10 @@ const roomSetFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, r
 };
 
 /** Món dựng mẫu concept bằng CO ĐỀU trong lượt dựng (concept giữ dù lệch tỉ lệ hộp, `roomSetOf`): toPascal khớp `uniform`. */
-export const roomSetUniformOf = (id: string, folder: string): boolean => {
+export const roomSetUniformOf = (id: string, folder: string): boolean | 'real' => {
   const d = SET_LOG.get(id);
-  return d?.uniform === true && d.to === folder;
+  // Vòng 17 (làn A): 'real' = phương án cuối dựng CỠ THẬT, được vượt hộp AI.
+  return d !== undefined && d.to === folder ? (d.uniform ?? false) : false;
 };
 
 /** Món đổi mẫu do `roomset` trong lượt dựng hiện tại (toPascal ghi provenance; đồ người dùng xác nhận không mang prov `ai`). */
@@ -1015,7 +1101,8 @@ export const roomSetPools = (): Record<string, readonly string[]> =>
 /** Đầu dò `__pascalProbe.roomSetTiming()`: thời gian chọn bộ của lượt dựng gần nhất (ms, số phòng). */
 export const roomSetTiming = (): { readonly ms: number; readonly rooms: number } => ({ ...SET_TIMING });
 
-type RoomSetEntry = SetDecision & { readonly roomId: string; readonly rev?: string };
+/** `doubt`: vai món chưa xác định (`roleDoubtOf`), món dựng bằng vai trung tính. */
+type RoomSetEntry = SetDecision & { readonly roomId: string; readonly rev?: string; readonly doubt?: string };
 /** Đầu dò `__pascalProbe.roomSet()`: phòng → neo + từng món (vai, mẫu cũ → mới, luật, chi phí, lý do giữ/chọn). */
 export const roomSetReport = (): Record<string, { readonly anchor: string | null; readonly items: readonly RoomSetEntry[] }> => {
   const out: Record<string, { anchor: string | null; items: RoomSetEntry[] }> = {};

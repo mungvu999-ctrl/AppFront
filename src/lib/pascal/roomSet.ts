@@ -20,7 +20,7 @@
 
 import type { Furniture } from '@/domain/spatial/types';
 
-import { qualityOf as defaultQualityOf, type ModelQuality, type QualityPart } from './libraryQuality';
+import { qualityOf as defaultQualityOf, type ModelQuality, type PartMaterial, type QualityPart } from './libraryQuality';
 import { overlapAreaMm2, rectsOverlap, tuckedSeat, type Rect } from './placement';
 import { SCENE_STYLE_MATERIALS, type SceneStyle } from './sceneStyles';
 
@@ -97,6 +97,50 @@ export const CONTRAST_REF = 25;
  */
 export const SIZE_FLOOR_PCT = 0.1;
 const SIZE_FLOOR_ROLES: ReadonlySet<string> = new Set(['armchair', 'sofa']);
+/**
+ * Phạm vi CÔNG NĂNG theo vai (vòng 17, m): cỡ HIỂN THỊ [rộng mặt trước W, sâu D, cao tổng H]; `sy` = hệ số cao hiển thị
+ * (đồ ngồi: giữ cao ngồi 0,40–0,50); `edges` = W/D là cạnh ngắn/dài (bàn). Căn cứ: Neufert, Panero-Zelnik (ghế ăn ngồi
+ * 0,43–0,48, bàn ăn/làm việc 0,72–0,76, bàn trà 0,35–0,50, giường đôi ≥ 1,35 × 1,9, giường đơn 0,9–1,2 × 1,9–2,0, sofa
+ * ≥ 1,4, tủ áo sâu ≥ 0,50 — p10 catalog 510); catalog useMm ở cỡ thật lọt 78–100 % mỗi vai (F:/runs/m17/A/KET-QUA.txt §2).
+ */
+type Span = readonly [number, number];
+const ANY: Span = [0, Infinity];
+export const FUNC_RANGE: Readonly<Record<string, { readonly w: Span; readonly d: Span; readonly h: Span; readonly sy?: Span; readonly edges?: true }>> = {
+  doubleBed: { w: [1.35, 2.2], d: [1.9, 2.45], h: ANY },
+  singleBed: { w: [0.85, 1.3], d: [1.85, 2.3], h: ANY },
+  sofa: { w: [1.4, Infinity], d: [0.75, 1.15], h: [0.65, 1.05], sy: [0.9, 1.1] },
+  armchair: { w: [0.58, 1.15], d: [0.6, 1.1], h: [0.65, 1.15], sy: [0.9, 1.1] },
+  diningChair: { w: [0.38, 0.65], d: [0.4, 0.68], h: [0.65, 1.1], sy: [0.9, 1.1] },
+  bench: { w: [0.4, 2], d: [0.3, 0.7], h: [0.38, 0.52] },
+  diningTable: { w: [0.7, 1.3], d: [0.7, 2.6], h: [0.7, 0.79], edges: true },
+  desk: { w: [0.8, 2], d: [0.45, 0.9], h: [0.65, 0.8] },
+  coffeeTable: { w: ANY, d: [0.5, 1.5], h: [0.3, 0.52], edges: true },
+  nightstand: { w: [0.35, 0.7], d: [0.3, 0.55], h: [0.4, 0.75] },
+  closet: { w: [0.45, 3.6], d: [0.5, 0.7], h: [1.75, 2.45] },
+  dresser: { w: [0.5, 2], d: [0.35, 0.65], h: [0.5, 1.35] },
+  bookshelf: { w: [0.5, 2], d: [0.25, 0.5], h: [0.8, 2.3] },
+  cabinet: { w: [0.4, 2], d: [0.3, 0.6], h: [0.5, 1.25] },
+};
+const FUNC_EPS = 1e-6;
+export const FUNC_REJECT = 'ngoài công năng';
+/**
+ * Lý do "ngoài công năng" của cỡ hiển thị `shown` [rộng, cao, sâu] (mẫu cỡ thật `dims`) cho vai `role`; `undefined` = trong
+ * phạm vi / vai không có bảng. Ràng buộc CỨNG: không thuộc CONCEPT_LENIENT (concept co đều cũng bị kiểm) lẫn SHAPE_REJECTS
+ * (luật cũ không được giữ khi ngoài công năng).
+ */
+export const functionalMissOf = (role: string, dims: Dims, shown: Dims): string | undefined => {
+  const r = FUNC_RANGE[role];
+  if (r === undefined) return undefined;
+  const [w, d] = r.edges === true ? [Math.min(shown[0], shown[2]), Math.max(shown[0], shown[2])] : [shown[0], shown[2]];
+  const out = (v: number, [lo, hi]: Span): boolean => v < lo - FUNC_EPS || v > hi + FUNC_EPS;
+  const mm = (v: number): string => (Number.isFinite(v) ? `${Math.round(v * 1000)}` : '∞');
+  if (out(w, r.w)) return `rộng ${mm(w)} mm ngoài ${mm(r.w[0])}–${mm(r.w[1])}`;
+  if (out(d, r.d)) return `sâu ${mm(d)} mm ngoài ${mm(r.d[0])}–${mm(r.d[1])}`;
+  if (out(shown[1], r.h)) return `cao ${mm(shown[1])} mm ngoài ${mm(r.h[0])}–${mm(r.h[1])}`;
+  const sy = dims[1] > 0 ? shown[1] / dims[1] : 1;
+  if (r.sy !== undefined && out(sy, r.sy)) return `hệ số cao ${sy.toFixed(2)} ngoài ${r.sy[0]}–${r.sy[1]}`;
+  return undefined;
+};
 /**
  * Gương (`QualityPart.finish === 'mirror'`, làn Q: metallic ≥ 0,9, roughness ≤ 0,15): bộ dựng hình web CHƯA phản chiếu nên
  * gương hiện thành tấm trắng phẳng "như chưa gán vật liệu" (chấm mù lượt 4). Phạt MIRROR_PENALTY × tỉ phần: 15 % gương
@@ -207,6 +251,17 @@ const SEAT_ROLES: ReadonlySet<string> = new Set(['sofa', 'armchair', 'diningChai
 /** Món ngồi gom theo bàn (ghế ăn, ghế băng) và vai bàn của nhóm. */
 const SEAT_GROUP_ROLES: ReadonlySet<string> = new Set(['diningChair', 'bench']);
 const TABLE_ROLES: ReadonlySet<string> = new Set(['diningTable', 'desk']);
+/**
+ * Hợp bộ khách (vòng 17): sofa / ghế bành / bàn trà chấm thêm độ lệch với BẢNG MÀU BỘ (`SetRef`: món ghim + đã chốt +
+ * concept còn giữ + đồ đứng sàn ngoài bộ có mẫu) — chỉ khi phòng có sofa (bộ ghế khách); phòng ngủ, bàn ăn không đổi.
+ */
+const SET_FIT_ROLES: ReadonlySet<string> = new Set(['sofa', 'armchair', 'coffeeTable']);
+/** Phạt khác chất liệu bọc chính (da/vải) với chất liệu bọc trội của bộ: bằng một phần thân lệch hẳn tông ở tỉ phần ACCENT_MIN_SHARE. */
+export const SET_MAT_MISMATCH = 0.15;
+/** Tỉ lệ cặp với sofa của phòng (cỡ catalog): ghế bành cao ≤ ×ARM_H_MAX, rộng ≤ ×ARM_W_MAX; bàn trà rộng ≤ ×TABLE_W_MAX. Vượt: SCALE_W × ln(vượt). */
+export const ARM_H_MAX = 1.1;
+export const ARM_W_MAX = 0.75;
+export const TABLE_W_MAX = 0.7;
 
 type Lab = readonly [number, number, number];
 export type Dims = readonly [number, number, number];
@@ -346,7 +401,10 @@ export interface SetDecision {
   /** Đầu dò: số ứng viên trong tập bị loại theo từng lý do ràng buộc cứng (vắng = không bị loại cái nào). */
   readonly rejects?: Readonly<Record<string, number>>;
   /** Mẫu concept giữ dù lệch tỉ lệ hộp: dựng bằng CO ĐỀU (toPascal `roomSetUniformOf`). */
-  readonly uniform?: boolean;
+  /** `'real'` (vòng 17): phương án cuối dựng mẫu ở CỠ THẬT, được vượt hộp AI chưa xác nhận (itemFitOf `uniform: 'real'`). */
+  readonly uniform?: boolean | 'real';
+  /** Đầu dò (vòng 17): mẫu được giữ/ghim nằm ngoài phạm vi công năng của vai (`functionalMissOf`). */
+  readonly funcMiss?: string;
   /** Đầu dò: tối đa 3 ứng viên qua ràng buộc cứng rẻ nhất [mẫu, chi phí]. */
   readonly top?: readonly (readonly [string, number])[];
 }
@@ -424,6 +482,8 @@ export const hardRejectOf = (m: SetMember, folder: string, ctx: SetContext, skip
     // hơn mẫu trên một trục thì trục ấy bị bóp không chặn dưới (hộp dò 1,16 × 0,29 m: ghế bị kéo 1,37 và bóp 0,48).
     if (distorted(dims, shown)) return 'méo dáng';
     if (no('không giữ cỡ người dùng') && m.sizeFrom === 'user' && m.box !== undefined && (shown[0] < m.box.w * USER_FILL || shown[2] < m.box.d * USER_FILL)) return 'không giữ cỡ người dùng';
+    // Vòng 17: công năng trên cỡ HIỂN THỊ (cả co đều concept). Cỡ người dùng xác nhận không bị loại — chỉ ghi sổ (`funcMiss`).
+    if (m.sizeFrom !== 'user' && functionalMissOf(m.role, dims, shown) !== undefined) return FUNC_REJECT;
   } else if (!fitsSpot(dims, m.short, m.long)) return 'không lọt chỗ';
   const h = shown?.[1] ?? dims[1];
   // Chuẩn cao: cao đã cho, không thì trung vị pool vai; chuẩn ≥ TALL_M (tủ áo, kệ) thì không cao hơn chuẩn.
@@ -540,7 +600,19 @@ interface ItemCost {
   readonly mirror: number;
   readonly contrast: number;
   readonly pair: number;
+  /** Lệch bảng màu bộ + chất liệu bọc (vòng 17, `SET_FIT_ROLES`). */
+  readonly set: number;
+  /** Tỉ lệ cặp với sofa (`ARM_*`, `TABLE_W_MAX`). */
+  readonly ratio: number;
   readonly total: number;
+}
+
+/** Bảng màu bộ của phòng (vòng 17): màu các phần thân (không kim loại/kính, tỉ phần ≥ ACCENT_MIN_SHARE) + chất liệu bọc trội + cỡ sofa. */
+interface SetRef {
+  readonly labs: readonly Lab[];
+  readonly mat?: PartMaterial;
+  /** Cỡ catalog của sofa rộng nhất đã chốt/ghim trong phòng; vắng = chưa có sofa. */
+  readonly sofa?: Dims;
 }
 
 /** Ngữ cảnh chấm một món: gỗ tham chiếu + họ nhấn đã có trong phòng (tường, đồ cố định, món đã chọn). */
@@ -552,7 +624,28 @@ interface ItemRefs {
   readonly hardL?: number;
   /** Gỗ của bàn trong nhóm ghế khi bàn có gỗ ≥ PAIR_WOOD_SHARE (`PAIR_*`); vắng = không áp. */
   readonly pair?: Lab;
+  /** Bảng màu bộ (chỉ vai `SET_FIT_ROLES` trong phòng có sofa); vắng = không chấm hợp bộ. */
+  readonly set?: SetRef;
 }
+
+/** Chất liệu bọc chính (phần bọc tỉ phần lớn nhất, da/vải); vắng = không có phần bọc đã biết chất liệu. */
+const upholsteryMatOf = (parts: readonly QualityPart[]): PartMaterial | undefined =>
+  [...parts]
+    .filter((p) => p.kind === 'upholstery' && (p.material === 'leather' || p.material === 'fabric'))
+    .sort((a, b) => b.share - a.share)[0]?.material;
+/** Bảng màu bộ từ các mẫu: phần thân ≥ ACCENT_MIN_SHARE; chất liệu bọc trội theo tổng tỉ phần bọc da/vải. */
+const setRefOf = (folders: readonly string[], ctx: SetContext, memo: Memo, sofa: Dims | undefined): SetRef => {
+  const labs: Lab[] = [];
+  const mats = new Map<PartMaterial, number>();
+  for (const folder of folders) {
+    const f = featOf(folder, ctx, memo);
+    for (const p of [...f.wood, ...f.body]) if (p.share >= ACCENT_MIN_SHARE) labs.push(p.lab);
+    for (const p of f.soft) if (p.kind === 'upholstery' && (p.material === 'leather' || p.material === 'fabric')) mats.set(p.material, (mats.get(p.material) ?? 0) + p.share);
+  }
+  const mat = [...mats].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0];
+  return { labs, ...(mat === undefined ? {} : { mat }), ...(sofa === undefined ? {} : { sofa }) };
+};
+const overRatio = (r: number, max: number): number => (r > max ? SCALE_W * Math.log(r / max) : 0);
 
 const familiesWith = (families: readonly number[], labs: readonly Lab[]): number[] => {
   const out = [...families];
@@ -589,6 +682,29 @@ const itemCostOf = (folder: string, role: string, refs: ItemRefs, ctx: SetContex
   const pairLab = refs.pair;
   const pair =
     pairLab === undefined ? 0 : W_WOOD * f.body.reduce((s, p) => s + (p.share * Math.max(0, woodDeltaOf(p.lab, pairLab) - WOOD_TOL)) / WOOD_DE_REF, 0);
+  // Hợp bộ (vòng 17): mỗi phần thân so với màu GẦN NHẤT của bảng màu bộ, cùng thang gỗ (WOOD_TOL/WOOD_DE_REF); khác chất
+  // liệu bọc trội của bộ → SET_MAT_MISMATCH.
+  const ref = refs.set;
+  const mat = ref?.mat === undefined ? undefined : upholsteryMatOf(f.soft);
+  const set =
+    ref === undefined || ref.labs.length === 0
+      ? 0
+      : W_WOOD *
+          [...f.wood, ...f.body].reduce(
+            (s, p) => s + (p.share * Math.max(0, Math.min(...ref.labs.map((r) => woodDeltaOf(p.lab, r))) - WOOD_TOL)) / WOOD_DE_REF,
+            0,
+          ) +
+        (mat !== undefined && mat !== ref.mat ? SET_MAT_MISMATCH : 0);
+  const d = ctx.dimsOf(folder);
+  const sofa = ref?.sofa;
+  const ratio =
+    d === undefined || sofa === undefined || sofa[0] <= 0 || sofa[1] <= 0
+      ? 0
+      : role === 'armchair'
+        ? overRatio(d[1] / sofa[1], ARM_H_MAX) + overRatio(d[0] / sofa[0], ARM_W_MAX)
+        : role === 'coffeeTable'
+          ? overRatio(d[0] / sofa[0], TABLE_W_MAX)
+          : 0;
   return {
     style,
     wood,
@@ -600,7 +716,9 @@ const itemCostOf = (folder: string, role: string, refs: ItemRefs, ctx: SetContex
     mirror,
     contrast,
     pair,
-    total: style + wood + soft + dark + fabric + layer + mirror + contrast + pair,
+    set,
+    ratio,
+    total: style + wood + soft + dark + fabric + layer + mirror + contrast + pair + set + ratio,
   };
 };
 
@@ -696,7 +814,11 @@ const shownRectOf = (m: SetMember, folder: string | null): PlanRect | undefined 
 };
 
 /** Vùng chặn trên mặt bằng (m): đồ đứng sàn ngoài bộ, vùng mở cửa đi, thân tường; `kind` = loại đồ (`tuckedSeat`). */
-export type SetZone = PlanRect & { readonly kind?: string };
+export type SetZone = PlanRect & {
+  readonly kind?: string;
+  /** Mẫu thư viện của đồ ngoài bộ (đã lưu / luật): góp vào bảng màu bộ (vòng 17); vắng = chỉ chặn chỗ. */
+  readonly folder?: string;
+};
 /** Ghế kê dưới bàn/quầy chồng hình hợp lệ — không tính va chạm. */
 const tucked = (a: string | undefined, b: string | undefined): boolean =>
   a !== undefined && b !== undefined && tuckedSeat({ kind: a } as Pick<Furniture, 'kind'>, { kind: b } as Pick<Furniture, 'kind'>);
@@ -802,10 +924,13 @@ export const roomSetOf = (
     const r = m.lifted === true ? undefined : shownRectOf(m, folder);
     if (r !== undefined) placed.push(m.kind === undefined ? r : { ...r, kind: m.kind });
   };
+  /** Món dựng ở CỠ THẬT (phương án cuối vòng 17, `uniform: 'real'`): cỡ hiển thị = cỡ catalog, canh tâm hộp như itemFitOf. */
+  const realMemberOf = (m: SetMember): SetMember => ({ ...m, shownOf: (f) => ctx.dimsOf(f) });
+  const memberAs = (m: SetMember, u: SetDecision['uniform']): SetMember => (u === 'real' ? realMemberOf(m) : u === true ? conceptMemberOf(m) : m);
   for (const m of inSet) {
     const f = folderOfFixed(m);
     // Món đã chốt co đều ở lượt trước: chiếm chỗ bằng mặt bằng co đều, không phải phép khớp thường (Codex M16-3 #2).
-    if (f !== null) placeOf(decided.get(m.id)?.uniform === true ? conceptMemberOf(m) : m, f);
+    if (f !== null) placeOf(memberAs(m, decided.get(m.id)?.uniform), f);
     // Codex SEL-1 #1: món ghim có mẫu ngoài thư viện (`current` null) vẫn chiếm chỗ — giữ bằng cả hộp.
     else if (m.fixed && m.lifted !== true && m.box !== undefined) placed.push(m.kind === undefined ? boxRectOf(m.box) : { ...boxRectOf(m.box), kind: m.kind });
   }
@@ -817,16 +942,23 @@ export const roomSetOf = (
     return (SCALE_W * (Math.abs(Math.log(s[0] / d[0])) + Math.abs(Math.log(s[2] / d[2])))) / 2;
   };
   /** Ứng viên lọt của món: mẫu → chi phí (qua ràng buộc cứng + va chạm), lý do loại theo số lượng. */
-  const evalOf = (m: SetMember, costFor: (m: SetMember, f: string) => number) => {
-    const rejects: Record<string, number> = {};
-    const box = m.box;
-    // Món bộ CHƯA chốt (kể cả cùng vai) giữ chỗ bằng cả hộp của nó (mặt bằng ⊆ hộp: bảo thủ).
-    const pending: SetZone[] = inSet.flatMap((x) =>
+  // Món bộ CHƯA chốt (kể cả cùng vai) giữ chỗ bằng cả hộp của nó (mặt bằng ⊆ hộp: bảo thủ).
+  const pendingOf = (m: SetMember): SetZone[] =>
+    inSet.flatMap((x) =>
       x === m || x.fixed || x.lifted === true || x.box === undefined || decided.has(x.id) || out.has(x.id)
         ? []
         : [x.kind === undefined ? boxRectOf(x.box) : { ...boxRectOf(x.box), kind: x.kind }],
     );
-    const near = box === undefined || m.lifted === true ? [] : [...placed, ...pending].filter((z) => !tucked(m.kind, z.kind) && rectsOverlap(boxRectOf(box), z));
+  /** Mẫu `f` trong phạm vi công năng ở cỡ hiển thị của `mm` (cỡ người dùng xác nhận: luôn đạt — chỉ ghi sổ). */
+  const funcOk = (mm: SetMember, f: string): boolean => {
+    const dims = ctx.dimsOf(f);
+    const shown = mm.shownOf?.(f) ?? dims;
+    return mm.sizeFrom === 'user' || dims === undefined || shown === undefined || functionalMissOf(mm.role, dims, shown) === undefined;
+  };
+  const evalOf = (m: SetMember, costFor: (m: SetMember, f: string) => number) => {
+    const rejects: Record<string, number> = {};
+    const box = m.box;
+    const near = box === undefined || m.lifted === true ? [] : [...placed, ...pendingOf(m)].filter((z) => !tucked(m.kind, z.kind) && rectsOverlap(boxRectOf(box), z));
     const ok: { f: string; cost: number; hit: number }[] = [];
     for (const f of m.pool) {
       const r = hardRejectOf(m, f, ctx);
@@ -852,7 +984,9 @@ export const roomSetOf = (
       const dims = ctx.dimsOf(cur);
       const shown = m.shownOf?.(cur) ?? dims;
       const ceilingOk = m.ceilingM === undefined || (shown !== undefined && (m.liftM ?? 0) + shown[1] <= m.ceilingM - CEILING_GAP_M);
-      if (r !== undefined && SHAPE_REJECTS.has(r) && ceilingOk) {
+      // Vòng 17: hiện trạng cũng phải trong phạm vi công năng và không méo dáng (lý do đầu tiên của hardRejectOf có thể che).
+      const formOk = dims !== undefined && shown !== undefined && !distorted(dims, shown) && funcOk(m, cur);
+      if (r !== undefined && SHAPE_REJECTS.has(r) && ceilingOk && formOk) {
         const rect = near.length === 0 ? undefined : shownRectOf(m, cur);
         const hit = rect === undefined ? 0 : near.reduce((s, z) => s + overlapAreaM2(rect, z), 0);
         if (hit <= minHit + ROOM_OVERLAP_TOL_M2) legacyShape = r;
@@ -881,12 +1015,102 @@ export const roomSetOf = (
       const miss = r ?? (hit > (ok.length === 0 ? 0 : minHit) + ROOM_OVERLAP_TOL_M2 ? 'va chạm' : undefined);
       concept = miss === undefined ? { f, cost: costFor(m, f), ...(lenient ? { uniform: strict } : {}) } : { f, miss };
     }
-    return { pass, rejects, ...(legacyShape === undefined ? {} : { legacyShape }), ...(concept === undefined ? {} : { concept }) };
+    // Vòng 17 (L4): chi phí mẫu luật cũ cho trần FAIL_COST của phương án cuối — chỉ khi pool rỗng.
+    const legacyCost = pass.size === 0 && cur !== null && ctx.dimsOf(cur) !== undefined ? costFor(m, cur) : undefined;
+    return {
+      pass,
+      rejects,
+      ...(legacyShape === undefined ? {} : { legacyShape }),
+      ...(concept === undefined ? {} : { concept }),
+      ...(legacyCost === undefined ? {} : { legacyCost }),
+    };
+  };
+  /**
+   * Lý do loại vì CHẤT LƯỢNG/AN TOÀN (L5, vòng 17): mẫu trượt các lý do này (ở pool, concept hay luật cũ) không quay lại qua
+   * nhánh nào — kể cả phương án cuối.
+   */
+  const BANNED: ReadonlySet<string> = new Set(['thiếu dữ liệu chất lượng', 'có lỗi QC', 'vân vỡ', 'giường chưa hoàn chỉnh', 'chạm gần trần', 'va chạm']);
+  /**
+   * Phương án cuối khi không ứng viên nào qua (vòng 17, điều phối): (a) mẫu NHỎ NHẤT đúng vai qua chất lượng ở CỠ THẬT
+   * (công năng trên cỡ thật, không co), canh tâm hộp AI như itemFitOf, nhận khi không chồng vùng chặn/đồ ghim/món đã
+   * chốt/món chưa chốt quá ROOM_OVERLAP_TOL_M2 — hộp AI chưa xác nhận nên được vượt hộp; (b) không được thì mẫu luật cũ
+   * như trước nếu nó không bị cấm (L5), không méo dáng (L3) và chi phí ≤ FAIL_COST (L4) — ghi sổ "ngoài công năng" nếu
+   * có; (c) còn lại `null` = mẫu mặc định của loại (toPascal `furnitureFolderOf`). Không bao giờ chọn mẫu co dưới phạm vi.
+   */
+  const fallbackOf = (
+    m: SetMember,
+    ev: { readonly legacyCost?: number; readonly concept?: { readonly f: string; readonly miss?: string } },
+  ): { readonly to: string | null; readonly uniform?: 'real'; readonly why: string } => {
+    const b = m.box;
+    if (b !== undefined && m.sizeFrom !== 'user') {
+      const real = realMemberOf(m);
+      const zones = m.lifted === true ? [] : [...placed, ...pendingOf(m)].filter((z) => !tucked(m.kind, z.kind));
+      const area = (f: string): number => {
+        const d = ctx.dimsOf(f) as Dims;
+        return d[0] * d[2];
+      };
+      const fits = m.pool
+        .filter((f) => ctx.dimsOf(f) !== undefined && hardRejectOf(real, f, ctx, CONCEPT_LENIENT) === undefined)
+        .sort((x, y) => area(x) - area(y) || x.localeCompare(y));
+      for (const f of fits) {
+        const d = ctx.dimsOf(f) as Dims;
+        const rect = planRectOf(b.cx, b.cy, d[0], d[2], b.rot);
+        if (zones.reduce((s, z) => s + overlapAreaM2(rect, z), 0) <= ROOM_OVERLAP_TOL_M2) {
+          return { to: f, uniform: 'real', why: 'phương án cuối: mẫu nhỏ nhất đúng vai ở cỡ thật (vượt hộp AI), không va chạm' };
+        }
+      }
+    }
+    const cur = m.current;
+    if (cur === null) return { to: null, why: 'phương án cuối: không ứng viên, không mẫu luật cũ' };
+    const r = hardRejectOf(m, cur, ctx);
+    const dims = ctx.dimsOf(cur);
+    const shown = m.shownOf?.(cur) ?? dims;
+    const ban =
+      (r !== undefined && BANNED.has(r) ? r : undefined) ??
+      (ev.concept?.f === cur && ev.concept.miss !== undefined && BANNED.has(ev.concept.miss) ? ev.concept.miss : undefined) ??
+      (dims !== undefined && shown !== undefined && distorted(dims, shown) ? 'méo dáng' : undefined) ??
+      (ev.legacyCost !== undefined && ev.legacyCost > FAIL_COST ? `chi phí ${ev.legacyCost.toFixed(2)} > ${FAIL_COST}` : undefined);
+    const miss = dims === undefined || shown === undefined ? undefined : functionalMissOf(m.role, dims, shown);
+    // ponytail: `to: null` dựng KHÔNG mẫu (modelFolderOf trả thẳng null) — chưa có "mẫu dựng sẵn của vai" ở tầng roomSet;
+    // luật cũ trượt L3/L4/L5 vẫn được giữ nhưng sổ ghi rõ (`luật cũ trượt`) để đầu dò đếm. Nâng cấp: sceneVariety trả mẫu dựng sẵn.
+    return {
+      to: cur,
+      why:
+        `không ứng viên qua ràng buộc cứng — mẫu luật cũ` +
+        (ban === undefined ? '' : `; luật cũ trượt (${ban})`) +
+        (miss === undefined ? '' : `; ${FUNC_REJECT}: ${miss}`),
+    };
+  };
+
+  // Bảng màu bộ (vòng 17, L1): mẫu đã có của từng món (ghim / đã chốt lượt trước / đã chốt trong lượt) — chưa chốt thì
+  // mẫu concept nếu qua chất lượng/an toàn (bỏ qua lý do lệch hộp như CONCEPT_LENIENT; concept bị loại không góp màu) — cộng
+  // đồ đứng sàn ngoài bộ có mẫu (`SetZone.folder`). Tính lại mỗi vai nên luôn theo các vai đã chốt.
+  const hasSofa = inSet.some((m) => m.role === 'sofa');
+  const conceptAhead = new Map<string, string | null>();
+  const aheadOf = (m: SetMember): string | null => {
+    if (m.concept === undefined || m.concept.reject !== undefined) return null;
+    const hit = conceptAhead.get(m.id);
+    if (hit !== undefined) return hit;
+    const f = m.concept.folder;
+    const ok = hardRejectOf(conceptMemberOf(m), f, ctx, CONCEPT_LENIENT) === undefined ? f : null;
+    conceptAhead.set(m.id, ok);
+    return ok;
+  };
+  const setRefNow = (): SetRef => {
+    const own = inSet.map((m) => out.get(m.id)?.to ?? folderOfFixed(m) ?? (m.fixed ? null : aheadOf(m)));
+    const sofas = inSet.flatMap((m, i) => {
+      const f = m.role === 'sofa' && (out.has(m.id) || m.fixed || decided.has(m.id)) ? own[i] : null;
+      const d = f === null || f === undefined ? undefined : ctx.dimsOf(f);
+      return d === undefined ? [] : [d];
+    });
+    const folders = [...own, ...zones.map((z) => z.folder)].filter((f): f is string => typeof f === 'string');
+    return setRefOf(folders, ctx, memo, sofas.sort((a, b) => b[0] - a[0])[0]);
   };
 
   for (const role of roles) {
     const group = inSet.filter((m) => m.role === role);
     const todo = group.filter((m) => !m.fixed && !decided.has(m.id));
+    const setRef = hasSofa && SET_FIT_ROLES.has(role) ? setRefNow() : undefined;
     if (todo.length === 0) continue;
     const anchor = role === anchorRole;
     const keyOf = new Map(group.map((m) => [m.id, tableOf(m)?.id ?? ''] as const));
@@ -906,6 +1130,7 @@ export const roomSetOf = (
         anchor,
         ...(hardShare > 0 ? { hardL: hardSum / hardShare } : {}),
         ...(tf?.woodLab !== undefined && tf.woodShare >= PAIR_WOOD_SHARE ? { pair: tf.woodLab } : {}),
+        ...(setRef === undefined ? {} : { set: setRef }),
       };
     };
     const evals = new Map(
@@ -1057,7 +1282,8 @@ export const roomSetOf = (
         const legacyOk = m.current !== null && ev.pass.has(m.current);
         const legacyShape = (ev as { legacyShape?: string }).legacyShape;
         const failKeep = over !== undefined && (legacyOk || legacyShape !== undefined);
-        const to = pick === undefined || failKeep ? m.current : pick.f;
+        const fb = pick === undefined ? fallbackOf(m, ev) : undefined;
+        const to = fb !== undefined ? fb.to : failKeep ? m.current : (pick as { f: string }).f;
         const miss = conceptMiss.get(m.id);
         out.set(m.id, {
           id: m.id,
@@ -1076,7 +1302,9 @@ export const roomSetOf = (
             (miss === undefined ? '' : `concept trượt: ${miss}; `) +
             (m.pinTo !== undefined
               ? 'cặp đã nhận: mẫu của món thật, chốt đúng lượt vai'
-              : cost === undefined
+              : fb !== undefined
+                ? fb.why
+                : cost === undefined
                 ? 'không ứng viên qua ràng buộc cứng — mẫu luật cũ'
                 : failKeep && !legacyOk
                   ? `giữ mẫu luật cũ: hiện trạng, trượt hình dáng (${legacyShape ?? ''}); mẫu chung ${pick?.f ?? ''} ${(over as number).toFixed(2)} > ngưỡng hỏng ${FAIL_COST}`
@@ -1087,8 +1315,11 @@ export const roomSetOf = (
                     : `${via}; ${cost.toFixed(2)} (${old})`),
           ...(Object.keys(ev.rejects).length > 0 ? { rejects: ev.rejects } : {}),
           ...(top.length > 0 ? { top } : {}),
+          ...(fb?.uniform === undefined ? {} : { uniform: fb.uniform }),
         });
-        if (to !== null) placeOf(m, to);
+        if (to !== null) placeOf(memberAs(m, fb?.uniform), to);
+        // Mẫu mặc định của loại (phương án cuối `null`) dựng trong hộp: chiếm chỗ bằng cả hộp.
+        else if (m.box !== undefined && m.lifted !== true) placed.push(m.kind === undefined ? boxRectOf(m.box) : { ...boxRectOf(m.box), kind: m.kind });
       }
     }
     for (const m of todo) {
@@ -1100,6 +1331,15 @@ export const roomSetOf = (
       families = familiesWith(families, feat.loud.map((p) => p.lab));
       addHard(to);
     }
+  }
+  // Đầu dò (vòng 17): mẫu giữ/ghim/cỡ người dùng ngoài phạm vi công năng — ghi sổ, không đổi.
+  for (const m of inSet) {
+    const d = out.get(m.id);
+    if (d === undefined || d.to === null) continue;
+    const dims = ctx.dimsOf(d.to);
+    const shown = memberAs(m, d.uniform).shownOf?.(d.to) ?? dims;
+    const miss = dims === undefined || shown === undefined ? undefined : functionalMissOf(m.role, dims, shown);
+    if (miss !== undefined) out.set(m.id, { ...d, funcMiss: miss });
   }
   return out;
 };
