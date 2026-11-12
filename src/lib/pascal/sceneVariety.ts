@@ -1077,6 +1077,16 @@ export const roomSetUniformOf = (id: string, folder: string): boolean | 'real' =
 /** Vai HIỆU LỰC bộ chọn đã dùng cho món trong lượt dựng (kể cả vai ngữ cảnh) — dựng cảnh áp lưng tường theo đúng vai này (Codex M17-4 #1). */
 export const roomSetRoleOf = (id: string): string | undefined => SET_LOG.get(id)?.role;
 
+/**
+ * Món CHƯA xác nhận (đồ sinh / AI) bị bộ chọn từ chối mọi mẫu: dựng ẩn (`visible: false`, giữ node để lượt lưu không đọc
+ * thành xoá) thay vì khung dây đỏ — trạng thái "chưa xác định", dữ liệu giữ nguyên, sổ ghi lý do. Món người dùng xác nhận
+ * vẫn hiện khung để họ thấy và sửa. Vòng 17: khung đỏ là lý do thua chính ở 9/14 nhóm phòng kém hơn trong chấm mù hồi quy.
+ */
+export const roomSetHiddenOf = (id: string): boolean => {
+  const d = SET_LOG.get(id);
+  return d !== undefined && d.to === null && d.by !== 'user';
+};
+
 /** Bộ chọn đã từ chối mọi mẫu cho món (phương án cuối `to: null`) trong lượt dựng hiện tại. */
 export const roomSetRejectedOf = (id: string): boolean => {
   const d = SET_LOG.get(id);

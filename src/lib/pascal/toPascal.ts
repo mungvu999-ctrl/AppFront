@@ -112,6 +112,7 @@ import {
   isThinSink,
   modelFolderOf,
   roleOf,
+  roomSetHiddenOf,
   roomSetRejectedOf,
   roomSetRoleOf,
   roomSetSwapOf,
@@ -1720,7 +1721,9 @@ export const toPascalScene = (
     /* Hộp quầy gốc vẫn phải có node (thiếu = lượt lưu đọc thành xoá) nhưng ẩn; dãy tủ thay nó là đồ sinh ra.
        Thảm lạc ngoài phòng (`isStrayRug`) cũng vậy: giữ node để lưu không xoá, chỉ không trải ra sân trống. */
     const shown =
-      isKitchenRunHost(furniture) || isStrayRug(furniture, builtRooms)
+      isKitchenRunHost(furniture) ||
+      isStrayRug(furniture, builtRooms) ||
+      roomSetHiddenOf(furniture.id)
         ? { ...node, visible: false }
         : isGeneratedNodeId(node.id)
           ? withFields(

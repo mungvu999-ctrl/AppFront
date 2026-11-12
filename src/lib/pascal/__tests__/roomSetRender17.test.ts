@@ -14,12 +14,13 @@ import type { PascalItemNode } from '../types';
 
 const TABLE = 'F-0000ROLE17T';
 /** Giả lập sổ bộ chọn cho riêng bàn: `real` = dựng cỡ thật vai coffeeTable; `rejected` = từ chối mọi mẫu. */
-const SEL = vi.hoisted(() => ({ real: false, rejected: false }));
+const SEL = vi.hoisted(() => ({ real: false, rejected: false, hidden: false }));
 vi.mock('../sceneVariety', async (importOriginal) => {
   interface Real {
     roomSetUniformOf: (id: string, folder: string) => boolean | 'real';
     roomSetRoleOf: (id: string) => string | undefined;
     roomSetRejectedOf: (id: string) => boolean;
+    roomSetHiddenOf: (id: string) => boolean;
     modelFolderOf: (f: { id: string }, ...rest: unknown[]) => string | null;
   }
   const real = await importOriginal<Real>();
@@ -29,6 +30,7 @@ vi.mock('../sceneVariety', async (importOriginal) => {
     roomSetUniformOf: (id: string, folder: string) => (SEL.real && mine(id) ? 'real' : real.roomSetUniformOf(id, folder)),
     roomSetRoleOf: (id: string) => (SEL.real && mine(id) ? 'coffeeTable' : real.roomSetRoleOf(id)),
     roomSetRejectedOf: (id: string) => (SEL.rejected && mine(id)) || real.roomSetRejectedOf(id),
+    roomSetHiddenOf: (id: string) => (SEL.hidden && mine(id)) || real.roomSetHiddenOf(id),
     // Vai ngữ cảnh (`roleOverride`) của bàn: bộ chọn trả null. Đường mẫu vai gốc (không roleOverride) giữ thật.
     modelFolderOf: (f: { id: string }, ...rest: unknown[]) => (SEL.rejected && mine(f.id) && rest[2] !== undefined ? null : real.modelFolderOf(f, ...rest)),
   };
@@ -96,8 +98,22 @@ describe('Codex M17-4', () => {
     SEL.rejected = true;
     try {
       expect(tableNode().asset.src).toBe('asset://appfront/table');
+      expect(tableNode().visible).not.toBe(false);
     } finally {
       SEL.rejected = false;
+    }
+  });
+
+  it('món chưa xác nhận bị từ chối mọi mẫu → node ẩn (visible false), vẫn có node để lượt lưu không xoá', () => {
+    SEL.rejected = true;
+    SEL.hidden = true;
+    try {
+      const n = tableNode();
+      expect(n).toBeDefined();
+      expect(n.visible).toBe(false);
+    } finally {
+      SEL.rejected = false;
+      SEL.hidden = false;
     }
   });
 });
