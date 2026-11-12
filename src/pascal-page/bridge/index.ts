@@ -220,7 +220,7 @@ const messageOf = (error: unknown): string => {
   return BRIDGE_LOAD_ERROR;
 };
 
-async function loadProject(projectId: string): Promise<{
+async function loadProject(projectId: string, signal?: AbortSignal): Promise<{
   readonly projectName: string;
   readonly style: SceneStyle;
   readonly additions: readonly DesignAddition[];
@@ -271,7 +271,7 @@ async function loadProject(projectId: string): Promise<{
   /* Mẫu AI chọn là id thư viện máy chủ: `sceneStyleFromConcept` chỉ giữ id đã gộp vào danh mục, nên phải chờ ĐÚNG lượt
      đọc thư viện chung (cùng promise với `main.tsx`, không ném) — concept về trước thư viện từng làm mất mẫu AI âm thầm. */
   // Mẫu đã lưu ngoài danh sách thư viện: đọc theo id (#15) trước khi dựng, cùng lượt chờ.
-  await import('@/lib/pascal/sceneLibrary').then((m) => m.ensureSceneLibraryFor(document.graph.furniture)).catch(() => undefined);
+  await import('@/lib/pascal/sceneLibrary').then((m) => m.ensureSceneLibraryFor(document.graph.furniture, undefined, signal)).catch(() => undefined);
   // Concept đã xong thắng mọi phong cách khác (kể cả bản xem thử trên máy); chưa xong/hỏng → phong cách cũ.
   const concept = sceneConceptOf(conceptLoaded);
   const style = concept.style ?? readSceneStyle(() => localStorage, { id: projectId, style: settings?.sceneStyle });
@@ -379,7 +379,8 @@ export function usePascalProjectBridge(
     let cancelled = false;
 
     setLoad({ status: 'loading' });
-    loadProject(projectId).then(
+    const scene = new AbortController();
+    loadProject(projectId, scene.signal).then(
       ({ projectName, style, additions, furnish, concept }) => {
         if (cancelled) return;
         setLoad({ status: 'ready', projectName, style, additions, furnish });
@@ -394,6 +395,7 @@ export function usePascalProjectBridge(
 
     return () => {
       cancelled = true;
+      scene.abort();
     };
   }, [projectId, push]);
   useEffect(() => {

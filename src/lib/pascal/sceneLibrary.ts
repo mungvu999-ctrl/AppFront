@@ -107,8 +107,10 @@ const forget = (): void => {
   missingById.clear();
   retryAt.clear();
   listedIds.clear();
+  // Đổi tài khoản: huỷ TOÀN CỤC mọi lượt đọc theo id (khác rời một cảnh — chỉ người tiêu thụ ấy rời).
+  ownerEpoch += 1;
+  for (const entry of pendingById.values()) entry.ctl.abort();
   pendingById.clear();
-  abortByIdReads();
   clearServerLibrary();
 };
 
@@ -129,8 +131,18 @@ const missingById = new Map<string, SavedModelFailure>();
 const retryAt = new Map<string, number>();
 /** Id của danh sách đã ghi gần nhất: kết quả theo id về muộn KHÔNG ghi đè mục danh sách (danh sách thắng). */
 const listedIds = new Set<string>();
-/** Lượt đọc theo id đang chạy, gắn thế hệ: rời cảnh (`abandonLocal`) thì người gọi mới không bám lượt đã bị bỏ. */
-const pendingById = new Map<string, { readonly gen: number; readonly promise: Promise<void> }>();
+/**
+ * Lượt đọc theo id đang chạy, dùng chung giữa các cảnh: đếm người tiêu thụ còn sống; người cuối rời (cảnh đóng, đổi
+ * phiên bản) thì huỷ lượt (gỡ cả chỗ trong hàng chờ). Lượt đã huỷ bị gỡ khỏi bảng → người gọi mới tự đọc lại.
+ */
+interface PendingById {
+  readonly promise: Promise<void>;
+  readonly ctl: AbortController;
+  consumers: number;
+}
+const pendingById = new Map<string, PendingById>();
+/** Tăng khi đổi tài khoản (`forget`): lượt đọc theo id của chủ cũ không ghi. */
+let ownerEpoch = 0;
 
 /**
  * Ghi lại danh mục từ danh sách đã nhận + mẫu theo id (đồng bộ, không khung nào thấy danh mục rỗng). Nguồn gốc theo id
@@ -285,21 +297,31 @@ const releaseByIdSlot = (): void => {
  * Semaphore chung của mọi lượt đọc theo id, biết huỷ: `alive` sai khi chờ hoặc ngay sau khi có chỗ → không gọi API,
  * trả `null`. Có thể ném (lỗi của `work`).
  */
-const withByIdSlot = async <T>(alive: () => boolean, work: () => Promise<T>): Promise<T | null> => {
+const withByIdSlot = async <T>(alive: () => boolean, work: () => Promise<T>, signal?: AbortSignal): Promise<T | null> => {
   if (!alive()) return null;
   if (byIdSlots > 0) byIdSlots -= 1;
-  else if (!(await new Promise<boolean>((wake) => byIdWaiters.push({ alive, wake })))) return null;
+  else {
+    const granted = await new Promise<boolean>((wake) => {
+      const waiter: ByIdWaiter = { alive, wake };
+      byIdWaiters.push(waiter);
+      // Huỷ khi đang chờ: rời hàng NGAY, không đợi tới lượt trả chỗ kế tiếp.
+      signal?.addEventListener(
+        'abort',
+        () => {
+          const at = byIdWaiters.indexOf(waiter);
+          if (at >= 0) byIdWaiters.splice(at, 1);
+          wake(false);
+        },
+        { once: true },
+      );
+    });
+    if (!granted) return null;
+  }
   try {
     return alive() ? await work() : null;
   } finally {
     releaseByIdSlot();
   }
-};
-/** Huỷ lượt đọc theo id đang chạy của vòng đời cũ (rời cảnh, đổi người). */
-let byIdCtl = new AbortController();
-const abortByIdReads = (): void => {
-  byIdCtl.abort();
-  byIdCtl = new AbortController();
 };
 
 /** Lượt dựng không hỏi theo id khi máy chủ đã nói rõ không cho đọc thư viện / chưa có phiên / lượt đọc mất hiệu lực. */
@@ -318,8 +340,10 @@ const readById = async (
   if (api.read === undefined) return 'read-failed';
   const { read } = api;
   // `null` = lượt đã bỏ (không gọi) hoặc lỗi mạng: nơi gọi kiểm vòng đời ngay sau, bỏ kết quả nếu đã bỏ.
-  const result = await withByIdSlot(alive, () =>
-    read({ libraryItemId: modelId, ...(signal === undefined ? {} : { signal }) }).catch(() => null),
+  const result = await withByIdSlot(
+    alive,
+    () => read({ libraryItemId: modelId, ...(signal === undefined ? {} : { signal }) }).catch(() => null),
+    signal,
   ).catch(() => null);
   if (result === null) return 'read-failed';
   if (result.ok) return result.data;
@@ -356,29 +380,31 @@ export const savedModelIdsToResolve = (furniture: readonly SavedFurniture[]): st
  * Thư viện chung (`ensureSceneLibrary`) + mẫu đã lưu ngoài danh sách, gọi TRƯỚC khi dựng cảnh: mỗi id thiếu đọc bằng #15
  * (tối đa `SAVED_MODEL_CONCURRENCY` lượt cùng lúc), gộp vào danh mục KHÔNG gỡ phần còn lại; mục ấy giữ qua mọi lượt thay
  * danh sách và gia hạn URL theo chính #15. 404/403/lỗi → món giữ đường lưu (hình thay thế) + câu báo chung
- * (`SAVED_MODEL_MISSING_NOTICE`) + đầu dò `libraryLoad().missingById`. Đổi người/rời cảnh giữa chừng → bỏ kết quả. Không ném.
+ * (`SAVED_MODEL_MISSING_NOTICE`) + đầu dò `libraryLoad().missingById`. Không ném.
+ * Huỷ THEO CẢNH: `signal` của người gọi (cảnh đóng/đổi phiên bản) chỉ rút người tiêu thụ ấy; lượt đọc dùng chung chỉ huỷ
+ * khi không còn ai cần. Đổi tài khoản huỷ toàn cục (`forget`).
  */
 export async function ensureSceneLibraryFor(
   furniture: readonly SavedFurniture[],
   getApi: LibraryApiSource = defaultApi,
+  signal?: AbortSignal,
 ): Promise<SceneLibrary> {
-  // `ensureSceneLibrary` chuẩn hoá phiên ĐỒNG BỘ trước (đổi chủ → `forget()` tăng thế hệ); thế hệ chụp SAU bước ấy và
-  // TRƯỚC await: đổi chủ lúc vào không bỏ lượt này, rời cảnh trong lúc chờ thư viện thì lượt này không hỏi/ghi gì.
+  // `ensureSceneLibrary` chuẩn hoá phiên ĐỒNG BỘ trước (đổi chủ → `forget()`); mốc chủ chụp SAU bước ấy, trước await.
   const loading = ensureSceneLibrary(getApi);
-  const gen = generation;
-  const ctl = byIdCtl;
+  const epoch = ownerEpoch;
   const library = await loading;
-  if (NO_BY_ID_SOURCES.has(library.source) || gen !== generation) return library;
+  const left = (): boolean => signal?.aborted === true;
+  if (NO_BY_ID_SOURCES.has(library.source) || epoch !== ownerEpoch || left()) return library;
   const owner = settledOwner;
   if (currentOwner() !== owner) return library;
-  const stale = (): boolean => gen !== generation || currentOwner() !== owner;
+  const stale = (): boolean => epoch !== ownerEpoch || currentOwner() !== owner;
   const ids = savedModelIdsToResolve(furniture);
   if (ids.length === 0) return library;
   const api = await getApi().catch(() => null);
-  if (stale()) return library;
-  const resolveOne = async (modelId: string): Promise<void> => {
-    const got = await readById(modelId, api, () => !stale(), ctl.signal);
-    if (stale()) {
+  if (stale() || left()) return library;
+  const resolveOne = async (modelId: string, readSignal: AbortSignal): Promise<void> => {
+    const got = await readById(modelId, api, () => !stale() && !readSignal.aborted, readSignal);
+    if (stale() || readSignal.aborted) {
       assetLog.dropped += 1;
       return;
     }
@@ -400,13 +426,31 @@ export async function ensureSceneLibraryFor(
     registerServerLibrary([got]);
   };
   const join = (modelId: string): Promise<void> => {
-    const entry = pendingById.get(modelId);
-    if (entry !== undefined && entry.gen === gen) return entry.promise;
-    const promise = resolveOne(modelId).finally(() => {
-      if (pendingById.get(modelId)?.promise === promise) pendingById.delete(modelId);
-    });
-    pendingById.set(modelId, { gen, promise });
-    return promise;
+    if (left()) return Promise.resolve();
+    let entry = pendingById.get(modelId);
+    if (entry === undefined) {
+      const ctl = new AbortController();
+      const created: PendingById = {
+        ctl,
+        consumers: 0,
+        promise: resolveOne(modelId, ctl.signal).finally(() => {
+          if (pendingById.get(modelId) === created) pendingById.delete(modelId);
+        }),
+      };
+      pendingById.set(modelId, created);
+      entry = created;
+    }
+    const mine = entry;
+    mine.consumers += 1;
+    const leave = (): void => {
+      mine.consumers -= 1;
+      if (mine.consumers > 0) return;
+      mine.ctl.abort();
+      if (pendingById.get(modelId) === mine) pendingById.delete(modelId);
+    };
+    signal?.addEventListener('abort', leave, { once: true });
+    void mine.promise.finally(() => signal?.removeEventListener('abort', leave));
+    return unlessAborted(mine.promise, signal).then(() => undefined);
   };
   await Promise.all(ids.map(join)).catch(() => undefined);
   return library;
@@ -439,6 +483,8 @@ export const libraryLoadStatus = (): LibraryLoadStatus => ({
 export const resetSceneLibraryForTests = (): void => {
   forget();
   settledOwner = null;
+  byIdSlots = SAVED_MODEL_CONCURRENCY;
+  byIdWaiters.length = 0;
   assetLog.refreshed = 0;
   assetLog.retriedSame = 0;
   assetLog.dropped = 0;
@@ -679,29 +725,34 @@ async function refreshOnce(
   await sleep(wait);
   if (isStale()) return fail(modelId, 'stale');
   const byIdOwned = (): boolean => resolvedById.has(modelId) && !listedIds.has(modelId);
-  if (byIdOwned()) {
-    // Mẫu resolve theo id (không có trong danh sách): gia hạn bằng chính #15, không đọc lại cả thư viện.
+  /** Gia hạn bằng chính #15; `undefined` = xong (hoặc danh sách đã nhận mục), còn lại = kết cục trả ngay. */
+  const refreshById = async (): Promise<null | undefined> => {
     const got = await readById(modelId, await getApi().catch(() => null), () => !isStale(), signal);
     if (isStale()) return fail(modelId, 'stale');
     // Danh sách đã nhận mục này trong lúc chờ: danh sách thắng, URL lấy từ danh sách.
-    if (byIdOwned()) {
-      if (got === 'no-session') return fail(modelId, 'no-session');
-      if (got === 'read-failed') return fail(modelId, 'failed');
-      if (typeof got === 'string') {
-        // 404/403: gỡ khỏi danh mục nhất quán (không còn "đã biết" mà không gia hạn được) + ghi kết cục.
-        resolvedById.delete(modelId);
-        rebuildCatalog();
-        return failSaved(modelId, got);
-      }
-      resolvedById.set(modelId, got);
-      registerServerLibrary([got]);
+    if (!byIdOwned()) return undefined;
+    if (got === 'no-session') return fail(modelId, 'no-session');
+    if (got === 'read-failed') return fail(modelId, 'failed');
+    if (typeof got === 'string') {
+      // 404/403: gỡ khỏi danh mục nhất quán (không còn "đã biết" mà không gia hạn được) + ghi kết cục.
+      resolvedById.delete(modelId);
+      rebuildCatalog();
+      return failSaved(modelId, got);
     }
+    resolvedById.set(modelId, got);
+    registerServerLibrary([got]);
+    return undefined;
+  };
+  if (byIdOwned()) {
+    if ((await refreshById()) === null) return null;
   } else {
     let failure = await refreshLibrary(getApi, signal);
     // Lượt đọc chung bị huỷ bởi NGƯỜI KHỞI TẠO nó, còn mình chưa huỷ: tự đọc lại một lần.
     if (failure === 'aborted' && !isStale()) failure = await refreshLibrary(getApi, signal);
     if (failure === 'aborted' || (failure === null && isStale())) return fail(modelId, 'stale');
     if (failure !== null) return fail(modelId, failure);
+    // Mục RỜI danh sách trong lượt này mà từng resolve theo id: giá trị theo id cũ quay lại → đọc #15 trước khi trả URL.
+    if (byIdOwned() && (await refreshById()) === null) return null;
   }
   // Danh mục (đã THAY bằng lượt đọc mới nhất) không còn mẫu này = người dùng mất quyền với nó.
   if (!isServerModel(modelId)) return fail(modelId, 'no-permission');
@@ -727,8 +778,6 @@ const abandonLocal = (): void => {
   generation += 1;
   refreshing = null;
   inflight.clear();
-  pendingById.clear();
-  abortByIdReads();
 };
 
 /** Gọi từ BẤT KỲ bó nào: vô hiệu mọi lượt gia hạn đang chạy của mọi bó trên tài liệu (review Codex-3 #5). */

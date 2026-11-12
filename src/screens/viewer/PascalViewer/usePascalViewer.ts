@@ -381,6 +381,7 @@ export function usePascalViewer({
     }
 
     let cancelled = false;
+    const scene = new AbortController();
     const echo = echoPending.current;
     echoPending.current = false;
 
@@ -392,7 +393,7 @@ export function usePascalViewer({
         throw error;
       })
       // Thư viện máy chủ chốt TRƯỚC khi dựng (cùng điểm vào với editor); `cancelled` bỏ kết quả của bản vẽ cũ.
-      .then(async ([pascal, diffs, { ensureSceneLibraryFor }]) => [pascal, diffs, await ensureSceneLibraryFor(graph.furniture)] as const)
+      .then(async ([pascal, diffs, { ensureSceneLibraryFor }]) => [pascal, diffs, await ensureSceneLibraryFor(graph.furniture, undefined, scene.signal)] as const)
       .then(([{ standardSceneOf }, { diffScenes, isEmptyDiff }]) => {
         if (cancelled) return;
         const converted = standardSceneOf(graph);
@@ -409,6 +410,7 @@ export function usePascalViewer({
 
     return () => {
       cancelled = true;
+      scene.abort();
     };
     /* `attempt` có mặt vì "thử lại" phải chạy lại CẢ lượt nạp này: thiếu nó thì
        nạp hỏng → thử lại → `result` vẫn `null` và màn kẹt "đang nạp" mãi (B-V10-04). */

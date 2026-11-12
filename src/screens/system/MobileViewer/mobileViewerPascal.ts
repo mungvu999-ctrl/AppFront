@@ -27,6 +27,7 @@ export function mountMobileViewerPascal(
   options: MobileViewerSceneOptions,
 ): MobileViewerSceneMount {
   let disposed = false;
+  const scene = new AbortController();
   let handle: { readonly dispose: () => void } | null = null;
 
   /* Thư viện máy chủ + concept AI chốt TRƯỚC khi dựng cảnh — cùng điểm vào với editor (`ensureSceneLibrary`,
@@ -35,7 +36,7 @@ export function mountMobileViewerPascal(
   Promise.all([
     defaultLoadMount(),
     import('@/lib/pascal/sceneStandard'),
-    import('@/lib/pascal/sceneLibrary').then(({ ensureSceneLibraryFor }) => ensureSceneLibraryFor(options.graph.furniture)),
+    import('@/lib/pascal/sceneLibrary').then(({ ensureSceneLibraryFor }) => ensureSceneLibraryFor(options.graph.furniture, undefined, scene.signal)),
     import('@/lib/pascal/sceneConcept').then(async ({ conceptSceneOptions, loadSceneConcept }) => {
       if (projectId === undefined) return { sceneOptions: {}, notice: null };
       const concept = await (options.loadConcept?.() ?? loadSceneConcept(projectId));
@@ -85,6 +86,7 @@ export function mountMobileViewerPascal(
     handle: {
       dispose: () => {
         disposed = true;
+        scene.abort();
         handle?.dispose();
       },
     },

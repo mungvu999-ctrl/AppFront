@@ -397,13 +397,16 @@ export function useVersionHistory(options: UseVersionHistoryOptions): VersionHis
   const [resolvedFor, setResolvedFor] = useState<typeof savedFurniture | null>(null);
   useEffect(() => {
     let live = true;
-    void ensureSceneLibraryFor(savedFurniture).then((loaded) => {
+    // Đổi phiên bản/rời màn: rút người tiêu thụ này (việc đọc theo id đang chờ của bản cũ rời hàng ngay).
+    const scene = new AbortController();
+    void ensureSceneLibraryFor(savedFurniture, undefined, scene.signal).then((loaded) => {
       if (!live) return;
       setLibrary(loaded);
       setResolvedFor(savedFurniture);
     });
     return () => {
       live = false;
+      scene.abort();
     };
   }, [savedFurniture]);
   const awaitingSavedModels = resolvedFor !== savedFurniture && savedModelIdsToResolve(savedFurniture).length > 0;
