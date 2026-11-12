@@ -14,9 +14,9 @@ import { clearServerLibrary, registerServerLibrary } from '../furnitureCatalog';
 import { itemFitOf } from '../itemFit';
 import { LIBRARY_QUALITY, type ModelQuality } from '../libraryQuality';
 import LIBRARY from '../libraryRoles.json' with { type: 'json' };
-import { ANCHOR_BAND, FAIL_COST, hardRejectOf, paletteOf, planRectOf, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetMember } from '../roomSet';
+import { ANCHOR_BAND, CONCEPT_LENIENT, FAIL_COST, hardRejectOf, paletteOf, planRectOf, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetDecision, type SetMember } from '../roomSet';
 import { sceneStyleOf } from '../sceneStyles';
-import { addRoomSetMembers, contextRolesOf, finishRoomSet, modelFolderOf, roomSetPools, roomSetReport, setRoomSetKeys, type LayerStyle } from '../sceneVariety';
+import { addRoomSetMembers, contextRolesOf, finishRoomSet, modelFolderOf, roomSetPools, roomSetReport, roomSetSwapOf, roomSetUniformOf, setRoomSetKeys, type LayerStyle } from '../sceneVariety';
 
 const roles = LIBRARY.roles as Record<string, string[]>;
 const libStyles = (LIBRARY as unknown as { models: Record<string, { s: string[] }> }).models;
@@ -539,5 +539,234 @@ describe('Codex SEL-1', () => {
     const run = (idA: string, idB: string): string | null | undefined =>
       roomSetOf('R', [shelf(idA, 'a', true, 0), shelf(idB, 'b', true, 0), shelf('third', null, false, 3)], new Map(), c).get('third')?.to;
     expect(run('p1', 'p2')).toBe(run('p2', 'p1'));
+  });
+});
+
+/* ---- Vòng 16: mẫu concept AI không còn là ghim — ứng viên ưu tiên, chỉ chọn khi qua mọi ràng buộc cứng của món ---- */
+
+describe('vòng 16 — mẫu concept là ứng viên ưu tiên, không phải ghim', () => {
+  const table = (extra: Partial<SetMember> = {}): SetMember => at('t', 'diningTable', null, 1.6, 0.9, 0, 0, extra);
+
+  it('concept qua mọi ràng buộc cứng → chọn concept (cause concept), không so chi phí', () => {
+    const base = roomSetOf('R', [table()], new Map(), ctx).get('t');
+    const concept = base?.top?.find(([f]) => f !== base.to)?.[0] as string;
+    expect(concept).toBeDefined();
+    const d = roomSetOf('R', [table({ concept: { folder: concept } })], new Map(), ctx).get('t');
+    expect(d).toMatchObject({ to: concept, cause: 'concept', why: expect.stringContaining('concept') });
+  });
+
+  // Ghi chú (điều phối 13/11): trước đây concept lệch tỉ lệ hộp ("sai tỉ lệ thật"/"vượt hộp") cũng trượt; nay chỉ chất
+  // lượng/an toàn (méo dáng, va chạm, trần, giường, vân vỡ, QC) loại concept — lệch hộp thì giữ và dựng co đều.
+  const uniformOf = (w: number, d: number) => (x: string) => itemFitOf(x, w, d, undefined, CEIL * 1000, false, true)?.shownM;
+  it('concept méo dáng → bộ chọn chọn mẫu khác như không có concept, không kéo giãn concept', () => {
+    // Hộp hẹp dài: tìm hộp mà ít nhất một bàn méo dáng ở phép khớp thường.
+    const boxes: [number, number][] = [[1.6, 0.9], [1.6, 0.5], [2, 0.45], [1.2, 0.35]];
+    const [w, dd, bad] = boxes.flatMap(([bw, bd]) => {
+      const m0 = at('t', 'diningTable', null, bw, bd, 0, 0);
+      const f = m0.pool.find((x) => hardRejectOf(m0, x, ctx) === 'méo dáng');
+      return f === undefined ? [] : [[bw, bd, f] as const];
+    })[0] as readonly [number, number, string];
+    expect(bad).toBeDefined();
+    const base = roomSetOf('R', [at('t', 'diningTable', null, w, dd, 0, 0)], new Map(), ctx).get('t');
+    const d = roomSetOf('R', [at('t', 'diningTable', null, w, dd, 0, 0, { concept: { folder: bad, shownOf: uniformOf(w, dd) } })], new Map(), ctx).get('t');
+    expect(d?.to).toBe(base?.to);
+    expect(d?.to).not.toBe(bad);
+    expect(d?.cause).not.toBe('concept');
+    expect(d?.why).toContain('concept trượt: méo dáng');
+  });
+
+  it('concept chỉ lệch tỉ lệ hộp (sai tỉ lệ thật / vượt hộp, không méo) → GIỮ concept, dựng co đều (uniform), cỡ co đều vừa hộp', () => {
+    const m = table();
+    const lenient = m.pool.find((x) => {
+      const r = hardRejectOf(m, x, ctx);
+      return (r === 'sai tỉ lệ thật' || r === 'vượt hộp chỗ đặt') && hardRejectOf({ ...m, shownOf: uniformOf(1.6, 0.9) }, x, ctx, CONCEPT_LENIENT) === undefined;
+    }) as string;
+    expect(lenient).toBeDefined();
+    const d = roomSetOf('R', [table({ concept: { folder: lenient, shownOf: uniformOf(1.6, 0.9) } })], new Map(), ctx).get('t');
+    expect(d).toMatchObject({ to: lenient, cause: 'concept', uniform: true, why: expect.stringContaining('co đều') });
+    const fit = itemFitOf(lenient, 1.6, 0.9, undefined, CEIL * 1000, false, true);
+    const [sx, sy, sz] = fit?.scale ?? [0, 0, 0];
+    expect(sx).toBeCloseTo(sy, 9);
+    expect(sx).toBeCloseTo(sz, 9);
+    expect((fit?.shownM[0] ?? 9) <= 1.6 + 1e-9 && (fit?.shownM[2] ?? 9) <= 0.9 + 1e-9).toBe(true);
+  });
+
+  it('Codex M16-3 #3: concept co đều quá nhỏ (hộp 5 cm, hệ số 0, cỡ 1 mm) → trượt "co quá nhỏ", không nhận concept', () => {
+    const m = table();
+    const lenient = m.pool.find((x) => {
+      const r = hardRejectOf(m, x, ctx);
+      return (r === 'sai tỉ lệ thật' || r === 'vượt hộp chỗ đặt') && hardRejectOf({ ...m, shownOf: uniformOf(1.6, 0.9) }, x, ctx, CONCEPT_LENIENT) === undefined;
+    }) as string;
+    const tiny = at('t', 'diningTable', null, 0.05, 0.05, 0, 0, { concept: { folder: lenient, shownOf: uniformOf(0.05, 0.05) } });
+    expect(roomSetOf('R', [tiny], new Map(), ctx).get('t')?.why).toContain('concept trượt: co quá nhỏ');
+    for (const shown of [[0, 0, 0], [0.001, 0.001, 0.001]] as Dims[]) {
+      const d = roomSetOf('R', [table({ concept: { folder: lenient, shownOf: () => shown } })], new Map(), ctx).get('t');
+      expect(d?.cause).not.toBe('concept');
+      expect(d?.why).toContain('concept trượt: co quá nhỏ');
+    }
+  });
+
+  it('Codex M16-3 #2: lập lại kế hoạch — món đã chốt co đều chiếm chỗ bằng mặt bằng co đều, không phải phép khớp thường', () => {
+    const q: ModelQuality = { role: 'closet', useMm: [800, 1800, 500], front: { axis: '+z', check: 'ok' }, parts: [{ kind: 'frame', share: 1, lab: [62, 8, 24], material: 'wood', kindBy: 'm' }], detail: { tris: 1, kb: 1, textures: 0, maxTex: 0, tier: 'light' }, licence: 'CC0', source: 't' } as ModelQuality;
+    const c: SetContext = { tierOf: () => 0, tiers: 1, dimsOf: () => [0.8, 1.8, 0.5], palette: {}, qualityOf: (x) => ({ ...q, role: x === 'kd' ? 'dresser' : 'closet' }) };
+    // A: hộp 1,6 × 0,5 tại 0; phép khớp thường phủ cả hộp, co đều chỉ 0,8 × 0,5 giữa hộp.
+    const a: SetMember = { id: 'A', role: 'closet', short: 0.5, long: 1.6, current: null, pool: [], fixed: false, box: { cx: 0, cy: 0, w: 1.6, d: 0.5, rot: 0 }, shownOf: () => [1.6, 1.8, 0.5], concept: { folder: 'k', shownOf: () => [0.8, 1.8, 0.5] } };
+    // B: hộp 0,8 × 0,5 tại x 0,9 (0,5..1,3): chồng phép khớp thường của A (..0,8), không chồng co đều (..0,4).
+    // B khác vai (tủ ngăn kéo) để mẫu đã chốt của A không dẫn nhóm của B.
+    const b: SetMember = { id: 'B', role: 'dresser', short: 0.5, long: 0.8, current: null, pool: [], fixed: false, box: { cx: 0.9, cy: 0, w: 0.8, d: 0.5, rot: 0 }, shownOf: () => [0.8, 1.8, 0.5], concept: { folder: 'kd' } };
+    const decidedA: SetDecision = { id: 'A', role: 'closet', from: null, to: 'k', rule: 'roomset', cause: 'concept', anchor: true, uniform: true, why: '' };
+    expect(roomSetOf('R', [a, b], new Map([['A', decidedA]]), c).get('B')).toMatchObject({ cause: 'concept', to: 'kd' });
+    // Đối chứng: cùng quyết định nhưng không co đều → A chiếm cả hộp → B trượt va chạm.
+    const plain: SetDecision = { ...decidedA, uniform: false };
+    expect(roomSetOf('R', [a, b], new Map([['A', plain]]), c).get('B')?.why).toContain('concept trượt: va chạm');
+  });
+
+  it('Codex M16-1 #2: pool không còn ứng viên lọt → ngân sách va chạm 0, concept chồng vật cản trượt', () => {
+    const base = roomSetOf('R', [table()], new Map(), ctx).get('t');
+    const concept = base?.to as string;
+    const zone = [planRectOf(0, 0, 0.5, 0.5, 0)];
+    const free = roomSetOf('R', [table({ pool: [], concept: { folder: concept } })], new Map(), ctx).get('t');
+    expect(free).toMatchObject({ cause: 'concept', to: concept });
+    const blocked = roomSetOf('R', [table({ pool: [], concept: { folder: concept } })], new Map(), ctx, zone).get('t');
+    expect(blocked?.cause).toBe('fallback');
+    expect(blocked?.to).not.toBe(concept);
+    expect(blocked?.why).toContain('concept trượt: va chạm');
+  });
+
+  it('nhóm ghế quanh bàn: concept là mẫu chung khi qua cho MỌI ghế; một ghế trượt → cả nhóm đi đường thường, một mẫu', () => {
+    const chairs = (extra: Partial<SetMember> = {}): SetMember[] => [
+      pinnedAt('A', 'diningTable', 'table-oak-light-tapered-legs', 1.6, 0.9, 0, 0),
+      at('a1', 'diningChair', null, 0.48, 0.5, -0.4, -0.7, extra),
+      at('a2', 'diningChair', null, 0.48, 0.5, 0.4, -0.7, extra),
+      at('a3', 'diningChair', null, 0.48, 0.5, 0, 0.7, extra),
+    ];
+    const base = roomSetOf('R', chairs(), new Map(), ctx);
+    const concept = base.get('a1')?.top?.find(([f]) => f !== base.get('a1')?.to)?.[0] as string;
+    const all = roomSetOf('R', chairs({ concept: { folder: concept } }), new Map(), ctx);
+    for (const id of ['a1', 'a2', 'a3']) expect(all.get(id)).toMatchObject({ to: concept, cause: 'concept', group: 'A' });
+    // Ghế thứ tư dò thành dải 1,16 × 0,29 m: concept méo ở ghế này → không ghế nào của bàn lấy concept.
+    const strip = at('bad', 'diningChair', null, 1.16, 0.29, 0, -1.1, { concept: { folder: concept } });
+    const out = roomSetOf('R', [...chairs({ concept: { folder: concept } }), strip], new Map(), ctx);
+    expect(out.get('bad')?.why).toContain('concept trượt');
+    for (const id of ['a1', 'a2', 'a3']) {
+      expect(out.get(id)?.cause).not.toBe('concept');
+      expect(out.get(id)?.why).toContain('(ghế bad cùng bàn)');
+    }
+    expect(new Set(['a1', 'a2', 'a3'].map((id) => out.get(id)?.to)).size).toBe(1);
+  });
+
+  describe('qua đường dựng thật (sceneVariety)', () => {
+    const ROOM = 'R-CONCEPT';
+    const usage = (): RoomUsage => 'livingRoom';
+    const furniture = (id: string, kind: Furniture['kind'], w: number, d: number, x: number, y: number, extra: Partial<Furniture> = {}): Furniture =>
+      ({
+        id,
+        levelId: 'L-1',
+        roomId: ROOM,
+        kind,
+        centre: { x, y },
+        boundingBox: { min: { x: x - w / 2, y: y - d / 2 }, max: { x: x + w / 2, y: y + d / 2 } },
+        rotationDeg: 0,
+        source: 'ai',
+        reviewed: false,
+        confidence: 1,
+        ...extra,
+      }) as Furniture;
+    const CHAIRS = ['chair-white-windsor-spindle', 'chair-dining-grey-scandi-b', 'chair-dining-oak-rope-arm-b'];
+    const OTHER_TABLE = 'table-walnut-medium-splayed-legs';
+    const userTable = furniture('F-T', 'table', 1600, 900, 0, 0, { model: { id: 't', src: '/items/table-oak-light-tapered-legs/model.glb' } });
+    const chair = furniture('F-C', 'chair', 480, 500, 0, -700);
+    const strip = furniture('F-S', 'chair', 1160, 290, 3000, 3000);
+    const base: LayerStyle = { ...am, roomSet: true, layout: new Set(), rulesOff: new Set(), woodTone: 'l' };
+    const withConcept = (chairPick: string): LayerStyle => ({ ...base, prefer: { ...base.prefer, diningChair: [chairPick], diningTable: [OTHER_TABLE] } });
+    const pick = (items: readonly Furniture[], id: string, style: LayerStyle): string | null => {
+      setRoomSetKeys(new Map(), new Map([[ROOM, CEIL]]));
+      contextRolesOf(items, usage);
+      return modelFolderOf(items.find((f) => f.id === id) as Furniture, style, 'livingRoom');
+    };
+    const entry = (id: string) => roomSetReport()[ROOM]?.items.find((d) => d.id === id);
+    beforeAll(() => {
+      clearServerLibrary();
+      registerServerLibrary(
+        [...CHAIRS, 'table-oak-light-tapered-legs', OTHER_TABLE].map((id) => {
+          const u = real(id)?.useMm ?? [1000, 1000, 1000];
+          return { id, widthMm: u[0], heightMm: u[1], depthMm: u[2], modelUrl: `https://x.test/${id}.glb` };
+        }),
+      );
+    });
+    afterAll(() => {
+      clearServerLibrary();
+      registerServerLibrary(
+        ROLES.flatMap((role) => pool(role)).map((id) => {
+          const u = real(id)?.useMm ?? [1000, 1000, 1000];
+          return { id, widthMm: u[0], heightMm: u[1], depthMm: u[2], modelUrl: `https://x.test/${id}.glb` };
+        }),
+      );
+    });
+
+    it('concept hợp lệ → chọn concept; món có `model` người dùng vẫn ghim dù concept vai ấy khác', () => {
+      const selected = pick([userTable, chair], 'F-C', base);
+      const concept = CHAIRS.find((c) => c !== selected && entry('F-C')?.top?.some(([f]) => f === c)) as string;
+      expect(concept).toBeDefined();
+      expect(pick([userTable, chair], 'F-C', withConcept(concept))).toBe(concept);
+      expect(entry('F-C')).toMatchObject({ cause: 'concept', to: concept });
+      // `from` = luật cũ KHÔNG BAO GIỜ là concept (luật thư viện trúng concept → bỏ, Codex M16-1 #1).
+      expect(entry('F-C')?.from).not.toBe(concept);
+      // Món có `model` dựng bằng mẫu đã lưu (không hỏi modelFolderOf): sổ ghi ghim, mẫu đã lưu, không phải concept bàn.
+      expect(entry('F-T')).toMatchObject({ cause: 'pinned', to: 'table-oak-light-tapered-legs' });
+    });
+
+    it('concept méo trong hộp → không trả concept, cả qua đường fallback (luật cũ không chứa concept); roomSet tắt → như cũ (concept)', () => {
+      const off: LayerStyle = { ...base, roomSet: false };
+      const legacy = pick([strip], 'F-S', off);
+      const concept = CHAIRS.find((c) => c !== legacy) as string;
+      const got = pick([strip], 'F-S', withConcept(concept));
+      expect(got).not.toBe(concept);
+      expect(entry('F-S')?.why).toContain('concept trượt');
+      expect(entry('F-S')?.from).not.toBe(concept);
+      expect(pick([strip], 'F-S', { ...withConcept(concept), roomSet: false })).toBe(concept);
+    });
+
+    it('Codex M16-1 #1: thư viện chỉ còn đúng mẫu concept, concept méo → luật cũ không trả nó (mẫu dựng sẵn), không fail-keep nó', () => {
+      const only = 'chair-white-windsor-spindle';
+      clearServerLibrary();
+      const u = real(only)?.useMm ?? [1000, 1000, 1000];
+      registerServerLibrary([{ id: only, widthMm: u[0], heightMm: u[1], depthMm: u[2], modelUrl: `https://x.test/${only}.glb` }]);
+      try {
+        const got = pick([strip], 'F-S', withConcept(only));
+        expect(got).not.toBe(only);
+        expect(entry('F-S')).toMatchObject({ cause: 'fallback', why: expect.stringContaining('concept trượt') });
+        expect(entry('F-S')?.from).not.toBe(only);
+      } finally {
+        clearServerLibrary();
+        registerServerLibrary(
+          [...CHAIRS, 'table-oak-light-tapered-legs', OTHER_TABLE].map((id) => {
+            const v = real(id)?.useMm ?? [1000, 1000, 1000];
+            return { id, widthMm: v[0], heightMm: v[1], depthMm: v[2], modelUrl: `https://x.test/${id}.glb` };
+          }),
+        );
+      }
+    });
+
+    it('concept lệch hộp qua sceneVariety: giữ concept, roomSetUniformOf = true (toPascal co đều); món có `model` không co đều', () => {
+      // Ghế ăn ở hộp 0,38 × 0,38 m cạnh bàn (hộp AI dò nhỏ): ghế thật ~0,55 m → sai tỉ lệ thật ở phép khớp thường, không méo.
+      const big = furniture('F-BIG', 'chair', 380, 380, 0, -700);
+      const concept = 'chair-dining-oak-rope-arm-b';
+      const got = pick([userTable, big], 'F-BIG', withConcept(concept));
+      expect(got).toBe(concept);
+      expect(entry('F-BIG')).toMatchObject({ cause: 'concept', uniform: true });
+      expect(roomSetUniformOf('F-BIG', concept)).toBe(true);
+      expect(roomSetUniformOf('F-T', 'table-oak-light-tapered-legs')).toBe(false);
+    });
+
+    it('Codex M16-1 #3: concept khác mẫu luật cũ (`from`) → roomSetSwapOf có quyết định (prov.model), cùng mốc với sổ', () => {
+      pick([userTable, chair], 'F-C', base);
+      const legacy = entry('F-C')?.from;
+      const concept = CHAIRS.find((c) => c !== legacy && entry('F-C')?.top?.some(([f]) => f === c)) as string;
+      expect(concept).toBeDefined();
+      expect(pick([userTable, chair], 'F-C', withConcept(concept))).toBe(concept);
+      expect(entry('F-C')).toMatchObject({ cause: 'concept', rule: 'roomset', from: legacy, to: concept });
+      expect(roomSetSwapOf('F-C')).toMatchObject({ from: legacy, to: concept });
+    });
   });
 });

@@ -1128,3 +1128,33 @@ describe('roomset lượt 10', () => {
     expect(paletteOf({ ...base, wall: {} } as unknown as typeof base, 'd')).toEqual({ tone: 'd', light: false });
   });
 });
+
+/* ---- Codex M16-3 #1: concept co đều đến qua vai ngữ cảnh (folderOverride của toPascal) vẫn dựng co đều ---- */
+
+describe('roomset — concept co đều qua vai ngữ cảnh (tủ đầu giường xa giường → bàn trà)', () => {
+  const concept = (roles.coffeeTable ?? [])[0] as string;
+  beforeAll(() => {
+    clearServerLibrary();
+    // Mẫu 0,70 × 0,60 m trong hộp 0,45 × 0,40 m: tỉ lệ thật ~0,65 (lệch hộp, không méo) → giữ concept, co đều.
+    registerServerLibrary([{ id: concept, widthMm: 700, heightMm: 450, depthMm: 600, modelUrl: `https://x.test/${concept}.glb` }]);
+    Q.clear();
+    Q.set(concept, qual('coffeeTable', { frame: OAK }));
+  });
+  afterAll(() => {
+    clearServerLibrary();
+    Q.clear();
+  });
+
+  it('asset.scale của món dựng bằng concept co đều có ba trục bằng nhau, mặt bằng trong hộp', () => {
+    const g = graphWith();
+    const graph = { ...g, furniture: g.furniture.map((f) => (f.id === NS2 ? piece(NS2, 'table', 450, 400, 4300, 3500, { heightMm: 550 } as Partial<Furniture>) : f)) } as SpatialGraph;
+    const style: LayerStyle = { ...ON, prefer: { ...ON.prefer, coffeeTable: [concept] } };
+    const scene = sceneOf(graph, style);
+    expect(assetOf(scene, NS2)).toBe(concept);
+    expect(roomSetReport()[ROOM]?.items.find((d) => d.id === NS2)).toMatchObject({ role: 'coffeeTable', cause: 'concept', uniform: true });
+    const [sx, sy, sz] = (scene.nodes[`item_${NS2}`] as PascalItemNode).asset.scale as [number, number, number];
+    expect(sx).toBeCloseTo(sy, 9);
+    expect(sx).toBeCloseTo(sz, 9);
+    expect(sx * 0.7).toBeLessThanOrEqual(0.45 + 1e-9);
+  });
+});

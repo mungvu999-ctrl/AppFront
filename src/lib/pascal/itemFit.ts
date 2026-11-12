@@ -61,7 +61,8 @@ export interface ItemFit {
 
 /**
  * Khớp mẫu `folder` vào hộp `widthM` × `depthM` (trục riêng của món) với `heightMm` của món (vắng = theo mẫu, chặn trần
- * tầng `levelHeightMm`); `exactFit` = cặp nhận (khớp đúng hộp + `heightMm`). `null` = mẫu chưa có trong catalog.
+ * tầng `levelHeightMm`); `exactFit` = cặp nhận (khớp đúng hộp + `heightMm`); `uniform` = CO ĐỀU một hệ số cả 3 trục, vừa
+ * trong hộp mặt bằng, không phóng to quá cỡ thật, không quá trần (mẫu concept giữ dù lệch tỉ lệ hộp). `null` = mẫu chưa có trong catalog.
  */
 export const itemFitOf = (
   folder: string,
@@ -70,6 +71,7 @@ export const itemFitOf = (
   heightMm: number | undefined,
   levelHeightMm: number,
   exactFit = false,
+  uniform = false,
 ): ItemFit | null => {
   const catalog = CATALOG_MODELS[folder];
   if (catalog === undefined) {
@@ -93,6 +95,10 @@ export const itemFitOf = (
   // Không trục mặt bằng nào vượt hộp bao (FE-H): biên [0,8; 1,25] chỉ chống co thiếu — mẫu khác dáng
   // hộp (chậu, tủ đầu giường, kệ nông) từng phình gấp đôi hộp ở trục bị chặn.
   const [ax, sy, az] = ((): PascalVec3 => {
+    if (uniform) {
+      const s = Math.min(rx, rz, 1, metresOf(levelHeightMm) / ch);
+      return [s, s, s];
+    }
     if (exactFit) return [rx, heightMm === undefined ? heightOf(Math.sqrt(rx * rz)) : metresOf(heightMm) / ch, rz];
     if (RUG_FOLDERS.has(folder)) return [rx, fixedH === undefined ? RUG_SCALE_Y : fixedH / ch, rz];
     if (STRETCH_FOLDERS.has(folder)) {
@@ -117,10 +123,11 @@ export const itemFitOf = (
   const backShift = catalog.attachTo === 'wall-side' ? -(depthM - cd * sz) / 2 : 0;
   const [ox, oy, oz] = catalog.offset;
 
+  const shownH = uniform ? ch * sy : (fixedH ?? ch * sy);
   return {
     folder,
-    shownM: [cw * sx, fixedH ?? ch * sy, cd * sz] as PascalVec3,
-    heightM: fixedH ?? ch * sy,
+    shownM: [cw * sx, shownH, cd * sz] as PascalVec3,
+    heightM: shownH,
     scale: [sx * kx, sy * ky, sz * kz] as PascalVec3,
     offset: [ox * sx, oy * sy, oz * sz + backShift] as PascalVec3,
     rotation: [...catalog.rotation] as PascalVec3,

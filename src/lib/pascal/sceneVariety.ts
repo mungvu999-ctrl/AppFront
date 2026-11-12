@@ -569,15 +569,26 @@ export const modelFolderOf = (
   return baseFolderOf(f, style, usage, roleOverride);
 };
 
-const baseFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, roleOverride?: FurnitureRole): string | null => {
+/** Mẫu concept AI chọn cho vai (`sceneStyleFromConcept` đặt đầu `prefer`): mẫu thư viện máy chủ đầu tiên; vắng = không có. */
+const conceptOf = (role: FurnitureRole, style: SceneStyle): string | undefined => (style.prefer[role] ?? []).find(isServerModel);
+
+/** `noConcept`: bỏ mẫu concept khỏi `prefer` — mẫu luật cũ của món chưa ghim khi bộ chọn bật (concept là ứng viên ưu tiên của `roomSetOf`, không phải luật cũ). */
+const baseFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, roleOverride?: FurnitureRole, noConcept = false): string | null => {
   const role = roleOverride ?? roleOf(f, usage);
   const catalogue = ROLE_MODELS[role];
   const best = Math.min(...catalogue.map((folder) => sizeCostOf(f, folder)));
   const isNearBest = (folder: string): boolean => sizeCostOf(f, folder) <= best * STYLE_TIE + 1e-9;
   /* AID-01: mẫu thư viện máy chủ mà AI chọn cho vai trò (`sceneStyleFromConcept`) không nằm trong
      `ROLE_MODELS` — máy chủ đã lọc theo loại, cỡ khớp bằng `asset.scale`, nên không qua ngưỡng cỡ. */
+  // Luật cũ của món chưa ghim khi bộ chọn bật: không bao giờ ra mẫu concept, kể cả khi luật thư viện tự chọn trúng nó
+  // (Codex M16-1 #1) — concept chỉ vào cảnh qua `roomSetOf` khi qua ràng buộc cứng; hết lựa chọn → mẫu dựng sẵn.
+  const excluded = noConcept ? conceptOf(role, style) : undefined;
+  const libraryOf = (): string | null => {
+    const x = libraryModelOf(f, role, style);
+    return x === excluded ? null : x;
+  };
   const preferred = (style.prefer[role] ?? []).filter((folder) =>
-    catalogue.includes(folder) ? isNearBest(folder) : isServerModel(folder),
+    catalogue.includes(folder) ? isNearBest(folder) : !noConcept && isServerModel(folder),
   );
   const key = PER_ITEM_ROLES.has(role) ? f.id : `${f.roomId ?? 'none'}|${role}`;
   const hashed = (folders: readonly string[]): string => folders[fnv1a(key) % folders.length] as string;
@@ -590,7 +601,7 @@ const baseFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, role
     const first = hashed(folders);
     if (!isRejected(first)) return first;
     const good = folders.filter((folder) => !isRejected(folder));
-    const replacement = good.length > 0 ? hashed(good) : libraryModelOf(f, role, style);
+    const replacement = good.length > 0 ? hashed(good) : libraryOf();
     if (replacement === null || isRejected(replacement)) return textureBrokenOf(first) ? builtIn : first;
     QC_SWAPS.set(f.id, { from: first, to: replacement, role });
     return replacement;
@@ -598,7 +609,7 @@ const baseFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, role
 
   // Mẫu đẹp của thư viện máy chủ thay mẫu Pascal low-poly cùng loại (khi thư viện đã nạp); mẫu AI chọn vẫn thắng.
   if (!preferred.some(isServerModel)) {
-    const library = libraryModelOf(f, role, style);
+    const library = libraryOf();
     if (library !== null) return library;
   }
 
@@ -701,12 +712,11 @@ type SetInput = FolderInput & Partial<Pick<Furniture, 'edited' | 'slots' | 'cent
 /** Twin của cặp đã nhận → mẫu đã lưu của món thật (`addRoomSetMembers`): ghim, không chấm như đồ sinh. */
 const SET_PINNED = new Map<string, string>();
 /**
- * Món GHIM (vòng 14): mẫu người dùng chọn / cặp đã nhận (`model`), khe vật liệu theo mẫu đang có (`slots`), twin của cặp
- * đã nhận, mẫu concept AI chọn cho vai (`style.prefer`). Mọi món vai bộ còn lại — đồ sinh, AI chưa/đã xác nhận, người dùng
- * nhập, `edited` chưa gán mẫu — lấy mẫu từ MỘT đánh giá (`roomSetOf`); luật cũ chỉ còn là phương án cuối.
+ * Món GHIM: mẫu người dùng chọn / cặp đã nhận (`model`), khe vật liệu theo mẫu đang có (`slots`), twin của cặp đã nhận.
+ * Mẫu concept AI chọn cho vai (`style.prefer`) KHÔNG phải ghim (vòng 16): là ứng viên ưu tiên của `roomSetOf`, chỉ được
+ * chọn khi qua mọi ràng buộc cứng của món. Mọi món vai bộ còn lại lấy mẫu từ MỘT đánh giá; luật cũ chỉ là phương án cuối.
  */
-const isPinned = (f: SetInput, role: FurnitureRole, style: SceneStyle): boolean =>
-  f.model !== undefined || f.slots !== undefined || SET_PINNED.has(f.id) || (style.prefer[role] ?? []).some(isServerModel);
+const isPinned = (f: SetInput): boolean => f.model !== undefined || f.slots !== undefined || SET_PINNED.has(f.id);
 /** Nguồn cỡ của món chưa ghim: đồ sinh / AI chưa xác nhận / người dùng đã xác nhận (hộp không bao giờ đổi). */
 const sizeFromOf = (f: SetInput): NonNullable<SetMember['sizeFrom']> =>
   isGenerated(f) ? 'generated' : f.reviewed === false && f.source !== 'human' && f.edited !== true ? 'ai' : 'user';
@@ -850,7 +860,7 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
   const wanted = style.libraryStyles ?? [];
   const ceilingM = SET_ROOM_CEILINGS.get(roomId);
   /** Cỡ HIỂN THỊ [rộng, cao, sâu] m của mẫu `x` trong hộp của món — đúng phép khớp dựng cảnh (`itemFitOf`, cặp nhận khớp đúng). */
-  const shownIn = (f: SetInput, x: string): Dims | undefined =>
+  const shownIn = (f: SetInput, x: string, uniform = false): Dims | undefined =>
     ceilingM === undefined
       ? undefined
       : itemFitOf(
@@ -860,6 +870,7 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
           f.heightMm,
           ceilingM * 1000,
           SET_EXACT.has(f.id),
+          uniform,
         )?.shownM;
   // Vùng chặn: vùng mở cửa + thân tường của tầng, và mặt bằng HIỂN THỊ của đồ đứng sàn ngoài bộ (mẫu đã lưu, không thì
   // mẫu luật — vai ngoài bộ); không xác định được mẫu → hộp.
@@ -873,7 +884,8 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
   });
   const members: SetMember[] = [...room.members.values()].map(({ f, role, override }) => {
     const twinPin = SET_PINNED.get(f.id);
-    const pinned = twinPin === undefined && isPinned(f, role, style);
+    const pinned = twinPin === undefined && isPinned(f);
+    const concept = pinned || twinPin !== undefined ? undefined : conceptOf(role, style);
     const pin = twinPin ?? (f.model === undefined ? undefined : (SAVED_FOLDER.exec(f.model.src)?.[1] ?? null));
     const [short, long] = footprintOf(f);
     const box = setBoxOf(f);
@@ -888,9 +900,19 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
       short,
       long,
       // Món chưa ghim: mẫu luật cũ CHỈ là phương án cuối + để sổ so (`from`).
-      current: pin !== undefined ? pin : baseFolderOf(f, style, room.usage, override),
+      // Mẫu luật cũ của món chưa ghim không chứa mẫu concept: concept trượt ràng buộc cứng thì không quay lại qua `fallback`/`fail-keep`.
+      current: pin !== undefined ? pin : baseFolderOf(f, style, room.usage, override, !pinned),
       pool: pinned || twinPin !== undefined ? [] : setPoolOf(f, role, style),
       fixed: pinned,
+      ...(concept === undefined
+        ? {}
+        : {
+            concept: {
+              folder: concept,
+              ...(QC_EXCLUDED.has(concept) ? { reject: 'QC loại' } : {}),
+              ...(ceilingM === undefined ? {} : { shownOf: (x: string) => shownIn(f, x, true) }),
+            },
+          }),
       ...(twinPin === undefined ? {} : { pinTo: twinPin }),
       ...(ceilingM === undefined
         ? {}
@@ -926,6 +948,8 @@ const roomSetFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, r
   const member = room?.members.get(f.id);
   const role = roleOverride ?? roleOf(f, usage);
   let folder = current;
+  /** Mốc so "đã đổi do roomset": mẫu luật cũ của chính quyết định (`from`) khi áp quyết định (Codex M16-1 #3). */
+  let baseline = current;
   const pin = SET_PINNED.get(f.id);
   // Đang lập bộ (planRoom gọi mẫu luật cũ của từng món; `?layout=hue` hỏi mẫu neo qua modelFolderOf) → mẫu luật cũ, không đệ quy.
   // Vai/ngữ cảnh khác lúc đăng ký (chữ ký, vai) → luật cũ. Twin của cặp đã nhận → mẫu của món thật.
@@ -943,11 +967,20 @@ const roomSetFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, r
       }
     }
     const decision = plan.get(f.id);
-    if (decision !== undefined && !isPinned(f, role, style)) folder = decision.to;
+    if (decision !== undefined && !isPinned(f)) {
+      folder = decision.to;
+      baseline = decision.from;
+    }
   }
-  if (folder !== current) SET_APPLIED.add(f.id);
+  if (folder !== baseline) SET_APPLIED.add(f.id);
   else SET_APPLIED.delete(f.id);
   return folder;
+};
+
+/** Món dựng mẫu concept bằng CO ĐỀU trong lượt dựng (concept giữ dù lệch tỉ lệ hộp, `roomSetOf`): toPascal khớp `uniform`. */
+export const roomSetUniformOf = (id: string, folder: string): boolean => {
+  const d = SET_LOG.get(id);
+  return d?.uniform === true && d.to === folder;
 };
 
 /** Món đổi mẫu do `roomset` trong lượt dựng hiện tại (toPascal ghi provenance; đồ người dùng xác nhận không mang prov `ai`). */
