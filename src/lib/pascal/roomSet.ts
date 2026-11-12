@@ -936,6 +936,11 @@ export const roomSetOf = (
   }
   // Vùng chặn của lượt: `zones` + mặt bằng hiển thị của đồ ghim và món đã chốt (thêm sau mỗi vai).
   const placed: SetZone[] = [...zones];
+  /**
+   * Vùng KẾT CẤU (F5-2, vòng 17): thân tường + vùng mở cửa (toPascal `wallRects`/`doorSwingRects`) = vùng `zones` đầu vào không
+   * có `kind`; đồ đứng sàn ngoài bộ luôn mang `kind` của đồ (sceneVariety `obstacles`), món của bộ thêm sau vào `placed`.
+   */
+  const structural: readonly SetZone[] = zones.filter((z) => z.kind === undefined);
   const placeOf = (m: SetMember, folder: string, real = false): void => {
     const d = real ? ctx.dimsOf(folder) : undefined;
     const r = m.lifted === true ? undefined : d !== undefined && m.box !== undefined ? realRectOf(m, m.box, d) : shownRectOf(m, folder);
@@ -1162,6 +1167,15 @@ export const roomSetOf = (
       if (forbiddenOf(realMemberOf(m), st, cm === 'va chạm' ? undefined : cm) === undefined) {
         if (!grows(b, stDims)) {
           return { to: null, why: `phương án cuối: hộp AI quá nhỏ cho vai — mẫu dựng sẵn cỡ thật vượt hộp quá ${REAL_GROW_M} m` };
+        }
+        // F5-2 (điều phối, D5): `forced` được chồng ĐỒ ĐẠC, không được chồng thân tường / vùng mở cửa quá phần hộp đã chồng.
+        // Mặt bằng = realRectOf (áp lưng theo vai, cơ chế dựng sẵn có); không dời khác vì toPascal không dựng được độ dời ấy.
+        // Món chưa xác định không đặt được thì ẨN (`null`, c9d44006) thay vì đè kết cấu.
+        if (m.lifted !== true) {
+          const wallHit = (rect: PlanRect): number => structural.reduce((s, z) => s + overlapAreaM2(rect, z), 0);
+          if (wallHit(realRectOf(m, b, stDims)) > wallHit(boxRectOf(b)) + ROOM_OVERLAP_TOL_M2) {
+            return { to: null, why: 'phương án cuối: mẫu dựng sẵn cỡ thật va chạm tường/cửa — ẩn món' };
+          }
         }
         const forced = [forbid ?? 'không mẫu luật cũ', ...(clear(realRectOf(m, b, stDims)) ? [] : ['va chạm'])].filter((x, i, a) => a.indexOf(x) === i).join(', ');
         return { to: st, uniform: 'real', forced, why: `phương án cuối: mẫu dựng sẵn ở cỡ thật dù ${forced} (luật cũ không dùng được)` };

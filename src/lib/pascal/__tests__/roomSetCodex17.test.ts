@@ -79,9 +79,10 @@ const ALL: SetZone = { cx: 0, cy: 0, w: 9, d: 9, rotationDeg: 0 };
  * (`WIDE`) chồng thêm → va chạm; cỡ thật sofa 2,0 m cũng chồng và vượt hộp 0,4 m ≤ REAL_GROW_M (cỡ thật vẫn được dựng).
  */
 const NARROW = { ...BOX, w: 1.6 };
+// F5-2: vùng chặn là ĐỒ ĐẠC (có `kind`) — `forced` được chồng đồ đạc; vùng không `kind` = tường/cửa, forced không được chồng.
 const FLANK: SetZone[] = [
-  { cx: 2.8, cy: 0, w: 4, d: 9, rotationDeg: 0 },
-  { cx: -2.8, cy: 0, w: 4, d: 9, rotationDeg: 0 },
+  { cx: 2.8, cy: 0, w: 4, d: 9, rotationDeg: 0, kind: 'cabinet' },
+  { cx: -2.8, cy: 0, w: 4, d: 9, rotationDeg: 0, kind: 'cabinet' },
 ];
 /** Cỡ hiển thị rộng 2,0 m (rộng hơn hộp NARROW), sâu/cao theo catalog. */
 const WIDE = (f: string): Dims | undefined => {
@@ -325,6 +326,38 @@ describe('Điều phối M17-2 — null chỉ vì va chạm / ngoài công năng
     expect(roomSetOf('r', [qc], new Map(), ctx, FLANK).get('s')?.to).toBeNull();
     const user = mem('s', 'sofa', [], { current: null, stock: 'sofa', box: NARROW, sizeFrom: 'user', shownOf: WIDE });
     expect(roomSetOf('r', [user], new Map(), ctx, FLANK).get('s')?.uniform).not.toBe('real');
+  });
+});
+
+describe('F5-2 (điều phối, D5) — forced không chồng tường/cửa, vẫn được chồng đồ đạc', () => {
+  // Phòng 2,5×3 m: bốn thân tường 0,2 m (vùng không `kind` = kết cấu); hộp ghế bành 0,48 m sát tường y = 0 (mép trong 0,1).
+  const W = 2.5;
+  const D = 3;
+  const walls: SetZone[] = [
+    { cx: W / 2, cy: 0, w: W + 0.2, d: 0.2, rotationDeg: 0 },
+    { cx: W / 2, cy: D, w: W + 0.2, d: 0.2, rotationDeg: 0 },
+    { cx: 0, cy: D / 2, w: 0.2, d: D + 0.2, rotationDeg: 0 },
+    { cx: W, cy: D / 2, w: 0.2, d: D + 0.2, rotationDeg: 0 },
+  ];
+  const small = { cx: W / 2, cy: 0.1 + 0.24, w: 0.48, d: 0.48, rot: 0 };
+  // Hiển thị trong hộp = co 0,6 (0,48 m): ngoài công năng ghế bành → mẫu dựng sẵn không dựng được ở cỡ hiển thị, đi nhánh forced.
+  const shownOf = (): Dims => [0.48, 0.51, 0.48];
+  const arm = mem('a', 'armchair', [], { current: null, stock: 'a-arm-grey', box: small, shownOf });
+
+  it('ghế bành dựng sẵn 0,8 m cỡ thật sẽ lấn 0,16 m vào thân tường → null (ẩn), lý do tường/cửa', () => {
+    const d = roomSetOf('r', [arm], new Map(), ctx, walls).get('a');
+    expect(d?.to).toBeNull();
+    expect(d?.why).toMatch(/tường\/cửa/);
+  });
+
+  it('cùng chỗ nhưng vùng chặn là đồ đạc (có kind) → forced vẫn dựng cỡ thật dù va chạm', () => {
+    const furniture = walls.map((z) => ({ ...z, kind: 'cabinet' }));
+    expect(roomSetOf('r', [arm], new Map(), ctx, furniture).get('a')).toMatchObject({ to: 'a-arm-grey', uniform: 'real', forced: expect.stringContaining('va chạm') });
+  });
+
+  it('hộp giữa phòng: cỡ thật không chạm tường → forced như cũ', () => {
+    const mid = mem('a', 'armchair', [], { current: null, stock: 'a-arm-grey', box: { ...small, cy: D / 2 }, shownOf });
+    expect(roomSetOf('r', [mid], new Map(), ctx, walls).get('a')).toMatchObject({ to: 'a-arm-grey', uniform: 'real' });
   });
 });
 

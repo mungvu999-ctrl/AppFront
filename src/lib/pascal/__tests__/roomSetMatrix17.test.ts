@@ -223,7 +223,7 @@ const violationsOf = (c: Combo, b: Built, out: ReadonlyMap<string, SetDecision>,
       if (miss !== undefined) errs.push(`${at}: (2) ngoài công năng ${miss} — ${d.to} uniform ${String(d.uniform ?? false)} (${d.cause}, ${d.why})`);
       if (d.uniform === true && shown[0] / model.dims[0] < UNIFORM_MIN - 1e-9) errs.push(`${at}: (2) co đều ${(shown[0] / model.dims[0]).toFixed(2)} < ${UNIFORM_MIN}`);
     }
-    // (4) cỡ thật vượt hộp ≤ REAL_GROW_M; không chồng vùng chặn quá phần hộp đã chồng (trừ `forced` có ghi va chạm).
+    // (4) cỡ thật vượt hộp ≤ REAL_GROW_M; không chồng vùng chặn quá phần hộp đã chồng (trừ `forced` chồng đồ đạc, không tường/cửa).
     const box = m.box as SetBox;
     if (d.uniform === 'real' && (shown[0] > box.w + REAL_GROW_M + 1e-6 || shown[2] > box.d + REAL_GROW_M + 1e-6)) {
       errs.push(`${at}: (4) cỡ thật ${shown[0].toFixed(2)}×${shown[2].toFixed(2)} vượt hộp ${box.w.toFixed(2)}×${box.d.toFixed(2)} quá ${REAL_GROW_M}`);
@@ -231,7 +231,8 @@ const violationsOf = (c: Combo, b: Built, out: ReadonlyMap<string, SetDecision>,
     const hit = hitOf(rectOfDecision(m, d, shown), b.zones);
     const boxHit = hitOf(planRectOf(box.cx, box.cy, box.w, box.d, box.rot), b.zones);
     if (hit > boxHit + ROOM_OVERLAP_TOL_M2 + 1e-9) {
-      if (d.forced?.includes('va chạm') === true) forcedHits.push(`${at}: chồng ${hit.toFixed(3)} > hộp ${boxHit.toFixed(3)} m² — forced (${d.forced})`);
+      // F5-2: forced chỉ được chồng ĐỒ ĐẠC (vùng có `kind`); vùng ma trận là tường/cửa (không `kind`) → luôn là lỗi.
+      if (d.forced?.includes('va chạm') === true && b.zones.some((z) => z.kind !== undefined)) forcedHits.push(`${at}: chồng ${hit.toFixed(3)} > hộp ${boxHit.toFixed(3)} m² — forced (${d.forced})`);
       else errs.push(`${at}: (4) chồng vùng chặn ${hit.toFixed(3)} > hộp ${boxHit.toFixed(3)} m² (${d.to}, ${d.cause}, uniform ${String(d.uniform ?? false)}, ${d.why})`);
     }
   }
