@@ -117,7 +117,7 @@ const forget = (): void => {
 let lastListing: LibraryListing | null = null;
 /** Mẫu đã lưu không có trong danh sách, đọc riêng bằng `GET /api/library/{id}`: giữ qua mọi lượt THAY danh sách. */
 const resolvedById = new Map<string, LibraryItem>();
-/** Mẫu đã lưu đọc theo id mà không có (404), không có quyền (403) hoặc đọc hỏng: không hỏi lại tới khi đổi người. */
+/** Mẫu đã lưu đọc theo id mà không có (404), không có quyền (403) — không hỏi lại tới khi đổi người — hoặc đọc hỏng (5xx/mạng: lượt dựng sau hỏi lại). */
 const missingById = new Map<string, SavedModelFailure>();
 const pendingById = new Map<string, Promise<void>>();
 
@@ -237,15 +237,21 @@ interface SavedFurniture {
   readonly model?: { readonly src: string } | undefined;
 }
 
+/** Máy chủ đã trả lời rõ (404/403): không hỏi lại. Đọc hỏng (5xx/mạng) thì lượt `ensureSceneLibraryFor` sau hỏi lại. */
+const answered = (id: string): boolean => {
+  const reason = missingById.get(id);
+  return reason === 'not-found' || reason === 'forbidden';
+};
+
 /**
  * Id mẫu mà món đã lưu tham chiếu nhưng danh mục ĐANG nạp (đóng gói + thư viện máy chủ) không có — mẫu ở ngoài danh sách
- * (thứ tự sau trần, mẫu riêng chia sẻ qua dự án…). Đã thử mà hỏng thì không vào lại.
+ * (thứ tự sau trần, mẫu riêng chia sẻ qua dự án…). Đã có câu trả lời 404/403 thì không vào lại.
  */
 export const savedModelIdsToResolve = (furniture: readonly SavedFurniture[]): string[] => {
   const ids = new Set<string>();
   for (const f of furniture) {
     const id = f.model === undefined ? undefined : SAVED_MODEL_SRC.exec(f.model.src)?.[1];
-    if (id !== undefined && !known(id) && !missingById.has(id)) ids.add(id);
+    if (id !== undefined && !known(id) && !answered(id)) ids.add(id);
   }
   return [...ids].sort();
 };
@@ -281,6 +287,7 @@ export async function ensureSceneLibraryFor(
       fail(modelId, got);
       return;
     }
+    missingById.delete(modelId);
     resolvedById.set(modelId, got);
     registerServerLibrary([got]);
   };

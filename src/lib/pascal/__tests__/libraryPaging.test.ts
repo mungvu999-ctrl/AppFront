@@ -253,6 +253,21 @@ describe('ensureSceneLibraryFor — mẫu đã lưu ngoài danh sách', () => {
     expect(read).not.toHaveBeenCalled();
   });
 
+  it('5xx/mạng khi đọc theo id → có câu báo nhưng KHÔNG đánh dấu vĩnh viễn: lượt sau hỏi lại và resolve được', async () => {
+    read.mockResolvedValueOnce({ ok: false, error: { kind: 'http', status: 503, requestId: 'r', retryable: true, raw: null } });
+    read.mockRejectedValueOnce(new Error('offline'));
+    await ensureSceneLibraryFor(saved('shared-flaky'));
+    expect(libraryLoadStatus().missingById).toEqual([{ modelId: 'shared-flaky', reason: 'read-failed' }]);
+    expect(assetRefreshStatus().notice).toBe(SAVED_MODEL_MISSING_NOTICE);
+    await ensureSceneLibraryFor(saved('shared-flaky'));
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(isServerModel('shared-flaky')).toBe(false);
+    await ensureSceneLibraryFor(saved('shared-flaky'));
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(isServerModel('shared-flaky')).toBe(true);
+    expect(libraryLoadStatus()).toMatchObject({ resolvedById: ['shared-flaky'], missingById: [] });
+  });
+
   it(`đọc theo id có giới hạn: tối đa ${SAVED_MODEL_CONCURRENCY} lượt cùng lúc`, async () => {
     let live = 0;
     let peak = 0;

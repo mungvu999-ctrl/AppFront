@@ -1,6 +1,7 @@
 import type { QueryClient, QueryFunction } from '@tanstack/react-query';
 
 import type { ApiResult, LibraryApi, LibraryItem } from '@/api/client';
+import { readAllLibraryPages, type LibraryListApi } from '@/api/libraryPages';
 
 import { prefetchOnHover, type PrefetchOnHoverHandlers } from './prefetch';
 import { queryKeys, type QueryKeyOf } from './queryKeys';
@@ -80,10 +81,12 @@ export interface LibraryQueryOptions<TData, TKey extends readonly unknown[]> {
  * huỷ được lượt gọi thay vì để nó chạy hết rồi vứt kết quả.
  */
 export function libraryListQueryOptions(
-  libraryApi: Pick<LibraryApi, 'list'>,
+  libraryApi: LibraryListApi,
 ): LibraryQueryOptions<LibraryItem[], LibraryListQueryKey> {
   return {
-    queryFn: ({ signal }) => unwrap(libraryApi.list({ signal })),
+    // M15: đọc ĐỦ trang (cùng vòng đọc với cảnh 3D); lỗi của bất kỳ trang nào ném như lượt đọc một phát trước đây.
+    queryFn: ({ signal }) =>
+      unwrap(readAllLibraryPages(libraryApi, signal).then((r): ApiResult<LibraryItem[]> => (r.ok ? { ok: true, data: [...r.data.items] } : r))),
     queryKey: queryKeys.library.list(),
   };
 }
