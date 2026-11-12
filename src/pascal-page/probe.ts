@@ -103,11 +103,12 @@ if (window.__pascalProbe) {
 }
 
 
-// Bộ nội thất theo phòng (vòng 12 làn S, `?enable=roomset`, `roomSet.ts`): phòng → { anchor, items[{id, role, from, to, rule, cost, why}] }.
-// Rỗng khi cờ tắt. `rule: 'keep'` kèm `why` = lý do giữ mẫu cũ.
+// Bộ nội thất theo phòng (`roomSet.ts`): phòng → { anchor, items[{id, role, from (mẫu luật cũ), to, rule, cause, by, group,
+// pool, rev, cost, why, rejects, top}] }. Rỗng khi cờ tắt. `cause`: selector / same / fallback / pinned (vòng 14).
+// `roomSetPools()`: vai → mẫu thư viện thấy được (so hai lượt để tách A catalog / B asset mới / C bộ chọn, DESIGN §2.7).
 if (window.__pascalProbe) {
-  void import('@/lib/pascal/sceneVariety').then(({ roomSetReport, roomSetTiming }) => {
-    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { roomSet: roomSetReport, roomSetTiming });
+  void import('@/lib/pascal/sceneVariety').then(({ roomSetPools, roomSetReport, roomSetTiming }) => {
+    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { roomSet: roomSetReport, roomSetTiming, roomSetPools });
   });
 }
 

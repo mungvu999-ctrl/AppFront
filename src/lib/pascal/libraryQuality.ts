@@ -15,6 +15,9 @@ export type QualityBy = 'm' | 'i';
 /** Mức hoàn thiện. Giường: `full` = nệm + chăn/ga + gối; `partial` = có nệm phủ ga nhưng thiếu gối hoặc chăn; `bare` = khung hoặc nệm trần. */
 export type Completeness = 'full' | 'partial' | 'bare';
 
+/** Nhãn texture vải (xem tay từ ảnh): `broken` = vân vỡ/loang patchwork khi dựng, `unsure` = nghi; vắng = ok hoặc chưa xem. */
+export type TextureFlag = 'broken' | 'unsure';
+
 export type PartKind = 'upholstery' | 'bedding' | 'frame' | 'top' | 'metal' | 'glass' | 'other';
 export type PartMaterial = 'wood' | 'fabric' | 'leather' | 'metal' | 'stone' | 'glass' | 'plastic' | 'ceramic';
 
@@ -57,6 +60,8 @@ export interface ModelQuality {
   readonly shape?: 'L';
   /** Mức hoàn thiện; vắng = chưa biết hoặc không áp dụng cho vai này. */
   readonly completeness?: { readonly v: Completeness; readonly by: QualityBy };
+  /** Cờ texture vải; vắng = ok hoặc chưa xem. */
+  readonly texture?: { readonly v: TextureFlag; readonly by: QualityBy };
   /** Các phần chính, tỉ phần giảm dần; vắng = chưa đo được. */
   readonly parts?: readonly QualityPart[];
   /** Mã phong cách (suy luận từ ảnh). */
@@ -96,6 +101,8 @@ interface CompactRow {
   f?: number;
   h?: 'L';
   c?: string;
+  /** Cờ texture: 1 = broken, 2 = unsure. */
+  t?: number;
   p?: number[][];
   s?: string[];
   d: [number, number, number, number, number];
@@ -126,6 +133,7 @@ const expandRow = (dict: CompactFile['dict'], x: CompactRow): ModelQuality => {
     front: frontOfFlags(x.f ?? 0),
     ...(x.h === 'L' ? { shape: 'L' as const } : {}),
     ...(comp ? { completeness: { v: comp, by: x.c?.[1] === 'm' ? 'm' : 'i' } } : {}),
+    ...(x.t === 1 || x.t === 2 ? { texture: { v: x.t === 1 ? ('broken' as const) : ('unsure' as const), by: 'i' as const } } : {}),
     ...(x.p
       ? {
           // Hàng phần: [kind, share%, L, a, b, material?, finish?]; material -1 = vắng; finish 1 = mirror.
@@ -164,3 +172,6 @@ export const expandLibraryQuality = (raw: unknown): LibraryQualityFile => expand
 export const LIBRARY_QUALITY: LibraryQualityFile = expand(data as unknown as CompactFile);
 
 export const qualityOf = (id: string): ModelQuality | undefined => LIBRARY_QUALITY.models[id];
+
+/** Cờ texture vải của mẫu: 'broken' | 'unsure', vắng = ok hoặc chưa xem. */
+export const textureOf = (id: string): TextureFlag | undefined => LIBRARY_QUALITY.models[id]?.texture?.v;

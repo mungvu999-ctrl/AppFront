@@ -1,7 +1,7 @@
 /**
  * Bộ nội thất theo phòng (`roomSet.ts` + móc trong `sceneVariety.ts`/`toPascal.ts`, vòng 12 làn S): ràng buộc cứng
- * loại trước (dữ liệu vắng = loại), neo + món phụ hợp gỗ/vải, cặp cùng vai một mẫu, tất định, giữ bộ cũ khi không hơn;
- * cờ tắt = như cũ; không ghi mẫu dẫn xuất vào bản lưu; tải lại cùng kết quả; undo/redo không nhận món dẫn xuất.
+ * loại trước (dữ liệu vắng = loại), neo + món phụ hợp gỗ/vải, cặp cùng vai một mẫu, tất định; vòng 14: một đánh giá cho
+ * mọi món chưa ghim (mẫu luật cũ chỉ là phương án cuối); cờ tắt = như cũ; không ghi mẫu dẫn xuất vào bản lưu; tải lại cùng kết quả; undo/redo không nhận món dẫn xuất.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -18,12 +18,8 @@ import {
   DARK_L,
   CEILING_GAP_M,
   DARK_SEAT_SHARE,
-  FAIL_COST,
-  GOOD_COST,
   hardRejectOf,
   layersOf,
-  oldFailOf,
-  MIN_GAIN,
   paletteOf,
   ROOMSET_VERSION,
   roomSetKeysOf,
@@ -111,7 +107,7 @@ describe('roomSetOf — hàm thuần', () => {
     expect(roomSetOnOf('?enable=roomset', false)).toBe(true);
   });
 
-  it('ràng buộc cứng: giường chưa hoàn chỉnh/chưa biết, mặt trước nghi, lỗi QC, thiếu phần, to/cao quá, sai vai → loại; giữ mẫu cũ', () => {
+  it('ràng buộc cứng: giường chưa hoàn chỉnh/chưa biết, mặt trước nghi, lỗi QC, thiếu phần, to/cao quá chuẩn vai, sai vai → loại; không ứng viên → mẫu luật cũ', () => {
     const table: Record<string, ModelQuality> = {
       cur: qual('doubleBed', { frame: OAK, completeness: 'bare' }),
       bare: qual('doubleBed', { frame: OAK, completeness: 'bare' }),
@@ -137,12 +133,12 @@ describe('roomSetOf — hàm thuần', () => {
       issue: 'có lỗi QC',
       noparts: 'thiếu dữ liệu phần',
       big: 'không lọt chỗ',
-      tall: 'cao hơn mẫu cũ',
+      tall: 'cao hơn chuẩn vai',
       sofa: 'sai vai',
       nodata: 'thiếu dữ liệu chất lượng',
     });
     const d = roomSetOf('R-1', [m], new Map(), ctx).get(m.id);
-    expect(d).toMatchObject({ to: 'cur', rule: 'keep', why: 'không ứng viên qua ràng buộc cứng' });
+    expect(d).toMatchObject({ to: 'cur', rule: 'keep', cause: 'fallback', why: 'không ứng viên qua ràng buộc cứng — mẫu luật cũ' });
   });
 
   it('dữ liệu chất lượng vắng hoàn toàn: mọi món giữ mẫu cũ', () => {
@@ -166,7 +162,7 @@ describe('roomSetOf — hàm thuần', () => {
       member('n2', 'nightstand', 'ns-walnut', ['ns-oak', 'ns-walnut']),
     ];
     const out = roomSetOf('R-1', ms, new Map(), ctxOf(table, { 'bed-oak': BED_DIMS }));
-    expect(out.has('F-bed')).toBe(false);
+    expect(out.get('F-bed')).toMatchObject({ to: 'bed-oak', rule: 'keep', cause: 'pinned' });
     expect(out.get('n1')).toMatchObject({ from: 'ns-walnut', to: 'ns-oak', rule: 'roomset' });
     expect(out.get('n2')?.to).toBe('ns-oak');
   });
@@ -200,15 +196,20 @@ describe('roomSetOf — hàm thuần', () => {
     expect(ctx).toBeDefined();
   });
 
-  it('biên tối thiểu: bộ cũ đạt ràng buộc cứng và bộ mới không rẻ hơn ≥ MIN_GAIN → giữ bộ cũ', () => {
+  it('vòng 14 — không còn biên MIN_GAIN: món chưa ghim lấy mẫu rẻ nhất dù mẫu luật cũ chỉ kém chút; luật cũ chỉ ghi `from`', () => {
     const table = {
       bed: qual('doubleBed', { frame: OAK, completeness: 'full' }),
-      'ns-a': qual('nightstand', { frame: [61.5, 8, 24] }),
+      // Chênh ≈ 0,18: lớn hơn dải hoà ANCHOR_BAND 0,08 (không rút băm), nhỏ hơn MIN_GAIN cũ 0,25 (trước đây sẽ giữ ns-a).
+      'ns-a': qual('nightstand', { frame: [40, 8, 24] }),
       'ns-b': qual('nightstand', { frame: OAK }),
     };
     const ctx = ctxOf(table, { bed: BED_DIMS });
     const out = roomSetOf('R-1', [bedMember('F-bed', 'bed', [], { fixed: true }), member('n', 'nightstand', 'ns-a', ['ns-a', 'ns-b'])], new Map(), ctx);
-    expect(out.get('n')).toMatchObject({ to: 'ns-a', rule: 'keep' });
+    const d = out.get('n');
+    expect(d).toMatchObject({ from: 'ns-a', to: 'ns-b', rule: 'roomset', cause: 'selector' });
+    expect((d?.fromCost as number) - (d?.cost as number)).toBeLessThan(0.25);
+    // Cùng mẫu tốt nhất với luật cũ → `same`.
+    expect(roomSetOf('R-1', [bedMember('F-bed', 'bed', [], { fixed: true }), member('n', 'nightstand', 'ns-b', ['ns-a', 'ns-b'])], new Map(), ctx).get('n')).toMatchObject({ to: 'ns-b', cause: 'same', rule: 'keep' });
   });
 
   it('nhanh: căn 6 phòng (giường + 2 tab + tủ áo + bàn + ghế, ~30 ứng viên mỗi vai): in số đo, chốt bậc độ phức tạp < 250 ms', () => {
@@ -418,11 +419,22 @@ describe('roomset trong đường dựng cảnh', () => {
     // Dải neo của phòng này có 6 ứng viên: băm theo id thì 4 bản chép gần như chắc chắn rút khác nhau.
   });
 
-  it('món ghim (người dùng xác nhận) giữ nguyên mẫu, không mang prov.model', () => {
-    const pinned = graphWith({ ...HUMAN } as Partial<Furniture>);
-    const scene = sceneOf(pinned, ON);
-    expect(assetOf(scene, BED)).toBe(assetOf(sceneOf(pinned, OFF), BED));
+  it('vòng 14 — món người dùng xác nhận CHƯA gán mẫu: mẫu do cùng đánh giá chọn (không phải luật cũ), sổ ghi by=user; không mang prov.model', () => {
+    const confirmed = graphWith({ ...HUMAN } as Partial<Furniture>);
+    const scene = sceneOf(confirmed, ON);
+    const bed = assetOf(scene, BED);
+    expect(bed).not.toBe(oldBed);
+    expect((Q.get(bed) as ModelQuality).completeness?.v).toBe('full');
     expect(provOf(scene, BED)?.model).toBeUndefined();
+    expect(roomSetReport()[ROOM]?.items.find((d) => d.id === BED)).toMatchObject({ from: oldBed, to: bed, cause: 'selector', by: 'user' });
+  });
+
+  it('món GHIM (người dùng chọn mẫu `model`) giữ nguyên mẫu, sổ ghi cause=pinned; các món khác chấm theo nó', () => {
+    const src = `/items/${oldBed}/model.glb`;
+    const pinned = graphWith({ ...HUMAN, model: { id: oldBed, src } } as Partial<Furniture>);
+    const on = sceneOf(pinned, ON);
+    expect(roomSetReport()[ROOM]?.items.find((d) => d.id === BED)).toMatchObject({ to: oldBed, cause: 'pinned' });
+    expect((on.nodes[`item_${BED}`] as PascalItemNode).asset.src).toBe((sceneOf(pinned, OFF).nodes[`item_${BED}`] as PascalItemNode).asset.src);
   });
 
   it('lưu: lượt nạp đầu (mọi node "đã đổi") không ghi mẫu roomset vào dữ liệu', () => {
@@ -643,17 +655,18 @@ describe('roomset trên dữ liệu chất lượng thật (am-ap, tông sáng)'
       ['bed2', [at('b2', 'doubleBed', 'bed-double-oak-pro'), at('w2', 'closet', 'storage-wardrobe-greywash'), at('k2', 'desk', 'desk-pro')]],
     ];
     const all = rooms.flatMap(([key, ms]) => [...roomSetOf(key, ms, new Map(), ctx).values()]);
-    const kept = all.filter((d) => d.rule === 'keep');
-    const why: Record<string, number> = {};
-    for (const d of kept) {
-      const k = d.why.replace(/ \(.*\)$/, '');
-      why[k] = (why[k] ?? 0) + 1;
-    }
-    console.info(`roomset căn mẫu: ${all.length} món, đổi ${all.length - kept.length}, giữ ${kept.length}`, JSON.stringify(why));
-    console.info(all.map((d) => `${d.id}: ${d.from} → ${d.to} [${d.rule}] ${d.why}`).join('\n'));
+    const causes: Record<string, number> = {};
+    for (const d of all) causes[d.cause] = (causes[d.cause] ?? 0) + 1;
+    console.info(`roomset căn mẫu: ${all.length} món`, JSON.stringify(causes));
+    console.info(all.map((d) => `${d.id}: ${d.from} → ${d.to} [${d.cause}] ${d.why}`).join('\n'));
     expect(all.length).toBe(17);
-    // Biên rõ: đa số món giữ mẫu cũ khi mẫu cũ đạt ràng buộc cứng.
-    expect(kept.length).toBeGreaterThan(all.length / 2);
+    // Vòng 14: không còn "giữ mẫu cũ"; mẫu chọn luôn qua ràng buộc cứng, luật cũ chỉ khi không ứng viên nào qua.
+    for (const [, ms] of rooms)
+      for (const m of ms) {
+        const d = all.find((x) => x.id === m.id);
+        if (d?.cause === 'fallback') expect(d.to).toBe(m.current);
+        else expect(hardRejectOf(m, d?.to as string, ctx)).toBeUndefined();
+      }
   });
 });
 
@@ -693,7 +706,7 @@ describe('roomset lượt 3 — mỗi món chỉ nhận mẫu qua ràng buộc c
     expect(out.get('b1')?.to).toBe('bed-drawers-greywash');
   });
 
-  it('bất biến trên 300 phòng sinh ngẫu nhiên (hạt cố định): món đổi mẫu qua ràng buộc cứng của nó và hơn mẫu cũ ≥ MIN_GAIN, hoặc dưới trần theo lý do mẫu cũ trượt', () => {
+  it('bất biến trên 300 phòng sinh ngẫu nhiên (hạt cố định): mẫu chọn qua ràng buộc cứng của CHÍNH món; không ứng viên → mẫu luật cũ; món ghim không đổi', () => {
     let seed = 12345;
     const rand = (): number => {
       seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
@@ -725,15 +738,14 @@ describe('roomset lượt 3 — mỗi món chỉ nhận mẫu qua ràng buộc c
       }
       for (const d of roomSetOf(`room-${r}`, members, new Map(), ctx).values()) {
         checked += 1;
-        if (d.rule !== 'roomset') continue;
-        swaps += 1;
         const m = members.find((x) => x.id === d.id) as SetMember;
+        if (m.fixed) expect(d).toMatchObject({ cause: 'pinned', to: m.current });
+        if (d.cause === 'fallback') expect(d.to).toBe(m.current);
+        if (d.cause !== 'selector' && d.cause !== 'same') continue;
+        if (d.rule === 'roomset') swaps += 1;
         expect(hardRejectOf(m, d.to as string, ctx)).toBeUndefined();
-        // Lượt 6: giường được chọn thay luôn đủ chăn gối.
+        // Lượt 6: giường được chọn luôn đủ chăn gối.
         if (m.role === 'doubleBed' || m.role === 'singleBed') expect(real(d.to as string)?.completeness?.v).toBe('full');
-        // Lượt 5: mẫu cũ đạt chất lượng → hơn ≥ MIN_GAIN; trượt chất lượng → ≤ FAIL_COST; chưa biết → ≤ GOOD_COST.
-        if (d.oldFail === undefined) expect((d.cost as number) <= (d.fromCost as number) - MIN_GAIN + 1e-9).toBe(true);
-        else expect(d.cost as number).toBeLessThanOrEqual(d.oldFail === 'unknown' ? GOOD_COST : FAIL_COST);
         // Vòng 13: mặt bằng HIỂN THỊ nằm trong HỘP chỗ đặt (không theo mẫu cũ), tỉ lệ thật trong dải; cao chừa hở trần.
         const to = m.shownOf?.(d.to as string) as Dims;
         expect(to[0]).toBeLessThanOrEqual(m.short + SHOWN_TOL_M + 1e-9);
@@ -848,28 +860,27 @@ describe('roomset lượt 5 — mẫu đang dùng chỉ "không đạt" về ch�
     ...['c1', 'c2', 'c3', 'c4'].map((id) => boxed(id, 'diningChair', 'dining-chair-pro', 0.45, 0.45)),
   ];
 
-  it('mẫu cũ co vào hộp nhỏ hơn mặt bằng gốc: lượt 4 trượt "không lọt chỗ"; giờ đạt (lượt 6: chỗ = max(hộp, mẫu cũ)) và đạt chất lượng nên phải so biên', () => {
+  it('mẫu đang dựng co vào hộp nhỏ hơn mặt bằng gốc (aka3) vẫn lọt chỗ: tỉ lệ thật theo co đều về hộp ≥ SCALE_MIN', () => {
     for (const m of aka3Room().filter((x) => ['sofa', 'table', 'commode', 'c1'].includes(x.id))) {
       expect(m.long).toBeLessThan(Math.max(...(ctx.dimsOf(m.current as string) ?? [0]).filter((_, i) => i !== 1)));
       expect(hardRejectOf(m, m.current as string, ctx)).toBeUndefined();
-      expect(oldFailOf(m, m.current as string, ctx)).toBeUndefined();
     }
   });
 
-  it('sofa xám, bàn ăn sồi, ghế ăn, tủ commode: giữ mẫu cũ hoặc đổi sang mẫu có điểm phạt ≤ GOOD_COST — không còn sofa da đen, gỗ tối, ghế uốn đen', () => {
+  it('sofa xám, bàn ăn sồi, ghế ăn, tủ commode: không ra sofa da đen, gỗ tối, ghế uốn đen; ghế quanh bàn một mẫu', () => {
     const out = roomSetOf('aka3', aka3Room(), new Map(), ctx);
-    for (const d of out.values()) {
-      expect(d.rule === 'keep' || (d.cost ?? Infinity) <= GOOD_COST).toBe(true);
-      expect(['sofa-black-leather-2', 'table-dining-dark-wood', 'chair-bentwood-classic', 'storage-dresser-pine']).not.toContain(d.to);
-    }
-    console.info([...out.values()].map((d) => `${d.id}: ${d.from} → ${d.to} [${d.rule}${d.oldFail ? `, cũ ${d.oldFail}` : ''}] ${d.why}`).join('\n'));
+    for (const d of out.values()) expect(['sofa-black-leather-2', 'table-dining-dark-wood', 'chair-bentwood-classic', 'storage-dresser-pine']).not.toContain(d.to);
+    expect(new Set(['c1', 'c2', 'c3', 'c4'].map((id) => out.get(id)?.to)).size).toBe(1);
+    console.info([...out.values()].map((d) => `${d.id}: ${d.from} → ${d.to} [${d.cause}] ${d.why}`).join('\n'));
   });
 
-  it('mẫu cũ chưa biết (không có trong dữ liệu chất lượng): chỉ thay bằng mẫu ≤ GOOD_COST, ghi oldFail = unknown', () => {
+  it('mẫu luật cũ không có trong dữ liệu chất lượng: không ảnh hưởng — món vẫn lấy mẫu tốt nhất qua ràng buộc cứng', () => {
     const out = roomSetOf('u', [boxed('c', 'diningChair', 'khong-co-trong-du-lieu', 0.5, 0.55)], new Map(), ctx);
     const d = out.get('c');
-    expect(d?.oldFail).toBe('unknown');
-    expect(d?.rule === 'keep' || (d?.cost ?? Infinity) <= GOOD_COST).toBe(true);
+    expect(d?.cause).toBe('selector');
+    expect(d?.fromCost).toBeUndefined();
+    // Vai duy nhất là neo: rút trong dải ANCHOR_BAND quanh mẫu rẻ nhất.
+    expect(d?.cost as number).toBeLessThanOrEqual((d?.top?.[0]?.[1] ?? 0) + 0.08 + 1e-3);
   });
 });
 
@@ -919,7 +930,7 @@ describe('roomset lượt 6 — giường nhiều lớp vải, co công bằng, 
     expect(layersOf(real('bed-double-oak-pro')?.parts ?? []).layers).toBe(2);
   });
 
-  it('giường AI dò hộp 1,30 × 1,94 m (mẫu cũ 1,71 × 2,14 m đang bị co): ứng viên được co tới cùng mức → thay bằng giường full ≥ 2 lớp vải', () => {
+  it('giường AI dò hộp 1,30 × 1,94 m (mẫu 1,71 × 2,14 m co đều 0,83 ≥ SCALE_MIN): chọn giường full ≥ 2 lớp vải', () => {
     const ctx = ctxFor('am-ap');
     const m = boxed('b', 'doubleBed', 'bed-white-oak-headboard', 1.3, 1.94);
     expect(hardRejectOf(m, 'bed-double-oak-pro', ctx)).toBeUndefined();
@@ -938,10 +949,9 @@ describe('roomset lượt 6 — giường nhiều lớp vải, co công bằng, 
         for (const d of roomSetOf(`${styleId}|${key}`, ms, new Map(), ctx).values()) {
           const cell = (byRole[d.role] ??= [0, 0]);
           cell[d.rule === 'roomset' ? 0 : 1] += 1;
-          if (d.rule !== 'roomset') continue;
+          if (d.cause === 'fallback' || d.cause === 'pinned') continue;
           const m = ms.find((x) => x.id === d.id) as SetMember;
           expect(hardRejectOf(m, d.to as string, ctx)).toBeUndefined();
-          if (d.oldFail === undefined) expect((d.cost as number) <= (d.fromCost as number) - MIN_GAIN + 1e-9).toBe(true);
           const dark = (real(d.to as string)?.parts ?? []).reduce((s, p) => s + (p.lab[0] < DARK_L ? p.share : 0), 0);
           if (ctx.palette.light !== false && ['sofa', 'armchair', 'diningChair'].includes(d.role)) expect(dark).toBeLessThan(DARK_SEAT_SHARE);
         }
@@ -964,19 +974,20 @@ describe('roomset lượt 7', () => {
   });
   const closetDims: Dims = [1.2, 1.9, 0.6];
 
-  it('gương 20 % (finish mirror) không thay được tủ gỗ cùng tông có 28 % phần tối; tủ gỗ không gương thì thay', () => {
+  it('gương 20 % (finish mirror) thua tủ gỗ cùng tông có 28 % phần tối; tủ gỗ không gương thắng cả hai', () => {
     const table = { old: wardrobe(0, 0.28), mirror: wardrobe(0.2), plain: wardrobe(0) };
     const ctx = ctxOf(table, { old: closetDims, mirror: closetDims, plain: closetDims });
-    const m = (pool: string[]): SetMember => member('w', 'closet', 'old', pool, { short: 0.6, long: 1.2 });
-    expect(roomSetOf('R', [m(['mirror'])], new Map(), ctx).get('w')).toMatchObject({ to: 'old', rule: 'keep' });
-    expect(roomSetOf('R', [m(['plain'])], new Map(), ctx).get('w')).toMatchObject({ to: 'plain', rule: 'roomset' });
+    const m = (pool: string[]): SetMember => member('w', 'closet', 'x', pool, { short: 0.6, long: 1.2 });
+    expect(roomSetOf('R', [m(['mirror', 'old'])], new Map(), ctx).get('w')?.to).toBe('old');
+    expect(roomSetOf('R', [m(['mirror', 'old', 'plain'])], new Map(), ctx).get('w')?.to).toBe('plain');
   });
 
-  it('món cao: mẫu cũ ≥ 2,0 m thì ứng viên không cao hơn; có chiều cao trần thì chừa khoảng hở', () => {
+  it('món cao: chuẩn cao (heightMm, không thì trung vị pool vai) ≥ 2,0 m thì ứng viên không cao hơn chuẩn; có trần thì chừa khoảng hở', () => {
     const table = { old: wardrobe(0), taller: wardrobe(0), lower: wardrobe(0) };
     const ctx = ctxOf(table, { old: [1.2, 2.05, 0.6], taller: [1.2, 2.2, 0.6], lower: [1.2, 1.95, 0.6] });
-    const m = member('w', 'closet', 'old', ['taller', 'lower'], { short: 0.6, long: 1.2 });
-    expect(hardRejectOf(m, 'taller', ctx)).toBe('cao hơn mẫu cũ');
+    // Trung vị pool [1,95; 2,05; 2,2] = 2,05 ≥ TALL_M.
+    const m = member('w', 'closet', 'old', ['taller', 'lower', 'old'], { short: 0.6, long: 1.2 });
+    expect(hardRejectOf(m, 'taller', ctx)).toBe('cao hơn chuẩn vai');
     expect(hardRejectOf(m, 'lower', ctx)).toBeUndefined();
     expect(hardRejectOf({ ...m, ceilingM: 2.2 }, 'lower', ctx)).toBe('chạm gần trần');
   });
@@ -1028,8 +1039,9 @@ describe('roomset — trần phòng lấy từ chiều cao tầng (toPascalScene
     reg(() => 1900);
     current = assetOf(sceneOf(graphAt(3000), OFF), WARD);
     [tall, low] = closets.filter((id) => id !== current) as [string, string];
-    // Mẫu cũ 1,90 m (dưới TALL_M: được cao thêm ×1,15 = 2,185 m); ứng viên cao 2,15 m (chi phí 0) và thấp 2,00 m (gỗ lệch tông).
-    reg((id) => (id === tall ? 2150 : id === low ? 2000 : 1900));
+    // Trung vị pool 1,90 m (dưới TALL_M: tới ×1,15 = 2,185 m); ứng viên cao 2,15 m (chi phí 0) và 1,90 m (gỗ lệch tông);
+    // mẫu luật cũ 1,80 m có lỗi QC.
+    reg((id) => (id === tall ? 2150 : id === low ? 1900 : 1800));
     Q.clear();
     Q.set(current, qual('closet', { frame: OAK, issues: ['test'] }));
     Q.set(tall, qual('closet', { frame: [67, 5, 22] }));
@@ -1042,7 +1054,7 @@ describe('roomset — trần phòng lấy từ chiều cao tầng (toPascalScene
 
   it('trần 3,0 m nhận tủ 2,15 m; trần 2,4 m (hở 0,3 m → tối đa 2,1 m) không nhận tủ ấy', () => {
     expect(assetOf(sceneOf(graphAt(3000), ON), WARD)).toBe(tall);
-    // Trần 2,4 m: tủ 2,15 m bị loại "chạm gần trần"; tủ 2,0 m lệch tông/phong cách vượt trần chi phí → giữ mẫu cũ.
+    // Trần 2,4 m: tủ 2,15 m bị loại "chạm gần trần" → tủ còn lại.
     expect(assetOf(sceneOf(graphAt(2400), ON), WARD)).not.toBe(tall);
     expect(roomSetReport()[ROOM]?.items.find((d) => d.id === WARD)?.to).not.toBe(tall);
   });
@@ -1061,7 +1073,7 @@ describe('roomset lượt 8 — mẫu dùng chung qua đúng bộ lọc ứng vi
       'R',
       [
         member('F-sofa', 'sofa', 'pinned', [], { fixed: true, short: 0.8, long: 2 }),
-        // Bộ lọc của món nhận (setPoolOf: cỡ/QC/hướng) chỉ để lại `own`; mẫu cũ chưa có dữ liệu → được thay bằng mẫu ≤ GOOD_COST.
+        // Bộ lọc của món nhận (setPoolOf: QC/hướng) chỉ để lại `own`.
         member('DRESS-sofa', 'sofa', 'old', ['own'], { short: 0.8, long: 2 }),
       ],
       new Map(),
@@ -1103,7 +1115,7 @@ describe('roomset lượt 9 — cỡ hiển thị (itemFitOf)', () => {
   it('#1: tủ catalog 1,9 m, `heightMm` đã lưu 2300, trần 2,4 m → hiển thị 2,3 m, loại "chạm gần trần"', () => {
     const shownOf = (x: string) => itemFitOf(x, 1.0, 0.6, 2300, 2400)?.shownM;
     expect((shownOf('fit-tall') as Dims)[1]).toBeCloseTo(2.3, 6);
-    const m = member('w', 'closet', 'fit-tall', ['fit-tall'], { short: 0.6, long: 1.0, ceilingM: 2.4, shownOf });
+    const m = member('w', 'closet', 'fit-tall', ['fit-tall'], { short: 0.6, long: 1.0, ceilingM: 2.4, heightM: 2.3, shownOf });
     expect(hardRejectOf(m, 'fit-tall', ctx)).toBe('chạm gần trần');
   });
 });

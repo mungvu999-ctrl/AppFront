@@ -8,6 +8,7 @@ import { LIBRARY_QUALITY, type ModelQuality, type QualityPart } from '../library
 import {
   CONTRAST_TOL,
   hardRejectOf,
+  overlapAreaM2,
   layersOf,
   tintedOf,
   paletteOf,
@@ -81,11 +82,12 @@ describe('vòng 13 — cỡ theo hộp và tỉ lệ thật', () => {
   it('phạt tỉ lệ: mẫu cũ phải co mạnh trong hộp thua mẫu vừa hộp tự nhiên cùng màu', () => {
     const wood = [part('frame', 1, [62, 8, 24], 'wood')];
     const table = { shrunk: qual('dresser', wood), natural: qual('dresser', wood) };
-    const dims: Record<string, Dims> = { shrunk: [1.3, 0.8, 0.62], natural: [1.0, 0.8, 0.48] };
+    const dims: Record<string, Dims> = { shrunk: [1.15, 0.8, 0.55], natural: [1.0, 0.8, 0.48] };
     const m = boxed('d', 'dresser', 'shrunk', ['natural', 'shrunk'], { cx: 0, cy: 0, w: 1.0, d: 0.48 }, dims);
     const d = roomSetOf('R', [m], new Map(), ctxOf(table, dims)).get('d');
     expect(d?.to).toBe('natural');
-    expect((d?.fromCost as number) - (d?.cost as number)).toBeGreaterThan(0.25);
+    // Co 0,87 mỗi trục → phạt (|ln sx| + |ln sz|)/2 ≈ 0,14.
+    expect((d?.fromCost as number) - (d?.cost as number)).toBeGreaterThan(0.1);
   });
 });
 
@@ -134,34 +136,34 @@ describe('vòng 13 — tấm phủ xanh xám là trung tính (bằng chứng ch�
   });
 });
 
-describe('vòng 13 — va chạm cả phòng sau khi chọn', () => {
-  it('đổi làm mặt bằng hiển thị chồng vật cản nhiều hơn mẫu cũ → trả mẫu cũ, lý do "va chạm cả phòng"', () => {
+describe('vòng 13/14 — va chạm cả phòng (mức chồng nhỏ nhất đạt được, không so mẫu cũ)', () => {
+  it('mẫu hiện đủ hộp đè lên tủ lạnh sát cạnh → bị loại "va chạm", chọn mẫu hẹp; không vật cản thì mẫu rộng thắng', () => {
     const table = { slim: qual('bookshelf', [part('frame', 1, [28, 10, 14], 'wood')]), wide: qual('bookshelf', [part('frame', 1, [75, 4, 15], 'wood')]) };
-    // Hộp AI dò (chưa xác nhận) 1,2 × 0,4 m; mẫu cũ hiện 0,8 m; mẫu mới hiện đủ 1,2 m và đè lên tủ lạnh sát cạnh.
+    // Hộp AI dò (chưa xác nhận) 1,2 × 0,4 m; mẫu hẹp hiện 0,8 m; mẫu rộng hiện đủ 1,2 m và đè lên tủ lạnh sát cạnh.
     const dims: Record<string, Dims> = { slim: [0.8, 1.8, 0.4], wide: [1.2, 1.8, 0.4] };
-    const m = boxed('s', 'bookshelf', 'slim', ['wide'], { cx: 0, cy: 0, w: 1.2, d: 0.4 }, dims, { sizeFrom: 'ai' });
+    const m = boxed('s', 'bookshelf', 'slim', ['wide', 'slim'], { cx: 0, cy: 0, w: 1.2, d: 0.4 }, dims, { sizeFrom: 'ai' });
     const ctx = ctxOf(table, dims);
-    // Không vật cản: được đổi (mẫu cũ không phải trần cỡ).
     const free = roomSetOf('R', [m], new Map(), { ...ctx, palette: { light: true, tone: 'l' } }).get('s');
     expect(free?.to).toBe('wide');
     const fridge = planRectOf(0.775, 0, 0.65, 0.6, 0);
     const d = roomSetOf('R', [m], new Map(), ctx, [fridge]).get('s');
-    expect(d).toMatchObject({ to: 'slim', rule: 'keep' });
-    expect(d?.why).toContain('va chạm cả phòng');
+    expect(d?.to).toBe('slim');
+    expect(d?.rejects?.['va chạm']).toBe(1);
   });
 
-  // Codex review 1 #1: so với mặt bằng GỐC của từng cặp, không với mẫu CUỐI của món kia.
-  it('hai món cùng đổi: từng món riêng không tăng chồng so với mẫu cuối của món kia, nhưng cả cặp chồng mới → trả về', () => {
+  it('hai món bộ hộp chồng nhau: món chưa chốt giữ chỗ bằng cả hộp → cả cặp không chồng mặt bằng hiển thị', () => {
     const table = { oldW: qual('bookshelf', [part('frame', 1, [28, 10, 14], 'wood')]), newW: qual('bookshelf', [part('frame', 1, [75, 4, 15], 'wood')]) };
     const dims: Record<string, Dims> = { oldW: [1.6, 1.8, 1.0], newW: [1.0, 1.8, 1.6] };
     const ctx = { ...ctxOf(table, dims), palette: { light: true, tone: 'l' as const } };
-    const a = boxed('a', 'bookshelf', 'oldW', ['newW'], { cx: 0, cy: 0, w: 1.6, d: 1.6 }, dims, { sizeFrom: 'ai' });
-    const b = boxed('b', 'bookshelf', 'oldW', ['newW'], { cx: 0.9, cy: 1.2, w: 1.6, d: 1.6 }, dims, { sizeFrom: 'ai' });
+    const a = boxed('a', 'bookshelf', 'oldW', ['newW', 'oldW'], { cx: 0, cy: 0, w: 1.6, d: 1.6 }, dims, { sizeFrom: 'ai' });
+    const b = boxed('b', 'bookshelf', 'oldW', ['newW', 'oldW'], { cx: 0.9, cy: 1.2, w: 1.6, d: 1.6 }, dims, { sizeFrom: 'ai' });
     expect(roomSetOf('R', [a], new Map(), ctx).get('a')?.to).toBe('newW');
     const out = roomSetOf('R', [a, b], new Map(), ctx);
-    // Gốc: không chồng. Cả hai đổi: chồng 0,04 m². Kết quả phải không chồng mới.
-    expect([out.get('a')?.to, out.get('b')?.to]).not.toEqual(['newW', 'newW']);
-    expect(out.get('a')?.why).toContain('va chạm cả phòng');
+    const rect = (m: SetMember, x: string): ReturnType<typeof planRectOf> => {
+      const s = m.shownOf?.(x) as Dims;
+      return planRectOf(m.box?.cx ?? 0, m.box?.cy ?? 0, s[0], s[2], 0);
+    };
+    expect(overlapAreaM2(rect(a, out.get('a')?.to as string), rect(b, out.get('b')?.to as string))).toBeLessThan(0.002);
   });
 
   // Codex review 1 #2: diện tích chung của hình XOAY, không của hộp thẳng trục bao ngoài.
@@ -182,8 +184,8 @@ describe('vòng 13 — va chạm cả phòng sau khi chọn', () => {
     const ctx = { ...ctxOf(table, dims), palette: { light: true, tone: 'l' as const } };
     const m = boxed('s', 'bookshelf', 'slim', ['wide'], { cx: 0, cy: 0, w: 1.2, d: 0.4 }, dims, { sizeFrom: 'ai' });
     const wall = (lifted: boolean): SetMember => boxed('w', 'cabinet', 'wide', [], { cx: 0.7, cy: 0, w: 0.5, d: 0.4 }, dims, { fixed: true, ...(lifted ? { lifted: true } : {}) });
-    expect(roomSetOf('R', [m, wall(true)], new Map(), ctx).get('s')?.to).toBe('wide');
-    expect(roomSetOf('R', [m, wall(false)], new Map(), ctx).get('s')?.to).toBe('slim');
+    expect(roomSetOf('R', [{ ...m, pool: ['wide', 'slim'] }, wall(true)], new Map(), ctx).get('s')?.to).toBe('wide');
+    expect(roomSetOf('R', [{ ...m, pool: ['wide', 'slim'] }, wall(false)], new Map(), ctx).get('s')?.to).toBe('slim');
   });
 });
 
@@ -216,8 +218,8 @@ describe('vòng 13 — lớp vải chỉ đếm lớp trên nệm', () => {
   });
 });
 
-describe('vòng 13 — mẫu chung của nhóm vượt trần của một món', () => {
-  it('phòng hai giường: mẫu chung (rẻ nhất trung bình) quá trần với giường hộp hẹp → giường đó chấm riêng, không giữ giường trần', () => {
+describe('vòng 14 — mẫu chung của nhóm: chấp nhận được cho nhiều món nhất trước, rồi chi phí trung bình', () => {
+  it('phòng hai giường: mẫu A lọt cả hai, rẻ hơn trung bình → cả hai giường một mẫu dù riêng giường hẹp B rẻ hơn', () => {
     const bedding = [part('frame', 0.4, [70, 4, 18], 'wood'), part('bedding', 0.3, [88, 0, 1], 'fabric'), part('bedding', 0.3, [60, 0, 2], 'fabric')];
     const table = {
       bare: qual('doubleBed', [part('frame', 0.4, [70, 4, 18], 'wood'), part('bedding', 0.6, [88, 0, 1], 'fabric')], { completeness: { v: 'partial', by: 'i' } }),
@@ -225,19 +227,20 @@ describe('vòng 13 — mẫu chung của nhóm vượt trần của một món',
       B: qual('doubleBed', bedding, FULL),
     };
     const dims: Record<string, Dims> = { bare: [1.4, 1, 2.0], A: [1.6, 1, 2.0], B: [1.4, 1, 1.75] };
-    // Phong cách quyết định chi phí: A hạng 80/100, B hạng 88/100 (cùng phần, cùng màu).
-    const ctx: SetContext = { ...ctxOf(table, dims), tierOf: (x) => (x === 'A' ? 80 : x === 'B' ? 88 : 0), tiers: 99 };
+    // Phong cách quyết định chi phí: A hạng 30/100, B hạng 42/100 (cùng phần, cùng màu) — B ngoài dải neo; cả hai dưới FAIL_COST.
+    const ctx: SetContext = { ...ctxOf(table, dims), tierOf: (x) => (x === 'A' ? 30 : x === 'B' ? 42 : 0), tiers: 99 };
     const wide = boxed('b1', 'doubleBed', 'bare', ['A', 'B'], { cx: 0, cy: 0, w: 1.6, d: 2.0 }, dims, { sizeFrom: 'generated' });
     const narrow = boxed('b2', 'doubleBed', 'bare', ['A', 'B'], { cx: 3, cy: 0, w: 1.6, d: 1.75 }, dims, { sizeFrom: 'generated' });
     const out = roomSetOf('R', [wide, narrow], new Map(), ctx);
     expect(out.get('b1')?.to).toBe('A');
-    // A trong hộp sâu 1,75 m co 0,875 → +|ln 0,875| ≈ 0,13 → quá trần 0,9; B vừa hộp, dưới trần. Trung bình A < B → mẫu chung A.
-    expect(out.get('b2')).toMatchObject({ to: 'B', rule: 'roomset' });
+    // A trong hộp sâu 1,75 m co 0,875 (phạt ≈ 0,07) — vẫn lọt; trung bình A < B → mẫu chung A cho cả hai.
+    expect(out.get('b2')).toMatchObject({ to: 'A', rule: 'roomset', cause: 'selector' });
+    expect(out.get('b2')?.why).toContain('mẫu chung phòng (chấp nhận 2/2)');
   });
 });
 
-describe('vòng 13 — dải neo không rút trúng ứng viên quá trần (Codex lượt 3)', () => {
-  it('giường cũ chưa đủ, mẫu ghim cùng vai B quá trần, A dưới trần trong cùng dải: mọi khoá phòng đều ra A', () => {
+describe('vòng 14 — món ghim cùng vai dẫn cả nhóm', () => {
+  it('mẫu ghim B lọt chỗ của món chưa ghim: mọi khoá phòng đều ra B (không rút theo băm dù A rẻ hơn)', () => {
     const bedding = [part('frame', 0.4, [70, 4, 18], 'wood'), part('bedding', 0.3, [88, 0, 1], 'fabric'), part('bedding', 0.3, [60, 0, 2], 'fabric')];
     const table = {
       bare: qual('doubleBed', [part('frame', 0.4, [70, 4, 18], 'wood'), part('bedding', 0.6, [88, 0, 1], 'fabric')], { completeness: { v: 'partial', by: 'i' } }),
@@ -245,11 +248,11 @@ describe('vòng 13 — dải neo không rút trúng ứng viên quá trần (Cod
       B: qual('doubleBed', bedding, FULL),
     };
     const dims: Record<string, Dims> = { bare: [1.6, 1, 2.0], A: [1.6, 1, 2.0], B: [1.6, 1, 2.0] };
-    const ctx: SetContext = { ...ctxOf(table, dims), tierOf: (x) => (x === 'A' ? 86 : x === 'B' ? 93 : 0), tiers: 99 };
+    const ctx: SetContext = { ...ctxOf(table, dims), tierOf: (x) => (x === 'A' ? 26 : x === 'B' ? 33 : 0), tiers: 99 };
     const pinned = boxed('p', 'doubleBed', 'B', [], { cx: 5, cy: 0, w: 1.6, d: 2.0 }, dims, { fixed: true });
     for (const key of ['R0', 'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7']) {
       const m = boxed('b', 'doubleBed', 'bare', ['A', 'B'], { cx: 0, cy: 0, w: 1.6, d: 2.0 }, dims, { sizeFrom: 'generated' });
-      expect(roomSetOf(key, [pinned, m], new Map(), ctx).get('b')?.to).toBe('A');
+      expect(roomSetOf(key, [pinned, m], new Map(), ctx).get('b')).toMatchObject({ to: 'B', why: expect.stringContaining('cùng mẫu món ghim') });
     }
   });
 });
@@ -262,7 +265,7 @@ describe('vòng 13 — lớp phủ màu dịu trên nền chăn trung tính', ()
     expect(tintedOf(real('bed-double-linen-pro2'))).toBe(false);
   });
 
-  it('hai giường đủ chăn gối hoà điểm: giường có lớp phủ màu dịu thay giường chăn trơn (hơn ≥ MIN_GAIN)', () => {
+  it('hai giường đủ chăn gối hoà điểm: giường có lớp phủ màu dịu thắng giường chăn trơn', () => {
     const frame = part('frame', 0.4, [70, 4, 18], 'wood');
     const table = {
       plain: qual('doubleBed', [frame, part('bedding', 0.3, [65, 0, 0], 'fabric'), part('bedding', 0.3, [100, 0, 0], 'fabric')], FULL),

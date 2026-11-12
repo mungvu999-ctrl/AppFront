@@ -33,6 +33,7 @@ export const SRC = {
   roles2: `${FE}/libraryRoles2.json`,
   qc: `${FE}/libraryQc.json`,
   tags: 'F:/runs/m13/q/visual-tags-v2.jsonl',
+  texture: 'F:/runs/m15/q/texture-tags.jsonl',
 };
 export const GLB_DIRS = [
   'F:/runs/library-import-4/abo/out',
@@ -500,6 +501,7 @@ function compact(models) {
     if (f) row.f = f;
     if (q.shape) row.h = q.shape;
     if (q.completeness) row.c = q.completeness.v[0] + q.completeness.by;
+    if (q.texture) row.t = q.texture.v === 'broken' ? 1 : 2;
     // Hàng phần: [kind, share%, L, a, b, material?, finish?]; material = -1 khi vắng mà có finish; finish 1 = mirror.
     if (q.parts) row.p = q.parts.map((p) => [KIND_CODES.indexOf(p.kind), Math.round(p.share * 100), ...p.lab, ...(p.material || p.finish ? [p.material ? MAT_CODES.indexOf(p.material) : -1] : []), ...(p.finish ? [1] : [])]);
     if (q.styles?.length) row.s = q.styles;
@@ -521,6 +523,8 @@ async function main() {
   const qc = JSON.parse(readFileSync(SRC.qc, 'utf8')).excluded ?? {};
   const tagRows = existsSync(SRC.tags) ? readJsonl(SRC.tags) : [];
   const tags = tagConsensus(tagRows);
+  // Nhãn texture vải (m15, xem tay từ ảnh): chỉ ghi broken/unsure, ok = vắng.
+  const textureTags = new Map((existsSync(SRC.texture) ? readJsonl(SRC.texture) : []).filter((r) => r.texture === 'broken' || r.texture === 'unsure').map((r) => [r.id, r.texture]));
   const roleOf = new Map();
   for (const r of [roles, roles2]) for (const [role, ids] of Object.entries(r)) for (const id of ids) if (!roleOf.has(id)) roleOf.set(id, role);
   const glbs = GLB_DIRS.flatMap((d) => walk(d));
@@ -542,6 +546,7 @@ async function main() {
     if (prof?.sizeMm) { const pm = [prof.sizeMm.w, prof.sizeMm.h, prof.sizeMm.d]; const worst = Math.max(...pm.map((v, k) => Math.abs(useMm[k] - v) / Math.max(1, v))); if (worst > 0.05) sizeWarn.push({ id, useMm, profile: pm, worst: +worst.toFixed(3) }); }
     const kb = Math.round(statSync(file).size / 1024);
     const tag = tags.get(id);
+    const texture = textureTags.get(id);
     const issues = [...(prof?.qc?.issues ?? []), ...(qc[id]?.reasons ?? []).map((r) => `qc:${r}`)];
     // Mẫu chưa có vai (chỉ ở bản đầy đủ) đo theo `type` của profiles — cùng bộ tên vai.
     const shapeRole = role ?? prof?.type;
@@ -554,6 +559,7 @@ async function main() {
       front,
       ...(shape ? { shape } : {}),
       ...(tag ? { completeness: { v: tag, by: 'i' } } : {}),
+      ...(texture ? { texture: { v: texture, by: 'i' } } : {}),
       ...(parts ? { parts } : {}),
       ...(prof?.styles?.length ? { styles: prof.styles } : {}),
       detail: { tris: ms.tris, kb, textures: ms.textures, maxTex: ms.maxTex, tier: tierOf(ms.tris, kb) },
@@ -573,10 +579,11 @@ async function main() {
     [SRC.roles]: `sha=${sha(readFileSync(SRC.roles)).slice(0, 12)}`,
     [SRC.roles2]: `sha=${sha(readFileSync(SRC.roles2)).slice(0, 12)}`,
     [SRC.qc]: `sha=${sha(readFileSync(SRC.qc)).slice(0, 12)}`,
+    [SRC.texture]: existsSync(SRC.texture) ? `rows=${readJsonl(SRC.texture).length} sha=${sha(readFileSync(SRC.texture)).slice(0, 12)}` : 'absent',
     [SRC.tags]: existsSync(SRC.tags) ? `rows=${tagRows.length} sha=${sha(readFileSync(SRC.tags)).slice(0, 12)}` : 'absent',
   };
   for (const d of GLB_DIRS) inputs[d] = `glb=${dirHash[d]?.length ?? 0} sha=${sha((dirHash[d] ?? []).sort().join('')).slice(0, 12)}`;
-  const rules = { tier: TIER_RULE, parts: `area-weighted UV samples, split by material x mirror flag (metal>=${MIRROR_METAL} & rough<=${MIRROR_ROUGH} per sample, not transmissive) then k-means, merge same kind+material dE<12, drop share<${MIN_SHARE}, max ${MAX_PARTS}`, completeness: 'visual-tags: drop unsure; value with >=2 votes and no rival with >=2', front: FRONT_RULE, shape: SHAPE_RULE };
+  const rules = { tier: TIER_RULE, parts: `area-weighted UV samples, split by material x mirror flag (metal>=${MIRROR_METAL} & rough<=${MIRROR_ROUGH} per sample, not transmissive) then k-means, merge same kind+material dE<12, drop share<${MIN_SHARE}, max ${MAX_PARTS}`, completeness: 'visual-tags: drop unsure; value with >=2 votes and no rival with >=2', front: FRONT_RULE, shape: SHAPE_RULE, texture: 'texture-tags (m15, xem tay ảnh 256 px): broken = vân vỡ/loang patchwork, unsure = nghi; ok = vắng' };
   const head = (models) => ({ schema: 2, rev: sha(stable(models)).slice(0, 16), generatedBy: 'scripts/gen-library-quality.mjs', inputs, rules });
   const bundleModels = Object.fromEntries(Object.entries(all).filter(([id]) => roleOf.has(id)).sort(([x], [y]) => (x < y ? -1 : 1)));
   writeFileSync(join(outDir, 'libraryQuality-all.json'), JSON.stringify({ ...head(all), models: all }));
