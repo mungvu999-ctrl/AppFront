@@ -123,6 +123,12 @@ export const FUNC_RANGE: Readonly<Record<string, { readonly w: Span; readonly d:
   cabinet: { w: [0.4, 2], d: [0.3, 0.6], h: [0.5, 1.25] },
 };
 const FUNC_EPS = 1e-6;
+/**
+ * Dung sai kích thước hiển thị (rộng/sâu/cao) quanh phạm vi công năng: chỉ trượt khi dưới min × 0,9 hoặc trên max × 1,1.
+ * Ràng buộc nhắm đồ bị CO thành đồ thu nhỏ (s ~0,5–0,7), không nhắm sai lệch ±10 % của hộp AI / catalog (điều phối M17-2:
+ * 44/47 `to: null` phát lại 18 căn là tủ sâu 437–496 mm, kệ 602–690 mm…). Phạm vi gốc (FUNC_RANGE) giữ nguyên.
+ */
+export const FUNC_TOL = 0.1;
 export const FUNC_REJECT = 'ngoài công năng';
 /**
  * Lý do "ngoài công năng" của cỡ hiển thị `shown` [rộng, cao, sâu] (mẫu cỡ thật `dims`) cho vai `role`; `undefined` = trong
@@ -133,11 +139,11 @@ export const functionalMissOf = (role: string, dims: Dims, shown: Dims): string 
   const r = FUNC_RANGE[role];
   if (r === undefined) return undefined;
   const [w, d] = r.edges === true ? [Math.min(shown[0], shown[2]), Math.max(shown[0], shown[2])] : [shown[0], shown[2]];
-  const out = (v: number, [lo, hi]: Span): boolean => v < lo - FUNC_EPS || v > hi + FUNC_EPS;
+  const out = (v: number, [lo, hi]: Span, tol = 0): boolean => v < lo * (1 - tol) - FUNC_EPS || v > hi * (1 + tol) + FUNC_EPS;
   const mm = (v: number): string => (Number.isFinite(v) ? `${Math.round(v * 1000)}` : '∞');
-  if (out(w, r.w)) return `rộng ${mm(w)} mm ngoài ${mm(r.w[0])}–${mm(r.w[1])}`;
-  if (out(d, r.d)) return `sâu ${mm(d)} mm ngoài ${mm(r.d[0])}–${mm(r.d[1])}`;
-  if (out(shown[1], r.h)) return `cao ${mm(shown[1])} mm ngoài ${mm(r.h[0])}–${mm(r.h[1])}`;
+  if (out(w, r.w, FUNC_TOL)) return `rộng ${mm(w)} mm ngoài ${mm(r.w[0])}–${mm(r.w[1])}`;
+  if (out(d, r.d, FUNC_TOL)) return `sâu ${mm(d)} mm ngoài ${mm(r.d[0])}–${mm(r.d[1])}`;
+  if (out(shown[1], r.h, FUNC_TOL)) return `cao ${mm(shown[1])} mm ngoài ${mm(r.h[0])}–${mm(r.h[1])}`;
   const sy = dims[1] > 0 ? shown[1] / dims[1] : 1;
   if (r.sy !== undefined && out(sy, r.sy)) return `hệ số cao ${sy.toFixed(2)} ngoài ${r.sy[0]}–${r.sy[1]}`;
   return undefined;
@@ -408,6 +414,8 @@ export interface SetDecision {
   readonly uniform?: boolean | 'real';
   /** Đầu dò (vòng 17): mẫu được giữ/ghim nằm ngoài phạm vi công năng của vai (`functionalMissOf`). */
   readonly funcMiss?: string;
+  /** Đầu dò (M17-2): mẫu dựng sẵn ở cỡ thật đặt DÙ lý do này (va chạm / ngoài công năng / không mẫu luật cũ) — thay khung đỏ null. */
+  readonly forced?: string;
   /** Đầu dò: tối đa 3 ứng viên qua ràng buộc cứng rẻ nhất [mẫu, chi phí]. */
   readonly top?: readonly (readonly [string, number])[];
 }
@@ -1090,7 +1098,7 @@ export const roomSetOf = (
     m: SetMember,
     ev: { readonly legacyCost?: number; readonly concept?: { readonly f: string; readonly miss?: string } },
     costOf: (f: string) => number,
-  ): { readonly to: string | null; readonly uniform?: 'real'; readonly why: string } => {
+  ): { readonly to: string | null; readonly uniform?: 'real'; readonly forced?: string; readonly why: string } => {
     const b = m.box;
     const zones = m.lifted === true || b === undefined ? [] : [...placed, ...pendingOf(m)].filter((z) => !tucked(m.kind, z.kind));
     const hitOf = (rect: PlanRect | undefined): number => (rect === undefined ? 0 : zones.reduce((s, z) => s + overlapAreaM2(rect, z), 0));
@@ -1137,6 +1145,18 @@ export const roomSetOf = (
         clear(m.lifted === true ? undefined : shownRectOf(m, st));
       if (stockOk) {
         return { to: st, why: `phương án cuối: mẫu dựng sẵn của vai — ${cur === null ? 'không mẫu luật cũ' : `luật cũ trượt (${slip ?? ''})`}` };
+      }
+    }
+    // Điều phối M17-2: null chỉ vì va chạm / ngoài công năng → mẫu dựng sẵn ở CỠ THẬT (không co, không méo, 'real') DÙ va chạm,
+    // cờ `forced` cho đầu dò. Vẫn phải qua chất lượng/an toàn + trần ở cỡ thật (`forbiddenOf` trên cỡ thật). Khung đỏ (null) chỉ
+    // còn khi lý do cấm là an toàn/chất lượng hoặc không có mẫu dựng sẵn hợp lệ. Cỡ người dùng xác nhận không dựng cỡ thật.
+    const forceable = cur === null || forbid === 'va chạm' || (forbid?.startsWith(FUNC_REJECT) ?? false);
+    const stDims = st === undefined ? undefined : ctx.dimsOf(st);
+    if (forceable && st !== undefined && st !== cur && stDims !== undefined && b !== undefined && m.sizeFrom !== 'user') {
+      const cm = conceptMissOf(st);
+      if (forbiddenOf(realMemberOf(m), st, cm === 'va chạm' ? undefined : cm) === undefined) {
+        const forced = [forbid ?? 'không mẫu luật cũ', ...(clear(realRectOf(m, b, stDims)) ? [] : ['va chạm'])].filter((x, i, a) => a.indexOf(x) === i).join(', ');
+        return { to: st, uniform: 'real', forced, why: `phương án cuối: mẫu dựng sẵn ở cỡ thật dù ${forced} (luật cũ không dùng được)` };
       }
     }
     if (cur === null) return { to: null, why: 'phương án cuối: không ứng viên, không mẫu luật cũ, mẫu dựng sẵn không đặt được' };
@@ -1401,6 +1421,7 @@ export const roomSetOf = (
           ...(Object.keys(ev.rejects).length > 0 ? { rejects: ev.rejects } : {}),
           ...(top.length > 0 ? { top } : {}),
           ...(fb?.uniform === undefined ? {} : { uniform: fb.uniform }),
+          ...(fb?.forced === undefined ? {} : { forced: fb.forced }),
         });
         if (to !== null) placeOf(memberAs(m, fb?.uniform), to, fb?.uniform === 'real');
         // Mẫu mặc định của loại (phương án cuối `null`) dựng trong hộp: chiếm chỗ bằng cả hộp.

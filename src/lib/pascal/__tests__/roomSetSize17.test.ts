@@ -18,16 +18,20 @@ describe('vòng 17 — functionalMissOf (ca T1–T14)', () => {
     expect(functionalMissOf('closet', [1.285, 1.903, 0.508], [0.784, 1.161, 0.31])).toBeDefined();
     expect(functionalMissOf('closet', [1.4, 2.07, 0.58], [0.922, 1.363, 0.382])).toBeDefined();
   });
-  it('T5/T6: bàn ăn cao 684 / 693 → ngoài; cao thật 760 → đạt', () => {
-    expect(functionalMissOf('diningTable', [1.6, 0.76, 0.9], [1.422, 0.684, 0.811])).toMatch(/cao 684/);
-    expect(functionalMissOf('diningTable', [1.6, 0.76, 0.9], [1.396, 0.693, 0.821])).toBeDefined();
+  // Điều phối M17-2 (đổi có chủ đích, FUNC_TOL 10 %): T5–T8 lệch < 10 % phạm vi nay đạt; ngoài 10 % vẫn trượt.
+  it('T5/T6: bàn ăn cao 684 / 693 → đạt (trong 10 %); cao 620 → ngoài; cao thật 760 → đạt', () => {
+    expect(functionalMissOf('diningTable', [1.6, 0.76, 0.9], [1.422, 0.684, 0.811])).toBeUndefined();
+    expect(functionalMissOf('diningTable', [1.6, 0.76, 0.9], [1.396, 0.693, 0.821])).toBeUndefined();
+    expect(functionalMissOf('diningTable', [1.6, 0.76, 0.9], [1.3, 0.62, 0.75])).toMatch(/cao 620/);
     expect(functionalMissOf('diningTable', [1.6, 0.76, 0.9], [1.422, 0.76, 0.811])).toBeUndefined();
   });
-  it('T7: giường đôi rộng 1277 → ngoài (không hạ thành giường đơn: vai giữ nguyên)', () => {
-    expect(functionalMissOf('doubleBed', [1.748, 0.895, 1.978], [1.277, 0.895, 2.077])).toMatch(/rộng 1277/);
+  it('T7: giường đôi rộng 1277 → đạt (trong 10 %); rộng 1200 → ngoài (không hạ thành giường đơn: vai giữ nguyên)', () => {
+    expect(functionalMissOf('doubleBed', [1.748, 0.895, 1.978], [1.277, 0.895, 2.077])).toBeUndefined();
+    expect(functionalMissOf('doubleBed', [1.748, 0.895, 1.978], [1.2, 0.895, 2.077])).toMatch(/rộng 1200/);
   });
-  it('T8: ghế ăn sâu 362 → ngoài', () => {
-    expect(functionalMissOf('diningChair', [0.41, 0.8, 0.52], [0.41, 0.736, 0.362])).toMatch(/sâu 362/);
+  it('T8: ghế ăn sâu 362 → đạt (trong 10 %); sâu 350 → ngoài', () => {
+    expect(functionalMissOf('diningChair', [0.41, 0.8, 0.52], [0.41, 0.736, 0.362])).toBeUndefined();
+    expect(functionalMissOf('diningChair', [0.41, 0.8, 0.52], [0.41, 0.736, 0.35])).toMatch(/sâu 350/);
   });
   it('T9/T10: sofa co 0,22 (395 rộng), tủ áo 102 rộng → ngoài', () => {
     expect(functionalMissOf('sofa', [1.8, 0.9, 0.9], [0.395, 0.644, 0.686])).toBeDefined();

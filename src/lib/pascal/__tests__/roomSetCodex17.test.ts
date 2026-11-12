@@ -266,3 +266,30 @@ describe('Codex M17-2 #1, #2 — luật cũ / mẫu dựng sẵn ở phương á
     expect(roomSetOf('r', [closet('user')], new Map(), cctx).get('c')?.to).not.toBeNull();
   });
 });
+
+describe('Điều phối M17-2 — null chỉ vì va chạm / ngoài công năng → mẫu dựng sẵn CỠ THẬT (cờ forced)', () => {
+  it('luật cũ chồng vùng chặn, có mẫu dựng sẵn → mẫu dựng sẵn cỡ thật dù va chạm, cause fallback + forced', () => {
+    const m = mem('s', 'sofa', [], { current: 'sofa-old', stock: 'sofa', box: BOX, shownOf: (f) => DIMS[f] });
+    const d = roomSetOf('r', [m], new Map(), ctx, [ALL]).get('s');
+    expect(d).toMatchObject({ to: 'sofa', uniform: 'real', cause: 'fallback', forced: 'va chạm' });
+    expect(d?.why).toMatch(/cỡ thật dù va chạm/);
+  });
+
+  it('không mẫu luật cũ → mẫu dựng sẵn cỡ thật (forced ghi "không mẫu luật cũ")', () => {
+    const m = mem('s', 'sofa', [], { current: null, stock: 'sofa', box: BOX, shownOf: (f) => DIMS[f] });
+    expect(roomSetOf('r', [m], new Map(), ctx, [ALL]).get('s')).toMatchObject({ to: 'sofa', uniform: 'real', forced: expect.stringContaining('không mẫu luật cũ') });
+  });
+
+  it('mẫu dựng sẵn cỡ thật vượt trần → vẫn null (trần không được bỏ qua)', () => {
+    // Trần 1,2 − 0,3 = 0,9: luật cũ cao 0,85 qua trần nhưng va chạm; mẫu dựng sẵn cao 0,95 không.
+    const m = mem('s', 'sofa', [], { current: 'sofa-old', stock: 'sofa-tall', box: BOX, ceilingM: 1.2, shownOf: (f) => DIMS[f] });
+    expect(roomSetOf('r', [m], new Map(), ctx, [ALL]).get('s')?.to).toBeNull();
+  });
+
+  it('lý do an toàn/chất lượng (có lỗi QC) → null dù có mẫu dựng sẵn; người dùng xác nhận không dựng cỡ thật', () => {
+    const qc = mem('s', 'sofa', [], { current: 'sofa-qc', stock: 'sofa', box: BOX, shownOf: (f) => DIMS[f] });
+    expect(roomSetOf('r', [qc], new Map(), ctx, [ALL]).get('s')?.to).toBeNull();
+    const user = mem('s', 'sofa', [], { current: null, stock: 'sofa', box: BOX, sizeFrom: 'user', shownOf: (f) => DIMS[f] });
+    expect(roomSetOf('r', [user], new Map(), ctx, [ALL]).get('s')?.uniform).not.toBe('real');
+  });
+});

@@ -119,11 +119,13 @@ describe('I2 — phương án cuối', () => {
     expect(d?.why).toMatch(/luật cũ trượt/);
   });
 
-  it('luật cũ ngoài công năng, mẫu dựng sẵn méo → null, sổ ghi ngoài công năng (không giữ luật cũ)', () => {
+  it('luật cũ ngoài công năng, mẫu dựng sẵn méo ở cỡ hiển thị → mẫu dựng sẵn CỠ THẬT dù va chạm (cờ forced), không giữ luật cũ', () => {
+    // Điều phối M17-2 (đổi có chủ đích): null chỉ vì va chạm / ngoài công năng → mẫu dựng sẵn cỡ thật (cũ: null).
     const block: SetZone = { cx: 0, cy: 0, w: 6, d: 6, rotationDeg: 0 };
     const m = mem('s', 'sofa', ['sofa-deep'], { current: 'sofa-old', stock: 'sofa', box: { cx: 0, cy: 0, w: 2, d: 0.85, rot: 0 }, shownOf: () => [1.0, 0.85, 0.85] });
     const d = roomSetOf('r', [m], new Map(), ctxOf(), [block]).get('s');
-    expect(d?.to).toBeNull();
+    expect(d).toMatchObject({ to: 'sofa', uniform: 'real', cause: 'fallback' });
+    expect(d?.forced).toMatch(/ngoài công năng.*va chạm/);
     expect(d?.why).toMatch(/ngoài công năng/);
   });
 });
