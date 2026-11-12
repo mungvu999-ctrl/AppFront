@@ -398,12 +398,12 @@ describe('repairScene', () => {
       expect(repairs[0]?.after?.boundingBox).toEqual(after.boundingBox);
     });
 
-    it('ghế ăn AI sâu 0,30 m: kẹp sâu về dải vai (0,38 m), lý do hiện trên chip; ghế người dùng không đụng', () => {
+    it('ghế ăn AI sâu 0,30 m: kẹp sâu về dải vai (0,36 m — dải đo từ catalog vòng 13), lý do hiện trên chip; ghế người dùng không đụng', () => {
       const g = graphOf([BED_ROOM], [chair('F-ai', 480, 300, 1000, 1750), chair('F-me', 480, 300, 3000, 1750, HUMAN)]);
       const { graph, repairs } = repairScene(g);
       expect(repairs.map((r) => [r.furnitureId, r.action, r.rule])).toEqual([['F-ai', 'rescaled', 'fit']]);
-      expect(repairs[0]?.reasonVi).toContain('kẹp về 0,48 × 0,38 m');
-      expect(sides(byId(graph, 'F-ai') as Furniture)).toEqual([480, 378]);
+      expect(repairs[0]?.reasonVi).toContain('kẹp về 0,48 × 0,36 m');
+      expect(sides(byId(graph, 'F-ai') as Furniture)).toEqual([480, 362]);
       expect(byId(graph, 'F-me')).toBe(byId(g, 'F-me'));
       // Idempotent, và tắt riêng bằng ?disable=fit.
       expect(repairScene(graph).repairs).toEqual([]);
@@ -462,8 +462,8 @@ describe('repairScene', () => {
       const { graph, repairs } = repairScene(graphOf([BED_ROOM], [closet]));
       expect(repairs).toMatchObject([{ furnitureId: 'F-closet', action: 'rescaled', rule: 'fit' }]);
       const after = byId(graph, 'F-closet') as Furniture;
-      expect(sides(after)).toEqual([1000, 381]);
-      expect(Math.abs(after.centre.y - 381 / 2 - (251 - 150))).toBeLessThanOrEqual(1);
+      expect(sides(after)).toEqual([1000, 408]); // p10 sâu vai tủ áo, catalog vòng 13 (16 mẫu)
+      expect(Math.abs(after.centre.y - 408 / 2 - (251 - 150))).toBeLessThanOrEqual(1);
     });
   });
 

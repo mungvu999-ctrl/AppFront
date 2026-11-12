@@ -105,8 +105,8 @@ if (window.__pascalProbe) {
 // Bộ nội thất theo phòng (vòng 12 làn S, `?enable=roomset`, `roomSet.ts`): phòng → { anchor, items[{id, role, from, to, rule, cost, why}] }.
 // Rỗng khi cờ tắt. `rule: 'keep'` kèm `why` = lý do giữ mẫu cũ.
 if (window.__pascalProbe) {
-  void import('@/lib/pascal/sceneVariety').then(({ roomSetReport }) => {
-    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { roomSet: roomSetReport });
+  void import('@/lib/pascal/sceneVariety').then(({ roomSetReport, roomSetTiming }) => {
+    if (window.__pascalProbe) Object.assign(window.__pascalProbe, { roomSet: roomSetReport, roomSetTiming });
   });
 }
 

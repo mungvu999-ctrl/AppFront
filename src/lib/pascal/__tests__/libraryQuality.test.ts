@@ -11,7 +11,7 @@ import { Document } from '@gltf-transform/core';
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 
-import { LIBRARY_QUALITY, LIBRARY_QUALITY_SCHEMA, qualityOf } from '../libraryQuality';
+import { expandLibraryQuality, LIBRARY_QUALITY, LIBRARY_QUALITY_SCHEMA, qualityOf } from '../libraryQuality';
 import ROLES from '../libraryRoles.json' with { type: 'json' };
 import ROLES2 from '../libraryRoles2.json' with { type: 'json' };
 
@@ -26,6 +26,9 @@ interface GenModule {
   makeIO(): Promise<{ read(path: string): Promise<Document> }>;
   dE(a: readonly number[], b: readonly number[]): number;
   linToLab(lin: readonly number[]): Lab;
+  HMAP_GRID: number;
+  frontOf(hm: ArrayLike<number>, role: string | undefined, prev?: 'ok' | 'suspect', aspect?: number): { front: { check: string; by: string; sym?: string } };
+  shapeOf(hm: ArrayLike<number>, role: string | undefined): 'L' | undefined;
 }
 interface Check {
   id: string;
@@ -158,4 +161,74 @@ describe('parts không phải trung bình texture', () => {
     expect(again?.share).toBeCloseTo(main?.share ?? -1, 2);
     expect(dE(again?.lab ?? [0, 0, 0], main?.lab ?? [0, 0, 0])).toBeLessThan(1);
   }, 60_000);
+});
+
+describe('schema v2: hướng mặt trước đo được, đối xứng, dáng L', () => {
+  const head = { rev: 'x', generatedBy: 't', inputs: {}, dict: { licence: ['CC0'], sourcePrefix: ['s/'], author: [], kind: [], material: [], tier: ['light'] } };
+  const row = { u: [1, 1, 1], d: [1, 1, 0, 0, 0], l: 0, o: [0, 'a'] };
+
+  it('giải nén hàng v1 (f = 1 hoặc vắng) và hàng v2 (bit đo, đối xứng, dáng L)', () => {
+    const v1 = expandLibraryQuality({ ...head, schema: 1, format: 'compact-1', models: { a: { ...row, f: 1 }, b: row } });
+    expect(v1.models.a?.front).toEqual({ axis: '+z', check: 'suspect', by: 'import' });
+    expect(v1.models.b?.front).toEqual({ axis: '+z', check: 'ok', by: 'import' });
+    expect(v1.models.b?.shape).toBeUndefined();
+    const v2 = expandLibraryQuality({ ...head, schema: 2, format: 'compact-2', models: { a: { ...row, f: 2, h: 'L' }, b: { ...row, f: 3 }, c: { ...row, f: 6 }, d: { ...row, f: 10 } } });
+    expect(v2.models.a?.front).toEqual({ axis: '+z', check: 'ok', by: 'measured' });
+    expect(v2.models.a?.shape).toBe('L');
+    expect(v2.models.b?.front).toEqual({ axis: '+z', check: 'suspect', by: 'measured' });
+    expect(v2.models.c?.front.sym).toBe('rot180');
+    expect(v2.models.d?.front.sym).toBe('all');
+  });
+
+  // Bản đồ độ cao tổng hợp: hàng j theo z (j = 0 ở −Z), cột i theo x; -1 = trống.
+  const grid = async (f: (i: number, j: number, g: number) => number) => {
+    const { HMAP_GRID: g } = await gen();
+    return Float32Array.from({ length: g * g }, (_, k) => f(k % g, Math.floor(k / g), g));
+  };
+  const sofa = (backAtNegZ: boolean) => (_i: number, j: number, g: number) => ((backAtNegZ ? j < 4 : j >= g - 4) ? 1 : 0.45);
+
+  it('lưng ở −Z → ok, measured; lưng ở +Z → suspect, measured; lưng ở ±X → suspect', async () => {
+    const { frontOf } = await gen();
+    expect(frontOf(await grid(sofa(true)), 'sofa').front).toMatchObject({ check: 'ok', by: 'measured' });
+    expect(frontOf(await grid(sofa(false)), 'sofa', 'ok').front).toMatchObject({ check: 'suspect', by: 'measured' });
+    expect(frontOf(await grid((i) => (i < 4 ? 1 : 0.45)), 'doubleBed').front).toMatchObject({ check: 'suspect', by: 'measured' });
+    // Không có lưng (ghế dài phẳng) → giữ quy ước nhập và kết quả kiểm cũ.
+    expect(frontOf(await grid(() => 0.5), 'bench', 'suspect').front).toEqual({ axis: '+z', check: 'suspect', by: 'import' });
+  });
+
+  it('bàn tròn → sym all; bàn chữ nhật hai đầu như nhau → rot180; tủ không có tín hiệu → import', async () => {
+    const { frontOf } = await gen();
+    const round = await grid((i, j, g) => (Math.hypot(i + 0.5 - g / 2, j + 0.5 - g / 2) <= g / 2 ? 0.95 : -1));
+    expect(frontOf(round, 'coffeeTable', 'ok', 1).front).toMatchObject({ by: 'measured', sym: 'all' });
+    // Bàn dài: hộp bao 2:1 nên dù lưới vuông đối xứng 90° vẫn chỉ là rot180.
+    expect(frontOf(round, 'diningTable', 'ok', 2).front).toMatchObject({ by: 'measured', sym: 'rot180' });
+    // Một bên có bệ cao → không đối xứng → import.
+    expect(frontOf(await grid((i) => (i < 6 ? 1 : 0.3)), 'coffeeTable').front).toEqual({ axis: '+z', check: 'ok', by: 'import' });
+    expect(frontOf(round, 'dresser').front).toEqual({ axis: '+z', check: 'ok', by: 'import' });
+  });
+
+  it('sofa góc: một đầu sâu kín lưới, đầu kia nông → L; sofa thẳng → không', async () => {
+    const { shapeOf } = await gen();
+    expect(shapeOf(await grid((i, j, g) => (i >= g * 0.6 || j < g * 0.5 ? 0.5 : -1)), 'sofa')).toBe('L');
+    expect(shapeOf(await grid(() => 0.5), 'sofa')).toBeUndefined();
+    expect(shapeOf(await grid((i, j, g) => (i >= g * 0.6 || j < g * 0.5 ? 0.5 : -1)), 'armchair')).toBeUndefined();
+  });
+
+  it('dữ liệu thật: đối xứng chỉ ở vai không phải ghế/giường, import không có sym, dáng L chỉ ở sofa', () => {
+    const seatBed = new Set(['sofa', 'armchair', 'diningChair', 'bench', 'doubleBed', 'singleBed']);
+    for (const [id, q] of models) {
+      if (q.front.sym) {
+        expect(q.front.by, id).toBe('measured');
+        expect(seatBed.has(q.role ?? ''), id).toBe(false);
+      }
+      if (q.shape) expect(q.role, id).toBe('sofa');
+    }
+  });
+
+  it('dữ liệu thật: giường đo được gần như đều có đầu giường ở −Z (ok)', () => {
+    const beds = models.filter(([, q]) => /Bed$/.test(q.role ?? '') && q.front.by === 'measured');
+    expect(beds.length).toBeGreaterThan(10);
+    const suspect = beds.filter(([, q]) => q.front.check === 'suspect').map(([id]) => id);
+    expect(suspect.length / beds.length, suspect.join(', ')).toBeLessThanOrEqual(0.1);
+  });
 });

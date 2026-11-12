@@ -30,6 +30,9 @@ import {
   roomSetOf,
   ROOMSET_DEFAULT,
   roomSetOnOf,
+  scaleOf,
+  SCALE_MAX,
+  SCALE_MIN,
   SHOWN_TOL_M,
   type Dims,
   type SetContext,
@@ -329,12 +332,14 @@ const provOf = (scene: PascalScene, id: string): SceneProvenance | undefined =>
   (scene.nodes[`item_${id}`]?.metadata as { appfront?: { fields?: Record<string, unknown> } } | undefined)?.appfront?.fields?.[PROV_FIELD] as SceneProvenance | undefined;
 
 let oldBed = '';
-const fillQuality = (bareBed: string): void => {
+// Vòng 13: luật thư viện đã không tự chọn giường dưới chuẩn hoàn thiện, nên tiền đề "luật cũ chọn nệm trần" không còn
+// dựng được; giường cũ ở đây ĐỦ chăn gối nhưng khung gỗ đỏ sẫm lệch tông → roomset vẫn phải thay và ghi sổ như trước.
+const fillQuality = (offBed: string): void => {
   Q.clear();
   for (const role of SET_LIB_ROLES)
     for (const [i, id] of (roles[role] ?? []).entries()) {
-      const wood: Lab = [55 + (i % 5), 8, 22];
-      Q.set(id, qual(role, { frame: wood, completeness: id === bareBed ? 'bare' : 'full' }));
+      const wood: Lab = id === offBed ? [24, 30, 28] : [55 + (i % 5), 8, 22];
+      Q.set(id, qual(role, { frame: wood, completeness: 'full' }));
     }
 };
 
@@ -349,7 +354,7 @@ describe('roomset trong đường dựng cảnh', () => {
       ),
     );
     oldBed = assetOf(sceneOf(graphWith(), OFF), BED);
-    // Mẫu luật cũ chọn là giường nệm trần → roomset phải thay bằng giường hoàn chỉnh.
+    // Mẫu luật cũ chọn lệch tông → roomset phải thay bằng giường hợp bộ (vẫn đủ chăn gối).
     fillQuality(oldBed);
   });
   afterAll(() => {
@@ -363,7 +368,7 @@ describe('roomset trong đường dựng cảnh', () => {
     expect(plain).not.toBe(itemsOf(sceneOf(graphWith(), OFF)));
   });
 
-  it('cờ bật: giường trần thay bằng giường hoàn chỉnh, prov.model ghi luật + phiên bản + mẫu cũ; hai tab cùng mẫu; báo cáo', () => {
+  it('cờ bật: giường lệch tông thay bằng giường hợp bộ (đủ chăn gối), prov.model ghi luật + phiên bản + mẫu cũ; hai tab cùng mẫu; báo cáo', () => {
     const scene = sceneOf(graphWith(), ON);
     const bed = assetOf(scene, BED);
     expect(bed).not.toBe(oldBed);
@@ -623,9 +628,10 @@ describe('roomset trên dữ liệu chất lượng thật (am-ap, tông sáng)'
     const bed = out.get('bed')?.to;
     expect(real(bed ?? '')?.completeness?.v).toBe('full');
     expect(partsOf(bed).some((p) => p.kind === 'bedding')).toBe(true);
+    // Vòng 13: tủ có đổi hay không tuỳ giường neo của catalog hiện tại (MIN_GAIN); nếu đổi thì phải ít phần tối hơn.
     const closet = out.get('closet');
-    expect(closet?.rule).toBe('roomset');
-    expect(darkShare(closet?.to)).toBeLessThan(darkShare('storage-wardrobe-greywash'));
+    if (closet?.rule === 'roomset') expect(darkShare(closet.to)).toBeLessThan(darkShare('storage-wardrobe-greywash'));
+    else expect(closet?.to).toBe('storage-wardrobe-greywash');
   });
 
   it('thống kê một căn mẫu (khách + ăn + 2 ngủ): số món đổi / giữ và lý do giữ', () => {
@@ -728,11 +734,12 @@ describe('roomset lượt 3 — mỗi món chỉ nhận mẫu qua ràng buộc c
         // Lượt 5: mẫu cũ đạt chất lượng → hơn ≥ MIN_GAIN; trượt chất lượng → ≤ FAIL_COST; chưa biết → ≤ GOOD_COST.
         if (d.oldFail === undefined) expect((d.cost as number) <= (d.fromCost as number) - MIN_GAIN + 1e-9).toBe(true);
         else expect(d.cost as number).toBeLessThanOrEqual(d.oldFail === 'unknown' ? GOOD_COST : FAIL_COST);
-        // Lượt 9: mặt bằng HIỂN THỊ không lớn hơn mẫu cũ (từng trục, dung sai SHOWN_TOL_M); cao hiển thị chừa hở trần.
-        const [to, from] = [m.shownOf?.(d.to as string), m.shownOf?.(d.from as string)];
-        expect(to !== undefined && from !== undefined).toBe(true);
-        expect((to as Dims)[0]).toBeLessThanOrEqual((from as Dims)[0] + SHOWN_TOL_M + 1e-9);
-        expect((to as Dims)[2]).toBeLessThanOrEqual((from as Dims)[2] + SHOWN_TOL_M + 1e-9);
+        // Vòng 13: mặt bằng HIỂN THỊ nằm trong HỘP chỗ đặt (không theo mẫu cũ), tỉ lệ thật trong dải; cao chừa hở trần.
+        const to = m.shownOf?.(d.to as string) as Dims;
+        expect(to[0]).toBeLessThanOrEqual(m.short + SHOWN_TOL_M + 1e-9);
+        expect(to[2]).toBeLessThanOrEqual(m.long + SHOWN_TOL_M + 1e-9);
+        const g = scaleOf(ctx.dimsOf(d.to as string), to) as number;
+        expect(g >= SCALE_MIN - 1e-9 && g <= SCALE_MAX + 1e-9).toBe(true);
         expect((to as Dims)[1]).toBeLessThanOrEqual(CEIL - CEILING_GAP_M + 1e-9);
       }
     }
@@ -1083,13 +1090,14 @@ describe('roomset lượt 9 — cỡ hiển thị (itemFitOf)', () => {
     { 'fit-old': [0.5, 0.8, 0.5], 'fit-new': [0.5, 0.8, 1.0], 'fit-tall': [1.0, 1.9, 0.6] },
   );
 
-  it('#4: hộp 500×1000 mm — mẫu cũ hiện sâu < 1 m, mẫu thay hiện sâu đủ 1 m → loại "lớn hơn mẫu cũ khi hiển thị"', () => {
+  it('#4 (vòng 13): hộp 500×1000 mm — mẫu thay hiện sâu đủ 1 m (lớn hơn mẫu cũ) vẫn đạt vì nằm trong hộp; vượt hộp thì loại', () => {
     const shownOf = (x: string) => itemFitOf(x, 0.5, 1.0, undefined, 2700)?.shownM;
     expect((shownOf('fit-old') as Dims)[2]).toBeLessThan(0.95);
     expect((shownOf('fit-new') as Dims)[2]).toBeCloseTo(1.0, 6);
-    const m = member('d', 'dresser', 'fit-old', ['fit-new'], { short: 0.5, long: 1.0, shownOf });
-    expect(hardRejectOf(m, 'fit-new', ctx)).toBe('lớn hơn mẫu cũ khi hiển thị');
-    expect(roomSetOf('R', [m], new Map(), ctx).get('d')?.to).toBe('fit-old');
+    const box = { cx: 0, cy: 0, w: 0.5, d: 1.0, rot: 0 };
+    expect(hardRejectOf(member('d', 'dresser', 'fit-old', ['fit-new'], { short: 0.5, long: 1.0, shownOf, box }), 'fit-new', ctx)).toBeUndefined();
+    const tight = { ...box, d: 0.9 };
+    expect(hardRejectOf(member('d', 'dresser', 'fit-old', ['fit-new'], { short: 0.5, long: 1.0, shownOf, box: tight }), 'fit-new', ctx)).toBe('vượt hộp chỗ đặt');
   });
 
   it('#1: tủ catalog 1,9 m, `heightMm` đã lưu 2300, trần 2,4 m → hiển thị 2,3 m, loại "chạm gần trần"', () => {
