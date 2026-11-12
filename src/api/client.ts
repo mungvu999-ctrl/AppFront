@@ -407,6 +407,23 @@ export interface ReadLibraryItemInput extends RequestOptions {
   libraryItemId: string;
 }
 
+/** M15 — `GET /api/library?limit&cursor` (`limit` 1..500); `cursor` = `nextCursor` của trang trước. */
+export interface ListLibraryPageInput extends RequestOptions {
+  cursor?: string;
+  limit?: number;
+}
+
+/**
+ * Một trang thư viện: `nextCursor` từ header `X-Next-Cursor` (vắng = hết), `revision` từ `X-Library-Revision`
+ * (BE cũ không gửi → vắng), `bytes` = độ dài thân phản hồi (đầu dò).
+ */
+export interface LibraryPage {
+  items: LibraryItem[];
+  nextCursor?: string;
+  revision?: string;
+  bytes: number;
+}
+
 /**
  * Quản trị người dùng — T-04/T-05.
  *
@@ -657,6 +674,8 @@ export interface SpatialApi {
  */
 export interface LibraryApi {
   list(options?: RequestOptions): Promise<ApiResult<LibraryItem[]>>;
+  /** Một trang theo con trỏ; thân vẫn là mảng trần, trang kế + phiên bản tập mục đi trong header. */
+  listPage(input?: ListLibraryPageInput): Promise<ApiResult<LibraryPage>>;
   read(input: ReadLibraryItemInput): Promise<ApiResult<LibraryItem>>;
 }
 
@@ -1260,6 +1279,45 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
   library: {
     list: async (options) =>
       decodeList(await callGet<unknown>(http, ENDPOINTS.library.list, options?.signal), LibraryItemSchema, 'library.list'),
+    listPage: async ({ cursor, limit, signal } = {}) => {
+      const raw = await http.get<Response>(ENDPOINTS.library.list, {
+        query: {
+          ...(cursor !== undefined ? { cursor } : {}),
+          ...(limit !== undefined ? { limit } : {}),
+        },
+        responseType: 'response',
+        ...(signal !== undefined ? { signal } : {}),
+      });
+
+      if (!raw.ok) {
+        return asApiResult(raw);
+      }
+
+      const nextCursor = raw.data.headers.get('X-Next-Cursor') ?? '';
+      const revision = raw.data.headers.get('X-Library-Revision') ?? '';
+      const text = await raw.data.text();
+      let body: unknown = null;
+      try {
+        body = JSON.parse(text) as unknown;
+      } catch {
+        // Thân không phải JSON: `decodeList` báo lỗi giải mã như mọi lượt đọc khác.
+      }
+      const items = decodeList({ ok: true, data: body }, LibraryItemSchema, 'library.listPage');
+
+      if (!items.ok) {
+        return items;
+      }
+
+      return {
+        ok: true,
+        data: {
+          items: items.data,
+          ...(nextCursor !== '' ? { nextCursor } : {}),
+          ...(revision !== '' ? { revision } : {}),
+          bytes: text.length,
+        },
+      };
+    },
     read: async ({ libraryItemId, signal }) =>
       decodeSingle(
         await callGet<unknown>(http, ENDPOINTS.library.detail(libraryItemId), signal),

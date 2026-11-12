@@ -392,7 +392,7 @@ export function usePascalViewer({
         throw error;
       })
       // Thư viện máy chủ chốt TRƯỚC khi dựng (cùng điểm vào với editor); `cancelled` bỏ kết quả của bản vẽ cũ.
-      .then(async ([pascal, diffs, { ensureSceneLibrary }]) => [pascal, diffs, await ensureSceneLibrary()] as const)
+      .then(async ([pascal, diffs, { ensureSceneLibraryFor }]) => [pascal, diffs, await ensureSceneLibraryFor(graph.furniture)] as const)
       .then(([{ standardSceneOf }, { diffScenes, isEmptyDiff }]) => {
         if (cancelled) return;
         const converted = standardSceneOf(graph);
