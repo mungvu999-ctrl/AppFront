@@ -274,6 +274,18 @@ describe('vòng 14 lượt 2 — ngưỡng hỏng FAIL_COST (ca thua rõ f-22/f-
     expect([out.get('a')?.to, out.get('b')?.to]).toEqual(['S', 'S']);
   });
 
+  it('Codex SEL-5: dải hoà lưng chừng ngưỡng (S1 0,88, S2 0,93, chênh < ANCHOR_BAND) → mọi khoá băm ra S1, không fail-keep', () => {
+    const c = ctxT('dresser', { S1: 88, S2: 93, L: 99 });
+    const keys = Array.from({ length: 16 }, (_, i) => `R${i}`);
+    for (const key of keys) {
+      const out = roomSetOf(key, [sq('a', 1, 0, 'L', ['S1', 'S2', 'L']), sq('b', 1, 3, 'L', ['S1', 'S2', 'L'])], new Map(), c);
+      expect([out.get('a')?.to, out.get('b')?.to, out.get('a')?.cause]).toEqual(['S1', 'S1', 'selector']);
+    }
+    // Cùng dải nhưng cả hai trên ngưỡng (S1 0,92, S2 0,97): băm vẫn rút trong dải, rồi cả nhóm fail-keep.
+    const hi = ctxT('dresser', { S1: 92, S2: 97, L: 99 });
+    for (const key of keys) expect(roomSetOf(key, [sq('a', 1, 0, 'L', ['S1', 'S2', 'L'])], new Map(), hi).get('a')).toMatchObject({ to: 'L', cause: 'fail-keep' });
+  });
+
   it('ngưỡng theo NHÓM: mẫu chung trung bình > 0,9 → cả nhóm giữ mẫu luật cũ (không lệch nhau); có món ghim trong nhóm → mẫu ghim dẫn cả nhóm', () => {
     const c = ctxT('dresser', { S: 86, L: 99 });
     const two = [sq('a', 1, 0, 'L', ['S', 'L']), sq('b', 0.85, 3, 'L', ['S', 'L'])];

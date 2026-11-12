@@ -868,7 +868,10 @@ export const roomSetOf = (
       if (best === undefined) return undefined;
       // Hoà trong nhiễu (≤ ANCHOR_BAND, cùng số món chấp nhận): rút theo băm khoá NỘI DUNG (phòng/nhóm/món), mọi vai —
       // tất định, không ép đa dạng; chỉ bỏ việc "tên thư mục nhỏ nhất thắng ở mọi phòng".
-      const band = ranked.filter((r) => r.n === best.n && r.cost <= r9(best.cost + ANCHOR_BAND)).sort((a, b) => a.f.localeCompare(b.f));
+      const inBand = ranked.filter((r) => r.n === best.n && r.cost <= r9(best.cost + ANCHOR_BAND)).sort((a, b) => a.f.localeCompare(b.f));
+      // Codex SEL-5: trong dải, mẫu dưới ngưỡng hỏng đi trước — băm không được rút trúng mẫu > FAIL_COST khi dải còn mẫu đạt.
+      const good = inBand.filter((r) => r.cost <= FAIL_COST);
+      const band = good.length > 0 ? good : inBand;
       return { f: (band[fnv1a(hashKey) % band.length] as { f: string }).f, n: best.n, band: band.length };
     };
     // Mẫu chung cả phòng; nhóm (bàn) dùng nó khi nó chấp nhận được cho MỌI món của nhóm, không thì mẫu chung của nhóm.
