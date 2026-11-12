@@ -755,14 +755,22 @@ export const contextRolesOf = (
   const roles = new Map<string, FurnitureRole>();
   const toiletsOf = new Map<string, Placed[]>();
   const beds = items.filter((f) => f.kind === 'bed');
+  const baseRole = new Map(items.map((f) => [f.id, roleOf(f, usageOf(f))] as const));
+  /** Ghế/sofa theo phòng (R7 bàn trà) — một lần, không quét cả cảnh cho mỗi bàn (Codex M17-12 P2). */
+  const seatsByRoom = new Map<string | undefined, Placed[]>();
+  for (const x of items) {
+    const r = baseRole.get(x.id);
+    if (r === 'sofa' || r === 'armchair' || r === 'diningChair') seatsByRoom.set(x.roomId, [...(seatsByRoom.get(x.roomId) ?? []), x]);
+  }
 
   for (const f of items) {
-    const role = roleOf(f, usageOf(f));
+    const role = baseRole.get(f.id) ?? roleOf(f, usageOf(f));
     if (role === 'toilet' && f.roomId !== undefined) toiletsOf.set(f.roomId, [...(toiletsOf.get(f.roomId) ?? []), f]);
-    if ((role === 'diningTable' || role === 'desk') && usageOf(f) === 'livingRoom' && footprintOf(f)[1] <= COFFEE_MAX_LONG_M) {
+    // Codex M17-12 P1: chỉ món AI chưa xác nhận — đồ người dùng xác nhận / có mẫu / khe vật liệu không đổi vai.
+    if ((role === 'diningTable' || role === 'desk') && isUnconfirmedAi(f) && usageOf(f) === 'livingRoom' && footprintOf(f)[1] <= COFFEE_MAX_LONG_M) {
       const rect = rectOfFurniture(f);
       const near = (r: FurnitureRole, gap: number): boolean =>
-        items.some((x) => x !== f && x.roomId === f.roomId && roleOf(x, usageOf(x)) === r && rectsOverlap(rect, rectOfFurniture(x), gap + 1));
+        (seatsByRoom.get(f.roomId) ?? []).some((x) => baseRole.get(x.id) === r && rectsOverlap(rect, rectOfFurniture(x), gap + 1));
       if ((near('sofa', COFFEE_SOFA_GAP_MM) || near('armchair', COFFEE_SOFA_GAP_MM)) && !near('diningChair', COFFEE_CHAIR_GAP_MM)) roles.set(f.id, 'coffeeTable');
     }
     if (role === 'nightstand') {

@@ -130,6 +130,13 @@ describe('R7 — bàn nhỏ sát sofa trong phòng khách là bàn trà (lỗi �
     expect(contextRolesOf([sofa, table], () => 'livingRoom').get(table.id)).toBe('coffeeTable');
   });
 
+  it('món người dùng đã xác nhận / có mẫu → không đổi vai (Codex M17-12 P1)', () => {
+    for (const extra of [{ reviewed: true }, { source: 'human' as const }, { edited: true }, { model: { id: 'x', src: '/items/x/model.glb' } }]) {
+      const t = { ...table, ...extra } as Furniture;
+      expect(contextRolesOf([sofa, t], () => 'livingRoom').get(t.id)).toBeUndefined();
+    }
+  });
+
   it('có ghế ăn sát bàn → giữ vai bàn (không đổi)', () => {
     const chair = at(ai('ch', 'chair', 450, 450), 1500, 1250);
     expect(contextRolesOf([sofa, table, chair], () => 'livingRoom').get(table.id)).toBeUndefined();
