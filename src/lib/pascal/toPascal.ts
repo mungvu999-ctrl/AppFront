@@ -831,8 +831,10 @@ const itemNodeOf = (
   // Khớp mô hình vào hộp bao CỤC BỘ bằng `asset.scale` (`itemFitOf`, itemFit.ts) — `node.scale` phải giữ
   // [1, 1, 1] vì lượt về đọc lệch khỏi 1 là "người dùng vừa kéo" (toSpatial `isUnscaled`).
   // `asset.id` cũng giữ nguyên `appfront-<kind>`: đổi nó là lượt về sinh `model` (R1-3b).
-  // Mẫu concept roomSet giữ dù lệch tỉ lệ hộp → co đều (không kéo giãn từng trục); món có `model` giữ phép khớp cũ.
-  const uniform = model !== null && furniture.model === undefined && folderOverride === undefined && roomSetUniformOf(furniture.id, model.folder);
+  // Mẫu concept roomSet giữ dù lệch tỉ lệ hộp → co đều (không kéo giãn từng trục), kể cả khi thư mục đến qua vai ngữ cảnh
+  // (`folderOverride` = kết quả modelFolderOf của chính món). Chỉ khi thư mục dựng ĐÚNG là quyết định co đều của sổ:
+  // mẫu khác (chậu mỏng, mẫu luật đã lưu, món có `model`) giữ phép khớp cũ (Codex M16-3 #1).
+  const uniform = model !== null && furniture.model === undefined && roomSetUniformOf(furniture.id, model.folder);
   const fit = model === null ? null : itemFitOf(model.folder, widthM, depthM, furniture.heightMm, levelHeightMm, exactFit, uniform);
   const heightM = fit?.heightM ?? heightOfFurniture(furniture, levelHeightMm);
   const liftMm = furniture.liftMm ?? model?.liftMm ?? baseLiftMm;

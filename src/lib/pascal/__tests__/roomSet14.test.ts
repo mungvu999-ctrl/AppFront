@@ -14,7 +14,7 @@ import { clearServerLibrary, registerServerLibrary } from '../furnitureCatalog';
 import { itemFitOf } from '../itemFit';
 import { LIBRARY_QUALITY, type ModelQuality } from '../libraryQuality';
 import LIBRARY from '../libraryRoles.json' with { type: 'json' };
-import { ANCHOR_BAND, CONCEPT_LENIENT, FAIL_COST, hardRejectOf, paletteOf, planRectOf, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetMember } from '../roomSet';
+import { ANCHOR_BAND, CONCEPT_LENIENT, FAIL_COST, hardRejectOf, paletteOf, planRectOf, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetDecision, type SetMember } from '../roomSet';
 import { sceneStyleOf } from '../sceneStyles';
 import { addRoomSetMembers, contextRolesOf, finishRoomSet, modelFolderOf, roomSetPools, roomSetReport, roomSetSwapOf, roomSetUniformOf, setRoomSetKeys, type LayerStyle } from '../sceneVariety';
 
@@ -589,6 +589,36 @@ describe('vòng 16 — mẫu concept là ứng viên ưu tiên, không phải gh
     expect(sx).toBeCloseTo(sy, 9);
     expect(sx).toBeCloseTo(sz, 9);
     expect((fit?.shownM[0] ?? 9) <= 1.6 + 1e-9 && (fit?.shownM[2] ?? 9) <= 0.9 + 1e-9).toBe(true);
+  });
+
+  it('Codex M16-3 #3: concept co đều quá nhỏ (hộp 5 cm, hệ số 0, cỡ 1 mm) → trượt "co quá nhỏ", không nhận concept', () => {
+    const m = table();
+    const lenient = m.pool.find((x) => {
+      const r = hardRejectOf(m, x, ctx);
+      return (r === 'sai tỉ lệ thật' || r === 'vượt hộp chỗ đặt') && hardRejectOf({ ...m, shownOf: uniformOf(1.6, 0.9) }, x, ctx, CONCEPT_LENIENT) === undefined;
+    }) as string;
+    const tiny = at('t', 'diningTable', null, 0.05, 0.05, 0, 0, { concept: { folder: lenient, shownOf: uniformOf(0.05, 0.05) } });
+    expect(roomSetOf('R', [tiny], new Map(), ctx).get('t')?.why).toContain('concept trượt: co quá nhỏ');
+    for (const shown of [[0, 0, 0], [0.001, 0.001, 0.001]] as Dims[]) {
+      const d = roomSetOf('R', [table({ concept: { folder: lenient, shownOf: () => shown } })], new Map(), ctx).get('t');
+      expect(d?.cause).not.toBe('concept');
+      expect(d?.why).toContain('concept trượt: co quá nhỏ');
+    }
+  });
+
+  it('Codex M16-3 #2: lập lại kế hoạch — món đã chốt co đều chiếm chỗ bằng mặt bằng co đều, không phải phép khớp thường', () => {
+    const q: ModelQuality = { role: 'closet', useMm: [800, 1800, 500], front: { axis: '+z', check: 'ok' }, parts: [{ kind: 'frame', share: 1, lab: [62, 8, 24], material: 'wood', kindBy: 'm' }], detail: { tris: 1, kb: 1, textures: 0, maxTex: 0, tier: 'light' }, licence: 'CC0', source: 't' } as ModelQuality;
+    const c: SetContext = { tierOf: () => 0, tiers: 1, dimsOf: () => [0.8, 1.8, 0.5], palette: {}, qualityOf: (x) => ({ ...q, role: x === 'kd' ? 'dresser' : 'closet' }) };
+    // A: hộp 1,6 × 0,5 tại 0; phép khớp thường phủ cả hộp, co đều chỉ 0,8 × 0,5 giữa hộp.
+    const a: SetMember = { id: 'A', role: 'closet', short: 0.5, long: 1.6, current: null, pool: [], fixed: false, box: { cx: 0, cy: 0, w: 1.6, d: 0.5, rot: 0 }, shownOf: () => [1.6, 1.8, 0.5], concept: { folder: 'k', shownOf: () => [0.8, 1.8, 0.5] } };
+    // B: hộp 0,8 × 0,5 tại x 0,9 (0,5..1,3): chồng phép khớp thường của A (..0,8), không chồng co đều (..0,4).
+    // B khác vai (tủ ngăn kéo) để mẫu đã chốt của A không dẫn nhóm của B.
+    const b: SetMember = { id: 'B', role: 'dresser', short: 0.5, long: 0.8, current: null, pool: [], fixed: false, box: { cx: 0.9, cy: 0, w: 0.8, d: 0.5, rot: 0 }, shownOf: () => [0.8, 1.8, 0.5], concept: { folder: 'kd' } };
+    const decidedA: SetDecision = { id: 'A', role: 'closet', from: null, to: 'k', rule: 'roomset', cause: 'concept', anchor: true, uniform: true, why: '' };
+    expect(roomSetOf('R', [a, b], new Map([['A', decidedA]]), c).get('B')).toMatchObject({ cause: 'concept', to: 'kd' });
+    // Đối chứng: cùng quyết định nhưng không co đều → A chiếm cả hộp → B trượt va chạm.
+    const plain: SetDecision = { ...decidedA, uniform: false };
+    expect(roomSetOf('R', [a, b], new Map([['A', plain]]), c).get('B')?.why).toContain('concept trượt: va chạm');
   });
 
   it('Codex M16-1 #2: pool không còn ứng viên lọt → ngân sách va chạm 0, concept chồng vật cản trượt', () => {

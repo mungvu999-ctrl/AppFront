@@ -144,6 +144,11 @@ const SHAPE_REJECTS: ReadonlySet<string> = new Set(['sai tỉ lệ thật', 'mé
  * Lý do hình dáng NHẸ không loại mẫu concept (điều phối 13/11): concept chỉ bị loại vì chất lượng/an toàn (giường chưa
  * hoàn chỉnh, vân vỡ, QC, va chạm, trần, méo dáng); lệch tỉ lệ/cỡ so với hộp thì giữ và dựng CO ĐỀU.
  */
+/**
+ * Hệ số co đều nhỏ nhất của concept: co dưới nửa cỡ thật (hoặc hệ số không hữu hạn / ≤ 0) là "co quá nhỏ" — concept
+ * trượt (Codex M16-3 #3). Không phải hằng chi phí.
+ */
+export const UNIFORM_MIN = 0.5;
 export const CONCEPT_LENIENT: ReadonlySet<string> = new Set(['sai tỉ lệ thật', 'vượt hộp chỗ đặt', 'cao hơn chuẩn vai', 'nhỏ hơn cỡ vai', 'không giữ cỡ người dùng']);
 /** Gỗ: ΔE (L* tối hơn tham chiếu tính đủ, sáng hơn tính nửa) trong dung sai này coi là cùng tông; vượt thì /WOOD_DE_REF. */
 export const WOOD_TOL = 15;
@@ -696,6 +701,17 @@ export type SetZone = PlanRect & { readonly kind?: string };
 const tucked = (a: string | undefined, b: string | undefined): boolean =>
   a !== undefined && b !== undefined && tuckedSeat({ kind: a } as Pick<Furniture, 'kind'>, { kind: b } as Pick<Furniture, 'kind'>);
 const boxRectOf = (b: SetBox): PlanRect => planRectOf(b.cx, b.cy, b.w, b.d, b.rot);
+/**
+ * Co đều quá nhỏ: hệ số (cỡ hiển thị / cỡ thật) không hữu hạn, ≤ 0 hoặc < UNIFORM_MIN; hoặc đã co mà mặt bằng còn dưới
+ * nửa hộp ở cả hai trục. Không có cỡ hiển thị (test thuần) → không kiểm.
+ */
+const tooSmallOf = (dims: Dims | undefined, shown: Dims | undefined, box: SetBox | undefined): string | undefined => {
+  if (dims === undefined || shown === undefined || dims[0] <= 0) return undefined;
+  const s = shown[0] / dims[0];
+  if (!Number.isFinite(s) || s <= 0 || !shown.every((v) => Number.isFinite(v) && v > 0) || s < UNIFORM_MIN) return 'co quá nhỏ';
+  if (s < 1 && box !== undefined && shown[0] < box.w / 2 && shown[2] < box.d / 2) return 'co quá nhỏ';
+  return undefined;
+};
 /** Món với cỡ hiển thị CO ĐỀU của mẫu concept (vắng thì như món). */
 const conceptMemberOf = (m: SetMember): SetMember => (m.concept?.shownOf === undefined ? m : { ...m, shownOf: m.concept.shownOf });
 
@@ -788,7 +804,8 @@ export const roomSetOf = (
   };
   for (const m of inSet) {
     const f = folderOfFixed(m);
-    if (f !== null) placeOf(m, f);
+    // Món đã chốt co đều ở lượt trước: chiếm chỗ bằng mặt bằng co đều, không phải phép khớp thường (Codex M16-3 #2).
+    if (f !== null) placeOf(decided.get(m.id)?.uniform === true ? conceptMemberOf(m) : m, f);
     // Codex SEL-1 #1: món ghim có mẫu ngoài thư viện (`current` null) vẫn chiếm chỗ — giữ bằng cả hộp.
     else if (m.fixed && m.lifted !== true && m.box !== undefined) placed.push(m.kind === undefined ? boxRectOf(m.box) : { ...boxRectOf(m.box), kind: m.kind });
   }
@@ -853,7 +870,11 @@ export const roomSetOf = (
       const cm = lenient ? conceptMemberOf(m) : m;
       const dims = ctx.dimsOf(f);
       const shown = m.shownOf?.(f);
-      const r = !lenient ? strict : (hardRejectOf(cm, f, ctx, CONCEPT_LENIENT) ?? (dims !== undefined && shown !== undefined && distorted(dims, shown) ? 'méo dáng' : undefined));
+      const r = !lenient
+        ? strict
+        : (tooSmallOf(dims, cm.shownOf?.(f), m.box) ??
+          hardRejectOf(cm, f, ctx, CONCEPT_LENIENT) ??
+          (dims !== undefined && shown !== undefined && distorted(dims, shown) ? 'méo dáng' : undefined));
       const rect = r !== undefined || near.length === 0 ? undefined : shownRectOf(cm, f);
       const hit = rect === undefined ? 0 : near.reduce((s, z) => s + overlapAreaM2(rect, z), 0);
       // Pool không còn ứng viên lọt: ngân sách va chạm = 0 chồng (+ dung sai), không phải vô hạn (Codex M16-1 #2).
