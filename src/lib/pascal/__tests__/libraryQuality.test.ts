@@ -11,7 +11,7 @@ import { Document } from '@gltf-transform/core';
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 
-import { expandLibraryQuality, LIBRARY_QUALITY, LIBRARY_QUALITY_SCHEMA, qualityOf } from '../libraryQuality';
+import { expandLibraryQuality, LIBRARY_QUALITY, LIBRARY_QUALITY_SCHEMA, qualityOf, textureOf } from '../libraryQuality';
 import ROLES from '../libraryRoles.json' with { type: 'json' };
 import ROLES2 from '../libraryRoles2.json' with { type: 'json' };
 
@@ -230,5 +230,12 @@ describe('schema v2: hướng mặt trước đo được, đối xứng, dáng 
     expect(beds.length).toBeGreaterThan(10);
     const suspect = beds.filter(([, q]) => q.front.check === 'suspect').map(([id]) => id);
     expect(suspect.length / beds.length, suspect.join(', ')).toBeLessThanOrEqual(0.1);
+  });
+
+  it('cờ texture: broken cho bed-double-linen-pro2, ok = vắng', () => {
+    expect(textureOf('bed-double-linen-pro2')).toBe('broken');
+    expect(textureOf('chair-teal-velvet-tufted')).toBe('unsure');
+    expect(textureOf('bed-double-pro')).toBeUndefined();
+    expect(Object.values(LIBRARY_QUALITY.models).filter((q) => q.texture).length).toBe(6);
   });
 });
