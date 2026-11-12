@@ -17,7 +17,7 @@ import LIBRARY_ROLES_JSON from './libraryRoles.json' with { type: 'json' };
 import { itemFitOf } from './itemFit';
 import { qualityOf } from './libraryQuality';
 import { rectOfFurniture, rectsOverlap } from './placement';
-import { type Dims, fnv1a, paletteOf, planRectOf, ROOMSET_ON, roomSetOf, SET_ROLES, type SetDecision, type SetMember, type SetZone } from './roomSet';
+import { type Dims, fnv1a, paletteOf, planRectOf, ROOMSET_ON, roomSetOf, SET_ROLES, textureBroken, type SetDecision, type SetMember, type SetZone } from './roomSet';
 import { GENERATED_DRESS_PREFIX } from './sceneDressing';
 import { accentKeyOf, harmonyKeyOf, LAYOUT_FLAGS_ON, roomHarmonyPlanOf, type LayoutFlag, type RoomHarmonyPlan } from './sceneHarmony';
 import { SCENE_RULES_OFF } from './sceneLayer';
@@ -326,6 +326,8 @@ const styleTierOf = (folder: string, wanted: readonly string[]): number => {
 const belowQuality = (folder: string, role: FurnitureRole): boolean => {
   const q = qualityOf(folder);
   if (q === undefined) return false;
+  // Vân vỡ khi dựng (cờ texture 'broken'): luật cũ (phương án cuối) cũng không tự chọn, mọi vai.
+  if (textureBroken(q)) return true;
   return (role === 'doubleBed' || role === 'singleBed') && q.completeness !== undefined && q.completeness.v !== 'full';
 };
 const libraryModelOf = (f: Shaped & Pick<Furniture, 'id'> & Partial<Pick<Furniture, 'roomId'>>, role: FurnitureRole, style: SceneStyle): string | null => {

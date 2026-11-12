@@ -227,6 +227,22 @@ describe('vòng 14 lượt 2 — ngưỡng hỏng FAIL_COST (ca thua rõ f-22/f-
   });
 });
 
+describe('vòng 14 lượt 2 — cờ texture "broken" (vân vỡ) loại khỏi bể ứng viên mọi vai; "unsure" không ảnh hưởng', () => {
+  const q = (texture?: 'broken' | 'unsure'): ModelQuality =>
+    ({ role: 'sofa', useMm: [1, 1, 1], front: { axis: '+z', check: 'ok' }, parts: [{ kind: 'upholstery', share: 1, lab: [70, 1, 4], material: 'fabric', kindBy: 'm' }], detail: { tris: 1, kb: 1, textures: 0, maxTex: 0, tier: 'light' }, licence: 'CC0', source: 't', ...(texture === undefined ? {} : { texture: { v: texture, by: 'i' } }) }) as ModelQuality;
+  const table: Record<string, ModelQuality> = { broken: q('broken'), unsure: q('unsure'), ok: q() };
+  const c: SetContext = { tierOf: () => 0, tiers: 3, dimsOf: () => [2, 0.8, 0.9], palette: { light: true, tone: 'l' }, qualityOf: (x) => table[x] };
+  const m: SetMember = { id: 's', role: 'sofa', short: 0.9, long: 2, current: null, pool: ['broken', 'unsure', 'ok'], fixed: false };
+
+  it('broken → "vân vỡ"; unsure và ok đạt, cùng chi phí (không hạ ưu tiên)', () => {
+    expect(hardRejectOf(m, 'broken', c)).toBe('vân vỡ');
+    expect(hardRejectOf(m, 'unsure', c)).toBeUndefined();
+    const d = roomSetOf('R', [m], new Map(), c).get('s');
+    expect(d?.rejects?.['vân vỡ']).toBe(1);
+    expect(d?.top?.map(([f, cost]) => [f, cost])).toEqual([['ok', 0], ['unsure', 0]]);
+  });
+});
+
 /* ---- Chính sách món đã xác nhận chưa gán mẫu (DESIGN §2.6, phương án B) qua đường dựng thật của sceneVariety ---- */
 
 describe('vòng 14 — món đã xác nhận chưa gán mẫu: cùng đánh giá, đổi theo catalog; món ghim không đổi', () => {

@@ -340,6 +340,11 @@ const isLoud = (lab: Lab): boolean => chromaOf(lab) > NEUTRAL_C;
 const isHard = (p: QualityPart): boolean =>
   p.kind !== 'upholstery' && p.kind !== 'bedding' && p.kind !== 'metal' && p.kind !== 'glass' && p.material !== 'metal' && p.material !== 'glass';
 
+/**
+ * Cờ texture của dữ liệu chất lượng (`ModelQuality.texture`, nhãn xem ảnh): 'broken' = vân vỡ/loang khi dựng → không bao giờ
+ * là ứng viên, mọi vai. 'unsure' không ảnh hưởng (không hạ ưu tiên). Đọc cấu trúc để không buộc vào phiên bản kiểu.
+ */
+export const textureBroken = (q: ModelQuality): boolean => (q as ModelQuality & { readonly texture?: { readonly v?: string } }).texture?.v === 'broken';
 /** Trung vị (trên) cao mẫu (m) của pool vai — chuẩn cao khi món không cho `heightMm` (nhớ theo mảng pool). */
 const MEDIAN_H = new WeakMap<readonly string[], number | undefined>();
 const poolMedianHOf = (m: SetMember, ctx: SetContext): number | undefined => {
@@ -363,6 +368,7 @@ export const hardRejectOf = (m: SetMember, folder: string, ctx: SetContext): str
   if (q === undefined) return 'thiếu dữ liệu chất lượng';
   if (q.role !== m.role) return 'sai vai';
   if ((q.issues ?? []).length > 0) return 'có lỗi QC';
+  if (textureBroken(q)) return 'vân vỡ';
   if (q.front.check !== 'ok') return 'mặt trước chưa tin';
   if (q.parts === undefined || q.parts.length === 0) return 'thiếu dữ liệu phần';
   if (BED_ROLES.has(m.role) && q.completeness?.v !== 'full') return 'giường chưa hoàn chỉnh';
