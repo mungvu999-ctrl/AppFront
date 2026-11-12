@@ -153,10 +153,11 @@ describe('vòng 13/14 — va chạm cả phòng (mức chồng nhỏ nhất đ�
 
   it('hai món bộ hộp chồng nhau: món chưa chốt giữ chỗ bằng cả hộp → cả cặp không chồng mặt bằng hiển thị', () => {
     const table = { oldW: qual('bookshelf', [part('frame', 1, [28, 10, 14], 'wood')]), newW: qual('bookshelf', [part('frame', 1, [75, 4, 15], 'wood')]) };
-    const dims: Record<string, Dims> = { oldW: [1.6, 1.8, 1.0], newW: [1.0, 1.8, 1.6] };
+    // Vòng 17: kệ sâu 1,0/1,6 m trượt "ngoài công năng" (bookshelf sâu 0,25–0,5) → kệ cỡ thật, hộp 1,6 × 0,5 chồng nhau.
+    const dims: Record<string, Dims> = { oldW: [1.6, 1.8, 0.3], newW: [1.0, 1.8, 0.5] };
     const ctx = { ...ctxOf(table, dims), palette: { light: true, tone: 'l' as const } };
-    const a = boxed('a', 'bookshelf', 'oldW', ['newW', 'oldW'], { cx: 0, cy: 0, w: 1.6, d: 1.6 }, dims, { sizeFrom: 'ai' });
-    const b = boxed('b', 'bookshelf', 'oldW', ['newW', 'oldW'], { cx: 0.9, cy: 1.2, w: 1.6, d: 1.6 }, dims, { sizeFrom: 'ai' });
+    const a = boxed('a', 'bookshelf', 'oldW', ['newW', 'oldW'], { cx: 0, cy: 0, w: 1.6, d: 0.5 }, dims, { sizeFrom: 'ai' });
+    const b = boxed('b', 'bookshelf', 'oldW', ['newW', 'oldW'], { cx: 0.9, cy: 0.4, w: 1.6, d: 0.5 }, dims, { sizeFrom: 'ai' });
     expect(roomSetOf('R', [a], new Map(), ctx).get('a')?.to).toBe('newW');
     const out = roomSetOf('R', [a, b], new Map(), ctx);
     const rect = (m: SetMember, x: string): ReturnType<typeof planRectOf> => {
@@ -226,14 +227,15 @@ describe('vòng 14 — mẫu chung của nhóm: chấp nhận được cho nhi�
       A: qual('doubleBed', bedding, FULL),
       B: qual('doubleBed', bedding, FULL),
     };
-    const dims: Record<string, Dims> = { bare: [1.4, 1, 2.0], A: [1.6, 1, 2.0], B: [1.4, 1, 1.75] };
+    // Vòng 17: giường sâu 1,75 m trượt "ngoài công năng" (doubleBed dài ≥ 1,9) → mọi chiều dài nhân 2,17/2,0 (cùng tỉ lệ co).
+    const dims: Record<string, Dims> = { bare: [1.4, 1, 2.17], A: [1.6, 1, 2.17], B: [1.4, 1, 1.9] };
     // Phong cách quyết định chi phí: A hạng 30/100, B hạng 42/100 (cùng phần, cùng màu) — B ngoài dải neo; cả hai dưới FAIL_COST.
     const ctx: SetContext = { ...ctxOf(table, dims), tierOf: (x) => (x === 'A' ? 30 : x === 'B' ? 42 : 0), tiers: 99 };
-    const wide = boxed('b1', 'doubleBed', 'bare', ['A', 'B'], { cx: 0, cy: 0, w: 1.6, d: 2.0 }, dims, { sizeFrom: 'generated' });
-    const narrow = boxed('b2', 'doubleBed', 'bare', ['A', 'B'], { cx: 3, cy: 0, w: 1.6, d: 1.75 }, dims, { sizeFrom: 'generated' });
+    const wide = boxed('b1', 'doubleBed', 'bare', ['A', 'B'], { cx: 0, cy: 0, w: 1.6, d: 2.17 }, dims, { sizeFrom: 'generated' });
+    const narrow = boxed('b2', 'doubleBed', 'bare', ['A', 'B'], { cx: 3, cy: 0, w: 1.6, d: 1.9 }, dims, { sizeFrom: 'generated' });
     const out = roomSetOf('R', [wide, narrow], new Map(), ctx);
     expect(out.get('b1')?.to).toBe('A');
-    // A trong hộp sâu 1,75 m co 0,875 (phạt ≈ 0,07) — vẫn lọt; trung bình A < B → mẫu chung A cho cả hai.
+    // A trong hộp sâu 1,9 m co 0,875 (phạt ≈ 0,07) — vẫn lọt; trung bình A < B → mẫu chung A cho cả hai.
     expect(out.get('b2')).toMatchObject({ to: 'A', rule: 'roomset', cause: 'selector' });
     expect(out.get('b2')?.why).toContain('mẫu chung phòng (chấp nhận 2/2)');
   });

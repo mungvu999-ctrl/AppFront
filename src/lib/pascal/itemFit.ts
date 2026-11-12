@@ -51,6 +51,8 @@ const clampTo = (v: number, lo: number, hi: number): number => Math.min(hi, Math
 const OWN_HEIGHT_FOLDERS: ReadonlySet<string> = new Set(['hob-sf']);
 /** Vai ngồi/bàn (libraryQuality): cao giữ thật khi không có `heightMm`. */
 const SEAT_TABLE_ROLES: ReadonlySet<string> = new Set(['sofa', 'armchair', 'diningChair', 'bench', 'diningTable', 'desk', 'coffeeTable']);
+/** Vai tựa tường (lưng −z cục bộ): dựng CỠ THẬT (`uniform: 'real'`) thì áp lưng vào mép sau hộp, không canh tâm (I2 vòng 17). */
+export const WALL_BACK_ROLES: ReadonlySet<string> = new Set(['sofa', 'doubleBed', 'singleBed', 'closet', 'dresser', 'bookshelf', 'cabinet', 'desk', 'nightstand']);
 
 export interface ItemFit {
   readonly folder: string;
@@ -127,7 +129,8 @@ export const itemFitOf = (
   // bộ, phía tường) thay vì treo lơ lửng giữa hộp. Dời bằng `asset.offset` chứ
   // không dời `position`: tâm món đồ phải giữ đúng `centre` để lượt về không trôi.
   // `attachTo` không ghi ra — Pascal sẽ đòi một bức tường cha mà node này không có.
-  const backShift = catalog.attachTo === 'wall-side' ? -(depthM - cd * sz) / 2 : 0;
+  const backShift =
+    catalog.attachTo === 'wall-side' || (uniform === 'real' && WALL_BACK_ROLES.has(qualityOf(folder)?.role ?? '')) ? -(depthM - cd * sz) / 2 : 0;
   const [ox, oy, oz] = catalog.offset;
 
   const shownH = uniform ? ch * sy : (fixedH ?? ch * sy);

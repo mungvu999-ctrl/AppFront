@@ -138,7 +138,8 @@ describe('roomSetOf — hàm thuần', () => {
       nodata: 'thiếu dữ liệu chất lượng',
     });
     const d = roomSetOf('R-1', [m], new Map(), ctx).get(m.id);
-    expect(d).toMatchObject({ to: 'cur', rule: 'keep', cause: 'fallback', why: 'không ứng viên qua ràng buộc cứng — mẫu luật cũ' });
+    // Vòng 17: nhánh fallback (b) ghi thêm lý do luật cũ trượt (BANNED) vào why.
+    expect(d).toMatchObject({ to: 'cur', rule: 'keep', cause: 'fallback', why: 'không ứng viên qua ràng buộc cứng — mẫu luật cũ; luật cũ trượt (giường chưa hoàn chỉnh)' });
   });
 
   it('dữ liệu chất lượng vắng hoàn toàn: mọi món giữ mẫu cũ', () => {
@@ -1090,7 +1091,8 @@ describe('roomset lượt 8 — mẫu dùng chung qua đúng bộ lọc ứng vi
 describe('roomset lượt 9 — cỡ hiển thị (itemFitOf)', () => {
   const ids = ['fit-old', 'fit-new', 'fit-tall'];
   beforeAll(() => {
-    const dims: Record<string, [number, number, number]> = { 'fit-old': [500, 800, 500], 'fit-new': [500, 800, 1000], 'fit-tall': [1000, 1900, 600] };
+    // Vòng 17: tủ ngăn kéo sâu 1,0 m trượt "ngoài công năng" (dresser sâu 0,35–0,65) → hộp/mẫu thu về cỡ thật sâu 0,6 m.
+    const dims: Record<string, [number, number, number]> = { 'fit-old': [500, 800, 350], 'fit-new': [500, 800, 600], 'fit-tall': [1000, 1900, 600] };
     registerServerLibrary(ids.map((id) => {
       const [widthMm, heightMm, depthMm] = dims[id] as [number, number, number];
       return { id, widthMm, heightMm, depthMm, modelUrl: `https://x.test/${id}.glb` };
@@ -1099,17 +1101,17 @@ describe('roomset lượt 9 — cỡ hiển thị (itemFitOf)', () => {
   afterAll(() => clearServerLibrary());
   const ctx = ctxOf(
     { 'fit-old': qual('dresser', { frame: OAK }), 'fit-new': qual('dresser', { frame: OAK }), 'fit-tall': qual('closet', { frame: OAK }) },
-    { 'fit-old': [0.5, 0.8, 0.5], 'fit-new': [0.5, 0.8, 1.0], 'fit-tall': [1.0, 1.9, 0.6] },
+    { 'fit-old': [0.5, 0.8, 0.35], 'fit-new': [0.5, 0.8, 0.6], 'fit-tall': [1.0, 1.9, 0.6] },
   );
 
-  it('#4 (vòng 13): hộp 500×1000 mm — mẫu thay hiện sâu đủ 1 m (lớn hơn mẫu cũ) vẫn đạt vì nằm trong hộp; vượt hộp thì loại', () => {
-    const shownOf = (x: string) => itemFitOf(x, 0.5, 1.0, undefined, 2700)?.shownM;
-    expect((shownOf('fit-old') as Dims)[2]).toBeLessThan(0.95);
-    expect((shownOf('fit-new') as Dims)[2]).toBeCloseTo(1.0, 6);
-    const box = { cx: 0, cy: 0, w: 0.5, d: 1.0, rot: 0 };
-    expect(hardRejectOf(member('d', 'dresser', 'fit-old', ['fit-new'], { short: 0.5, long: 1.0, shownOf, box }), 'fit-new', ctx)).toBeUndefined();
-    const tight = { ...box, d: 0.9 };
-    expect(hardRejectOf(member('d', 'dresser', 'fit-old', ['fit-new'], { short: 0.5, long: 1.0, shownOf, box: tight }), 'fit-new', ctx)).toBe('vượt hộp chỗ đặt');
+  it('#4 (vòng 13): hộp 500×600 mm — mẫu thay hiện sâu đủ 0,6 m (lớn hơn mẫu cũ) vẫn đạt vì nằm trong hộp; vượt hộp thì loại', () => {
+    const shownOf = (x: string) => itemFitOf(x, 0.5, 0.6, undefined, 2700)?.shownM;
+    expect((shownOf('fit-old') as Dims)[2]).toBeLessThan(0.59);
+    expect((shownOf('fit-new') as Dims)[2]).toBeCloseTo(0.6, 6);
+    const box = { cx: 0, cy: 0, w: 0.5, d: 0.6, rot: 0 };
+    expect(hardRejectOf(member('d', 'dresser', 'fit-old', ['fit-new'], { short: 0.5, long: 0.6, shownOf, box }), 'fit-new', ctx)).toBeUndefined();
+    const tight = { ...box, d: 0.55 };
+    expect(hardRejectOf(member('d', 'dresser', 'fit-old', ['fit-new'], { short: 0.5, long: 0.6, shownOf, box: tight }), 'fit-new', ctx)).toBe('vượt hộp chỗ đặt');
   });
 
   it('#1: tủ catalog 1,9 m, `heightMm` đã lưu 2300, trần 2,4 m → hiển thị 2,3 m, loại "chạm gần trần"', () => {
@@ -1135,7 +1137,8 @@ describe('roomset — concept co đều qua vai ngữ cảnh (tủ đầu giư�
   const concept = (roles.coffeeTable ?? [])[0] as string;
   beforeAll(() => {
     clearServerLibrary();
-    // Mẫu 0,70 × 0,60 m trong hộp 0,45 × 0,40 m: tỉ lệ thật ~0,65 (lệch hộp, không méo) → giữ concept, co đều.
+    // Mẫu 0,70 × 0,60 m trong hộp 0,53 × 0,45 m: tỉ lệ thật ~0,75 (lệch hộp, không méo) → giữ concept, co đều.
+    // Vòng 17: hộp cũ 0,45 × 0,40 co bàn trà còn cạnh dài 0,45 < 0,5 m → "ngoài công năng"; nới hộp (cạnh dài < 0,6 vẫn vai tủ đầu giường).
     registerServerLibrary([{ id: concept, widthMm: 700, heightMm: 450, depthMm: 600, modelUrl: `https://x.test/${concept}.glb` }]);
     Q.clear();
     Q.set(concept, qual('coffeeTable', { frame: OAK }));
@@ -1147,7 +1150,7 @@ describe('roomset — concept co đều qua vai ngữ cảnh (tủ đầu giư�
 
   it('asset.scale của món dựng bằng concept co đều có ba trục bằng nhau, mặt bằng trong hộp', () => {
     const g = graphWith();
-    const graph = { ...g, furniture: g.furniture.map((f) => (f.id === NS2 ? piece(NS2, 'table', 450, 400, 4300, 3500, { heightMm: 550 } as Partial<Furniture>) : f)) } as SpatialGraph;
+    const graph = { ...g, furniture: g.furniture.map((f) => (f.id === NS2 ? piece(NS2, 'table', 530, 450, 4300, 3500, { heightMm: 550 } as Partial<Furniture>) : f)) } as SpatialGraph;
     const style: LayerStyle = { ...ON, prefer: { ...ON.prefer, coffeeTable: [concept] } };
     const scene = sceneOf(graph, style);
     expect(assetOf(scene, NS2)).toBe(concept);
@@ -1155,6 +1158,6 @@ describe('roomset — concept co đều qua vai ngữ cảnh (tủ đầu giư�
     const [sx, sy, sz] = (scene.nodes[`item_${NS2}`] as PascalItemNode).asset.scale as [number, number, number];
     expect(sx).toBeCloseTo(sy, 9);
     expect(sx).toBeCloseTo(sz, 9);
-    expect(sx * 0.7).toBeLessThanOrEqual(0.45 + 1e-9);
+    expect(sx * 0.7).toBeLessThanOrEqual(0.53 + 1e-9);
   });
 });

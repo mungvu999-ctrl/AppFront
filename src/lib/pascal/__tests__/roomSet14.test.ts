@@ -14,7 +14,7 @@ import { clearServerLibrary, registerServerLibrary } from '../furnitureCatalog';
 import { itemFitOf } from '../itemFit';
 import { LIBRARY_QUALITY, type ModelQuality } from '../libraryQuality';
 import LIBRARY from '../libraryRoles.json' with { type: 'json' };
-import { ANCHOR_BAND, CONCEPT_LENIENT, FAIL_COST, hardRejectOf, paletteOf, planRectOf, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetDecision, type SetMember } from '../roomSet';
+import { ANCHOR_BAND, CONCEPT_LENIENT, FAIL_COST, functionalMissOf, hardRejectOf, paletteOf, planRectOf, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetDecision, type SetMember } from '../roomSet';
 import { sceneStyleOf } from '../sceneStyles';
 import { addRoomSetMembers, contextRolesOf, finishRoomSet, modelFolderOf, roomSetPools, roomSetReport, roomSetSwapOf, roomSetUniformOf, setRoomSetKeys, type LayerStyle } from '../sceneVariety';
 
@@ -146,7 +146,8 @@ describe('vòng 14 — một kiểu ghế quanh một bàn (ca f-03), ghế ghim
   it(`mẫu chung chỉ dùng khi không đắt hơn mẫu tốt nhất của chính món quá SHARE_BAND (${SHARE_BAND}): hộp dò lỗi không kéo cả bộ theo`, () => {
     // Một "ghế" dò thành dải 1,16 × 0,29 m: không mẫu ghế nào qua ràng buộc cứng (méo dáng/sai tỉ lệ) → luật cũ riêng nó.
     const out = roomSetOf('R', room([at('bad', 'diningChair', 'chair-dining-grey-shell-black-b', 1.16, 0.29, 5, -1.1)]), new Map(), ctx);
-    expect(out.get('bad')).toMatchObject({ cause: 'fallback', to: 'chair-dining-grey-shell-black-b' });
+    // Vòng 17: không ứng viên → phương án cuối (mẫu nhỏ nhất đúng vai, cỡ thật) thay cho mẫu luật cũ méo trong dải.
+    expect(out.get('bad')).toMatchObject({ cause: 'fallback', uniform: 'real', why: expect.stringContaining('phương án cuối') });
     for (const id of ['b1', 'b2', 'b3', 'b4']) expect(out.get(id)?.cost as number).toBeLessThan(0.6);
   });
 });
@@ -203,20 +204,22 @@ describe('vòng 14 lượt 2 — ngưỡng hỏng FAIL_COST (ca thua rõ f-22/f-
     );
   });
 
-  it('dữ liệu thật f-22: hộp giường AI 2,08 × 2,91 m — mọi ứng viên > FAIL_COST, mẫu luật cũ chỉ trượt HÌNH DÁNG (qua va chạm, texture, trần) → giữ hiện trạng (fail-keep)', () => {
+  it('dữ liệu thật f-22: hộp giường AI 2,08 × 2,91 m — mẫu luật cũ trượt hình dáng VÀ hiện sâu 2,9 m ngoài công năng → không fail-keep, phương án cuối cỡ thật', () => {
+    // Vòng 17 (đổi có chủ đích): fail-keep chỉ giữ hiện trạng trong công năng; giường hiện 2,08 × 2,91 m thì không.
     const legacy = 'bed-double-white-duvet-light-oak-headboard';
     const m = at('b', 'doubleBed', legacy, 2.081, 2.905, 0, 0, { kind: 'bed' });
     expect(['sai tỉ lệ thật', 'méo dáng']).toContain(hardRejectOf(m, legacy, ctx));
+    expect(functionalMissOf('doubleBed', dimsOf(legacy) as Dims, m.shownOf?.(legacy) as Dims)).toBeDefined();
     const d = roomSetOf('R', [m], new Map(), ctx).get('b');
-    expect(d?.top?.[0]?.[1] as number).toBeGreaterThan(FAIL_COST);
-    expect(d).toMatchObject({ to: legacy, cause: 'fail-keep' });
-    expect(d?.why).toContain('hiện trạng, trượt hình dáng');
+    expect(d).toMatchObject({ cause: 'fallback', uniform: 'real', why: expect.stringContaining('phương án cuối') });
+    expect(d?.to).not.toBe(legacy);
   });
 
   it('hiện trạng trượt hình dáng nhưng chồng vật cản / chạm trần → KHÔNG giữ, lấy ứng viên hợp lệ', () => {
     const c: SetContext = { ...ctxT('bookshelf', { slim: 100, old: 5 }), dimsOf: (x) => (x === 'old' ? [2, 1.8, 0.4] : [0.8, 1.8, 0.4]) };
     // Mẫu luật cũ 2,0 m co vào hộp 1,2 m (sai tỉ lệ thật) và hiện đủ 1,2 m → chồng tủ lạnh; ứng viên hẹp đắt 1,0.
-    const m: SetMember = { id: 's', role: 'bookshelf', short: 0.4, long: 1.2, current: 'old', pool: ['old', 'slim'], fixed: false, box: { cx: 0, cy: 0, w: 1.2, d: 0.4, rot: 0 }, shownOf: (x) => (x === 'old' ? [1.2, 1.8, 0.24] : [0.8, 1.8, 0.4]) };
+    const m: SetMember = { id: 's', role: 'bookshelf', short: 0.4, long: 1.2, current: 'old', pool: ['old', 'slim'], fixed: false, box: { cx: 0, cy: 0, w: 1.2, d: 0.4, rot: 0 }, shownOf: (x) => (x === 'old' ? [1.2, 1.8, 0.26] : [0.8, 1.8, 0.4]) };
+    // Vòng 17: sâu hiển thị 0,26 (cũ 0,24 < 0,25 trượt "ngoài công năng"; fail-keep chỉ giữ hiện trạng trong công năng).
     expect(hardRejectOf(m, 'old', c)).toBe('sai tỉ lệ thật');
     const fridge = planRectOf(0.775, 0, 0.65, 0.6, 0);
     expect(roomSetOf('R', [m], new Map(), c, [fridge]).get('s')).toMatchObject({ to: 'slim', cause: 'selector' });
@@ -224,7 +227,7 @@ describe('vòng 14 lượt 2 — ngưỡng hỏng FAIL_COST (ca thua rõ f-22/f-
     expect(roomSetOf('R', [m], new Map(), c).get('s')).toMatchObject({ to: 'old', cause: 'fail-keep' });
     // Chạm trần (mẫu luật cũ cao 2,2 m, trần 2,4 m → tối đa 2,1 m; ứng viên hẹp 1,8 m qua): không giữ.
     const tall: SetContext = { ...c, dimsOf: (x) => (x === 'old' ? [2, 2.2, 0.4] : [0.8, 1.8, 0.4]) };
-    const mt: SetMember = { ...m, ceilingM: 2.4, heightM: 2.2, shownOf: (x) => (x === 'old' ? [1.2, 2.2, 0.24] : [0.8, 1.8, 0.4]) };
+    const mt: SetMember = { ...m, ceilingM: 2.4, heightM: 2.2, shownOf: (x) => (x === 'old' ? [1.2, 2.2, 0.26] : [0.8, 1.8, 0.4]) };
     expect(roomSetOf('R', [mt], new Map(), tall).get('s')).toMatchObject({ to: 'slim', cause: 'selector' });
   });
 
@@ -236,18 +239,19 @@ describe('vòng 14 lượt 2 — ngưỡng hỏng FAIL_COST (ca thua rõ f-22/f-
 
   // Chi phí điều khiển bằng hạng phong cách (tier/100), phần gỗ trùng gỗ tham chiếu (phạt màu 0).
   const qd = (role: string): ModelQuality => ({ role, useMm: [1, 1, 1], front: { axis: '+z', check: 'ok' }, parts: [{ kind: 'frame', share: 1, lab: [67, 5, 22], material: 'wood', kindBy: 'm' }], detail: { tris: 1, kb: 1, textures: 0, maxTex: 0, tier: 'light' }, licence: 'CC0', source: 't' });
-  const ctxT = (role: string, tiers: Record<string, number>, dims: Dims = [1, 0.8, 1]): SetContext => ({
+  // Vòng 17: tủ ngăn kéo cỡ thật 0,6 × 0,8 × 0,6 m (cũ 1 × 1 m sâu 1 m trượt "ngoài công năng", dresser sâu 0,35–0,65).
+  const ctxT = (role: string, tiers: Record<string, number>, dims: Dims = [0.6, 0.8, 0.6]): SetContext => ({
     tierOf: (x) => tiers[x] ?? 0,
     tiers: 99,
     dimsOf: () => dims,
     palette: { light: true, tone: 'l' },
     qualityOf: (x) => (x in tiers ? qd(role) : undefined),
   });
-  /** Cỡ hiển thị: co đều mẫu 1 × 1 m vào hộp vuông cạnh `s`. */
-  const sq = (id: string, s: number, cx: number, current: string | null, pool: string[], extra: Partial<SetMember> = {}): SetMember => ({
-    id, role: 'dresser', short: s, long: s, current, pool, fixed: false, box: { cx, cy: 0, w: s, d: s, rot: 0 },
-    shownOf: () => [s, 0.8, s], ...extra,
-  });
+  /** Cỡ hiển thị: co đều mẫu 0,6 × 0,6 m vào hộp vuông cạnh 0,6·`k` (`k` = hệ số co). */
+  const sq = (id: string, k: number, cx: number, current: string | null, pool: string[], extra: Partial<SetMember> = {}): SetMember => {
+    const s = 0.6 * k;
+    return { id, role: 'dresser', short: s, long: s, current, pool, fixed: false, box: { cx, cy: 0, w: s, d: s, rot: 0 }, shownOf: () => [s, 0.8, s], ...extra };
+  };
 
   it('thuần: mẫu luật cũ HỢP LỆ, mẫu tốt nhất > FAIL_COST → giữ mẫu luật cũ (fail-keep); có ứng viên rẻ → đổi', () => {
     const c = ctxT('dresser', { dark: 100, legacy: 110, oak: 0 });
@@ -340,7 +344,10 @@ describe('vòng 14 lượt 2 — cờ texture "broken" (vân vỡ) loại khỏi
     expect(hardRejectOf(m, 'unsure', c)).toBeUndefined();
     const d = roomSetOf('R', [m], new Map(), c).get('s');
     expect(d?.rejects?.['vân vỡ']).toBe(1);
-    expect(d?.top?.map(([f, cost]) => [f, cost])).toEqual([['ok', 0], ['unsure', 0]]);
+    // Vòng 17 (I2): bảng màu bộ luôn có nền phòng (gỗ tông căn + tường) → chi phí sofa không còn 0; điều cần giữ là ok = unsure.
+    const top = d?.top ?? [];
+    expect(top.map(([f]) => f)).toEqual(['ok', 'unsure']);
+    expect(top[0]?.[1]).toBeCloseTo(top[1]?.[1] ?? NaN, 9);
   });
 });
 
@@ -608,12 +615,13 @@ describe('vòng 16 — mẫu concept là ứng viên ưu tiên, không phải gh
 
   it('Codex M16-3 #2: lập lại kế hoạch — món đã chốt co đều chiếm chỗ bằng mặt bằng co đều, không phải phép khớp thường', () => {
     const q: ModelQuality = { role: 'closet', useMm: [800, 1800, 500], front: { axis: '+z', check: 'ok' }, parts: [{ kind: 'frame', share: 1, lab: [62, 8, 24], material: 'wood', kindBy: 'm' }], detail: { tris: 1, kb: 1, textures: 0, maxTex: 0, tier: 'light' }, licence: 'CC0', source: 't' } as ModelQuality;
-    const c: SetContext = { tierOf: () => 0, tiers: 1, dimsOf: () => [0.8, 1.8, 0.5], palette: {}, qualityOf: (x) => ({ ...q, role: x === 'kd' ? 'dresser' : 'closet' }) };
+    // Vòng 17: tủ ngăn kéo 'kd' cao 0,9 m (cũ 1,8 m trượt "ngoài công năng", dresser cao ≤ 1,35).
+    const c: SetContext = { tierOf: () => 0, tiers: 1, dimsOf: (x) => (x === 'kd' ? [0.8, 0.9, 0.5] : [0.8, 1.8, 0.5]), palette: {}, qualityOf: (x) => ({ ...q, role: x === 'kd' ? 'dresser' : 'closet' }) };
     // A: hộp 1,6 × 0,5 tại 0; phép khớp thường phủ cả hộp, co đều chỉ 0,8 × 0,5 giữa hộp.
     const a: SetMember = { id: 'A', role: 'closet', short: 0.5, long: 1.6, current: null, pool: [], fixed: false, box: { cx: 0, cy: 0, w: 1.6, d: 0.5, rot: 0 }, shownOf: () => [1.6, 1.8, 0.5], concept: { folder: 'k', shownOf: () => [0.8, 1.8, 0.5] } };
     // B: hộp 0,8 × 0,5 tại x 0,9 (0,5..1,3): chồng phép khớp thường của A (..0,8), không chồng co đều (..0,4).
     // B khác vai (tủ ngăn kéo) để mẫu đã chốt của A không dẫn nhóm của B.
-    const b: SetMember = { id: 'B', role: 'dresser', short: 0.5, long: 0.8, current: null, pool: [], fixed: false, box: { cx: 0.9, cy: 0, w: 0.8, d: 0.5, rot: 0 }, shownOf: () => [0.8, 1.8, 0.5], concept: { folder: 'kd' } };
+    const b: SetMember = { id: 'B', role: 'dresser', short: 0.5, long: 0.8, current: null, pool: [], fixed: false, box: { cx: 0.9, cy: 0, w: 0.8, d: 0.5, rot: 0 }, shownOf: () => [0.8, 0.9, 0.5], concept: { folder: 'kd' } };
     const decidedA: SetDecision = { id: 'A', role: 'closet', from: null, to: 'k', rule: 'roomset', cause: 'concept', anchor: true, uniform: true, why: '' };
     expect(roomSetOf('R', [a, b], new Map([['A', decidedA]]), c).get('B')).toMatchObject({ cause: 'concept', to: 'kd' });
     // Đối chứng: cùng quyết định nhưng không co đều → A chiếm cả hộp → B trượt va chạm.
@@ -734,8 +742,9 @@ describe('vòng 16 — mẫu concept là ứng viên ưu tiên, không phải gh
       registerServerLibrary([{ id: only, widthMm: u[0], heightMm: u[1], depthMm: u[2], modelUrl: `https://x.test/${only}.glb` }]);
       try {
         const got = pick([strip], 'F-S', withConcept(only));
-        expect(got).not.toBe(only);
-        expect(entry('F-S')).toMatchObject({ cause: 'fallback', why: expect.stringContaining('concept trượt') });
+        // Vòng 17: phương án cuối được trả chính mẫu ấy nhưng ở CỠ THẬT (uniform 'real'), không bao giờ dựng méo theo hộp.
+        expect(entry('F-S')).toMatchObject({ cause: 'fallback', uniform: 'real', why: expect.stringContaining('concept trượt') });
+        expect(roomSetUniformOf('F-S', got as string)).toBe('real');
         expect(entry('F-S')?.from).not.toBe(only);
       } finally {
         clearServerLibrary();
@@ -748,14 +757,15 @@ describe('vòng 16 — mẫu concept là ứng viên ưu tiên, không phải gh
       }
     });
 
-    it('concept lệch hộp qua sceneVariety: giữ concept, roomSetUniformOf = true (toPascal co đều); món có `model` không co đều', () => {
+    it('concept ghế co đều dưới phạm vi qua sceneVariety: concept trượt "ngoài công năng", phương án cuối cỡ thật; món có `model` không co đều', () => {
       // Ghế ăn ở hộp 0,38 × 0,38 m cạnh bàn (hộp AI dò nhỏ): ghế thật ~0,55 m → sai tỉ lệ thật ở phép khớp thường, không méo.
+      // Vòng 17 (đổi có chủ đích): co đều ~0,7 hạ cao ngồi (hệ số cao ngoài 0,9–1,1) → concept trượt; cũ: giữ concept co đều.
       const big = furniture('F-BIG', 'chair', 380, 380, 0, -700);
       const concept = 'chair-dining-oak-rope-arm-b';
       const got = pick([userTable, big], 'F-BIG', withConcept(concept));
-      expect(got).toBe(concept);
-      expect(entry('F-BIG')).toMatchObject({ cause: 'concept', uniform: true });
-      expect(roomSetUniformOf('F-BIG', concept)).toBe(true);
+      expect(got).not.toBe(concept);
+      expect(entry('F-BIG')).toMatchObject({ cause: 'fallback', uniform: 'real', why: expect.stringContaining('concept trượt: ngoài công năng') });
+      expect(roomSetUniformOf('F-BIG', got as string)).toBe('real');
       expect(roomSetUniformOf('F-T', 'table-oak-light-tapered-legs')).toBe(false);
     });
 

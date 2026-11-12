@@ -983,6 +983,8 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
       // Món chưa ghim: mẫu luật cũ CHỈ là phương án cuối + để sổ so (`from`).
       // Mẫu luật cũ của món chưa ghim không chứa mẫu concept: concept trượt ràng buộc cứng thì không quay lại qua `fallback`/`fail-keep`.
       current: pin !== undefined ? pin : baseFolderOf(f, style, room.usage, override, !pinned),
+      // Mẫu dựng sẵn của vai: phương án cuối khi luật cũ trượt dáng/công năng (roomSet `fallbackOf`).
+      ...(ROLE_MODELS[role][0] === undefined ? {} : { stock: ROLE_MODELS[role][0] }),
       pool: pinned || twinPin !== undefined ? [] : setPoolOf(f, role, style),
       fixed: pinned,
       ...(concept === undefined
