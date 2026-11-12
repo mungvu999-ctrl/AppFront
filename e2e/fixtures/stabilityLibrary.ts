@@ -19,6 +19,16 @@ const MODELS: readonly (readonly [string, Group])[] = [
   ['cactus', 'decor'], ['bush', 'decor'], ['ceramic-vase', 'decor'], ['books', 'decor'],
 ];
 
+/** GLB của mục thư viện mà concept chọn cho vai tủ áo (`closet`); không vai nào khác dựng ra nó. */
+export const CONCEPT_FOLDER = 'closet-gen';
+/**
+ * Mục thư viện concept chọn cho vai tủ áo. Từ vòng 16 concept không còn là ghim: chỉ áp khi qua ràng buộc chất lượng /
+ * an toàn của món. Mục tự tạo `e2e-lib-NN` không có dữ liệu chất lượng (`libraryQuality.json`) và cỡ 0,75 × 0,70 × 0,80 m
+ * méo trong hộp tủ áo 1,7 × 0,6 m của F1 → bị loại đúng luật. Concept HỢP LỆ = id mục thật có dữ liệu chất lượng
+ * (`wardrobe-pro`) với cỡ thật của nó; GLB vẫn là `closet-gen` đóng gói.
+ */
+const CONCEPT_CLOSET = { id: 'wardrobe-pro', widthMm: 1166, heightMm: 2098, depthMm: 511 } as const;
+
 export const richLibraryBody = (requestUrl: string): unknown[] =>
   MODELS.map(([folder, group], index) => ({
     depthMm: 400 + (index % 5) * 100,
@@ -31,16 +41,14 @@ export const richLibraryBody = (requestUrl: string): unknown[] =>
     source: 'catalogue',
     triangleCount: 1_000 + index,
     widthMm: 600 + (index % 4) * 150,
+    ...(folder === CONCEPT_FOLDER ? CONCEPT_CLOSET : {}),
   }));
-
-/** GLB của mục thư viện mà concept chọn cho vai tủ áo (`closet`); không vai nào khác dựng ra nó. */
-export const CONCEPT_FOLDER = 'closet-gen';
 /**
  * Tệp mặc định của vai `closet` (hai tủ áo variant `wardrobe` của F1): thư mục `closet` qua swap realism
  * (`REALISM_MODEL_SWAP`) thành `wardrobe-sf`. Concept áp → không còn trong cảnh; không áp → luôn có.
  */
 export const DEFAULT_CLOSET_FILE = 'wardrobe-sf';
-const conceptClosetId = `e2e-lib-${String(MODELS.findIndex(([folder]) => folder === CONCEPT_FOLDER)).padStart(2, '0')}`;
+const conceptClosetId = CONCEPT_CLOSET.id;
 
 /**
  * Mẫu concept chọn theo vai. Như máy chủ thật (Design Director chỉ chọn mục thư viện đã công bố), vai tủ áo dùng
