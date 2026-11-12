@@ -219,13 +219,10 @@ export const SAVED_MODEL_CONCURRENCY = 4;
 /** Lượt dựng không hỏi theo id khi máy chủ đã nói rõ không cho đọc thư viện / chưa có phiên / lượt đọc mất hiệu lực. */
 const NO_BY_ID_SOURCES: ReadonlySet<string> = new Set(['fallback:no-session', 'fallback:forbidden', 'fallback:notFound', STALE_SOURCE]);
 
+type ByIdApi = Awaited<ReturnType<LibraryApiSource>>;
+
 /** Một mục theo id: mục, hoặc lý do không có. */
-const readById = async (
-  modelId: string,
-  getApi: LibraryApiSource,
-  signal?: AbortSignal,
-): Promise<LibraryItem | SavedModelFailure | 'no-session'> => {
-  const api = await getApi().catch(() => null);
+const readById = async (modelId: string, api: ByIdApi, signal?: AbortSignal): Promise<LibraryItem | SavedModelFailure | 'no-session'> => {
   if (api === null) return 'no-session';
   if (api.read === undefined) return 'read-failed';
   const result = await api.read({ libraryItemId: modelId, ...(signal === undefined ? {} : { signal }) }).catch(() => null);
@@ -270,8 +267,10 @@ export async function ensureSceneLibraryFor(
   if (currentOwner() !== owner) return library;
   const stale = (): boolean => gen !== generation || currentOwner() !== owner;
   const queue = savedModelIdsToResolve(furniture);
+  if (queue.length === 0) return library;
+  const api = await getApi().catch(() => null);
   const resolveOne = async (modelId: string): Promise<void> => {
-    const got = await readById(modelId, getApi);
+    const got = await readById(modelId, api);
     if (stale()) {
       assetLog.dropped += 1;
       return;
@@ -571,7 +570,7 @@ async function refreshOnce(
   if (isStale()) return fail(modelId, 'stale');
   if (resolvedById.has(modelId)) {
     // Mẫu resolve theo id (không có trong danh sách): gia hạn bằng chính #15, không đọc lại cả thư viện.
-    const got = await readById(modelId, getApi, signal);
+    const got = await readById(modelId, await getApi().catch(() => null), signal);
     if (isStale()) return fail(modelId, 'stale');
     if (typeof got === 'string') {
       if (got !== 'read-failed') resolvedById.delete(modelId);

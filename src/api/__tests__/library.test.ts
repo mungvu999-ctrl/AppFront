@@ -321,3 +321,36 @@ describe('createMockApiClient().library', () => {
     expect(unknown.ok && unknown.data.id).toBe('library-khong-co');
   });
 });
+
+describe('createApiClient().library.listPage (M15)', () => {
+  const httpWith = (response: Response) => {
+    const get = vi.fn(async () => ({ ok: true as const, data: response }));
+    return { get, http: { get } as unknown as HttpClient };
+  };
+
+  it('gửi limit/cursor, đọc X-Next-Cursor + X-Library-Revision + bytes', async () => {
+    const body = JSON.stringify([sampleWireItem]);
+    const { get, http } = httpWith(new Response(body, { headers: { 'X-Next-Cursor': 'c2', 'X-Library-Revision': 'r7' } }));
+    const result = await createApiClient(http).library.listPage({ cursor: 'c1', limit: 500 });
+
+    expect(get).toHaveBeenCalledWith(ENDPOINTS.library.list, { query: { cursor: 'c1', limit: 500 }, responseType: 'response' });
+    expect(result.ok && result.data.items.map((item) => item.id)).toEqual([sampleWireItem.id]);
+    expect(result.ok && { nextCursor: result.data.nextCursor, revision: result.data.revision, bytes: result.data.bytes }).toEqual({
+      nextCursor: 'c2',
+      revision: 'r7',
+      bytes: body.length,
+    });
+  });
+
+  it('BE cũ không header: hết trang, không revision', async () => {
+    const { http } = httpWith(new Response('[]'));
+    const result = await createApiClient(http).library.listPage({ limit: 500 });
+    expect(result).toStrictEqual({ ok: true, data: { items: [], bytes: 2 } });
+  });
+
+  it('thân không phải JSON → lỗi giải mã, không ném', async () => {
+    const { http } = httpWith(new Response('<html>'));
+    const result = await createApiClient(http).library.listPage();
+    expect(result.ok).toBe(false);
+  });
+});
