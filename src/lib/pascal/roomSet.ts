@@ -1161,24 +1161,38 @@ export const roomSetOf = (
     // cờ `forced` cho đầu dò. Vẫn phải qua chất lượng/an toàn + trần ở cỡ thật (`forbiddenOf` trên cỡ thật). Khung đỏ (null) chỉ
     // còn khi lý do cấm là an toàn/chất lượng hoặc không có mẫu dựng sẵn hợp lệ. Cỡ người dùng xác nhận không dựng cỡ thật.
     const forceable = cur === null || forbid === 'va chạm' || (forbid?.startsWith(FUNC_REJECT) ?? false);
-    const stDims = st === undefined ? undefined : ctx.dimsOf(st);
-    if (forceable && st !== undefined && stDims !== undefined && b !== undefined && m.sizeFrom !== 'user') {
-      const cm = conceptMissOf(st);
-      if (forbiddenOf(realMemberOf(m), st, cm === 'va chạm' ? undefined : cm) === undefined) {
-        if (!grows(b, stDims)) {
-          return { to: null, why: `phương án cuối: hộp AI quá nhỏ cho vai — mẫu dựng sẵn cỡ thật vượt hộp quá ${REAL_GROW_M} m` };
-        }
-        // F5-2 (điều phối, D5): `forced` được chồng ĐỒ ĐẠC, không được chồng thân tường / vùng mở cửa quá phần hộp đã chồng.
-        // Mặt bằng = realRectOf (áp lưng theo vai, cơ chế dựng sẵn có); không dời khác vì toPascal không dựng được độ dời ấy.
-        // Món chưa xác định không đặt được thì ẨN (`null`, c9d44006) thay vì đè kết cấu.
-        if (m.lifted !== true) {
-          const wallHit = (rect: PlanRect): number => structural.reduce((s, z) => s + overlapAreaM2(rect, z), 0);
-          if (wallHit(realRectOf(m, b, stDims)) > wallHit(boxRectOf(b)) + ROOM_OVERLAP_TOL_M2) {
-            return { to: null, why: 'phương án cuối: mẫu dựng sẵn cỡ thật va chạm tường/cửa — ẩn món' };
-          }
-        }
-        const forced = [forbid ?? 'không mẫu luật cũ', ...(clear(realRectOf(m, b, stDims)) ? [] : ['va chạm'])].filter((x, i, a) => a.indexOf(x) === i).join(', ');
-        return { to: st, uniform: 'real', forced, why: `phương án cuối: mẫu dựng sẵn ở cỡ thật dù ${forced} (luật cũ không dùng được)` };
+    if (forceable && b !== undefined && m.sizeFrom !== 'user') {
+      // F6 (vòng 17, R2 cn08/s4pn): tầng cưỡng bức thử MỌI mẫu thư viện của vai ở cỡ thật (cùng kiểm chất lượng như (a)), không
+      // chỉ mẫu dựng sẵn — mẫu dựng sẵn vân nhoè/lạc bộ chỉ là phương án cuối. Được chồng ĐỒ ĐẠC (nhỏ nhất trong dải hợp bộ), không được chồng
+      // thân tường / vùng mở cửa quá phần hộp đã chồng (F5-2); vẫn ≤ REAL_GROW_M mỗi trục. Món chưa xác định không đặt được thì ẨN.
+      const real = realMemberOf(m);
+      const wallHit = (rect: PlanRect): number => structural.reduce((s, z) => s + overlapAreaM2(rect, z), 0);
+      const wallOk = (d: Dims): boolean => m.lifted === true || wallHit(realRectOf(m, b, d)) <= wallHit(boxRectOf(b)) + ROOM_OVERLAP_TOL_M2;
+      const stockOk = (f: string): boolean => {
+        const cm = conceptMissOf(f);
+        return forbiddenOf(real, f, cm === 'va chạm' ? undefined : cm) === undefined;
+      };
+      const cands = [...new Set([...pool, ...(st === undefined ? [] : [st])])].flatMap((f) => {
+        const d = ctx.dimsOf(f);
+        if (d === undefined || !grows(b, d) || !wallOk(d)) return [];
+        if (f === st ? !stockOk(f) : hardRejectOf(real, f, ctx, CONCEPT_LENIENT) !== undefined) return [];
+        const c = f === st ? FAIL_COST : r9(costOf(f));
+        return c <= FAIL_COST ? [{ f, d, c, a: d[0] * d[2] }] : [];
+      });
+      // Thư viện trước (dải hợp bộ → nhỏ nhất, mức vượt hộp đã chặn ≤ REAL_GROW_M), mẫu dựng sẵn chỉ khi không còn mẫu thư viện.
+      const lib = cands.filter((x) => x.f !== st);
+      const from = lib.length > 0 ? lib : cands;
+      const cBest = Math.min(...from.map((x) => x.c));
+      const pick = from.filter((x) => x.c <= r9(cBest + SHARE_BAND)).sort((x, y) => x.a - y.a || x.c - y.c || x.f.localeCompare(y.f))[0];
+      if (pick !== undefined) {
+        const forced = [forbid ?? 'không mẫu luật cũ', ...(clear(realRectOf(m, b, pick.d)) ? [] : ['va chạm'])].filter((x, i, a) => a.indexOf(x) === i).join(', ');
+        return { to: pick.f, uniform: 'real', forced, why: `phương án cuối: ${pick.f === st ? 'mẫu dựng sẵn' : 'mẫu thư viện nhỏ nhất trong dải hợp bộ'} ở cỡ thật dù ${forced} (luật cũ không dùng được)` };
+      }
+      const stDims = st === undefined ? undefined : ctx.dimsOf(st);
+      if (st !== undefined && stDims !== undefined && stockOk(st)) {
+        return grows(b, stDims)
+          ? { to: null, why: 'phương án cuối: mẫu cỡ thật va chạm tường/cửa — ẩn món' }
+          : { to: null, why: `phương án cuối: hộp AI quá nhỏ cho vai — không mẫu cỡ thật nào vượt hộp dưới ${REAL_GROW_M} m` };
       }
     }
     if (cur === null) return { to: null, why: 'phương án cuối: không ứng viên, không mẫu luật cũ, mẫu dựng sẵn không đặt được' };

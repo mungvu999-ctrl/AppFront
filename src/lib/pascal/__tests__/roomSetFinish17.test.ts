@@ -130,6 +130,24 @@ describe('I2 — phương án cuối', () => {
   });
 });
 
+describe('F6 — tầng cưỡng bức thử mẫu thư viện trước mẫu dựng sẵn', () => {
+  it('đồ đạc chắn mọi cỡ thật: chọn mẫu thư viện của vai ở cỡ thật (forced), không rơi về mẫu dựng sẵn', () => {
+    // R2 cn08: sofa trượt công năng, cỡ thật chồng đồ khác → cũ: luôn mẫu dựng sẵn (vân nhoè, lạc bộ).
+    const sofaZone: SetZone = { cx: 0, cy: 0, w: 6, d: 6, rotationDeg: 0, kind: 'table' };
+    const m = mem('s', 'sofa', ['sofa-deep'], { current: 'sofa-old', stock: 'sofa', box: { cx: 0, cy: 0, w: 2, d: 0.85, rot: 0 }, shownOf: () => [1.0, 0.85, 0.85] });
+    const d = roomSetOf('r', [m], new Map(), ctxOf(), [sofaZone]).get('s');
+    expect(d).toMatchObject({ to: 'sofa-deep', uniform: 'real', cause: 'fallback' });
+    expect(d?.forced).toMatch(/va chạm/);
+  });
+
+  it('cỡ thật mẫu thư viện đè tường nhưng mẫu dựng sẵn không → vẫn mẫu dựng sẵn', () => {
+    // Tường sát mép sau hộp (y ≤ −0,425): sofa-deep sâu 0,9 áp lưng không đè; tường hai bên x > 1,0 chặn bề rộng 2,0 + 0,0.
+    const wall: SetZone = { cx: 0, cy: 0, w: 6, d: 6, rotationDeg: 0 };
+    const m = mem('s', 'sofa', ['sofa-deep'], { current: 'sofa-old', stock: 'sofa', box: { cx: 0, cy: 0, w: 2, d: 0.85, rot: 0 }, shownOf: () => [1.0, 0.85, 0.85] });
+    expect(roomSetOf('r', [m], new Map(), ctxOf(), [wall]).get('s')?.to).toBe('sofa');
+  });
+});
+
 describe('I2 — vai bench (giường cỡ nhỏ đổi vai)', () => {
   it('hộp 0,81 × 0,86: không ép băng dài 1,5 m vào hộp — ra đôn nhỏ ở cỡ thật', () => {
     const m = mem('b', 'bench', ['bench-long', 'ottoman'], { current: null, box: { cx: 0, cy: 0, w: 0.81, d: 0.86, rot: 0 }, shownOf: stretch(0.81, 0.86) });
