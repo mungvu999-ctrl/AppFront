@@ -14,7 +14,7 @@ import { clearServerLibrary, registerServerLibrary } from '../furnitureCatalog';
 import { itemFitOf } from '../itemFit';
 import { LIBRARY_QUALITY, type ModelQuality } from '../libraryQuality';
 import LIBRARY from '../libraryRoles.json' with { type: 'json' };
-import { paletteOf, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetMember } from '../roomSet';
+import { ANCHOR_BAND, paletteOf, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetMember } from '../roomSet';
 import { sceneStyleOf } from '../sceneStyles';
 import { addRoomSetMembers, contextRolesOf, modelFolderOf, roomSetPools, roomSetReport, setRoomSetKeys, type LayerStyle } from '../sceneVariety';
 
@@ -148,6 +148,48 @@ describe('vòng 14 — một kiểu ghế quanh một bàn (ca f-03), ghế ghim
     const out = roomSetOf('R', room([at('bad', 'diningChair', 'chair-dining-grey-shell-black-b', 1.16, 0.29, 5, -1.1)]), new Map(), ctx);
     expect(out.get('bad')).toMatchObject({ cause: 'fallback', to: 'chair-dining-grey-shell-black-b' });
     for (const id of ['b1', 'b2', 'b3', 'b4']) expect(out.get(id)?.cost as number).toBeLessThan(0.6);
+  });
+});
+
+describe('vòng 14 — hoà trong nhiễu (≤ ANCHOR_BAND) rút theo băm khoá nội dung ở MỌI vai (ca tab đầu giường 17/17 một mẫu)', () => {
+  // Tab đầu giường (không phải neo) cạnh giường ghim: nhiều mẫu chi phí màu 0, chênh chỉ từ phạt tỉ lệ.
+  const room = (key: string): Map<string, ReturnType<typeof roomSetOf> extends Map<string, infer D> ? D : never> =>
+    roomSetOf(
+      key,
+      [pinnedAt('B', 'doubleBed', 'bed-double-oak-pro', 1.8, 2.1, 0, 0), at('n1', 'nightstand', null, 0.45, 0.4, -1.2, 0.8, { kind: 'table' }), at('n2', 'nightstand', null, 0.45, 0.4, 1.2, 0.8, { kind: 'table' })],
+      new Map(),
+      ctx,
+    );
+  const keys = Array.from({ length: 12 }, (_, i) => `bedroom|${i}`);
+  beforeAll(() => {
+    registerServerLibrary(
+      ['nightstand', 'doubleBed'].flatMap((role) => pool(role)).map((id) => {
+        const u = real(id)?.useMm ?? [1000, 1000, 1000];
+        return { id, widthMm: u[0], heightMm: u[1], depthMm: u[2], modelUrl: `https://x.test/${id}.glb` };
+      }),
+    );
+  });
+
+  it('cùng phòng chạy hai lần → cùng mẫu; hai tab trong phòng một mẫu', () => {
+    for (const key of keys) {
+      const a = room(key);
+      expect(room(key).get('n1')?.to).toBe(a.get('n1')?.to);
+      expect(a.get('n2')?.to).toBe(a.get('n1')?.to);
+    }
+  });
+
+  it('nhiều phòng có ≥ 2 mẫu hoà → không phải mọi phòng cùng mẫu tên nhỏ nhất; mẫu rút luôn trong dải', () => {
+    const picks = keys.map((key) => room(key).get('n1'));
+    const top = picks[0]?.top ?? [];
+    expect(top.filter(([, c]) => c <= (top[0]?.[1] ?? 0) + ANCHOR_BAND).length).toBeGreaterThanOrEqual(2);
+    expect(new Set(picks.map((d) => d?.to)).size).toBeGreaterThan(1);
+    for (const d of picks) expect(d?.cost as number).toBeLessThanOrEqual((d?.top?.[0]?.[1] ?? 0) + ANCHOR_BAND + 1e-3);
+  });
+
+  it('chênh > ANCHOR_BAND → mẫu tốt nhất luôn thắng ở mọi khoá phòng', () => {
+    // Bàn óc chó ở chỗ vuông nhỏ, phòng sáng: mẫu sồi tốt nhất hơn hẳn → không phụ thuộc khoá.
+    const best = new Set(keys.map((key) => roomSetOf(key, [at('t', 'diningTable', null, 0.91, 0.91, 0, 0, { pool: ['table-dining-oak-pedestal-a192', 'table-walnut-square-tapered-legs'] })], new Map(), ctx).get('t')?.to));
+    expect([...best]).toEqual(['table-dining-oak-pedestal-a192']);
   });
 });
 

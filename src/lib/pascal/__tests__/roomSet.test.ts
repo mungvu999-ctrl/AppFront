@@ -199,7 +199,8 @@ describe('roomSetOf — hàm thuần', () => {
   it('vòng 14 — không còn biên MIN_GAIN: món chưa ghim lấy mẫu rẻ nhất dù mẫu luật cũ chỉ kém chút; luật cũ chỉ ghi `from`', () => {
     const table = {
       bed: qual('doubleBed', { frame: OAK, completeness: 'full' }),
-      'ns-a': qual('nightstand', { frame: [44, 8, 24] }),
+      // Chênh ≈ 0,18: lớn hơn dải hoà ANCHOR_BAND 0,08 (không rút băm), nhỏ hơn MIN_GAIN cũ 0,25 (trước đây sẽ giữ ns-a).
+      'ns-a': qual('nightstand', { frame: [40, 8, 24] }),
       'ns-b': qual('nightstand', { frame: OAK }),
     };
     const ctx = ctxOf(table, { bed: BED_DIMS });

@@ -104,7 +104,7 @@ const SIZE_FLOOR_ROLES: ReadonlySet<string> = new Set(['armchair', 'sofa']);
  * GỠ khi bộ dựng hình có phản chiếu.
  */
 export const MIRROR_PENALTY = 2;
-/** Dải neo: ứng viên có chi phí ≤ tốt nhất + chừng này được rút (băm phòng + vai). */
+/** Dải hoà: ứng viên cùng số món chấp nhận, chi phí ≤ tốt nhất + chừng này được rút theo băm khoá nội dung (mọi vai, vòng 14). */
 export const ANCHOR_BAND = 0.08;
 /**
  * Vòng 14 — một đánh giá, không "mẫu cũ": luật thư viện cũ không còn chọn trước rồi để bộ chọn sửa (bỏ MIN_GAIN /
@@ -640,7 +640,7 @@ const boxRectOf = (b: SetBox): PlanRect => planRectOf(b.cx, b.cy, b.w, b.d, b.ro
  *
  * Thứ tự: vai neo, rồi `SET_ROLES`; ghế ăn/ghế băng gom theo bàn (hộp bàn nở `CHAIR_REACH_M` chạm hộp ghế), vai khác một
  * nhóm mỗi phòng. Mỗi nhóm: mẫu ghim/đã chốt trong nhóm → mẫu chung; không thì mẫu lọt NHIỀU món nhất rồi chi phí trung
- * bình nhỏ nhất (neo: rút trong dải ANCHOR_BAND theo băm). Món không lọt mẫu chung chọn riêng. Không ứng viên → mẫu luật
+ * bình nhỏ nhất (hoà trong dải ANCHOR_BAND: rút theo băm khoá nội dung, mọi vai). Món không lọt mẫu chung chọn riêng. Không ứng viên → mẫu luật
  * cũ (`fallback`). "Lọt" = qua `hardRejectOf` VÀ va chạm: chồng của mặt bằng hiển thị với vùng chặn + đồ ghim + món đã
  * chốt (mặt bằng hiển thị) + món chưa chốt (cả hộp) ≤ mức nhỏ nhất đạt được trong các ứng viên của món +
  * ROOM_OVERLAP_TOL_M2 (mặt bằng ⊆ hộp, nên hộp không chồng gì thì va chạm không loại ứng viên nào).
@@ -797,7 +797,7 @@ export const roomSetOf = (
       return c !== undefined && c <= (ownBest.get(m.id) ?? Infinity) + SHARE_BAND + 1e-9;
     };
     /** Mẫu chấp nhận được cho NHIỀU món nhất của `list`, rồi chi phí trung bình nhỏ nhất; neo rút trong dải theo băm. */
-    const bestFor = (list: readonly SetMember[]): { f: string; n: number; band: number } | undefined => {
+    const bestFor = (list: readonly SetMember[], hashKey: string): { f: string; n: number; band: number } | undefined => {
       const ranked = [...new Set(list.flatMap((m) => [...passOf(m).keys()]))]
         .map((f) => {
           const costs = list.flatMap((m) => (okFor(m, f) ? [passOf(m).get(f) as number] : []));
@@ -807,17 +807,33 @@ export const roomSetOf = (
         .sort((a, b) => b.n - a.n || a.cost - b.cost || a.f.localeCompare(b.f));
       const best = ranked[0];
       if (best === undefined) return undefined;
-      const band = anchor ? ranked.filter((r) => r.n === best.n && r.cost <= best.cost + ANCHOR_BAND) : [best];
-      return { f: (band[fnv1a(`${roomKey}|${role}`) % band.length] as { f: string }).f, n: best.n, band: band.length };
+      // Hoà trong nhiễu (≤ ANCHOR_BAND, cùng số món chấp nhận): rút theo băm khoá NỘI DUNG (phòng/nhóm/món), mọi vai —
+      // tất định, không ép đa dạng; chỉ bỏ việc "tên thư mục nhỏ nhất thắng ở mọi phòng".
+      const band = ranked.filter((r) => r.n === best.n && r.cost <= best.cost + ANCHOR_BAND);
+      return { f: (band[fnv1a(hashKey) % band.length] as { f: string }).f, n: best.n, band: band.length };
     };
     // Mẫu chung cả phòng; nhóm (bàn) dùng nó khi nó chấp nhận được cho MỌI món của nhóm, không thì mẫu chung của nhóm.
-    const roomShared = bestFor(todo);
+    // Khoá băm theo nội dung, không theo id (chép dự án sinh id mới): thứ hạng vị trí của bàn / món trong phòng.
+    const byPlace = (a: SetMember, b: SetMember): number =>
+      (a.box?.cx ?? 0) - (b.box?.cx ?? 0) || (a.box?.cy ?? 0) - (b.box?.cy ?? 0) || a.id.localeCompare(b.id);
+    const tableRank = new Map([...tables].sort(byPlace).map((t, i) => [t.id, i] as const));
+    const groupHash = (key: string): string => `${roomKey}|${role}|g${key === '' ? '-' : (tableRank.get(key) ?? '?')}`;
+    const roomShared = bestFor(todo, `${roomKey}|${role}`);
     const keys = [...new Set(todo.map((m) => keyOf.get(m.id) ?? ''))];
     for (const key of keys) {
       const todoG = todo.filter((m) => keyOf.get(m.id) === key);
       const pinned = group.filter((m) => keyOf.get(m.id) === key).map(folderOfFixed).find((f): f is string => f !== null);
       const roomOk = roomShared !== undefined && todoG.every((m) => okFor(m, roomShared.f));
-      const shared = pinned !== undefined ? { f: pinned, n: 0, band: 1 } : roomOk ? roomShared : bestFor(todoG);
+      const shared = pinned !== undefined ? { f: pinned, n: 0, band: 1 } : roomOk ? roomShared : bestFor(todoG, groupHash(key));
+      // Món không hợp mẫu chung: gom tiếp thành mẫu chung thứ hai, thứ ba… của phần còn lại (ít kiểu nhất trong nhóm).
+      const restPick = new Map<string, { f: string; n: number; band: number }>();
+      let rest = todoG.filter((m) => shared === undefined || !(pinned !== undefined ? passOf(m).has(shared.f) : okFor(m, shared.f)));
+      for (let round = 2; rest.length > 0; round += 1) {
+        const next = bestFor(rest, `${groupHash(key)}|r${round}`);
+        if (next === undefined) break;
+        for (const m of rest) if (okFor(m, next.f)) restPick.set(m.id, next);
+        rest = rest.filter((m) => !restPick.has(m.id));
+      }
       for (const m of todoG) {
         const ev = evals.get(m.id) ?? { pass: new Map<string, number>(), rejects: {} };
         const fromCost = m.current === null ? undefined : ev.pass.get(m.current);
@@ -827,7 +843,7 @@ export const roomSetOf = (
           .map(([f, c]) => [f, +c.toFixed(3)] as const);
         // Mẫu ghim của nhóm: chỉ cần lọt; mẫu chung: phải chấp nhận được cho chính món.
         const sharedOk = shared !== undefined && (pinned !== undefined ? ev.pass.has(shared.f) : okFor(m, shared.f));
-        const pick = sharedOk ? shared : bestFor([m]);
+        const pick = sharedOk ? shared : restPick.get(m.id);
         const cost = pick === undefined ? undefined : ev.pass.get(pick.f);
         const old = fromCost === undefined ? 'luật cũ trượt/không có' : `luật cũ ${fromCost.toFixed(2)}`;
         const via =
@@ -838,7 +854,7 @@ export const roomSetOf = (
               : anchor
                 ? `neo, dải ${pick?.band ?? 0}`
                 : todo.length > 1
-                  ? 'mẫu chung không hợp món: tốt nhất của món'
+                  ? `mẫu chung không hợp món: mẫu chung phụ (chấp nhận ${pick?.n ?? 0})`
                   : 'tốt nhất';
         const to = pick === undefined ? m.current : pick.f;
         out.set(m.id, {
