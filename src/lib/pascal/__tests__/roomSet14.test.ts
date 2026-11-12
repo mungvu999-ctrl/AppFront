@@ -14,7 +14,7 @@ import { clearServerLibrary, registerServerLibrary } from '../furnitureCatalog';
 import { itemFitOf } from '../itemFit';
 import { LIBRARY_QUALITY, type ModelQuality } from '../libraryQuality';
 import LIBRARY from '../libraryRoles.json' with { type: 'json' };
-import { ANCHOR_BAND, hardRejectOf, paletteOf, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetMember } from '../roomSet';
+import { ANCHOR_BAND, FAIL_COST, hardRejectOf, paletteOf, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetMember } from '../roomSet';
 import { sceneStyleOf } from '../sceneStyles';
 import { addRoomSetMembers, contextRolesOf, finishRoomSet, modelFolderOf, roomSetPools, roomSetReport, setRoomSetKeys, type LayerStyle } from '../sceneVariety';
 
@@ -193,6 +193,40 @@ describe('vòng 14 — hoà trong nhiễu (≤ ANCHOR_BAND) rút theo băm khoá
   });
 });
 
+describe('vòng 14 lượt 2 — ngưỡng hỏng FAIL_COST (ca thua rõ f-22/f-14: giường phòng nhỏ)', () => {
+  beforeAll(() => {
+    registerServerLibrary(
+      [...pool('doubleBed'), ...pool('diningChair')].map((id) => {
+        const u = real(id)?.useMm ?? [1000, 1000, 1000];
+        return { id, widthMm: u[0], heightMm: u[1], depthMm: u[2], modelUrl: `https://x.test/${id}.glb` };
+      }),
+    );
+  });
+
+  it('dữ liệu thật: hộp giường AI 2,08 × 2,91 m — giường đủ chăn gối tốt không vừa, ứng viên còn lại > FAIL_COST → giữ mẫu luật cũ, cause fail-keep', () => {
+    const legacy = 'bed-double-white-duvet-light-oak-headboard';
+    const d = roomSetOf('R', [at('b', 'doubleBed', legacy, 2.081, 2.905, 0, 0, { kind: 'bed' })], new Map(), ctx).get('b');
+    expect(d?.top?.[0]?.[1] as number).toBeGreaterThan(FAIL_COST);
+    expect(d).toMatchObject({ to: legacy, cause: 'fail-keep', rule: 'keep' });
+    expect(d?.why).toContain('ngưỡng hỏng');
+  });
+
+  it('cùng luật mọi vai: ứng viên tốt nhất ≤ FAIL_COST thì vẫn đổi (hộp giường thường 1,8 × 2,1 m)', () => {
+    const d = roomSetOf('R', [at('b', 'doubleBed', 'bed-double-white-duvet-light-oak-headboard', 1.8, 2.1, 0, 0, { kind: 'bed' })], new Map(), ctx).get('b');
+    expect(d?.cause).not.toBe('fail-keep');
+    expect(d?.cost as number).toBeLessThanOrEqual(FAIL_COST);
+  });
+
+  it('thuần: chỉ còn ứng viên đắt (tối đậm trong phòng sáng) → giữ; có ứng viên rẻ → đổi', () => {
+    const q = (lab: [number, number, number]): ModelQuality => ({ role: 'dresser', useMm: [1, 1, 1], front: { axis: '+z', check: 'ok' }, parts: [{ kind: 'frame', share: 1, lab, material: 'wood', kindBy: 'm' }], detail: { tris: 1, kb: 1, textures: 0, maxTex: 0, tier: 'light' }, licence: 'CC0', source: 't' });
+    const table: Record<string, ModelQuality> = { dark: q([10, 20, 25]), oak: q([67, 5, 22]) };
+    const c: SetContext = { tierOf: () => 0, tiers: 3, dimsOf: () => [1, 0.8, 0.5], palette: { light: true, tone: 'l' }, qualityOf: (x) => table[x] };
+    const m = (p: string[]): SetMember => ({ id: 'd', role: 'dresser', short: 0.5, long: 1, current: 'legacy', pool: p, fixed: false });
+    expect(roomSetOf('R', [m(['dark'])], new Map(), c).get('d')).toMatchObject({ to: 'legacy', cause: 'fail-keep' });
+    expect(roomSetOf('R', [m(['dark', 'oak'])], new Map(), c).get('d')).toMatchObject({ to: 'oak', cause: 'selector' });
+  });
+});
+
 /* ---- Chính sách món đã xác nhận chưa gán mẫu (DESIGN §2.6, phương án B) qua đường dựng thật của sceneVariety ---- */
 
 describe('vòng 14 — món đã xác nhận chưa gán mẫu: cùng đánh giá, đổi theo catalog; món ghim không đổi', () => {
@@ -296,7 +330,7 @@ describe('Codex SEL-1', () => {
 
   it('#1 món ghim mẫu ngoài thư viện (current null) vẫn giữ chỗ bằng cả hộp: món bên cạnh không chọn mẫu phình vào nó', () => {
     const q = (lab: [number, number, number]): ModelQuality => ({ role: 'bookshelf', useMm: [1, 1, 1], front: { axis: '+z', check: 'ok' }, parts: [{ kind: 'frame', share: 1, lab, material: 'wood', kindBy: 'm' }], detail: { tris: 1, kb: 1, textures: 0, maxTex: 0, tier: 'light' }, licence: 'CC0', source: 't' });
-    const table: Record<string, ModelQuality> = { slim: q([28, 10, 14]), wide: q([75, 4, 15]) };
+    const table: Record<string, ModelQuality> = { slim: q([50, 6, 20]), wide: q([75, 4, 15]) };
     const dims: Record<string, Dims> = { slim: [0.8, 1.8, 0.4], wide: [1.2, 1.8, 0.4] };
     const c: SetContext = { tierOf: () => 0, tiers: 3, dimsOf: (x) => dims[x], palette: { light: true, tone: 'l' }, qualityOf: (x) => table[x] };
     const shownOf = (x: string): Dims | undefined => {

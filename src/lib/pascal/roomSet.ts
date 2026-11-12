@@ -128,6 +128,12 @@ export const PAIR_WOOD_SHARE = 0.5;
  * Không có trần này, "lọt nhiều món nhất" từng kéo cả bộ ghế về một mẫu chi phí 4,2 chỉ vì nó lọt một hộp dò lỗi.
  */
 export const SHARE_BAND = 0.25;
+/**
+ * Ngưỡng hỏng (vòng 12, chấm ảnh mù 9 căn: mẫu được khen 0,00–0,04, mẫu bị chê thấp nhất 0,98, còn lại 1,24–3,76). Vòng 14
+ * đã bỏ nó cùng mẫu đương nhiệm; chấm mù vòng 14 (f-22, f-14 phòng ngủ nhỏ) cho thấy cần lại: khi mẫu TỐT NHẤT qua ràng buộc
+ * cứng vẫn đắt hơn chừng này, đánh giá không có gì đáng chọn — giữ mẫu luật cũ (`cause: 'fail-keep'`), mọi vai.
+ */
+export const FAIL_COST = 0.9;
 /** Gỗ: ΔE (L* tối hơn tham chiếu tính đủ, sáng hơn tính nửa) trong dung sai này coi là cùng tông; vượt thì /WOOD_DE_REF. */
 export const WOOD_TOL = 15;
 export const WOOD_DE_REF = 20;
@@ -286,7 +292,7 @@ type SetRule = 'roomset' | 'keep';
  * Vì sao món ra mẫu này (QA tách A/B/C): `selector` = đánh giá chọn mẫu khác luật cũ; `same` = đánh giá chọn trùng luật
  * cũ; `fallback` = không ứng viên qua ràng buộc cứng → luật cũ; `pinned` = món ghim, không chọn.
  */
-export type SetCause = 'selector' | 'same' | 'fallback' | 'pinned';
+export type SetCause = 'selector' | 'same' | 'fallback' | 'fail-keep' | 'pinned';
 export interface SetDecision {
   readonly id: string;
   readonly role: string;
@@ -884,14 +890,16 @@ export const roomSetOf = (
                 : todo.length > 1
                   ? `mẫu chung không hợp món: mẫu chung phụ (chấp nhận ${pick?.n ?? 0})`
                   : 'tốt nhất';
-        const to = pick === undefined ? m.current : pick.f;
+        // Ngưỡng hỏng: mẫu chọn (kể cả mẫu chung) đắt hơn FAIL_COST → giữ mẫu luật cũ.
+        const failKeep = m.pinTo === undefined && cost !== undefined && cost > FAIL_COST;
+        const to = pick === undefined || failKeep ? m.current : pick.f;
         out.set(m.id, {
           id: m.id,
           role,
           from: m.current,
           to,
           rule: to === m.current ? 'keep' : 'roomset',
-          cause: m.pinTo !== undefined ? 'pinned' : pick === undefined ? 'fallback' : to === m.current ? 'same' : 'selector',
+          cause: m.pinTo !== undefined ? 'pinned' : pick === undefined ? 'fallback' : failKeep ? 'fail-keep' : to === m.current ? 'same' : 'selector',
           anchor,
           ...(cost === undefined ? {} : { cost }),
           ...(fromCost === undefined ? {} : { fromCost }),
@@ -903,7 +911,9 @@ export const roomSetOf = (
               ? 'cặp đã nhận: mẫu của món thật, chốt đúng lượt vai'
               : cost === undefined
                 ? 'không ứng viên qua ràng buộc cứng — mẫu luật cũ'
-                : `${via}; ${cost.toFixed(2)} (${old})`,
+                : failKeep
+                  ? `giữ mẫu luật cũ: mẫu tốt nhất ${cost.toFixed(2)} > ngưỡng hỏng ${FAIL_COST} (${pick?.f ?? ''})`
+                  : `${via}; ${cost.toFixed(2)} (${old})`,
           ...(Object.keys(ev.rejects).length > 0 ? { rejects: ev.rejects } : {}),
           ...(top.length > 0 ? { top } : {}),
         });

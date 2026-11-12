@@ -227,8 +227,8 @@ describe('vòng 14 — mẫu chung của nhóm: chấp nhận được cho nhi�
       B: qual('doubleBed', bedding, FULL),
     };
     const dims: Record<string, Dims> = { bare: [1.4, 1, 2.0], A: [1.6, 1, 2.0], B: [1.4, 1, 1.75] };
-    // Phong cách quyết định chi phí: A hạng 80/100, B hạng 92/100 (cùng phần, cùng màu) — B ngoài dải neo.
-    const ctx: SetContext = { ...ctxOf(table, dims), tierOf: (x) => (x === 'A' ? 80 : x === 'B' ? 92 : 0), tiers: 99 };
+    // Phong cách quyết định chi phí: A hạng 30/100, B hạng 42/100 (cùng phần, cùng màu) — B ngoài dải neo; cả hai dưới FAIL_COST.
+    const ctx: SetContext = { ...ctxOf(table, dims), tierOf: (x) => (x === 'A' ? 30 : x === 'B' ? 42 : 0), tiers: 99 };
     const wide = boxed('b1', 'doubleBed', 'bare', ['A', 'B'], { cx: 0, cy: 0, w: 1.6, d: 2.0 }, dims, { sizeFrom: 'generated' });
     const narrow = boxed('b2', 'doubleBed', 'bare', ['A', 'B'], { cx: 3, cy: 0, w: 1.6, d: 1.75 }, dims, { sizeFrom: 'generated' });
     const out = roomSetOf('R', [wide, narrow], new Map(), ctx);
@@ -248,7 +248,7 @@ describe('vòng 14 — món ghim cùng vai dẫn cả nhóm', () => {
       B: qual('doubleBed', bedding, FULL),
     };
     const dims: Record<string, Dims> = { bare: [1.6, 1, 2.0], A: [1.6, 1, 2.0], B: [1.6, 1, 2.0] };
-    const ctx: SetContext = { ...ctxOf(table, dims), tierOf: (x) => (x === 'A' ? 86 : x === 'B' ? 93 : 0), tiers: 99 };
+    const ctx: SetContext = { ...ctxOf(table, dims), tierOf: (x) => (x === 'A' ? 26 : x === 'B' ? 33 : 0), tiers: 99 };
     const pinned = boxed('p', 'doubleBed', 'B', [], { cx: 5, cy: 0, w: 1.6, d: 2.0 }, dims, { fixed: true });
     for (const key of ['R0', 'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7']) {
       const m = boxed('b', 'doubleBed', 'bare', ['A', 'B'], { cx: 0, cy: 0, w: 1.6, d: 2.0 }, dims, { sizeFrom: 'generated' });
