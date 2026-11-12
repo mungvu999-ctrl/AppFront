@@ -1531,7 +1531,7 @@ export const roomSetOf = (
     if (d === undefined || d.to === null) continue;
     const dims = ctx.dimsOf(d.to);
     const shown = memberAs(m, d.uniform).shownOf?.(d.to) ?? dims;
-    const miss = dims === undefined || shown === undefined ? undefined : functionalMissOf(m.role, dims, shown);
+    const miss = dims === undefined || shown === undefined ? undefined : functionalMissOf(d.role, dims, shown);
     if (miss !== undefined) out.set(m.id, { ...d, funcMiss: miss });
   }
   return out;

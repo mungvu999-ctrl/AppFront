@@ -170,6 +170,7 @@ describe('F8 — không mẫu nào của vai vừa hộp → mẫu nhỏ hơn c�
   it('tủ áo không vừa → kệ cao cỡ thật, sổ ghi vai bookshelf', () => {
     const d = roomSetOf('r', [closet()], new Map(), ctx8, []).get('w');
     expect(d).toMatchObject({ to: 'shelf-tall', uniform: 'real', role: 'bookshelf', cause: 'fallback' });
+    expect(d?.funcMiss).toBeUndefined(); // Codex M17-10: đầu dò công năng theo vai hiệu lực, không theo vai gốc
   });
 
   it('không có nhóm nhỏ hơn → vẫn ẩn (null) như cũ', () => {
