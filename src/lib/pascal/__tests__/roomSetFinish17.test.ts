@@ -131,13 +131,19 @@ describe('I2 — phương án cuối', () => {
 });
 
 describe('F6 — tầng cưỡng bức thử mẫu thư viện trước mẫu dựng sẵn', () => {
-  it('đồ đạc chắn mọi cỡ thật: chọn mẫu thư viện của vai ở cỡ thật (forced), không rơi về mẫu dựng sẵn', () => {
-    // R2 cn08: sofa trượt công năng, cỡ thật chồng đồ khác → cũ: luôn mẫu dựng sẵn (vân nhoè, lạc bộ).
-    const sofaZone: SetZone = { cx: 0, cy: 0, w: 6, d: 6, rotationDeg: 0, kind: 'table' };
+  it('hộp AI tự chồng đồ đạc, cỡ thật không chồng thêm: chọn mẫu thư viện của vai ở cỡ thật (forced), không mẫu dựng sẵn', () => {
+    // R2 cn08: sofa trượt công năng → cũ: luôn mẫu dựng sẵn (vân nhoè, lạc bộ). Vùng đồ đạc trùng đúng hộp (boxHit = 1,7 m²).
+    const sofaZone: SetZone = { cx: 0, cy: 0, w: 2.2, d: 0.85, rotationDeg: 0, kind: 'table' };
     const m = mem('s', 'sofa', ['sofa-deep'], { current: 'sofa-old', stock: 'sofa', box: { cx: 0, cy: 0, w: 2, d: 0.85, rot: 0 }, shownOf: () => [1.0, 0.85, 0.85] });
     const d = roomSetOf('r', [m], new Map(), ctxOf(), [sofaZone]).get('s');
     expect(d).toMatchObject({ to: 'sofa-deep', uniform: 'real', cause: 'fallback' });
-    expect(d?.forced).toMatch(/va chạm/);
+    expect(d?.forced).toMatch(/ngoài công năng/);
+  });
+
+  it('F7: cỡ thật chồng thêm đồ đạc ngoài hộp → ẩn (null), không đè', () => {
+    const wide: SetZone = { cx: 0, cy: 0, w: 6, d: 6, rotationDeg: 0, kind: 'table' };
+    const m = mem('s', 'sofa', ['sofa-deep'], { current: 'sofa-old', stock: 'sofa', box: { cx: 0, cy: 0, w: 1.8, d: 0.6, rot: 0 }, shownOf: () => [1.0, 0.6, 0.6] });
+    expect(roomSetOf('r', [m], new Map(), ctxOf(), [wide]).get('s')?.to).toBeNull();
   });
 
   it('cỡ thật mẫu thư viện đè tường nhưng mẫu dựng sẵn không → vẫn mẫu dựng sẵn', () => {

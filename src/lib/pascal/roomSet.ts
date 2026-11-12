@@ -1163,7 +1163,7 @@ export const roomSetOf = (
     const forceable = cur === null || forbid === 'va chạm' || (forbid?.startsWith(FUNC_REJECT) ?? false);
     if (forceable && b !== undefined && m.sizeFrom !== 'user') {
       // F6 (vòng 17, R2 cn08/s4pn): tầng cưỡng bức thử MỌI mẫu thư viện của vai ở cỡ thật (cùng kiểm chất lượng như (a)), không
-      // chỉ mẫu dựng sẵn — mẫu dựng sẵn vân nhoè/lạc bộ chỉ là phương án cuối. Được chồng ĐỒ ĐẠC (nhỏ nhất trong dải hợp bộ), không được chồng
+      // chỉ mẫu dựng sẵn — mẫu dựng sẵn vân nhoè/lạc bộ chỉ là phương án cuối. Không được chồng đồ đạc (F7) hay
       // thân tường / vùng mở cửa quá phần hộp đã chồng (F5-2); vẫn ≤ REAL_GROW_M mỗi trục. Món chưa xác định không đặt được thì ẨN.
       const real = realMemberOf(m);
       const wallHit = (rect: PlanRect): number => structural.reduce((s, z) => s + overlapAreaM2(rect, z), 0);
@@ -1174,7 +1174,9 @@ export const roomSetOf = (
       };
       const cands = [...new Set([...pool, ...(st === undefined ? [] : [st])])].flatMap((f) => {
         const d = ctx.dimsOf(f);
-        if (d === undefined || !grows(b, d) || !wallOk(d)) return [];
+        // F7 (R3 ch07: tủ cỡ thật đè giường + bàn ăn): không chồng đồ đạc quá phần hộp AI đã chồng — món chưa xác nhận thà ẩn
+        // còn hơn đè đồ khác (giám khảo mù R2/R3). Tầng này chỉ còn cưỡng bức lý do công năng / luật cũ, không cưỡng bức va chạm.
+        if (d === undefined || !grows(b, d) || !wallOk(d) || (m.lifted !== true && !clear(realRectOf(m, b, d), boxHit))) return [];
         if (f === st ? !stockOk(f) : hardRejectOf(real, f, ctx, CONCEPT_LENIENT) !== undefined) return [];
         const c = f === st ? FAIL_COST : r9(costOf(f));
         return c <= FAIL_COST ? [{ f, d, c, a: d[0] * d[2] }] : [];
@@ -1191,7 +1193,7 @@ export const roomSetOf = (
       const stDims = st === undefined ? undefined : ctx.dimsOf(st);
       if (st !== undefined && stDims !== undefined && stockOk(st)) {
         return grows(b, stDims)
-          ? { to: null, why: 'phương án cuối: mẫu cỡ thật va chạm tường/cửa — ẩn món' }
+          ? { to: null, why: 'phương án cuối: mẫu cỡ thật va chạm tường/cửa/đồ đạc — ẩn món' }
           : { to: null, why: `phương án cuối: hộp AI quá nhỏ cho vai — không mẫu cỡ thật nào vượt hộp dưới ${REAL_GROW_M} m` };
       }
     }

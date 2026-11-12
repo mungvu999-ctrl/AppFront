@@ -295,22 +295,25 @@ describe('Codex M17-2 #1, #2 — luật cũ / mẫu dựng sẵn ở phương á
   });
 });
 
-describe('Điều phối M17-2 — null chỉ vì va chạm / ngoài công năng → mẫu dựng sẵn CỠ THẬT (cờ forced)', () => {
-  it('luật cũ chồng vùng chặn, có mẫu dựng sẵn → mẫu dựng sẵn cỡ thật dù va chạm, cause fallback + forced', () => {
+describe('Điều phối M17-2 → F7 — cỡ thật cưỡng bức không được chồng đồ đạc quá phần hộp đã chồng', () => {
+  // F7 (đổi có chủ đích, R2/R3 mù: món chồng đồ khác bị chê, ẩn được khen): cũ — mẫu dựng sẵn cỡ thật DÙ va chạm đồ đạc.
+  it('luật cũ chồng vùng chặn, mẫu dựng sẵn cỡ thật cũng chồng đồ đạc → null (ẩn), sổ ghi đồ đạc', () => {
     const m = mem('s', 'sofa', [], { current: 'sofa-old', stock: 'sofa', box: NARROW, shownOf: WIDE });
     const d = roomSetOf('r', [m], new Map(), ctx, FLANK).get('s');
-    expect(d).toMatchObject({ to: 'sofa', uniform: 'real', cause: 'fallback', forced: 'va chạm' });
-    expect(d?.why).toMatch(/cỡ thật dù va chạm/);
+    expect(d).toMatchObject({ to: null, cause: 'fallback' });
+    expect(d?.why).toMatch(/đồ đạc/);
   });
 
-  it('không mẫu luật cũ → mẫu dựng sẵn cỡ thật (forced ghi "không mẫu luật cũ")', () => {
-    const m = mem('s', 'sofa', [], { current: null, stock: 'sofa', box: NARROW, shownOf: WIDE });
-    expect(roomSetOf('r', [m], new Map(), ctx, FLANK).get('s')).toMatchObject({ to: 'sofa', uniform: 'real', forced: expect.stringContaining('không mẫu luật cũ') });
+  it('không mẫu luật cũ, không vật cản → mẫu dựng sẵn cỡ thật (forced ghi "không mẫu luật cũ")', () => {
+    // Hiển thị co 1,0 m (ngoài công năng) → mẫu dựng sẵn không dựng được ở cỡ hiển thị, đi nhánh cưỡng bức.
+    const m = mem('s', 'sofa', [], { current: null, stock: 'sofa', box: NARROW, shownOf: () => [1.0, 0.85, 0.85] });
+    expect(roomSetOf('r', [m], new Map(), ctx, []).get('s')).toMatchObject({ to: 'sofa', uniform: 'real', forced: expect.stringContaining('không mẫu luật cũ') });
+    expect(roomSetOf('r', [m], new Map(), ctx, FLANK).get('s')?.to).toBeNull();
   });
 
-  it('mẫu luật cũ CHÍNH LÀ mẫu dựng sẵn, trượt → vẫn được dựng cỡ thật (đổi phép khớp, cùng mẫu) — Codex M17-3 #1', () => {
-    const m = mem('s', 'sofa', [], { current: 'sofa', stock: 'sofa', box: NARROW, shownOf: WIDE });
-    const d = roomSetOf('r', [m], new Map(), ctx, FLANK).get('s');
+  it('mẫu luật cũ CHÍNH LÀ mẫu dựng sẵn, trượt công năng, không vật cản → vẫn được dựng cỡ thật — Codex M17-3 #1', () => {
+    const m = mem('s', 'sofa', [], { current: 'sofa', stock: 'sofa', box: NARROW, shownOf: () => [1.0, 0.85, 0.85] });
+    const d = roomSetOf('r', [m], new Map(), ctx, []).get('s');
     expect(d?.to).toBe('sofa');
     expect(d?.uniform).toBe('real');
   });
@@ -329,7 +332,7 @@ describe('Điều phối M17-2 — null chỉ vì va chạm / ngoài công năng
   });
 });
 
-describe('F5-2 (điều phối, D5) — forced không chồng tường/cửa, vẫn được chồng đồ đạc', () => {
+describe('F5-2 (điều phối, D5) + F7 — forced không chồng tường/cửa, cũng không chồng đồ đạc', () => {
   // Phòng 2,5×3 m: bốn thân tường 0,2 m (vùng không `kind` = kết cấu); hộp ghế bành 0,48 m sát tường y = 0 (mép trong 0,1).
   const W = 2.5;
   const D = 3;
@@ -350,9 +353,9 @@ describe('F5-2 (điều phối, D5) — forced không chồng tường/cửa, v�
     expect(d?.why).toMatch(/tường\/cửa/);
   });
 
-  it('cùng chỗ nhưng vùng chặn là đồ đạc (có kind) → forced vẫn dựng cỡ thật dù va chạm', () => {
+  it('cùng chỗ nhưng vùng chặn là đồ đạc (có kind) → F7: cũng null (ẩn), không đè đồ khác', () => {
     const furniture = walls.map((z) => ({ ...z, kind: 'cabinet' }));
-    expect(roomSetOf('r', [arm], new Map(), ctx, furniture).get('a')).toMatchObject({ to: 'a-arm-grey', uniform: 'real', forced: expect.stringContaining('va chạm') });
+    expect(roomSetOf('r', [arm], new Map(), ctx, furniture).get('a')?.to).toBeNull();
   });
 
   it('hộp giữa phòng: cỡ thật không chạm tường → forced như cũ', () => {
