@@ -26,7 +26,8 @@ const MODIFIED = 'đã chỉnh sửa';
 export function creditPartsOf(credit: string): readonly CreditPart[] {
   return credit.split(' · ').map((part): CreditPart => {
     if (/^https?:\/\//.test(part)) {
-      const text = part.startsWith('https://creativecommons.org/') ? 'giấy phép' : 'nguồn';
+      // URL chung /licenses/ (không có /by/<bản>/) = giấy phép chưa rõ phiên bản (NO-438).
+      const text = part.startsWith('https://creativecommons.org/') ? (/^https:\/\/creativecommons\.org\/licenses\/?$/.test(part) ? 'giấy phép (chưa rõ phiên bản)' : 'giấy phép') : 'nguồn';
       return { kind: 'link', text, href: part };
     }
     return { kind: 'text', text: part.startsWith(MODIFIED) ? MODIFIED : part };

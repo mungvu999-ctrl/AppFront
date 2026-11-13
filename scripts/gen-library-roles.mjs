@@ -48,6 +48,14 @@ export const SIZE_LO = 0.7;
 export const SIZE_HI = 1.3;
 /** Hồ sơ cỡ vai ít mẫu hơn chừng này (tủ áo: 5) quá hẹp để làm chuẩn lạc cỡ — bỏ kiểm. */
 export const SIZE_MIN_N = 10;
+/**
+ * Hồ sơ RIÊNG của sofa góc/chữ L (hồ sơ `typeDetail === 'sectionalSofa'`, LSA vòng 18): không so với hồ sơ sofa thẳng (cạnh
+ * ngắn p90 1069 mm → 22/23 mẫu L "lạc vai"). Cạnh ngắn ≥ 1,3 m = chân L thật (mẫu 3 chỗ gắn nhầm nhãn sectional sâu 1,06 m bị
+ * loại), trần theo hộp góc AI lớn nhất đã gặp (2,38 m) và cạnh dài sofa góc phòng khách. Sofa góc KHÔNG vào hồ sơ cỡ vai
+ * `profiles.sofa` (sceneRepair kẹp hộp sofa thẳng theo hồ sơ ấy).
+ */
+export const SECTIONAL_MM = { short: [1300, 2500], long: [1800, 3300] };
+export const isSectional = (p) => p.typeDetail === 'sectionalSofa';
 const LICENCES = /^(CC0|CC-BY)/;
 
 export const familyOf = ([L, a, b]) => {
@@ -91,7 +99,12 @@ const main = () => {
     // Cỡ hợp vai (bài học bbcf6f29: 35 mẫu lạc vai theo cỡ): cạnh dài/ngắn trong [SIZE_LO × p10; SIZE_HI × p90] của vai.
     const prof = R.profiles?.[role];
     const [lo, hi] = [Math.min(p.sizeMm.w, p.sizeMm.d), Math.max(p.sizeMm.w, p.sizeMm.d)];
-    if (prof !== undefined && prof.n >= SIZE_MIN_N && (hi < SIZE_LO * prof.long[0] || hi > SIZE_HI * prof.long[2] || lo < SIZE_LO * prof.short[0] || lo > SIZE_HI * prof.short[2])) {
+    if (isSectional(p)) {
+      if (role !== 'sofa' || lo < SECTIONAL_MM.short[0] || lo > SECTIONAL_MM.short[1] || hi < SECTIONAL_MM.long[0] || hi > SECTIONAL_MM.long[1]) {
+        rejected.push(`${p.id}: cỡ ${lo}×${hi} mm lạc vai sofa góc`);
+        continue;
+      }
+    } else if (prof !== undefined && prof.n >= SIZE_MIN_N && (hi < SIZE_LO * prof.long[0] || hi > SIZE_HI * prof.long[2] || lo < SIZE_LO * prof.short[0] || lo > SIZE_HI * prof.short[2])) {
       rejected.push(`${p.id}: cỡ ${lo}×${hi} mm lạc vai ${role}`);
       continue;
     }
@@ -120,7 +133,7 @@ const main = () => {
   const FIT_ROLES = ['doubleBed', 'closet', 'dresser', 'bookshelf', 'diningChair', 'armchair', 'sofa', 'nightstand', 'coffeeTable', 'desk', 'diningTable', 'basin'];
   const profiles = {};
   for (const role of FIT_ROLES) {
-    const ps = (R.roles[role] ?? []).map((id) => P.get(id)).filter(Boolean);
+    const ps = (R.roles[role] ?? []).map((id) => P.get(id)).filter((p) => p !== undefined && !isSectional(p));
     if (ps.length < 5) continue;
     const L = ps.map((p) => Math.max(p.sizeMm.w, p.sizeMm.d));
     const S = ps.map((p) => Math.min(p.sizeMm.w, p.sizeMm.d));

@@ -56,3 +56,14 @@ export function usePublishNodeActions(actions: NodeActions): void {
     };
   });
 }
+
+/**
+ * Chạy một mục menu chuột phải (M18 LE). Cú chuột phải mở menu cũng là `controlstart` của camera-controls (nút phải = xoay)
+ * → `useViewer.cameraDragging = true`; nhả chuột không xoay thì `onControlEnd` bỏ qua khi camera chưa "nghỉ"
+ * (`custom-camera-controls.tsx` onControlEnd) nên cờ kẹt `true`, và `use-grid-events.ts` bỏ mọi `grid:click` khi cờ bật —
+ * "Di chuyển" bám chuột nhưng cú bấm đặt bị nuốt. Menu đã mở nghĩa là cú chuột phải KHÔNG phải kéo camera: hạ cờ trước khi chạy.
+ */
+export function runMenuAction(run: () => void, viewer: { setCameraDragging?: (dragging: boolean) => void }): void {
+  viewer.setCameraDragging?.(false);
+  run();
+}

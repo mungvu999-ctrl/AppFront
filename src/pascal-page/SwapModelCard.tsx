@@ -1,11 +1,14 @@
 /**
  * Thẻ "Đổi mẫu" của trang 3D: chọn đúng MỘT món đồ thì đổi được mô hình của nó sang mẫu khác
- * cùng nhóm (sofa ↔ ghế bành, giường đôi ↔ giường đơn…). Inspector của Pascal chỉ có
- * Dời/Nhân bản/Xoá nên thiếu lối này.
+ * cùng vai. Inspector của Pascal chỉ có Dời/Nhân bản/Xoá nên thiếu lối này.
  *
- * Đổi = `useScene.updateNode(id, { asset })` — cùng lối inspector dùng, nên lịch sử (Ctrl+Z) của
- * Pascal ghi lại và bộ tự lưu → cầu `onSave` → PUT chạy. `asset.id` đổi sang id catalog nên lượt
- * về (`toSpatial` `itemFieldsOf`) ghi `Furniture.model { id, src }`.
+ * Ứng viên (M18 LA): mẫu THƯ VIỆN HIỆN HÀNH cùng vai với món (`swapPoolOf` — đúng tập bộ chọn roomSet thấy, trừ QC loại và
+ * vân vỡ); vai = vai bộ chọn đã dùng trong lượt dựng (`roomSetRoleOf`), không có thì vai theo hộp (`roleOf`). `SWAP_GROUPS`
+ * (id catalog đóng gói) chỉ còn là đường lùi khi thư viện máy chủ lỗi/offline.
+ *
+ * Đổi = `useScene.updateNode(id, { asset, … })` — cùng lối inspector dùng, nên lịch sử (Ctrl+Z) của Pascal ghi lại và bộ tự
+ * lưu → cầu `onSave` → PUT chạy. Mẫu mới khớp vào HỘP ĐÃ LƯU bằng `userModelFitOf` (cùng phép `toPascal` dùng khi tải lại) và
+ * node mang cờ `USER_SEEN_FIELD` (lượt về ghi hậu tố `model.id`); hộp/cao/góc đã lưu không đổi — cỡ lúc đổi = cỡ sau tải lại.
  *
  * Không nhập `@pascal-app/*` (vitest không nạp được gói chưa dựng): `main.tsx` truyền store và
  * `CATALOG_ITEMS` thật vào, như `createProbe`.
@@ -14,7 +17,21 @@
 import { ChevronDown } from 'lucide-react';
 import { useRef } from 'react';
 
-import { namedFolderOf } from '@/lib/pascal/furnitureCatalog';
+import type { Furniture } from '@/domain/spatial/types';
+import {
+  CATALOG_MODELS,
+  canonicalModelId,
+  isServerModel,
+  modelSrcOf,
+  namedFolderOf,
+  serverModelIdOfUrl,
+  thumbnailOf,
+} from '@/lib/pascal/furnitureCatalog';
+import { bodyOfPascalId } from '@/lib/pascal/ids';
+import { userModelFitOf } from '@/lib/pascal/itemFit';
+import { ADOPTED_FIT_FIELD } from '@/lib/pascal/sceneDressing';
+import { roleOf, roomSetRoleOf, swapPoolOf } from '@/lib/pascal/sceneVariety';
+import { USER_SEEN_FIELD } from '@/lib/pascal/toSpatial';
 
 import { useMenuGroup } from './menuGroup';
 
@@ -35,27 +52,37 @@ export interface SwapAsset {
   readonly [key: string]: unknown;
 }
 
-/** Một ô catalog (`CATALOG_ITEMS` đã viết lại về `/items/<thư mục>/…` lúc dựng). */
+/** Một ô catalog (`CATALOG_ITEMS` đã viết lại về `/items/<thư mục>/…` lúc dựng, hoặc ô thư viện máy chủ). */
 export type SwapCatalogItem = Pick<SwapAsset, 'id' | 'name' | 'thumbnail' | 'src' | 'dimensions' | 'offset' | 'rotation' | 'scale'>;
 
-interface LooseNode {
+/** Node Pascal (kiểu lỏng): thẻ đọc hộp, siêu dữ liệu AppFront, tầng cha (chiều cao trần). */
+export interface SwapNode {
   readonly id: string;
   readonly type: string;
+  readonly parentId?: string | null;
   readonly asset?: SwapAsset;
+  readonly position?: Vec3;
+  readonly rotation?: Vec3;
+  readonly scale?: Vec3;
+  /** Tầng: chiều cao tầng (m). */
+  readonly height?: number;
+  readonly metadata?: {
+    readonly appfront?: { readonly fields?: Readonly<Record<string, unknown>>; readonly [key: string]: unknown };
+    readonly [key: string]: unknown;
+  };
 }
 
 export interface SwapModelStores {
   readonly useViewer: <T>(selector: (state: { selection: { selectedIds: readonly string[] } }) => T) => T;
   readonly useScene: {
     <T>(selector: (state: { nodes: object }) => T): T;
-    getState(): { updateNode(id: string, data: object): void };
+    getState(): { nodes: object; updateNode(id: string, data: object): void };
   };
 }
 
 /**
- * Nhóm đổi qua lại được, theo id catalog. Hạng mục của catalog quá thô ("furniture" có 50 mẫu,
- * gồm cả tạ và đàn piano), thẻ tag thì lúc có lúc không — nên chép tay. Cùng nhóm phải cùng kiểu
- * đặt (sàn / tường), không thì món đồ treo lơ lửng. Mẫu nào không có trong catalog cục bộ tự rơi.
+ * ĐƯỜNG LÙI (thư viện máy chủ lỗi/offline): nhóm đổi qua lại được theo id catalog đóng gói. Cùng nhóm phải cùng kiểu đặt
+ * (sàn / tường), không thì món đồ treo lơ lửng. Mẫu nào không có trong catalog cục bộ tự rơi.
  */
 export const SWAP_GROUPS: readonly (readonly string[])[] = [
   ['sofa', 'livingroom-chair', 'lounge-chair', 'sunbed'],
@@ -72,8 +99,10 @@ export const SWAP_GROUPS: readonly (readonly string[])[] = [
   ['shower-square', 'shower-angle'],
 ];
 
-/** Lệch tỉ lệ ngang/sâu tối đa khi kéo mẫu mới vào hộp cũ (cùng ý `MAX_STRETCH_RATIO` của toPascal). */
-const MAX_STRETCH = 1.8;
+/** Số mẫu tối đa trong danh sách (vai sofa có hơn 100 mẫu). */
+export const MAX_SWAP_OPTIONS = 24;
+/** Trần mặc định khi tầng cha không ghi chiều cao (mm): chỉ dùng để chặn cao món chưa có `heightMm`. */
+const DEFAULT_LEVEL_HEIGHT_MM = 2700;
 
 /**
  * Thư mục mẫu theo tên catalog. L3a-02: khi bật mẫu thật, giường/tủ áo/bồn cầu… dựng từ `/items/bed-sf/…`
@@ -83,45 +112,140 @@ const folderOf = (src: string): string | undefined => {
   const file = /^\/items\/([^/]+)\//.exec(src)?.[1];
   return file === undefined ? undefined : namedFolderOf(file);
 };
+/** Thư mục `CATALOG_MODELS` của ô — đúng thư mục lượt dựng lại tìm ra từ `model.src` đã lưu. */
+const fitFolderOf = (item: SwapCatalogItem): string | undefined => (isServerModel(item.id) ? item.id : folderOf(item.src));
+const fieldsOf = (node: SwapNode): Readonly<Record<string, unknown>> => node.metadata?.appfront?.fields ?? {};
+const numberOf = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+const dimsOf = (id: string): Vec3 => (CATALOG_MODELS[id] as { readonly dimensions: Vec3 }).dimensions;
 
-/** Mẫu cùng nhóm với món đồ (kể cả mẫu đang dùng), theo thứ tự nhóm; [] nếu không có mẫu nào khác. */
-export const swapCandidates = (asset: SwapAsset, catalog: readonly SwapCatalogItem[]): SwapCatalogItem[] => {
+/** Mẫu đang dùng của món: id máy chủ theo URL ký (chữ ký đổi mỗi lượt), không thì id chuẩn của `asset.id`. */
+const currentModelIdOf = (asset: SwapAsset): string => serverModelIdOfUrl(asset.src) ?? canonicalModelId(asset.id);
+
+/** Vai của món: vai bộ chọn đã dùng trong lượt dựng, không có thì vai theo loại/hộp (cùng cặp toPascal dùng cho itemFitOf). */
+const roleOfNode = (node: SwapNode): string | undefined => {
+  const set = roomSetRoleOf(bodyOfPascalId(node.id));
+  if (set !== undefined) return set;
+  const f = fieldsOf(node);
+  const heightMm = numberOf(f['heightMm']);
+  if (typeof f['kind'] !== 'string' || typeof f['boundingBox'] !== 'object' || f['boundingBox'] === null) return undefined;
+  return roleOf({
+    kind: f['kind'],
+    boundingBox: f['boundingBox'],
+    rotationDeg: numberOf(f['rotationDeg']) ?? 0,
+    ...(typeof f['variant'] === 'string' ? { variant: f['variant'] } : {}),
+    ...(heightMm === undefined ? {} : { heightMm }),
+  } as Pick<Furniture, 'kind' | 'variant' | 'boundingBox' | 'rotationDeg' | 'heightMm'>);
+};
+
+/** Ảnh xem trước của mẫu máy chủ; '' = mẫu không có ảnh (ô giữ chỗ, không `<img src="">`). */
+const previewOf = (id: string): string => {
+  const url = thumbnailOf(id);
+  return url.startsWith('/items/') ? '' : url;
+};
+
+/** Ứng viên từ thư viện hiện hành: mẫu đang dùng (nếu thuộc vai) đứng đầu, còn lại theo chi phí cỡ so với hộp, ≤ 24. */
+const serverCandidates = (node: SwapNode, asset: SwapAsset, catalog: readonly SwapCatalogItem[]): SwapCatalogItem[] => {
+  const role = roleOfNode(node);
+  if (role === undefined) return [];
+  const variant = fieldsOf(node)['variant'];
+  const pool = swapPoolOf(role, typeof variant === 'string' ? variant : undefined).filter((id) => CATALOG_MODELS[id] !== undefined);
+  const current = currentModelIdOf(asset);
+  const [w = 1, , d = 1] = asset.dimensions ?? [];
+  const costOf = (id: string): number => Math.abs(Math.log(w / dimsOf(id)[0])) + Math.abs(Math.log(d / dimsOf(id)[2]));
+  const others = pool.filter((id) => id !== current).sort((a, b) => costOf(a) - costOf(b) || a.localeCompare(b));
+  if (others.length === 0) return [];
+  const names = new Map(catalog.map((item) => [item.id, item.name] as const));
+  return [...(pool.includes(current) ? [current] : []), ...others].slice(0, MAX_SWAP_OPTIONS).map((id) => ({
+    id,
+    name: names.get(id) ?? id,
+    thumbnail: previewOf(id),
+    src: modelSrcOf(id),
+    dimensions: dimsOf(id),
+  }));
+};
+
+/** Đường lùi `SWAP_GROUPS`: mẫu cùng nhóm với món (kể cả mẫu đang dùng), theo thứ tự nhóm. */
+const groupCandidates = (asset: SwapAsset, catalog: readonly SwapCatalogItem[]): SwapCatalogItem[] => {
   const folder = folderOf(asset.src);
   const byId = new Map(catalog.map((item) => [item.id, item]));
   const group = SWAP_GROUPS.find((ids) => ids.some((id) => id === asset.id || (folder !== undefined && folderOf(byId.get(id)?.src ?? '') === folder)));
-  const found = (group ?? []).flatMap((id) => byId.get(id) ?? []);
+  return (group ?? []).flatMap((id) => byId.get(id) ?? []);
+};
+
+/** Mẫu đổi được của món; [] nếu không có mẫu nào khác (thẻ ẩn). Mẫu không khớp được (ngoài catalog) bị bỏ. */
+export const swapCandidates = (node: SwapNode, catalog: readonly SwapCatalogItem[]): SwapCatalogItem[] => {
+  const asset = node.asset;
+  if (asset === undefined) return [];
+  const server = serverCandidates(node, asset, catalog);
+  if (server.length > 0) return server;
+  const found = groupCandidates(asset, catalog).filter((item) => {
+    const folder = fitFolderOf(item);
+    return folder !== undefined && CATALOG_MODELS[folder] !== undefined;
+  });
   return found.length < 2 ? [] : found;
 };
 
-export const isCurrentModel = (asset: SwapAsset, item: SwapCatalogItem): boolean => folderOf(asset.src) === folderOf(item.src);
+/** Ô là mẫu đang dùng: mẫu máy chủ so theo id (URL ký khác nhau mỗi lượt), mẫu đóng gói so theo thư mục. */
+export const isCurrentModel = (asset: SwapAsset, item: SwapCatalogItem): boolean => {
+  if (serverModelIdOfUrl(asset.src) !== undefined || isServerModel(item.id)) return currentModelIdOf(asset) === item.id;
+  const folder = folderOf(asset.src);
+  return folder !== undefined && folder === folderOf(item.src);
+};
+
+/** Hộp ĐÃ LƯU của món (mm, `metadata.appfront.fields.boundingBox`); node không có thì hộp `asset.dimensions` quanh 0. */
+const savedBoxOf = (node: SwapNode, asset: SwapAsset): { min: { x: number; y: number }; max: { x: number; y: number } } => {
+  const box = fieldsOf(node)['boundingBox'] as { min?: { x?: unknown; y?: unknown }; max?: { x?: unknown; y?: unknown } } | undefined;
+  const [minX, minY, maxX, maxY] = [box?.min?.x, box?.min?.y, box?.max?.x, box?.max?.y].map(numberOf);
+  if (minX !== undefined && minY !== undefined && maxX !== undefined && maxY !== undefined) return { min: { x: minX, y: minY }, max: { x: maxX, y: maxY } };
+  const [w = 1, , d = 1] = asset.dimensions ?? [];
+  return { min: { x: -w * 500, y: -d * 500 }, max: { x: w * 500, y: d * 500 } };
+};
 
 /**
- * `asset` mới khi đổi sang `item`: giữ hộp ngang/sâu hiện tại (dimensions — `node.scale` của người
- * dùng nhân thêm sau, không đụng), cao theo catalog. Khớp bằng `asset.scale` như toPascal; lệch tỉ lệ
- * hai trục bị chặn ở `MAX_STRETCH` để ghế bành không bị kéo dài thành sofa — khi đó mẫu nhỏ hơn hộp.
+ * Bản cập nhật node khi đổi sang `item` (null = mẫu không khớp được). LF2: đổi mẫu KHÔNG đổi hộp/`heightMm`/góc/vị trí đã
+ * lưu — mẫu mới khớp vào HỘP ĐÃ LƯU bằng `userModelFitOf`, đúng phép `toPascal` dùng khi tải lại món có `model` mẫu người
+ * dùng, nên cỡ lúc đổi = cỡ sau tải lại mà không cần lưu cỡ đang thấy; bộ chọn (anh em) thấy đúng đầu vào như trước khi đổi.
+ * `asset.dimensions` = cỡ hiển thị. `node.scale` (co giãn chưa lưu) giữ nguyên — lượt về khi đó lưu cỡ đang thấy (khớp đúng).
  */
-export const fittedAsset = (asset: SwapAsset, item: SwapCatalogItem): SwapAsset => {
-  const [cw, ch, cd] = item.dimensions ?? [1, 1, 1];
-  const [w, , d] = asset.dimensions ?? [cw, ch, cd];
-  const lo = Math.min(w / cw, d / cd);
-  const sx = Math.min(w / cw, lo * MAX_STRETCH);
-  const sz = Math.min(d / cd, lo * MAX_STRETCH);
-  const [kx, ky, kz] = item.scale ?? [1, 1, 1];
-  const [ox, oy, oz] = item.offset ?? [0, 0, 0];
+export const swapUpdateOf = (node: SwapNode, item: SwapCatalogItem, levelHeightMm = DEFAULT_LEVEL_HEIGHT_MM): object | null => {
+  const asset = node.asset;
+  const folder = fitFolderOf(item);
+  if (asset === undefined || folder === undefined) return null;
+  const fields = fieldsOf(node);
+  const fit = userModelFitOf(folder, savedBoxOf(node, asset), numberOf(fields['heightMm']), levelHeightMm);
+  if (fit === null) return null;
   // `surface` cũ thuộc mẫu cũ (độ cao mặt đặt đồ) — bỏ đi chứ không mang sang mẫu khác.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- tách `surface` ra để bỏ.
   const { surface: _surface, ...rest } = asset;
+  const appfront = node.metadata?.appfront;
+  // Khớp đúng hộp (cặp nhận / mẫu người dùng đã co giãn) thuộc mẫu cũ: mẫu mới khớp thường vào hộp đã lưu.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- tách `ADOPTED_FIT_FIELD` ra để bỏ.
+  const { [ADOPTED_FIT_FIELD]: _exact, ...kept } = fields;
   return {
-    ...rest,
-    id: item.id,
-    name: item.name,
-    thumbnail: item.thumbnail,
-    src: item.src,
-    dimensions: [cw * sx, ch, cd * sz],
-    offset: [ox * sx, oy, oz * sz],
-    rotation: item.rotation ?? [0, 0, 0],
-    scale: [sx * kx, ky, sz * kz],
+    asset: {
+      ...rest,
+      id: item.id,
+      name: item.name,
+      thumbnail: item.thumbnail,
+      src: item.src,
+      dimensions: fit.shownM,
+      offset: fit.offset,
+      rotation: fit.rotation,
+      scale: fit.scale,
+    },
+    // Node AppFront: đánh dấu "mẫu người dùng" để lượt về ghi hậu tố `model.id`. Node không có siêu dữ liệu AppFront giữ nguyên.
+    ...(appfront === undefined ? {} : { metadata: { ...node.metadata, appfront: { ...appfront, fields: { ...kept, [USER_SEEN_FIELD]: true } } } }),
   };
+};
+
+/** Chiều cao tầng (mm) của món: tầng cha gần nhất có `height`. */
+const levelHeightMmOf = (nodes: Readonly<Record<string, SwapNode | undefined>>, node: SwapNode): number => {
+  let at: SwapNode | undefined = node;
+  for (let hops = 0; at !== undefined && hops < 8; hops += 1) {
+    if (at.type === 'level') return at.height === undefined ? DEFAULT_LEVEL_HEIGHT_MM : at.height * 1000;
+    at = at.parentId == null ? undefined : nodes[at.parentId];
+  }
+  return DEFAULT_LEVEL_HEIGHT_MM;
 };
 
 /** Ảnh thu nhỏ catalog `/items/…` được phục vụ ở `/pascal/items/…` (`NEXT_PUBLIC_ASSETS_CDN_URL`). */
@@ -137,15 +261,17 @@ export function SwapModelCard({ stores, catalog, readOnly }: SwapModelCardProps)
   useMenuGroup();
   const ids = stores.useViewer((s) => s.selection.selectedIds);
   const node = stores.useScene((s) =>
-    ids.length === 1 ? (s.nodes as Record<string, LooseNode | undefined>)[ids[0] as string] : undefined,
+    ids.length === 1 ? (s.nodes as Record<string, SwapNode | undefined>)[ids[0] as string] : undefined,
   );
   const details = useRef<HTMLDetailsElement>(null);
   const asset = node?.type === 'item' ? node.asset : undefined;
-  const options = asset === undefined ? [] : swapCandidates(asset, catalog);
+  const options = node === undefined || asset === undefined ? [] : swapCandidates(node, catalog);
   if (readOnly || node === undefined || asset === undefined || options.length === 0) return null;
 
   const choose = (item: SwapCatalogItem) => {
-    stores.useScene.getState().updateNode(node.id, { asset: fittedAsset(asset, item) });
+    const state = stores.useScene.getState();
+    const update = swapUpdateOf(node, item, levelHeightMmOf(state.nodes as Record<string, SwapNode | undefined>, node));
+    if (update !== null) state.updateNode(node.id, update);
     if (details.current) details.current.open = false;
   };
 
@@ -153,6 +279,7 @@ export function SwapModelCard({ stores, catalog, readOnly }: SwapModelCardProps)
     <details className="relative" data-appfront-menu="" ref={details}>
       <summary
         aria-label="Đổi mẫu — mở danh sách mẫu cùng loại"
+        data-testid="swap-model"
         title={`Đổi mẫu cho ${asset.name}`}
         className="flex h-8 shrink-0 cursor-pointer list-none items-center gap-1.5 whitespace-nowrap rounded-xl border border-[var(--pa-border)] bg-[var(--pa-surface)] px-2.5 font-medium text-[13px] text-[var(--pa-text)] shadow-[var(--pa-shadow-float)] transition-colors duration-120 hover:bg-[var(--pa-sunken)] motion-reduce:transition-none outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--pa-accent)] [&::-webkit-details-marker]:hidden"
       >
@@ -170,11 +297,17 @@ export function SwapModelCard({ stores, catalog, readOnly }: SwapModelCardProps)
               <button
                 aria-pressed={current}
                 className="flex h-11 w-full items-center gap-2 whitespace-nowrap rounded-lg px-2 text-left text-[var(--pa-text-2)] transition-colors duration-120 hover:bg-[var(--pa-sunken)] hover:text-[var(--pa-text)] disabled:cursor-default aria-pressed:bg-[var(--pa-selected)] aria-pressed:font-medium aria-pressed:text-[var(--pa-accent)] motion-reduce:transition-none outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--pa-accent)]"
+                data-model-id={item.id}
+                data-testid="swap-model-option"
                 disabled={current}
                 onClick={() => choose(item)}
                 type="button"
               >
-                <img alt="" className="h-9 w-9 shrink-0 rounded-md bg-[var(--pa-sunken)] object-contain" loading="lazy" src={servedUrl(item.thumbnail)} />
+                {item.thumbnail === '' ? (
+                  <span aria-hidden="true" className="h-9 w-9 shrink-0 rounded-md bg-[var(--pa-sunken)]" data-testid="swap-model-placeholder" />
+                ) : (
+                  <img alt="" className="h-9 w-9 shrink-0 rounded-md bg-[var(--pa-sunken)] object-contain" loading="lazy" src={servedUrl(item.thumbnail)} />
+                )}
                 {item.name}
               </button>
             </li>

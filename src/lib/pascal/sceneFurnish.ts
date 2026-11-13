@@ -25,6 +25,10 @@ import { degrees, millimetres } from '@/domain/units/types';
 
 import { modelSrcOf } from './furnitureCatalog';
 import {
+  BED_SIDE_MM,
+  CHAIR_CLEAR_MM,
+  DOOR_APPROACH_MM,
+  OPENING_MARGIN_MM,
   doorSwingRects,
   furnitureFacingDeg,
   rectInsidePolygon,
@@ -44,10 +48,6 @@ const INSET_MM = 100;
 const GAP_MM = 50;
 /** Đặt cách mép lùi/khe thêm 1 mm để tâm làm tròn về mm nguyên vẫn hợp lệ. */
 const SLACK_MM = 1;
-/** Khoảng chừa hai bên mỗi khoảng cửa khi tính đoạn tường trống. */
-const OPENING_MARGIN_MM = 100;
-/** Chỗ trống mỗi bên giường (đủ cho tủ đầu giường). */
-const BED_SIDE_MM = 450;
 /** Bàn nước đặt trước sofa một lối đi. */
 const COFFEE_TABLE_REACH_MM = 450;
 /** Khoảng giữa bàn nước và ghế bành. */
@@ -92,9 +92,8 @@ const BASE_RUN_MAX_MM = 3600;
 const BASE_RUN_MIN_MM = 1200;
 /** Dãy từ mức này có cả chậu lẫn bếp nấu; ngắn hơn chỉ chậu. */
 const RUN_HOB_MIN_MM = 1600;
-/** Lối đi giữa hai cửa (rộng) và chỗ kéo ghế quanh bàn ăn (mỗi phía). */
+/** Lối đi giữa hai cửa (rộng); chỗ kéo ghế quanh bàn ăn là CHAIR_CLEAR_MM (placement.ts). */
 const DOOR_PATH_MM = 900;
-const CHAIR_CLEAR_MM = 600;
 /** Phòng tắm từ mức này có thêm khu tắm vòi sen (góc tắm nhỏ 800 khi 900 không vừa). */
 const SHOWER_MIN_M2 = 2;
 /**
@@ -107,8 +106,6 @@ const OPEN_LIVING_MIN_SHORT_MM = 2400;
 const DINING_BACK_CLEAR_MM = 600;
 /** Vùng xem TV trước sofa khi chưa có TV (sâu, mm). */
 const SOFA_VIEW_MM = 3000;
-/** Vùng đứng trước mỗi cửa đi phía trong phòng (sâu, mm): không món nào được chiếm (P4). */
-const DOOR_APPROACH_MM = 900;
 /** Bếp mở trong phòng khách: dãy từ mức này (mm, kể cả tủ lạnh) được ưu tiên đoạn xa cửa. */
 const OPEN_KITCHEN_RUN_MM = 2400;
 /** Chậu dọc lan can: khe giữa hai chậu, tối đa số chậu mỗi phòng. */

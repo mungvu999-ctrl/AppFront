@@ -49,6 +49,7 @@ import {
   type Rect,
 } from './placement';
 import LIBRARY_ROLES_JSON from './libraryRoles.json' with { type: 'json' };
+import { isCornerSofaBox } from './roomSet';
 import { SANITARY_LABELS, sanitaryPlacementIssues, sanitaryRoleOf } from './sanitaryRules';
 import { classOf, SCENE_RULES_OFF, type SceneRepair, type SceneRepairAction } from './sceneLayer';
 import { roleOf } from './sceneVariety';
@@ -491,8 +492,11 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[], off: Readonl
       // (2) cỡ: kẹp cạnh dài/ngắn về dải vai. Cạnh dài giữ trục của hộp; hộp gần vuông (lệch < 1,4) thì cạnh dài theo
       // trục dài của vai (tủ 0,48 × 0,50 kẹp thành rộng 0,67 dọc tường, không thành sâu 0,67).
       const freeLong = FREE_LONG_ROLES.has(role);
+      // LSA vòng 18: hộp sofa góc (chữ L, `isCornerSofaBox`) không kẹp sâu về hồ sơ sofa THẲNG (p90 × 1,25 = 1,34 m) — bộ chọn
+      // đặt mẫu dáng L vào đúng hộp này.
+      const shortHi = role === 'sofa' && isCornerSofaBox(w / 1000, d / 1000) ? Infinity : p.short[2] * BAND_TOL;
       const long2 = Math.round(clampTo(long, p.long[0] / BAND_TOL, freeLong ? Infinity : p.long[2] * BAND_TOL));
-      const short2 = Math.round(clampTo(short, p.short[0] / BAND_TOL, p.short[2] * BAND_TOL));
+      const short2 = Math.round(clampTo(short, p.short[0] / BAND_TOL, shortHi));
       const sized = Math.abs(long2 - long) >= 1 || Math.abs(short2 - short) >= 1;
       if (!turned && !sized) continue;
       const squarish = Math.max(w, d) / Math.min(w, d) < AXIS_BOX_RATIO && Math.abs(Math.log(p.aspect)) > Math.log(AXIS_ROLE_RATIO);

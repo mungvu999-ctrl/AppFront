@@ -92,6 +92,31 @@ describe('doorSwingRects', () => {
   });
 });
 
+describe('doorSwingRects — chỉ phía cánh mở (vòng 18)', () => {
+  // Tường y = 0: phía +y (pháp tuyến trái) là phòng ngủ 3×3 m, phía −y là phòng khách 4×4 m lớn hơn.
+  const wall = wallOf('W-A', { x: 0, y: 0 }, { x: 4000, y: 0 });
+  const roomOf = (id: string, usage: Room['usage'], y0: number, y1: number, x1: number): Room =>
+    ({ ...meta, id, levelId: LEVEL, name: id, usage, areaM2: (x1 * Math.abs(y1 - y0)) / 1e6, wallIds: [], outline: [{ x: 0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: 0, y: y1 }] }) as Room;
+  const bed = roomOf('R-BED', 'bedroom', 0, 3000, 3000);
+  const living = roomOf('R-LIV', 'livingRoom', -4000, 0, 4000);
+  const withRooms = (rooms: Room[], openings: Opening[]): SpatialGraph => ({ ...graphOf([wall], openings), rooms });
+
+  it('cửa giữa hai phòng: một vùng, ở phòng nhỏ hơn (phía cánh mở); phòng kia không bị chặn', () => {
+    const rects = doorSwingRects(withRooms([bed, living], [doorOf('O-D', 'W-A', 1000)]), LEVEL);
+    expect(rects.map((r) => [r.cx, Math.round(r.cy), r.w, r.d])).toEqual([[1450, 550, 900, 900]]);
+  });
+
+  it('"Đổi hướng mở" (reversed) đưa vùng sang phía kia', () => {
+    const rects = doorSwingRects(withRooms([bed, living], [{ ...doorOf('O-D', 'W-A', 1000), reversed: true }]), LEVEL);
+    expect(rects.map((r) => Math.round(r.cy))).toEqual([-550]);
+  });
+
+  it('cửa tường bao (một bên ngoài nhà): vùng ở phía phòng; cửa trượt vẫn hai bên', () => {
+    expect(doorSwingRects(withRooms([living], [doorOf('O-D', 'W-A', 1000)]), LEVEL).map((r) => Math.round(r.cy))).toEqual([-550]);
+    expect(doorSwingRects(withRooms([bed, living], [doorOf('O-D', 'W-A', 1000, 'sliding')]), LEVEL).map((r) => Math.round(r.cy))).toEqual([400, -400]);
+  });
+});
+
 describe('roomEdges', () => {
   const outline: Point[] = [
     { x: 0, y: 0 },

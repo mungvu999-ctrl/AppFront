@@ -23,6 +23,16 @@ describe('creditPartsOf (NO-437)', () => {
     ]);
   });
 
+  it('labels the generic license URL (no version) as "giấy phép (chưa rõ phiên bản)"', () => {
+    const generic = 'https://creativecommons.org/licenses/';
+    expect(creditPartsOf(`Tác giả B · CC-BY · ${generic} · ${SOURCE}`)).toEqual([
+      { kind: 'text', text: 'Tác giả B' },
+      { kind: 'text', text: 'CC-BY' },
+      { kind: 'link', text: 'giấy phép (chưa rõ phiên bản)', href: generic },
+      { kind: 'link', text: 'nguồn', href: SOURCE },
+    ]);
+  });
+
   it('keeps the old two-part credit as plain text and never links non-http text', () => {
     expect(creditPartsOf('Poly Haven · CC0')).toEqual([
       { kind: 'text', text: 'Poly Haven' },
