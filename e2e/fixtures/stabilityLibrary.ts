@@ -27,7 +27,7 @@ export const CONCEPT_FOLDER = 'closet-gen';
  * méo trong hộp tủ áo 1,7 × 0,6 m của F1 → bị loại đúng luật. Concept HỢP LỆ = id mục thật có dữ liệu chất lượng
  * (`wardrobe-pro`) với cỡ thật của nó; GLB vẫn là `closet-gen` đóng gói.
  */
-const CONCEPT_CLOSET = { id: 'wardrobe-pro', widthMm: 1166, heightMm: 2098, depthMm: 511 } as const;
+export const CONCEPT_CLOSET = { id: 'wardrobe-pro', widthMm: 1166, heightMm: 2098, depthMm: 511 } as const;
 
 export const richLibraryBody = (requestUrl: string): unknown[] =>
   MODELS.map(([folder, group], index) => ({
