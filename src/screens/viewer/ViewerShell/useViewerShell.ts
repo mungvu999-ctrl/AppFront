@@ -86,6 +86,7 @@ import {
 } from '@/lib/three/camera/modes';
 import { DEFAULT_CAMERA_RIG, restingHeading } from '@/lib/three/present/director';
 import { toSceneLength } from '@/lib/three/build/scene';
+import { measureTextOfState, scaleStateOf, totalMeasureTextOf, type ScaleState } from '@/lib/viewmodel/provisionalScale';
 import { useStore } from '@/store';
 import type { ProjectRole } from '@/types/project';
 
@@ -480,6 +481,17 @@ export function useViewerShell(options: UseViewerShellOptions): ViewerShellProps
   const [hoverPointPx, setHoverPointPx] = useState<ViewerPointPx | null>(null);
   const [isOrthographic, setIsOrthographic] = useState(false);
 
+  const floorMeta = useStore((state) => state.floorMeta);
+  /* R10 làn S: diện tích, độ dày và tổng ở đây đều suy từ tỷ lệ — mang trạng thái từng tầng theo. */
+  const scaleStateOfLevel = useCallback(
+    (levelId: string | undefined): ScaleState | undefined => {
+      if (levelId === undefined) return undefined;
+      const meta = floorMeta[levelId];
+      if (meta === undefined || (meta.scaleStatus === undefined && meta.scaleState === undefined)) return undefined;
+      return scaleStateOf(meta.scaleStatus, meta.scaleSource, meta.scaleState);
+    },
+    [floorMeta],
+  );
   const selectedIds = useStore((state) => state.selectedIds);
   const hoveredId = useStore((state) => state.hoveredId);
   const setSelection = useStore((state) => state.setSelection);
@@ -1002,12 +1014,16 @@ export function useViewerShell(options: UseViewerShellOptions): ViewerShellProps
     }
 
     const rows: ViewerPropertyRow[] = [{ id: 'id', label: 'Mã đối tượng', value: entityId }];
+    const entityState = scaleStateOfLevel(
+      'levelId' in entity ? String((entity as { levelId: unknown }).levelId) : undefined,
+    );
+    const marked = (text: string): string => (entityState === undefined ? text : measureTextOfState(text, entityState));
 
     if ('areaM2' in entity) {
       rows.push({
         id: 'area',
         label: 'Diện tích',
-        value: formatArea((entity as { areaM2: number }).areaM2),
+        value: marked(formatArea((entity as { areaM2: number }).areaM2)),
       });
     }
 
@@ -1015,7 +1031,7 @@ export function useViewerShell(options: UseViewerShellOptions): ViewerShellProps
       rows.push({
         id: 'thickness',
         label: 'Độ dày',
-        value: formatLength(millimetres((entity as { thicknessMm: number }).thicknessMm)),
+        value: marked(formatLength(millimetres((entity as { thicknessMm: number }).thicknessMm))),
       });
     }
 
@@ -1030,13 +1046,20 @@ export function useViewerShell(options: UseViewerShellOptions): ViewerShellProps
     // Tiêu đề gọi đối tượng bằng mã người đọc — cùng mã dải "Đang sửa"; hàng "mã đối tượng"
     // ở trên giữ mã máy (B-V8-05).
     return { entityId, kindLabel, title: `${kindTitle} ${displayLabelIn(spatial, entityId)}`, rows };
-  }, [selectedIds, spatial]);
+  }, [scaleStateOfLevel, selectedIds, spatial]);
 
   const status = useMemo(() => {
+    /* Tổng cộng cả nhà: tầng nào tỷ lệ chưa tin được thì gọi tên tầng đó, không để số tổng trần. */
     const parts = [
       `${formatNumber(data.storeys.length)} tầng`,
       `${formatNumber(data.roomCount)} phòng`,
-      formatArea(data.totalAreaM2),
+      totalMeasureTextOf(
+        formatArea(data.totalAreaM2),
+        data.storeys.flatMap((storey) => {
+          const state = scaleStateOfLevel(String(storey.id));
+          return state === undefined ? [] : [{ name: storey.name, state }];
+        }),
+      ),
     ];
 
     if (perf !== null) {
@@ -1047,7 +1070,7 @@ export function useViewerShell(options: UseViewerShellOptions): ViewerShellProps
       summary: parts.join(' · '),
       liveMessage: sceneTransition.isRunning || state === 'loading' ? BUILDING_MESSAGE : READY_MESSAGE,
     };
-  }, [data, perf, sceneTransition.isRunning, state]);
+  }, [data, perf, scaleStateOfLevel, sceneTransition.isRunning, state]);
 
   /**
    * Mức thu phóng, ĐÃ ĐỊNH DẠNG ở đây chứ không ở view (A15).

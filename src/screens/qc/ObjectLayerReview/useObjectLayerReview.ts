@@ -84,6 +84,7 @@ import {
 } from '@/lib/selection/selectionOps';
 import { createSelectionChannel } from '@/lib/selection/syncChannel';
 import type { ColorTokenName } from '@/lib/coloring/scales';
+import { scaleStateOf } from '@/lib/viewmodel/provisionalScale';
 import { ROUTES } from '@/routes/paths';
 import { useStore } from '@/store';
 import { currentSelection } from '@/store/commit';
@@ -461,6 +462,8 @@ export function useObjectLayerReview(
   const scaleLock = useScaleLock(projectId, floorId);
   const isScaleLocked = canEditRole && scaleLock.locked;
   const canEdit = canEditRole && !isScaleLocked;
+  /* R10 làn S: mọi mm của ô mở suy từ tỷ lệ, nên dòng và thanh tra phải mang trạng thái tỷ lệ của tầng. */
+  const objectScaleState = scaleStateOf(floorLayer.scaleStatus, floorLayer.scaleSource, floorLayer.scaleState);
   const provisionalScaleNotice = useProvisionalScaleNotice(
     floorLayer.scaleStatus,
     projectId,
@@ -1901,14 +1904,14 @@ export function useObjectLayerReview(
   const rows = useMemo(
     () =>
       visibleObjects
-        .map((object) => toObjectRow(object, wallCodes, confidenceThreshold))
+        .map((object) => toObjectRow(object, wallCodes, confidenceThreshold, objectScaleState))
         .sort(
           (a, b) =>
             /* Hàng đợi xếp theo lý do máy nghi (chưa chắc loại → chưa gắn tường → còn lại). */
             objectReasonRank(a) - objectReasonRank(b) ||
             byReviewQueue({ reviewed: a.isReviewed, confidence: a.confidence }, { reviewed: b.isReviewed, confidence: b.confidence }),
         ),
-    [confidenceThreshold, visibleObjects, wallCodes],
+    [confidenceThreshold, objectScaleState, visibleObjects, wallCodes],
   );
 
   /* Nút "Duyệt tiếp" của cổng: đọc MỌI đối tượng, không chỉ dòng đang lọc — bộ lọc không làm nút chết. */
@@ -1944,8 +1947,8 @@ export function useObjectLayerReview(
 
     const wall = isOrphanObject(selectedObject) ? null : wallOfObject(selectedObject.hostWallId);
 
-    return toObjectInspector(selectedObject, wall, wallCodes, confidenceThreshold);
-  }, [confidenceThreshold, selectedObject, wallCodes, wallOfObject]);
+    return toObjectInspector(selectedObject, wall, wallCodes, confidenceThreshold, objectScaleState);
+  }, [confidenceThreshold, objectScaleState, selectedObject, wallCodes, wallOfObject]);
 
   /*
    * Impeccable A3: thứ tự dòng như danh sách đang vẽ — hàng đợi duyệt (chưa duyệt, tin cậy thấp trước).

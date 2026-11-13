@@ -78,6 +78,7 @@ import type { PointMm } from '@/domain/units/compare';
 import { snapToTargets, type AnchorKind, type SnapResult, type SnapTarget } from '@/domain/units/snap';
 import { millimetres } from '@/domain/units/types';
 import { formatArea, formatLength } from '@/lib/format/measure';
+import { measureTextOfState, type ScaleState } from '@/lib/viewmodel/provisionalScale';
 import { formatNumber, parseNumber } from '@/lib/format/number';
 import { readWireError } from '@/lib/errors/wireError';
 import type { HttpClient } from '@/lib/http';
@@ -406,10 +407,15 @@ function displayValueOf(label: string): number {
 export function formatMeasurementRow(
   core: MeasurementRowCore,
   unit: MeasureUnit,
+  scaleState?: ScaleState,
 ): PinnedMeasurement {
+  /* R10 làn S: số đo 3D suy từ tỷ lệ. Một thước có thể bắc qua nhiều tầng nên hook truyền xuống
+     trạng thái XẤU NHẤT của mô hình: không nói được tầng nào thì không được im lặng. */
+  const marked = (text: string): string =>
+    scaleState === undefined ? text : measureTextOfState(text, scaleState);
   if (core.mode === 'floorArea') {
     const area = measurePolygonArea(core.points);
-    const valueLabel = formatArea(area?.areaM2 ?? null);
+    const valueLabel = marked(formatArea(area?.areaM2 ?? null));
 
     return {
       ...core,
@@ -422,7 +428,7 @@ export function formatMeasurementRow(
     };
   }
 
-  const valueLabel = formatLength(core.rawValueMm, { unit });
+  const valueLabel = marked(formatLength(core.rawValueMm, { unit }));
 
   return {
     ...core,

@@ -266,11 +266,46 @@ describe('buildRoomAreasPage', () => {
     expect(page.rows.every((row) => row.statusCode === 'verified')).toBe(true);
   });
 
-  it('UX-23: tỷ lệ chưa xác nhận thì mọi diện tích ghi "(tạm)"', () => {
-    const page = pageOf(buildPdfDocument({ ...baseInput(), provisionalArea: true }), 'roomAreas');
+  it('UX-23: mọi tầng chưa xác nhận tỷ lệ thì mọi diện tích ghi "(tạm)"', () => {
+    const everyLevelId = SAMPLE_BUILDING.levels.map((level) => String(level.id));
+    const page = pageOf(buildPdfDocument({ ...baseInput(), provisionalLevelIds: everyLevelId }), 'roomAreas');
 
     expect(page.rows[0]?.cells[3]).toBe('17,00 m² (tạm)');
-    expect(page.totalArea.text).toBe('248,60 m² (tạm)');
+    expect(page.totalArea.text).toBe('≈ 248,60 m² (tạm)');
+  });
+
+  it('R10: chỉ tầng chưa tin được mới bị đánh dấu, và tổng gọi tên tầng đó', () => {
+    const [first, second] = SAMPLE_BUILDING.levels;
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    if (first === undefined || second === undefined) return;
+
+    const page = pageOf(buildPdfDocument({ ...baseInput(), provisionalLevelIds: [String(second.id)] }), 'roomAreas');
+    const onFirst = page.rows.filter((row) => row.cells[1] === first.name);
+    const onSecond = page.rows.filter((row) => row.cells[1] === second.name);
+
+    expect(onFirst.length).toBeGreaterThan(0);
+    expect(onSecond.length).toBeGreaterThan(0);
+    expect(onFirst.every((row) => row.cells[3]?.includes('(tạm)') === false)).toBe(true);
+    expect(onSecond.every((row) => row.cells[3]?.includes('(tạm)') === true)).toBe(true);
+    expect(page.totalArea.text).toBe(`≈ 248,60 m² (tạm) ở ${second.name}`);
+  });
+
+  it('R10: trang bìa cũng mang dấu, không chỉ trang Diện tích phòng', () => {
+    const everyLevelId = SAMPLE_BUILDING.levels.map((level) => String(level.id));
+    const cover = pageOf(buildPdfDocument({ ...baseInput(), provisionalLevelIds: everyLevelId }), 'cover');
+    const total = cover.fields.find((field) => field.label === 'Tổng diện tích');
+
+    expect(total?.text).toBe('≈ 248,60 m² (tạm)');
+  });
+
+  it('không tầng nào tạm thì không dấu nào xuất hiện, kể cả trang bìa', () => {
+    const document = buildPdfDocument(baseInput());
+
+    expect(pageOf(document, 'roomAreas').totalArea.text).toBe('248,60 m²');
+    expect(pageOf(document, 'cover').fields.find((field) => field.label === 'Tổng diện tích')?.text).toBe(
+      '248,60 m²',
+    );
   });
 });
 

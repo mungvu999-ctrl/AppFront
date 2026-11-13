@@ -174,6 +174,7 @@ import { boxAround } from '@/lib/input/dragDrop';
 import { formatLength } from '@/lib/format/measure';
 import { formatNumber } from '@/lib/format/number';
 import { confidenceLevel } from '@/lib/format/semantic';
+import { measureTextOfState, type ScaleState } from '@/lib/viewmodel/provisionalScale';
 import type { ViewStatusCode } from '@/lib/viewmodel/types';
 import { applyRollbackPatches, commit } from '@/store/commit';
 import { useStore } from '@/store';
@@ -1419,14 +1420,28 @@ export const formatObjectCount = (value: number): string =>
 /** Cửa đi hẹp hơn mức này thì gần như chắc là máy đọc sai bề rộng (UX-48). */
 export const NARROW_DOOR_MIN_WIDTH_MM = 600;
 
-/** Lời nhắc kiểm lại khi cửa đi hẹp bất thường; `null` ở cửa sổ, nội thất và cửa đủ rộng (UX-48). */
-export const doorSizeWarningOf = (object: { readonly layer: ReviewObject['layer']; readonly widthMm: number }): string | null =>
-  object.layer === 'door' && object.widthMm < NARROW_DOOR_MIN_WIDTH_MM
-    ? `Cửa hẹp bất thường (${formatObjectCount(object.widthMm)} mm), kiểm lại`
-    : null;
+/**
+ * Lời nhắc kiểm lại khi cửa đi hẹp bất thường; `null` ở cửa sổ, nội thất và cửa đủ rộng (UX-48).
+ *
+ * R10 làn S: bề rộng mm suy ra từ tỷ lệ, nên ở tầng tỷ lệ ước lượng lời này có thể là báo động giả —
+ * cửa vẫn đúng 800 mm, chỉ tỷ lệ sai. Khi đó nói rõ số là số ước thay vì khẳng định cửa hẹp.
+ */
+export const doorSizeWarningOf = (
+  object: { readonly layer: ReviewObject['layer']; readonly widthMm: number },
+  scaleState: ScaleState = 'confirmed',
+): string | null => {
+  if (object.layer !== 'door' || object.widthMm >= NARROW_DOOR_MIN_WIDTH_MM) return null;
+  const width = formatObjectCount(object.widthMm);
+  return isTrustedState(scaleState)
+    ? `Cửa hẹp bất thường (${width} mm), kiểm lại`
+    : `Đo ra ${width} mm — hẹp bất thường, nhưng tỷ lệ tầng còn là số ước; kiểm tỷ lệ trước`;
+};
 
-export const formatObjectSize = (widthMm: number, heightMm: number): string =>
-  `${formatObjectCount(widthMm)} × ${formatMillimetres(heightMm)}`;
+/** Trạng thái tỷ lệ cho phép đọc số đo như số thật. */
+const isTrustedState = (state: ScaleState): boolean => state === 'measured' || state === 'confirmed';
+
+export const formatObjectSize = (widthMm: number, heightMm: number, scaleState: ScaleState = 'confirmed'): string =>
+  measureTextOfState(`${formatObjectCount(widthMm)} × ${formatMillimetres(heightMm)}`, scaleState);
 
 /** Bộ đếm duyệt thành câu — "9/21 đối tượng đã duyệt". */
 export const reviewProgressLabel = (reviewed: number, total: number): string =>
@@ -1873,6 +1888,7 @@ export function toObjectRow(
   object: ReviewObject,
   wallCodes?: ReadonlyMap<string, string>,
   threshold: number = OBJECT_LAYER_CONFIDENCE_THRESHOLD,
+  scaleState: ScaleState = 'confirmed',
 ): ObjectListRowViewModel {
   const attached = isOrphanObject(object) ? null : object;
   const isOrphan = isUnattachedOpening(object);
@@ -1883,8 +1899,8 @@ export function toObjectRow(
     subtype: object.subtype,
     typeLabel: objectTypeLabelOf(object),
     codeLabel: `#${object.id}`,
-    sizeLabel: formatObjectSize(object.widthMm, object.heightMm),
-    sizeWarning: doorSizeWarningOf(object),
+    sizeLabel: formatObjectSize(object.widthMm, object.heightMm, scaleState),
+    sizeWarning: doorSizeWarningOf(object, scaleState),
     hostWallLabel: attached === null ? null : `#${wallCodes?.get(attached.hostWallId) ?? hostWallDisplayCode(attached.hostWallId)}`,
     confidence: object.confidence,
     statusCode: listStatusCodeOf(object, isOrphan, threshold),
@@ -1912,6 +1928,7 @@ export function toObjectInspector(
   wall: SolidWall | null,
   wallCodes?: ReadonlyMap<string, string>,
   threshold: number = OBJECT_LAYER_CONFIDENCE_THRESHOLD,
+  scaleState: ScaleState = 'confirmed',
 ): ObjectInspectorViewModel {
   const attached = isOrphanObject(object) ? null : object;
   const isOrphan = isUnattachedOpening(object);
@@ -1925,18 +1942,21 @@ export function toObjectInspector(
     typeLabel: objectTypeLabelOf(object),
     furnitureKind: (object as Partial<FreeFurnitureObject>).furnitureKind ?? null,
     furnitureVariant: (object as Partial<FreeFurnitureObject>).furnitureVariant ?? null,
-    sizeLabel: formatObjectSize(object.widthMm, object.heightMm),
-    sizeWarning: doorSizeWarningOf(object),
+    sizeLabel: formatObjectSize(object.widthMm, object.heightMm, scaleState),
+    sizeWarning: doorSizeWarningOf(object, scaleState),
     confidenceLabel: isLowConfidenceObject(object.confidence, threshold) ? LOW_CONFIDENCE_LABEL : CONFIDENT_LABEL,
-    widthLabel: formatMillimetres(object.widthMm),
-    heightLabel: formatMillimetres(object.heightMm),
-    sillHeightLabel: object.sillHeightMm === null ? null : formatMillimetres(object.sillHeightMm),
+    widthLabel: measureTextOfState(formatMillimetres(object.widthMm), scaleState),
+    heightLabel: measureTextOfState(formatMillimetres(object.heightMm), scaleState),
+    sillHeightLabel:
+      object.sillHeightMm === null ? null : measureTextOfState(formatMillimetres(object.sillHeightMm), scaleState),
     hostWallLabel: attached === null ? null : `#${wallCodes?.get(attached.hostWallId) ?? hostWallDisplayCode(attached.hostWallId)}`,
     hostWallId: attached?.hostWallId ?? null,
     relativePosition: attached?.relativePosition ?? null,
-    distanceToStartLabel: span === null ? null : formatMillimetres(span.lowMm),
+    distanceToStartLabel: span === null ? null : measureTextOfState(formatMillimetres(span.lowMm), scaleState),
     distanceToEndLabel:
-      span === null || wall === null ? null : formatMillimetres(centrelineLength(wall) - span.highMm),
+      span === null || wall === null
+        ? null
+        : measureTextOfState(formatMillimetres(centrelineLength(wall) - span.highMm), scaleState),
     swing: object.swing,
     confidence: object.confidence,
     isOrphan,

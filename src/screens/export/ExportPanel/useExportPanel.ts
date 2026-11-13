@@ -71,6 +71,8 @@ import { selectViolations } from '@/store/selectors';
 import type { FloorMetaEntry } from '@/store/spatialSlice';
 import type { ProjectRole } from '@/types/project';
 
+import { isScaleTrusted } from '@/lib/viewmodel/provisionalScale';
+
 import { floorLayerQuery, floorScaleKeysOf } from '../../qc/shared/floorScaleKeys';
 
 import { mergeExportHistory, readExportHistory, writeExportHistory } from './exportHistoryStorage';
@@ -84,6 +86,7 @@ import {
   EXPORT_FORBIDDEN_CAPTION,
   toExportFloors,
   type ExportedFile,
+  type FloorScaleExport,
   type ExportPanelCapabilities,
   type ExportPanelGateway,
   type ExportRunSnapshot,
@@ -325,12 +328,55 @@ export function useExportPanel(options: UseExportPanelOptions): ExportPanelProps
     const merged: Record<string, FloorMetaEntry> = { ...storeFloorMeta };
     floorIds.forEach((floorId, index) => {
       const held = storeFloorMeta[floorId];
-      if (floorScaleKeysOf(layerDocs[index], held)?.scaleStatus === 'unresolved') {
-        merged[floorId] = { ...(held ?? { revision: layerDocs[index]?.revision ?? 0 }), scaleStatus: 'unresolved' };
-      }
+      const keys = floorScaleKeysOf(layerDocs[index], held);
+      /* R10: giữ CẢ scaleState/scaleReasons, không riêng `scaleStatus` — tầng người dùng đã chấp nhận
+         số máy không còn `scaleStatus` nên lối cũ bỏ sót đúng tầng mà hồ sơ cần đánh dấu. */
+      if (keys === null) return;
+      if (keys.scaleStatus === undefined && keys.scaleState === undefined) return;
+      merged[floorId] = {
+        ...(held ?? { revision: layerDocs[index]?.revision ?? 0 }),
+        ...(keys.scaleStatus === undefined ? {} : { scaleStatus: keys.scaleStatus }),
+        ...(keys.scaleSource === undefined ? {} : { scaleSource: keys.scaleSource }),
+        ...(keys.scaleState === undefined ? {} : { scaleState: keys.scaleState }),
+        ...(keys.scaleReasons === undefined ? {} : { scaleReasons: keys.scaleReasons }),
+      };
     });
     return merged;
   }, [floorIds, layerDocs, storeFloorMeta]);
+
+  /**
+   * Tầng mà số đo chưa tin được (R10 làn S). Một danh sách thay cho boolean cũ: hồ sơ in và tệp JSON
+   * đều phải nói ĐÚNG tầng nào ước, không bôi "(tạm)" lên cả tệp rồi im lặng về tầng nào.
+   */
+  const provisionalLevelIds = useMemo(
+    () =>
+      graph === null
+        ? []
+        : floors
+            .filter((level) => {
+              if (idsOnLevel(graph, level.id).length === 0) return false;
+              if (level.scaleMillimetresPerPixel === undefined) return true;
+              const meta = floorMeta?.[level.id];
+              return !isScaleTrusted(meta?.scaleStatus, meta?.scaleSource, meta?.scaleState);
+            })
+            .map((level) => String(level.id)),
+    [floorMeta, floors, graph],
+  );
+
+  /** Trạng thái tỷ lệ của từng tầng, viết thẳng vào tệp JSON để người nhận tệp đọc được. */
+  const floorScalesForExport = useMemo<Readonly<Record<string, FloorScaleExport>>>(() => {
+    const out: Record<string, FloorScaleExport> = {};
+    for (const level of floors) {
+      const meta = floorMeta?.[level.id];
+      if (meta?.scaleState === undefined && meta?.scaleStatus === undefined) continue;
+      out[String(level.id)] = {
+        ...(meta.scaleState === undefined ? {} : { scaleState: meta.scaleState }),
+        ...(meta.scaleReasons === undefined ? {} : { scaleReasons: meta.scaleReasons }),
+        isTrusted: isScaleTrusted(meta.scaleStatus, meta.scaleSource, meta.scaleState),
+      };
+    }
+    return out;
+  }, [floorMeta, floors]);
 
   /* ---------------------------------------------------------------------- */
   /* Quyền — một khoá `model.export` gác cả bốn định dạng                    */
@@ -497,6 +543,7 @@ export function useExportPanel(options: UseExportPanelOptions): ExportPanelProps
           projectName: project?.name ?? '',
           graph,
           includeConfidence: optionsView.spatialJson.includeConfidence,
+          floorScales: floorScalesForExport,
         });
       }
 
@@ -513,11 +560,7 @@ export function useExportPanel(options: UseExportPanelOptions): ExportPanelProps
           dataVersion: versionId ?? '',
           preparerName,
           choice: pdfChoice,
-          provisionalArea: floors.some(
-            (level) =>
-              idsOnLevel(graph, level.id).length > 0 &&
-              (level.scaleMillimetresPerPixel === undefined || floorMeta?.[level.id]?.scaleStatus === 'unresolved'),
-          ),
+          provisionalLevelIds,
         });
       }
 

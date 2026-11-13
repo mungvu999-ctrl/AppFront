@@ -222,3 +222,33 @@ describe('measurementErrorCodeOf', () => {
     expect(measurementErrorCodeOf(odd).code).toBeNull();
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* R10 làn S: số đo 3D mang trạng thái tỷ lệ.                                  */
+/* -------------------------------------------------------------------------- */
+
+describe('R10: thước đo 3D theo trạng thái tỷ lệ', () => {
+  const coreOf = () =>
+    toMeasurementRowCore({
+      id: 'MS-r10',
+      mode: 'pointToPoint',
+      name: 'Phép đo R10',
+      points: [],
+      rawValueMm: millimetres(3600),
+    });
+
+  it('không truyền trạng thái thì số để trần, giữ nguyên hành vi cũ', () => {
+    expect(formatMeasurementRow(coreOf(), 'mm').valueLabel).not.toContain('≈');
+  });
+
+  it('mô hình đã đo được tỷ lệ thì số để trần', () => {
+    expect(formatMeasurementRow(coreOf(), 'mm', 'measured').valueLabel).not.toContain('≈');
+  });
+
+  it('còn tầng tỷ lệ ước lượng thì số đo mang dấu, vì thước không nói được nó thuộc tầng nào', () => {
+    const label = formatMeasurementRow(coreOf(), 'mm', 'estimated').valueLabel;
+
+    expect(label).toContain('≈');
+    expect(label).toContain('(ước lượng)');
+  });
+});

@@ -136,7 +136,7 @@ import {
 } from './wallDrawSnap';
 import { planConnectedDraw, runWallCommands } from './wallDrawConnect';
 import { ROUTES } from '@/routes/paths';
-import { thicknessLockTextOf } from '@/lib/viewmodel/provisionalScale';
+import { SCALE_MEASURE_SUFFIX, scaleStateOf, thicknessLockTextOf } from '@/lib/viewmodel/provisionalScale';
 import { useStore } from '@/store';
 import { currentSelection } from '@/store/commit';
 import type { ProjectRole } from '@/types/project';
@@ -2619,6 +2619,7 @@ export function useWallLayerReview(
     level,
     scaleStatus: floorLayer.scaleStatus,
     scaleSource: floorLayer.scaleSource,
+    scaleState: floorLayer.scaleState,
     lockText: thicknessLockText,
     walls,
     visibleWalls,
@@ -2710,14 +2711,22 @@ export function useWallLayerReview(
   const onFrame = (point: WallLayerMeasurementPx['startPx']) =>
     point === null ? null : toFramePoint(viewport, point);
   const shownMeasurement = drawMeasurement ?? measurement;
+  const measureState = scaleStateOf(floorLayer.scaleStatus, floorLayer.scaleSource, floorLayer.scaleState);
+  const canvasMeasureTextOf = (label: string): string => {
+    if (measureState === 'measured' || measureState === 'confirmed') return label;
+    // `missing` không có hậu tố riêng nhưng số vẫn vô nghĩa: giữ lời cũ "(tạm)".
+    const suffix = SCALE_MEASURE_SUFFIX[measureState];
+    return `≈ ${label}${suffix === '' ? ' (tạm)' : suffix}`;
+  };
   const frameMeasurement: WallLayerMeasurementPx | null =
     shownMeasurement === null
       ? null
       : {
           ...shownMeasurement,
-          /* G4a-22: tỷ lệ còn tạm thì số đo cũng tạm — cùng lời với "Chiều dài: … tỷ lệ tạm" của thanh tra. */
-          distanceLabel:
-            provisionalScaleNotice === null ? shownMeasurement.distanceLabel : `${shownMeasurement.distanceLabel} (tạm)`,
+          /* G4a-22: tỷ lệ còn tạm thì số đo cũng tạm — cùng lời với "Chiều dài: … tỷ lệ tạm" của thanh tra.
+             R10 làn S: xét trạng thái tỷ lệ của tầng, KHÔNG xét dải cảnh báo — từ R9 dải chỉ còn hiện ở
+             tầng bị khoá, nên tầng ước lượng để số đo trần giữa canvas mà không có dấu nào. */
+          distanceLabel: canvasMeasureTextOf(shownMeasurement.distanceLabel),
           startPx: onFrame(shownMeasurement.startPx),
           currentPx: onFrame(shownMeasurement.currentPx),
           midPx: onFrame(shownMeasurement.midPx),

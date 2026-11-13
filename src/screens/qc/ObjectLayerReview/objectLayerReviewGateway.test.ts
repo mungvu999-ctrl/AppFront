@@ -14,6 +14,7 @@ import {
   doorSizeWarningOf,
   inwardSwingIdsOf,
   drawnFurnitureInputOf,
+  formatObjectSize,
   levelOfGraph,
   objectPlacementsOf,
   objectsOf,
@@ -250,5 +251,42 @@ describe('inwardSwingIdsOf (cung cửa 2D cùng phía với 3D)', () => {
   it('"Đổi hướng mở" đảo phía; cửa sổ không bao giờ lật', () => {
     expect([...inwardSwingIdsOf(graphOf([room(0, 4000)], [door({ reversed: true })]))]).toEqual([]);
     expect([...inwardSwingIdsOf(graphOf([room(0, 4000)], [door({ kind: 'window' })]))]).toEqual([]);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* R10 làn S: số của ô mở mang trạng thái tỷ lệ của tầng.                      */
+/* -------------------------------------------------------------------------- */
+
+describe('R10: kích thước ô mở theo trạng thái tỷ lệ', () => {
+  it('tầng đo được tỷ lệ thì kích thước để trần', () => {
+    expect(formatObjectSize(900, 2200, 'measured')).toBe('900 × 2.200 mm');
+  });
+
+  it('tầng tỷ lệ ước lượng thì kích thước mang dấu ≈ và chữ ước lượng', () => {
+    expect(formatObjectSize(900, 2200, 'estimated')).toBe('≈ 900 × 2.200 mm (ước lượng)');
+  });
+
+  it('không truyền trạng thái thì giữ nguyên hành vi cũ, không đánh dấu oan', () => {
+    expect(formatObjectSize(900, 2200)).toBe('900 × 2.200 mm');
+  });
+});
+
+describe('R10: cảnh báo cửa hẹp không khẳng định khi tỷ lệ còn là số ước', () => {
+  const narrowDoor = { layer: 'door' as const, widthMm: 520 };
+
+  it('tỷ lệ đo được: vẫn nói thẳng là cửa hẹp bất thường', () => {
+    expect(doorSizeWarningOf(narrowDoor, 'measured')).toBe('Cửa hẹp bất thường (520 mm), kiểm lại');
+  });
+
+  it('tỷ lệ ước lượng: chỉ ra số là số ước và bảo kiểm tỷ lệ trước, vì có thể là báo động giả', () => {
+    expect(doorSizeWarningOf(narrowDoor, 'estimated')).toBe(
+      'Đo ra 520 mm — hẹp bất thường, nhưng tỷ lệ tầng còn là số ước; kiểm tỷ lệ trước',
+    );
+  });
+
+  it('cửa đủ rộng và cửa sổ thì không có lời nhắc nào, dù tỷ lệ thế nào', () => {
+    expect(doorSizeWarningOf({ layer: 'door', widthMm: 800 }, 'estimated')).toBeNull();
+    expect(doorSizeWarningOf({ layer: 'window', widthMm: 400 }, 'estimated')).toBeNull();
   });
 });

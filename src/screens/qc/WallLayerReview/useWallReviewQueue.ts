@@ -13,7 +13,7 @@ import type { Level, Wall, WallId } from '@/domain/spatial/types';
 import { useShortcut } from '@/hooks/useShortcut';
 import { runTransaction } from '@/lib/commands/transaction';
 import type { ShortcutRegistry } from '@/lib/input/shortcutRegistry';
-import type { ScaleSource, ScaleStatus } from '@/lib/viewmodel/provisionalScale';
+import type { ScaleSource, ScaleStatus, WireScaleState } from '@/lib/viewmodel/provisionalScale';
 import { useStore } from '@/store';
 
 import {
@@ -50,6 +50,8 @@ export interface UseWallReviewQueueInput {
   /** Tỷ lệ của tầng (N16) — cột "Dài, mm" theo cùng quy tắc với thanh tra (K16). */
   readonly scaleStatus?: ScaleStatus;
   readonly scaleSource?: ScaleSource | undefined;
+  /** N16 `scaleState` (R9): cột "Dài, mm" mang dấu ước lượng theo đúng trạng thái này. */
+  readonly scaleState?: WireScaleState | undefined;
   /** Câu khoá đổi độ dày (`thicknessLockTextOf`, tính ở hook màn); `null` = được đổi. */
   readonly lockText: string | null;
   /** Mọi tường của tầng (không lọc). */
@@ -80,13 +82,15 @@ export function useWallReviewQueue(input: UseWallReviewQueueInput): WallReviewQu
   const { graph, level, walls, visibleWalls, wallCodes, selectedWallId, canEdit, gateway, dispatchBundle } = input;
   const { invalidate, onSelect, onSkip, onFlash } = input;
 
-  const { scaleStatus, scaleSource, lockText, reasonOf } = input;
+  const { scaleStatus, scaleSource, scaleState, lockText, reasonOf } = input;
   const extras = useMemo(
     () =>
       new Map<string, WallRowExtra>(
-        walls.map((wall) => [wall.id, rowExtraOf(wall, level, scaleStatus, scaleSource, reasonOf?.(wall))] as const),
+        walls.map(
+          (wall) => [wall.id, rowExtraOf(wall, level, scaleStatus, scaleSource, reasonOf?.(wall), scaleState)] as const,
+        ),
       ),
-    [reasonOf, level, scaleSource, scaleStatus, walls],
+    [reasonOf, level, scaleSource, scaleState, scaleStatus, walls],
   );
   const nonStandardCount = useMemo(() => walls.filter((wall) => queueGroupOf(wall) === 'nonStandard').length, [walls]);
   /* Cả tầng, không theo bộ lọc: số trên nút "Đưa N tường về chuẩn" khớp màn Độ dày. */

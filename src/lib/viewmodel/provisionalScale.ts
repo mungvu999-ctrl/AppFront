@@ -222,7 +222,11 @@ export function measureTextOf(
   scaleSource?: ScaleSource,
   scaleState?: WireScaleState,
 ): string {
-  const state = scaleStateOf(scaleStatus, scaleSource, scaleState);
+  return measureTextOfState(formatted, scaleStateOf(scaleStatus, scaleSource, scaleState));
+}
+
+/** Như `measureTextOf` khi màn đã có sẵn `ScaleState` của tầng, khỏi dựng lại từ khoá N16. */
+export function measureTextOfState(formatted: string, state: ScaleState): string {
   if (state === 'missing') return MISSING_MEASURE_TEXT;
   const suffix = SCALE_MEASURE_SUFFIX[state];
   return suffix === '' ? formatted : `≈ ${formatted}${suffix}`;
@@ -283,3 +287,49 @@ export function scaleFloorsMessageOf(missing: readonly string[], provisional: re
 
   return parts.length === 0 ? null : `${parts.join('. ')}.`;
 }
+
+/**
+ * Số đo của tầng này có tin được không. Dùng cho mọi bề mặt chỉ cần quyết định "có đánh dấu hay
+ * không": `measured` (máy đọc từ bản vẽ) và `confirmed` (người hiệu chỉnh) là tin được, còn lại không.
+ *
+ * Thay cho lối cũ `scaleStatus === 'unresolved'`: từ R10/K4, tầng mà người dùng đã bấm chấp nhận số
+ * máy không còn `scaleStatus` nữa nhưng vẫn là số ước — luật cũ bỏ sót đúng những tầng đó.
+ */
+export function isScaleTrusted(
+  scaleStatus: ScaleStatus,
+  scaleSource?: ScaleSource,
+  scaleState?: WireScaleState,
+): boolean {
+  const state = scaleStateOf(scaleStatus, scaleSource, scaleState);
+  return state === 'measured' || state === 'confirmed';
+}
+
+/** Một tầng trong tổng cộng nhiều tầng: tên để gọi khi số của tầng đó không tin được. */
+export interface FloorMeasureRef {
+  readonly name: string;
+  readonly state: ScaleState;
+}
+
+/**
+ * Chữ cho một con số cộng từ NHIỀU tầng. Tầng nào không tin được thì gọi tên tầng đó ra, vì dấu ≈
+ * đặt trên số tổng không cho biết tầng nào ước — và không được im lặng chỉ vì đa số tầng đã đo.
+ */
+export function totalMeasureTextOf(formatted: string, floors: readonly FloorMeasureRef[]): string {
+  const loose = floors.filter((f) => f.state !== 'measured' && f.state !== 'confirmed');
+  if (loose.length === 0) return formatted;
+  if (loose.length === floors.length) return `≈ ${formatted} (ước lượng)`;
+  return `≈ ${formatted} (ước lượng ở ${loose.map((f) => f.name).join(', ')})`;
+}
+
+/**
+ * Mức "đáng lo" của từng trạng thái, để chọn trạng thái XẤU NHẤT khi một con số bắc qua nhiều tầng
+ * và không nói được nó thuộc tầng nào. Số lớn hơn = cần nói rõ hơn với người dùng.
+ */
+export const SCALE_SEVERITY = {
+  measured: 0,
+  confirmed: 0,
+  check: 1,
+  estimated: 2,
+  undetermined: 3,
+  missing: 4,
+} as const satisfies Readonly<Record<ScaleState, number>>;

@@ -116,7 +116,8 @@ import type { NotificationBus } from '@/lib/mutations/notificationBus';
 import { applyInvalidation } from '@/lib/query/invalidation';
 import { cachedProjectName } from '@/lib/query/cachedProjectName';
 import { queryKeys } from '@/lib/query/queryKeys';
-import type { ScaleState } from '@/lib/viewmodel/provisionalScale';
+import type { FloorMeasureRef, ScaleState } from '@/lib/viewmodel/provisionalScale';
+import { measureTextOfState, totalMeasureTextOf } from '@/lib/viewmodel/provisionalScale';
 import type { ApiResult } from '@/api/client';
 
 import { appNotificationBus } from '@/hooks/useNotifications';
@@ -407,11 +408,21 @@ export function floorScaleMissingOf(graph: NormalizedSpatial, level: Level, meta
   return floorRowScaleStateOf(graph, level, meta) === 'missing';
 }
 
-/** Trạng thái tỷ lệ của dòng tầng (chip chung `SCALE_STATE_VIEWS`); kho chưa biết là tạm thì coi như đã xác nhận. */
+/**
+ * Trạng thái tỷ lệ của dòng tầng (chip chung `SCALE_STATE_VIEWS`); kho chưa biết gì thì coi như đã
+ * xác nhận. Xét cả `scaleState`, không riêng `scaleStatus`: từ K4 tầng mà người dùng chấp nhận số
+ * máy không còn `scaleStatus` nhưng số vẫn là số ước — xét mình `scaleStatus` thì gắn nhầm cho nó
+ * nhãn xanh "Tỷ lệ đã xác nhận".
+ */
 export function floorRowScaleStateOf(graph: NormalizedSpatial, level: Level, meta: FloorMetaEntry | undefined): ScaleState {
-  return meta?.scaleStatus === 'unresolved'
-    ? floorScaleStateOf(meta.scaleStatus, meta.scaleSource, level.scaleMillimetresPerPixel, scaleImplausibleOf(graph, level.id), meta.scaleState)
-    : 'confirmed';
+  if (meta?.scaleStatus === undefined && meta?.scaleState === undefined) return 'confirmed';
+  return floorScaleStateOf(
+    meta.scaleStatus,
+    meta.scaleSource,
+    level.scaleMillimetresPerPixel,
+    scaleImplausibleOf(graph, level.id),
+    meta.scaleState,
+  );
 }
 
 /** Bỏ bộ đệm văn bản của một dòng, trả lại bản ghi mới — không đụng bản cũ. */
@@ -1745,7 +1756,7 @@ export function useFloorManager(options: UseFloorManagerOptions): UseFloorManage
         hasDrawing,
         wallCountText: countText(counts?.wallCount ?? null),
         roomCountText: countText(counts?.roomCount ?? null),
-        areaText: counts === null ? MISSING_VALUE : formatArea(counts.areaM2),
+        areaText: counts === null ? MISSING_VALUE : measureTextOfState(formatArea(counts.areaM2), scaleState),
         areaM2: counts === null ? null : squareMetres(counts.areaM2),
         qcProgressText: !hasDrawing ? MISSING_VALUE : qcProgressRatio === 0 ? QC_NOT_GRADED : formatPercent(qcProgressRatio, { fractionDigits: 0 }),
         qcProgressRatio,
@@ -1839,6 +1850,10 @@ export function useFloorManager(options: UseFloorManagerOptions): UseFloorManage
     let wallTotal: number | null = null;
     let roomTotal: number | null = null;
 
+    /* Tầng nào góp số vào tổng thì góp cả trạng thái tỷ lệ của nó: tổng trộn tầng đo được với tầng
+       ước mà không dấu, không tên tầng, thì người đọc tưởng cả toà nhà đã đo (R10 làn S). */
+    const countedFloors: FloorMeasureRef[] = [];
+
     for (const row of rows) {
       const counts = countsByLevel.get(row.id);
 
@@ -1846,6 +1861,7 @@ export function useFloorManager(options: UseFloorManagerOptions): UseFloorManage
         continue;
       }
 
+      countedFloors.push({ name: row.name, state: row.scaleState });
       areaOutlines = [...(areaOutlines ?? []), ...counts.roomOutlinesMm];
       wallTotal = (wallTotal ?? 0) + counts.wallCount;
       roomTotal = (roomTotal ?? 0) + counts.roomCount;
@@ -1854,7 +1870,8 @@ export function useFloorManager(options: UseFloorManagerOptions): UseFloorManage
     return {
       floorCountText: floorCountText(rows.length),
       totalHeightText,
-      totalAreaText: areaOutlines === null ? MISSING_VALUE : formatArea(totalArea(areaOutlines)),
+      totalAreaText:
+        areaOutlines === null ? MISSING_VALUE : totalMeasureTextOf(formatArea(totalArea(areaOutlines)), countedFloors),
       totalWallCountText: countText(wallTotal),
       totalRoomCountText: countText(roomTotal),
     };

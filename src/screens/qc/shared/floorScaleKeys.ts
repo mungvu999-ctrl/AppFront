@@ -17,11 +17,15 @@ export const floorLayerQuery = (projectId: string, floorId: string) => ({
  * Khoá tỷ lệ của tầng. N15 (`hydrateProject`) không mang `scaleStatus`, nên `floorMeta` thiếu khoá
  * này nghĩa là "chưa đọc" chứ không phải "đã xác nhận": chỉ tin N16 không cũ hơn kho, hoặc kho đã
  * biết tầng là tạm. `null` = chưa đọc được.
+ *
+ * Từ K4, tầng mà người dùng chấp nhận số máy không còn `scaleStatus` nhưng vẫn giữ `scaleState`:
+ * xét `scaleStatus` một mình thì đúng những tầng đó bị trả `null` và mọi nơi gọi đều bỏ sót.
  */
 export function floorScaleKeysOf(
   document: FloorLayerDocument | undefined,
   meta: FloorMetaEntry | undefined,
 ): FloorScaleKeys | null {
   if (document !== undefined && (meta === undefined || document.revision >= meta.revision)) return document;
-  return meta?.scaleStatus === undefined ? null : meta;
+  if (meta === undefined) return null;
+  return meta.scaleStatus === undefined && meta.scaleState === undefined ? null : meta;
 }
