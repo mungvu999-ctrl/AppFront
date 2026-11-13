@@ -1611,12 +1611,21 @@ export const roomSetOf = (
       seatsYield = false;
     }
   };
+  /**
+   * Codex M18-3 P1 — MỘT đường cho mọi lần món chính chiếm chỗ (T0 / thang dời / concept / dời cụm bàn / lượt trước, lượt đầu lẫn
+   * thử lại): gọi đầu mỗi lượt vai cho mọi món chính đã có mặt bằng. Món chưa chốt đã nhường nó (cùng phép nhường lúc đặt: ghế
+   * nhóm chỉ khi món đã thử lại) mà mặt bằng món chính chồng hộp hiện hành NHIỀU HƠN hộp đã lưu của hai món (chỗ luật chiếm thêm;
+   * món thử lại: mọi chồng — ghế từng chặn cả hộp) → `evicted`. Chồng có sẵn ở hộp đã lưu giữ nguyên ('data', không ẩn thêm).
+   */
   const evictFor = (m: SetMember): void => {
     const r = finalRect.get(m.id);
-    if (r === undefined) return;
-    seatsYield = true;
+    if (r === undefined || !LAYOUT_MAIN_ROLES.has(m.role)) return;
+    const retry = retried.has(m.id);
+    seatsYield = retry;
     for (const x of inSet) {
-      if (x.id !== m.id && pendingMovable(x) && yieldsTo(m, x) && overlapAreaM2(boxRectOf(boxOf(x) as SetBox), r) > ROOM_OVERLAP_TOL_M2) evicted.set(x.id, m.id);
+      if (x.id === m.id || !pendingMovable(x) || !yieldsTo(m, x)) continue;
+      const base = retry || m.box === undefined || x.box === undefined ? 0 : overlapAreaM2(boxRectOf(x.box), boxRectOf(m.box));
+      if (overlapAreaM2(boxRectOf(boxOf(x) as SetBox), r) > base + ROOM_OVERLAP_TOL_M2) evicted.set(x.id, m.id);
     }
     seatsYield = false;
   };
@@ -1720,6 +1729,7 @@ export const roomSetOf = (
   };
 
   for (const role of roles) {
+    for (const m of inSet) evictFor(m);
     if (SEAT_GROUP_ROLES.has(role)) moveTablesFor(role);
     const group = inSet.filter((m) => m.role === role);
     const todoAll = group.filter((m) => !m.fixed && !decided.has(m.id)).map(withShift);
@@ -1974,7 +1984,6 @@ export const roomSetOf = (
         else if (to !== null) placeOf(memberAs(m, fb?.uniform), to, fb?.uniform === 'real');
         // Mẫu mặc định của loại (phương án cuối `null`) dựng trong hộp: chiếm chỗ bằng cả hộp.
         else if (m.box !== undefined && m.lifted !== true) placed.push({ ...boxRectOf(m.box), id: m.id, ...(m.kind === undefined ? {} : { kind: m.kind }) });
-        if (to !== null && retried.has(m.id)) evictFor(m);
       }
     }
     for (const m of todo) {

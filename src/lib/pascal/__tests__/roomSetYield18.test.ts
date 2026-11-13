@@ -118,6 +118,16 @@ describe('roomSetOf — nhường chỗ giữa món chưa chốt (LT5)', () => {
     expect(ruleOverlaps(out)).toEqual([]);
   });
 
+  // Codex M18-3 P1: hộp gốc không chồng; giường đặt LƯỢT ĐẦU (thang dời, cỡ thật) chiếm chỗ ghế bành đã nhường → ghế bành phải dời/chưa bố trí.
+  it('phòng ngủ: giường dời lượt đầu chiếm chỗ ghế bành đã nhường — ghế bành dời/chưa bố trí được, không chồng', () => {
+    const arm = member('F-ac', 'armchair', { cx: 0.5, cy: 2.3, w: 0.8, d: 0.8 }, { kind: 'armchair', pool: ['ac1'], current: 'ac1' });
+    const out = run('bedroom|x|y#0,0', [bed(), arm]);
+    expect(out.get('F-bed')?.to).not.toBeNull();
+    const a = out.get('F-ac');
+    expect((a?.to !== null && a?.at !== undefined) || (a?.to === null && (a.unplaced?.reason ?? '') !== '')).toBe(true);
+    expect(ruleOverlaps(out)).toEqual([]);
+  });
+
   it('phòng khách (giường không dẫn) và ghế bành đã xác nhận: ghế bành vẫn chặn giường như cũ', () => {
     const arm = (over: Partial<SetMember> = {}): SetMember => member('F-ac', 'armchair', MID, { kind: 'armchair', pool: ['ac1'], current: 'ac1', ...over });
     for (const [key, a] of [['livingRoom|x|y#0,0', arm()], ['bedroom|x|y#0,0', arm({ sizeFrom: 'user' })], ['R-raw', arm()]] as const) {
