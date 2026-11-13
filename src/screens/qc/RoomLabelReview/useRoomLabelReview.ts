@@ -443,7 +443,7 @@ export function useRoomLabelReview(
 
   /* N16 của tầng — `useFloorLayer` quyết định nó vào kho thế nào (F-04x-2). */
   const floorLayer = useFloorLayer({ floorId, projectId, read: gateway.readLayer });
-  const { scaleStatus, scaleSource } = floorLayer;
+  const { scaleStatus, scaleSource, scaleState } = floorLayer;
   const provisionalScaleNotice = useProvisionalScaleNotice(scaleStatus, projectId, floorId, options.onNavigate, canEditRole);
   const readFailure = useFloorLayerReadFailure(floorLayer, projectId, options.onNavigate);
   /*
@@ -527,7 +527,7 @@ export function useRoomLabelReview(
     const next = new Map<RoomId, RoomLabelMeasures>();
 
     for (const room of rooms) {
-      const key = `${outlineKeyOf(room)}|${String(room.clearAreaM2)}|${scaleStatus ?? ''}|${scaleSource ?? ''}`;
+      const key = `${outlineKeyOf(room)}|${String(room.clearAreaM2)}|${scaleStatus ?? ''}|${scaleSource ?? ''}|${scaleState ?? ''}`;
       const cached = cache.get(room.id);
 
       if (cached !== undefined && cached.key === key) {
@@ -535,14 +535,14 @@ export function useRoomLabelReview(
         continue;
       }
 
-      const value = measureRoom(room, scale, scaleStatus, scaleSource);
+      const value = measureRoom(room, scale, scaleStatus, scaleSource, scaleState);
 
       cache.set(room.id, { key, value });
       next.set(room.id, value);
     }
 
     return next;
-  }, [rooms, scale, scaleSource, scaleStatus]);
+  }, [rooms, scale, scaleSource, scaleState, scaleStatus]);
 
   /* ---------------------------------------------------------------------- */
   /* Nhắc công năng M-14 — NHẮC, không bao giờ CHẶN.                          */
@@ -571,7 +571,7 @@ export function useRoomLabelReview(
     () =>
       rooms.map((room) =>
         toRoomLabelRow(room, {
-          measures: measures.get(room.id) ?? measureRoom(room, scale, scaleStatus, scaleSource),
+          measures: measures.get(room.id) ?? measureRoom(room, scale, scaleStatus, scaleSource, scaleState),
           notices: noticesOfRoom(violations, room.id, ruleRouteHref).filter(
             /* G4a-30: tỷ lệ tạm thì diện tích chưa có, không nhắc "thiếu m²" trái với panel. */
             (notice) => scaleStatus === undefined || notice.ruleCode !== 'ROOM-AREA-BELOW-MINIMUM',
@@ -590,6 +590,7 @@ export function useRoomLabelReview(
       ruleRouteHref,
       scale,
       scaleSource,
+      scaleState,
       scaleStatus,
       spillingRoomIds,
       violations,
@@ -597,8 +598,8 @@ export function useRoomLabelReview(
   );
 
   const summary = useMemo<RoomLabelSummaryViewModel>(
-    () => summaryOf(rooms, violations, scaleStatus, scaleSource),
-    [rooms, scaleSource, scaleStatus, violations],
+    () => summaryOf(rooms, violations, scaleStatus, scaleSource, scaleState),
+    [rooms, scaleSource, scaleState, scaleStatus, violations],
   );
 
   /* Cờ Z/S-20: một phòng chiếm >80 % sàn thường là khung tên bản vẽ bị dò thành phòng (B1-9). */

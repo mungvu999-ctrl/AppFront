@@ -6,7 +6,7 @@ import type { ApiClient, Project as ApiProject, SpatialApi } from './client';
 import type { SpatialGraphDocument } from './schemas/spatialGraph';
 import type { FloorLayerDocument } from './schemas/spatialLayer';
 import { effectiveProjectRole } from '@/lib/auth/permissions';
-import type { ScaleSource } from '@/lib/viewmodel/provisionalScale';
+import type { FloorScaleDetail, ScaleSource } from '@/lib/viewmodel/provisionalScale';
 
 /**
  * Đường nạp thật của màn QC: N16 (`GET …/floors/{floorId}/spatial/layer`) →
@@ -54,6 +54,8 @@ export interface FloorLayerGraphRead {
   readonly floorScaleStatus?: Readonly<Record<string, 'unresolved'>>;
   /** Nguồn tỷ lệ tạm của các tầng ấy (N16 `scaleSource`, UX-R1 K12). */
   readonly floorScaleSource?: Readonly<Record<string, ScaleSource>>;
+  /** N16 `scaleState`/`scaleReasons` (R9) của các tầng ấy. */
+  readonly floorScaleDetail?: Readonly<Record<string, FloorScaleDetail>>;
 }
 
 export interface ReadFloorLayerGraphInput {
@@ -141,16 +143,24 @@ export async function readProjectLayerRead(
 
   const floorScaleStatus: Record<string, 'unresolved'> = {};
   const floorScaleSource: Record<string, ScaleSource> = {};
+  const floorScaleDetail: Record<string, FloorScaleDetail> = {};
 
   floorIds.forEach((floorId, index) => {
     const document = documents[index];
 
     if (document?.scaleStatus !== undefined) floorScaleStatus[floorId] = document.scaleStatus;
     if (document?.scaleSource !== undefined) floorScaleSource[floorId] = document.scaleSource;
+    if (document?.scaleState !== undefined || document?.scaleReasons !== undefined) {
+      floorScaleDetail[floorId] = {
+        ...(document.scaleState === undefined ? {} : { scaleState: document.scaleState }),
+        ...(document.scaleReasons === undefined ? {} : { scaleReasons: document.scaleReasons }),
+      };
+    }
   });
 
   return {
     floorRevisions: Object.fromEntries(floorIds.map((floorId, index) => [floorId, documents[index]?.revision ?? 0])),
+    floorScaleDetail,
     floorScaleSource,
     floorScaleStatus,
     graph,

@@ -73,6 +73,7 @@ import {
 } from '@/lib/testing/sevenStateScenarios';
 import { useStore } from '@/store';
 
+import { ACCEPT_MACHINE_CONFIRM } from './machineScaleGate';
 import { ScaleCalibration } from './ScaleCalibration';
 import {
   compactScenario,
@@ -1219,6 +1220,59 @@ describe('[G51a] nhãn đo trực tiếp cần cỡ khung ảnh', () => {
 
     expect(observed.length).toBeGreaterThan(before);
     expect(observed.some((target) => target.className.includes('origin-top-left'))).toBe(true);
+  });
+});
+
+describe('R9 phản biện X F5: số máy ước lượng / chưa xác định — đo trước, áp sau', () => {
+  const measureFirstModel = (acceptLabel?: string) => {
+    const base = scenarioFor('partial');
+    return {
+      base,
+      model: {
+        ...base.model,
+        panel: {
+          ...base.model.panel,
+          canApply: false,
+          measureFirst: { label: 'Đo một đoạn đã biết', ...(acceptLabel === undefined ? {} : { acceptLabel }) },
+        },
+      },
+    };
+  };
+
+  it('nút chính là "Đo một đoạn đã biết" (đặt đoạn), nút áp khoá; nút phụ mở hộp xác nhận', () => {
+    const { base, model } = measureFirstModel('Dùng tạm tỷ lệ máy ước lượng');
+    const onPlaceSegment = vi.fn();
+    const onRequestAcceptMachine = vi.fn();
+    renderWithProviders(<ScaleCalibration actions={{ ...base.actions, onPlaceSegment, onRequestAcceptMachine }} model={model} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đo một đoạn đã biết' }));
+    expect(onPlaceSegment).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Xác nhận tỷ lệ' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Dùng tạm tỷ lệ máy ước lượng' }));
+    expect(onRequestAcceptMachine).toHaveBeenCalledTimes(1);
+  });
+
+  it('nguồn mâu thuẫn (không acceptLabel): không có lối nhận số máy', () => {
+    const { base, model } = measureFirstModel();
+    renderWithProviders(<ScaleCalibration actions={{ ...base.actions, onRequestAcceptMachine: vi.fn() }} model={model} />);
+
+    expect(screen.queryByRole('button', { name: 'Dùng tạm tỷ lệ máy ước lượng' })).toBeNull();
+  });
+
+  it('hộp xác nhận nói rõ sai tới ±40 %; đồng ý mới gọi nhận số máy', () => {
+    const { base, model } = measureFirstModel('Dùng tạm tỷ lệ máy ước lượng');
+    const onConfirmAcceptMachine = vi.fn();
+    const onCancelAcceptMachine = vi.fn();
+    renderWithProviders(
+      <ScaleCalibration
+        actions={{ ...base.actions, onConfirmAcceptMachine, onCancelAcceptMachine }}
+        model={{ ...model, acceptMachineConfirm: ACCEPT_MACHINE_CONFIRM }}
+      />,
+    );
+
+    expect(screen.getByRole('dialog').textContent).toContain('±40 %');
+    fireEvent.click(screen.getByRole('button', { name: 'Vẫn dùng số máy' }));
+    expect(onConfirmAcceptMachine).toHaveBeenCalledTimes(1);
   });
 });
 

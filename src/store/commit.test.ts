@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { applyRollbackPatches, commit, replaceFloorLayer } from './commit';
+import { applyFloorLayerRead, applyRollbackPatches, commit, replaceFloorLayer } from './commit';
 import { useStore } from './index';
 import { readEntity } from '../domain/spatial/applyPatch';
 import { normalizeSpatial } from '../domain/spatial/normalize';
@@ -212,6 +212,45 @@ describe('store/commit.ts', () => {
 
       replaceFloorLayer(floorId, { layer: layerWithoutFirstWall(), revision: 3 }, { scaleSent: true });
       expect(useStore.getState().floorMeta[floorId]).toEqual({ revision: 3 });
+    });
+
+    it('R9: carries scaleState/scaleReasons with scaleStatus; a sent scale (user calibration) drops them — measures lose ≈', () => {
+      replaceFloorLayer(floorId, {
+        layer: layerWithoutFirstWall(),
+        revision: 2,
+        scaleStatus: 'unresolved',
+        scaleSource: 'pipeline',
+        scaleState: 'estimated',
+        scaleReasons: ['door'],
+      });
+      expect(useStore.getState().floorMeta[floorId]).toEqual({
+        revision: 2,
+        scaleReasons: ['door'],
+        scaleSource: 'pipeline',
+        scaleState: 'estimated',
+        scaleStatus: 'unresolved',
+      });
+
+      replaceFloorLayer(floorId, { layer: layerWithoutFirstWall(), revision: 3 }, { scaleSent: true });
+      expect(useStore.getState().floorMeta[floorId]).toEqual({ revision: 3 });
+    });
+
+    it('R9: a reload through applyFloorLayerRead keeps scaleState/scaleReasons (409 reload, version restore)', () => {
+      applyFloorLayerRead(floorId, {
+        layer: layerWithoutFirstWall(),
+        revision: 2,
+        scaleStatus: 'unresolved',
+        scaleSource: 'pipeline',
+        scaleState: 'estimated',
+        scaleReasons: ['door'],
+      });
+      expect(useStore.getState().floorMeta[floorId]).toEqual({
+        revision: 2,
+        scaleReasons: ['door'],
+        scaleSource: 'pipeline',
+        scaleState: 'estimated',
+        scaleStatus: 'unresolved',
+      });
     });
 
     it('adds a missing floor with its level in one set, keeping history and other floors', () => {

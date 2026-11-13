@@ -212,7 +212,15 @@ const makeLayerDocument = (floor: Floor, revision: number, layer?: SpatialLayer)
       ...base.level,
       ...(scale === undefined ? {} : { scaleMillimetresPerPixel: scale.value }),
     },
-    ...(scale?.provisional === true ? { scaleStatus: 'unresolved' as const, scaleSource: scale.source } : {}),
+    ...(scale?.provisional === true
+      ? {
+          scaleStatus: 'unresolved' as const,
+          scaleSource: scale.source,
+          ...(scale.detail?.scaleState === undefined ? {} : { scaleState: scale.detail.scaleState }),
+          ...(scale.detail?.scaleReasons === undefined ? {} : { scaleReasons: [...scale.detail.scaleReasons] }),
+          ...(scale.detail?.scaleBasis === undefined ? {} : { scaleBasis: scale.detail.scaleBasis }),
+        }
+      : {}),
   };
 };
 
@@ -1284,8 +1292,21 @@ const lastLayerWrites = new Map<string, { base: number; body: string; revision: 
 /** Tỉ lệ của tầng theo mã tầng: `provisional` → N16 trả `scaleStatus: 'unresolved'`; PUT có tỉ lệ gỡ nó. */
 const writtenScales = new Map<
   string,
-  { provisional: boolean; value: MillimetresPerPixel; source: 'pipeline' | 'project_default' }
+  {
+    provisional: boolean;
+    value: MillimetresPerPixel;
+    source: 'pipeline' | 'project_default';
+    /** R9: N16 `scaleState`/`scaleReasons`/`scaleBasis` của tỷ lệ tạm (chỉ khi `provisional`). */
+    detail?: MockScaleDetail;
+  }
 >();
+
+/** R9: khoá tỷ lệ mới của N16 mà bộ giả trả kèm tỷ lệ tạm. */
+export interface MockScaleDetail {
+  readonly scaleState?: 'determined' | 'estimated' | 'unresolved';
+  readonly scaleReasons?: readonly string[];
+  readonly scaleBasis?: 'chain' | 'paired' | 'note' | 'door' | 'wallThickness' | 'default';
+}
 /** Trục và gốc đã lưu qua #35 (G4b-17): gửi `axes` thay nguyên danh sách, gửi `origin` thay gốc. */
 const writtenAxes = new Map<string, FloorLayerDocument['axes']>();
 const writtenOrigins = new Map<string, { x: number; y: number }>();
@@ -1307,8 +1328,19 @@ export const simulateProvisionalScale = (
   floorId: string,
   value: number,
   source: 'pipeline' | 'project_default' = 'pipeline',
+  detail?: MockScaleDetail,
 ): void => {
-  writtenScales.set(floorId, { provisional: true, source, value: value as MillimetresPerPixel });
+  writtenScales.set(floorId, {
+    provisional: true,
+    source,
+    value: value as MillimetresPerPixel,
+    ...(detail === undefined ? {} : { detail }),
+  });
+};
+
+/** Tầng người dùng đã hiệu chỉnh tỷ lệ (N16 không còn `scaleStatus`) — như sau một lượt PUT #35. */
+export const simulateCalibratedScale = (floorId: string, value: number): void => {
+  writtenScales.set(floorId, { provisional: false, source: 'pipeline', value: value as MillimetresPerPixel });
 };
 
 const MOCK_REMOTE_ACTOR_ID = 'usr_01J9ZQK7X4N2M8P6R3T5V7W9Y1';

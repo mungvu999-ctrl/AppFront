@@ -9,7 +9,9 @@ import { useStore } from '@/store';
 import {
   SCALE_ALL_MISSING_BODY_READ_ONLY,
   SCALE_ALL_MISSING_TITLE,
+  SCALE_ESTIMATED_PREFIX,
   SCALE_HIDDEN_PREFIX,
+  SCALE_UNDETERMINED_PREFIX,
   SCALE_PROVISIONAL_PREFIX,
   ScaleBanner,
   ScaleEmptyNotice,
@@ -39,6 +41,8 @@ const thinWalls = (graph: SpatialGraph): SpatialGraph => ({
 interface ReadResult {
   scaleStatus?: 'unresolved';
   scaleSource?: 'pipeline' | 'project_default';
+  scaleState?: 'determined' | 'estimated' | 'unresolved' | 'userCalibrated';
+  scaleReasons?: string[];
   level?: { scaleMillimetresPerPixel?: number };
 }
 
@@ -195,6 +199,47 @@ describe('ScaleBanner', () => {
     expect(await screen.findByRole('heading', { name: SCALE_ALL_MISSING_TITLE })).toBeTruthy();
     expect(screen.getByText(SCALE_ALL_MISSING_BODY_READ_ONLY)).toBeTruthy();
     expect(screen.queryAllByRole('link', { name: 'Đặt tỷ lệ' })).toHaveLength(0);
+  });
+});
+
+describe('ScaleBanner (R9 scaleState)', () => {
+  const r9 = (scaleState: NonNullable<ReadResult['scaleState']>, scaleReasons: string[]): ReadResult => ({
+    ...MEASURED,
+    scaleState,
+    scaleReasons,
+  });
+
+  it('đọc từ bản vẽ: không vào dải; ước lượng và chưa xác định mỗi nhóm một dòng, lối "Hiệu chỉnh tỷ lệ"', async () => {
+    mount(createSampleBuilding(), async (floorId) => {
+      if (floorId === sampleLevelId(0)) return r9('determined', ['chain']);
+      if (floorId === sampleLevelId(1)) return r9('estimated', ['door']);
+      if (floorId === sampleLevelId(2)) return r9('unresolved', ['chain', 'sourceConflict']);
+      return {};
+    });
+    const banner = await screen.findByRole('status');
+    const [first, firstReason, second, secondReason] = Array.from(banner.querySelectorAll('p'));
+    expect(first?.textContent).toBe(`${SCALE_UNDETERMINED_PREFIX}Level 2Hiệu chỉnh tỷ lệ`);
+    // Phản biện X F4: lý do hiện thành chữ, không chỉ trong chú thích.
+    expect(firstReason?.textContent).toBe(
+      'Đọc từ chuỗi kích thước trên bản vẽ; Số đo trên bản vẽ mâu thuẫn với ước từ cửa và tường.',
+    );
+    expect(second?.textContent).toBe(`${SCALE_ESTIMATED_PREFIX}Level 1`);
+    expect(secondReason?.textContent).toBe('Ước từ bề rộng cửa đi (giả định 745 mm).');
+    expect(banner.textContent).not.toContain('Level 0');
+    expect(second?.querySelector('span')?.getAttribute('title')).toContain('Ước từ bề rộng cửa đi (giả định 745 mm)');
+    expect(screen.getByRole('link', { name: 'Hiệu chỉnh tỷ lệ' }).getAttribute('href')).toBe(
+      `/projects/p1/floors/${sampleLevelId(2)}/scale`,
+    );
+  });
+
+  it('chưa xác định vẫn dựng 3D (không vào missingIds); mọi tầng đọc từ bản vẽ thì không dải', async () => {
+    /* eslint-disable-next-line local/no-direct-set -- giả lập kho vừa nạp, như bridge.test.ts */
+    useStore.setState({ spatial: normalizeSpatial(createSampleBuilding()) });
+    const status = await scaleStatusOf('p1-r9', async () => r9('unresolved', ['basisUnknown']));
+    expect(status).toMatchObject({ status: 'unresolved', missingIds: [], allMissing: false });
+    /* eslint-disable-next-line local/no-direct-set -- cảnh mới, lượt đọc mới */
+    useStore.setState({ spatial: normalizeSpatial(createSampleBuilding()) });
+    expect(await scaleStatusOf('p1-r9', async () => r9('determined', ['chain']))).toEqual({ status: 'resolved' });
   });
 });
 

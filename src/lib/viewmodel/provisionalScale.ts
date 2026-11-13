@@ -32,18 +32,34 @@ export const SCALE_PROPOSED_LABEL = 'Tỷ lệ đề xuất, chưa xác nhận';
 export const SCALE_ESTIMATED_NOTE = 'Tỷ lệ ước lượng — nên hiệu chỉnh';
 
 /**
- * Ba trạng thái tỷ lệ của một tầng (UX-R2 K50/K20/K46) — MỘT nguồn chữ và màu cho thanh bước,
- * cổng, dải, chip Các tầng, Xử lý, Quy chuẩn và 3D: `missing` đỏ (máy không đo được, đang dùng
- * mặc định dự án — khoá các bước sau), `check` vàng (máy đo được, cần người kiểm — không khoá),
- * `confirmed` xanh (người đã đặt/xác nhận; A5: xanh chỉ cho việc người duyệt).
+ * N16 `scaleState` (R9, tuỳ chọn): máy chủ chốt tỷ lệ của tầng thuộc loại nào — `determined` đọc từ số
+ * trên bản vẽ không nghi vấn; `estimated` chỉ ước (cửa 745 mm, độ dày tường, ghi chú 1:N); `unresolved`
+ * không đủ căn cứ hoặc nguồn mâu thuẫn; `userCalibrated` người dùng đã hiệu chỉnh. Vắng = máy chủ cũ.
  */
-export type ScaleState = 'missing' | 'check' | 'confirmed';
+export type WireScaleState = 'determined' | 'estimated' | 'unresolved' | 'userCalibrated';
+
+/** Phần R9 của khoá tỷ lệ N16 một tầng. */
+export interface FloorScaleDetail {
+  readonly scaleState?: WireScaleState | undefined;
+  readonly scaleReasons?: readonly string[] | undefined;
+}
+
+/**
+ * Trạng thái tỷ lệ của một tầng (UX-R2 K50/K20/K46) — MỘT nguồn chữ và màu cho thanh bước, cổng, dải,
+ * chip Các tầng, Xử lý, Quy chuẩn và 3D: `missing` đỏ (máy không đo được, đang dùng mặc định dự án —
+ * khoá các bước sau); `check` vàng (máy chủ cũ, không có `scaleState`: máy đo được, cần người kiểm);
+ * `undetermined` vàng (R9: chưa xác định — thiếu căn cứ hoặc nguồn mâu thuẫn); `estimated` vàng (R9:
+ * chỉ ước lượng); `measured` trung tính (R9: đọc từ bản vẽ, số hiện bình thường); `confirmed` xanh
+ * (người đã đặt/xác nhận; A5: xanh chỉ cho việc người duyệt). Không trạng thái R9 nào thành `missing`
+ * trừ khi nguồn là mặc định dự án — `missing` bỏ tầng khỏi cảnh 3D.
+ */
+export type ScaleState = 'missing' | 'check' | 'undetermined' | 'estimated' | 'measured' | 'confirmed';
 
 export interface ScaleStateView {
   /** Tên trạng thái, dùng y nguyên ở mọi màn. */
   readonly name: string;
-  /** Mã màu A4 (view tự map sang token). */
-  readonly statusCode: 'violation' | 'attention' | 'verified';
+  /** Mã màu A4 (view tự map sang token); `neutral` = không cần chú ý. */
+  readonly statusCode: 'violation' | 'attention' | 'verified' | 'neutral';
   /** Động từ của nút dẫn tới màn Tỷ lệ; `null` khi không còn việc. */
   readonly action: string | null;
 }
@@ -51,17 +67,91 @@ export interface ScaleStateView {
 export const SCALE_STATE_VIEWS = {
   missing: { name: 'Chưa có tỷ lệ', statusCode: 'violation', action: 'Đặt tỷ lệ' },
   check: { name: 'Tỷ lệ cần kiểm', statusCode: 'attention', action: 'Xác nhận tỷ lệ' },
+  undetermined: { name: 'Tỷ lệ chưa xác định', statusCode: 'attention', action: 'Hiệu chỉnh tỷ lệ' },
+  estimated: { name: 'Tỷ lệ ước lượng', statusCode: 'attention', action: 'Hiệu chỉnh tỷ lệ' },
+  measured: { name: 'Tỷ lệ đọc từ bản vẽ', statusCode: 'neutral', action: null },
   confirmed: { name: 'Tỷ lệ đã xác nhận', statusCode: 'verified', action: null },
 } as const satisfies Readonly<Record<ScaleState, ScaleStateView>>;
 
 /**
- * Trạng thái tỷ lệ từ hai khoá N16 khi không có đồ thị tầng: không `unresolved` → đã xác nhận;
- * `project_default` → chưa có; còn lại → cần kiểm. Có đồ thị thì `floorScaleStateOf` (qc/shared)
- * xét thêm tỷ lệ vô lý.
+ * Trạng thái tỷ lệ từ khoá N16 khi không có đồ thị tầng. Có `scaleState` (R9) thì theo nó; vắng (máy chủ
+ * cũ) thì luật cũ: không `unresolved` → đã xác nhận; `project_default` → chưa có; còn lại → cần kiểm.
+ * Có đồ thị thì `floorScaleStateOf` (qc/shared) xét thêm tỷ lệ vô lý.
  */
-export function scaleStateOf(scaleStatus: ScaleStatus, scaleSource: ScaleSource | undefined): ScaleState {
-  if (scaleStatus !== 'unresolved') return 'confirmed';
-  return isScaleMissing(scaleSource) ? 'missing' : 'check';
+export function scaleStateOf(
+  scaleStatus: ScaleStatus,
+  scaleSource: ScaleSource | undefined,
+  scaleState?: WireScaleState,
+): ScaleState {
+  switch (scaleState) {
+    case 'userCalibrated':
+      return 'confirmed';
+    case 'determined':
+      return 'measured';
+    case 'estimated':
+      return 'estimated';
+    case 'unresolved':
+      return isScaleMissing(scaleSource) ? 'missing' : 'undetermined';
+    case undefined:
+      if (scaleStatus !== 'unresolved') return 'confirmed';
+      return isScaleMissing(scaleSource) ? 'missing' : 'check';
+  }
+}
+
+/** Hậu tố số đo theo trạng thái: rỗng khi số tin được (hoặc khi không có số — `missing`). */
+export const SCALE_MEASURE_SUFFIX = {
+  missing: '',
+  check: ' (tạm)',
+  undetermined: ' (chưa xác định)',
+  estimated: ' (ước lượng)',
+  measured: '',
+  confirmed: '',
+} as const satisfies Readonly<Record<ScaleState, string>>;
+
+/** Câu tiếng Việt cho từng mã N16 `scaleReasons` (mã đầu = nguồn, sau đó = nghi vấn). */
+export const SCALE_REASON_TEXT: Readonly<Record<string, string>> = {
+  chain: 'Đọc từ chuỗi kích thước trên bản vẽ',
+  paired: 'Đọc từ các số đo khớp với tường',
+  note: 'Suy từ ghi chú tỷ lệ 1:N, chưa kiểm khổ in',
+  door: 'Ước từ bề rộng cửa đi (giả định 745 mm)',
+  wallThickness: 'Ước từ bề dày tường (giả định 150 mm)',
+  projectDefault: 'Máy không đo được, đang dùng tỷ lệ mặc định của dự án',
+  sourceConflict: 'Số đo trên bản vẽ mâu thuẫn với ước từ cửa và tường',
+  anisotropic: 'Ảnh giãn không đều theo hai chiều',
+  estimateSpread: 'Ước từ cửa và từ tường lệch nhau',
+  pageChanged: 'Trang bản vẽ đã đổi sau lần hiệu chỉnh',
+  human: 'Do bạn hiệu chỉnh bằng một kích thước đã biết',
+};
+
+/** Mã lạ (máy chủ mới hơn) hoặc `basisUnknown`: một câu chung, không vỡ màn. */
+export const SCALE_REASON_UNKNOWN = 'Chưa rõ căn cứ của tỷ lệ';
+
+export function scaleReasonTextOf(code: string): string {
+  return Object.prototype.hasOwnProperty.call(SCALE_REASON_TEXT, code)
+    ? (SCALE_REASON_TEXT[code] ?? SCALE_REASON_UNKNOWN)
+    : SCALE_REASON_UNKNOWN;
+}
+
+/** Các lý do thành một câu ("A; B."), bỏ câu trùng; `null` khi không có mã nào. */
+export function scaleReasonsSentenceOf(reasons: readonly string[] | undefined): string | null {
+  const texts = [...new Set((reasons ?? []).map(scaleReasonTextOf))];
+
+  return texts.length === 0 ? null : `${texts.join('; ')}.`;
+}
+
+/** Lời mời hiệu chỉnh: một kích thước đã biết là đủ. */
+export const CALIBRATE_BY_ONE_LENGTH = 'Hiệu chỉnh bằng một kích thước đã biết để số đo hết dấu ≈.';
+
+/**
+ * Câu trạng thái + lý do cho dải ở màn Tỷ lệ, Xử lý và trình sửa 3D (R9). `null` khi số đo tin được
+ * (`measured`, `confirmed`) hoặc máy chủ cũ (`check` — các màn giữ câu cũ của mình).
+ */
+export function scaleStateMessageOf(state: ScaleState, reasons: readonly string[] | undefined): string | null {
+  if (state !== 'undetermined' && state !== 'estimated' && state !== 'missing') return null;
+  const why = scaleReasonsSentenceOf(reasons);
+  const head = `${SCALE_STATE_VIEWS[state].name}${why === null ? '.' : `: ${why}`}`;
+
+  return state === 'missing' ? head : `${head} ${CALIBRATE_BY_ONE_LENGTH}`;
 }
 
 export interface ProvisionalScaleNoticeView {
@@ -123,19 +213,34 @@ export function thicknessLockTextOf(thicknessesMm: readonly number[], scaleSourc
 export const MISSING_MEASURE_TEXT = 'Chưa có';
 
 /**
- * Chữ số đo theo trạng thái tỷ lệ (UX-R2): đã xác nhận → số; chưa có → "Chưa có";
- * cần kiểm → "≈ <số> (tạm)" để người dùng vẫn thấy số máy đo nhưng biết nó chưa chắc.
+ * Chữ số đo theo trạng thái tỷ lệ (UX-R2, R9): số tin được → số; chưa có → "Chưa có"; còn lại →
+ * "≈ <số> (tạm | ước lượng | chưa xác định)" để người dùng vẫn thấy số máy đo nhưng biết nó chưa chắc.
  */
-export function measureTextOf(formatted: string, scaleStatus: ScaleStatus, scaleSource?: ScaleSource): string {
-  const state = scaleStateOf(scaleStatus, scaleSource);
+export function measureTextOf(
+  formatted: string,
+  scaleStatus: ScaleStatus,
+  scaleSource?: ScaleSource,
+  scaleState?: WireScaleState,
+): string {
+  const state = scaleStateOf(scaleStatus, scaleSource, scaleState);
   if (state === 'missing') return MISSING_MEASURE_TEXT;
-  return state === 'check' ? `≈ ${formatted} (tạm)` : formatted;
+  const suffix = SCALE_MEASURE_SUFFIX[state];
+  return suffix === '' ? formatted : `≈ ${formatted}${suffix}`;
 }
 
 export function provisionalScaleNoticeOf(
   scaleStatus: ScaleStatus,
   scaleSource?: ScaleSource,
+  scaleState?: WireScaleState,
+  scaleReasons?: readonly string[],
 ): ProvisionalScaleNoticeView | null {
+  if (scaleState !== undefined) {
+    const state = scaleStateOf(scaleStatus, scaleSource, scaleState);
+    if (state === 'missing') return { level: 'violation', message: MISSING_SCALE_MESSAGE };
+    const message = scaleStateMessageOf(state, scaleReasons);
+    return message === null ? null : { level: 'attention', message };
+  }
+
   if (scaleStatus !== 'unresolved') {
     return null;
   }

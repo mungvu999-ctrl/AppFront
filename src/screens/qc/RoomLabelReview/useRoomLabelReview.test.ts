@@ -930,6 +930,24 @@ describe('tỷ lệ tạm (F-04x-2)', () => {
     expect(measureRoom(withoutClear, scale)).not.toHaveProperty('centerlineAreaText');
   });
 
+  it('R9: số đo phòng theo scaleState — ước lượng / chưa xác định có dấu, đọc từ bản vẽ số trơn', () => {
+    const room: Room = {
+      ...ROOM_R005,
+      outline: [
+        { x: 0, y: 0 },
+        { x: 4000, y: 0 },
+        { x: 4000, y: 4000 },
+        { x: 0, y: 4000 },
+      ] as unknown as Room['outline'],
+    };
+    const scale = scaleFromRatio(millimetresPerPixel(1));
+
+    expect(measureRoom(room, scale, 'unresolved', 'pipeline', 'estimated').areaText).toBe('≈ 16,00 m² (ước lượng)');
+    expect(measureRoom(room, scale, 'unresolved', 'pipeline', 'unresolved').areaText).toBe('≈ 16,00 m² (chưa xác định)');
+    expect(measureRoom(room, scale, 'unresolved', 'pipeline', 'determined').areaText).toBe('16,00 m²');
+    expect(measureRoom(room, scale, 'unresolved', 'project_default', 'unresolved').areaText).toBe('Chưa có');
+  });
+
   /* UX-R2 K22/K04: tỷ lệ "cần kiểm" (vàng) không còn dải ở màn; số đo vẫn "≈ … (tạm)". */
   it('tầng unresolved do máy đo: không dải vàng; diện tích, chu vi, tổng hiện "≈ … (tạm)" (K16)', async () => {
     const mounted = await mountSettled({

@@ -110,6 +110,10 @@ export const ScaleBasisSchema = z.enum(['chain', 'paired', 'note', 'door', 'wall
 
 export type ScaleBasis = z.infer<typeof ScaleBasisSchema>;
 
+/** R9: bốn trạng thái tỷ lệ máy chủ biết hôm nay; giá trị khác được đọc là `estimated`. */
+const WIRE_SCALE_STATES = ['determined', 'estimated', 'unresolved', 'userCalibrated'] as const;
+type WireScaleStateName = (typeof WIRE_SCALE_STATES)[number];
+
 export const FloorLayerDocumentSchema = z
   .object({
     axes: z.array(AxisSchema),
@@ -125,6 +129,18 @@ export const FloorLayerDocumentSchema = z
     scaleSource: z.enum(['pipeline', 'project_default']).optional(),
     /** Tỷ lệ máy ước từ độ dày tường (mm/px), để người dùng xác nhận khi chưa có tỷ lệ (UX-R2). */
     suggestedScaleMmPerPx: scaleMillimetresPerPixelSchema.optional(),
+    /**
+     * R9: tỷ lệ máy chủ chốt thuộc loại nào (`determined` đọc từ bản vẽ, `estimated` chỉ ước, `unresolved`
+     * thiếu căn cứ/mâu thuẫn, `userCalibrated` người hiệu chỉnh). Vắng = máy chủ cũ → luật cũ theo `scaleStatus`.
+     */
+    // Chuỗi bất kỳ: trạng thái mới của máy chủ sau này không làm vỡ trang — coi như `estimated` (vẫn đánh dấu ≈).
+    scaleState: z
+      .string()
+      .min(1)
+      .transform((value) => (WIRE_SCALE_STATES.includes(value as WireScaleStateName) ? (value as WireScaleStateName) : 'estimated'))
+      .optional(),
+    /** R9: mã lý do (mã đầu = nguồn, sau = nghi vấn). Chuỗi chứ không enum: mã mới của máy chủ không vỡ màn. */
+    scaleReasons: z.array(z.string().min(1)).optional(),
     /** DPI của ảnh máy đã xử lý khi biết (PDF dựng ở DPI nào); `null`/vắng = không biết. Có thì nhập thẳng 1:N (U01). */
     sourceDpi: z.number().positive().finite().nullish(),
     /** Lớp đề xuất M2 — nhận rồi bỏ, `transform` dưới không chép (xem `ignoredSuggestionLayerShape`). */
@@ -150,6 +166,8 @@ export const FloorLayerDocumentSchema = z
     ...(wireDocument.scaleStatus !== undefined ? { scaleStatus: wireDocument.scaleStatus } : {}),
     ...(wireDocument.scaleBasis !== undefined ? { scaleBasis: wireDocument.scaleBasis } : {}),
     ...(wireDocument.scaleSource !== undefined ? { scaleSource: wireDocument.scaleSource } : {}),
+    ...(wireDocument.scaleState !== undefined ? { scaleState: wireDocument.scaleState } : {}),
+    ...(wireDocument.scaleReasons !== undefined ? { scaleReasons: wireDocument.scaleReasons } : {}),
     ...(wireDocument.suggestedScaleMmPerPx !== undefined
       ? { suggestedScaleMmPerPx: wireDocument.suggestedScaleMmPerPx }
       : {}),

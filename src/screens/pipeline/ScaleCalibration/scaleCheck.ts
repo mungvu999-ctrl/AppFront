@@ -12,7 +12,13 @@
 import { A3_SHORT_EDGE_MM, formatDrawingScaleRatio } from '@/lib/format/measure';
 import { formatNumber } from '@/lib/format/number';
 import { millimetres, millimetresToMetres } from '@/domain/units/types';
-import { SCALE_STATE_VIEWS } from '@/lib/viewmodel/provisionalScale';
+import {
+  CALIBRATE_BY_ONE_LENGTH,
+  SCALE_MEASURE_SUFFIX,
+  SCALE_STATE_VIEWS,
+  scaleReasonsSentenceOf,
+  type ScaleState,
+} from '@/lib/viewmodel/provisionalScale';
 
 const MM_PER_INCH = 25.4;
 /** Hai tỷ lệ in thường gặp và hai DPI quét thường gặp của bảng đối chiếu. */
@@ -50,6 +56,10 @@ export interface ScaleCheckInput {
   readonly dimensionCount?: number;
   /** D1: tỷ lệ đang hiện chỉ là máy đoán (chưa ai xác nhận, chưa ai gõ/đo). */
   readonly isGuess?: boolean;
+  /** R9: trạng thái tỷ lệ máy chủ chốt (N16 `scaleState`) của tỷ lệ máy đo; vắng = máy chủ cũ. */
+  readonly scaleState?: ScaleState;
+  /** R9: mã lý do (N16 `scaleReasons`). */
+  readonly scaleReasons?: readonly string[];
 }
 
 export interface ScaleCheckViewModel {
@@ -188,6 +198,25 @@ function guessSentence(input: ScaleCheckInput, sizeText: string | null): string 
   return `Máy đang ĐOÁN tỷ lệ (không đọc được số kích thước). Sai có thể tới ±40 %.${sizeText === null ? '' : ` Cỡ căn theo đoán: ${sizeText}.`}`;
 }
 
+/**
+ * R9: số đang hiện là của máy (đề xuất / tạm) và máy chủ có `scaleState` — tên trạng thái + căn cứ;
+ * chưa chắc thì mời hiệu chỉnh bằng một kích thước đã biết. `null` = dùng câu cũ.
+ */
+function r9StatusOf(input: ScaleCheckInput, base: string): ScaleStatus | null {
+  const { scaleState } = input;
+  if (scaleState === undefined || scaleState === 'missing') return null;
+  if (input.source !== 'proposed' && input.source !== 'provisional') return null;
+  const view = SCALE_STATE_VIEWS[scaleState];
+  const why = scaleReasonsSentenceOf(input.scaleReasons);
+  const invite = SCALE_MEASURE_SUFFIX[scaleState] === '' ? null : CALIBRATE_BY_ONE_LENGTH;
+
+  return {
+    tone: view.statusCode === 'verified' ? 'neutral' : view.statusCode,
+    label: view.name,
+    sentence: [why, base, invite].filter((part) => part !== null).join(' '),
+  };
+}
+
 function statusOf(
   input: ScaleCheckInput,
   densityLabel: string,
@@ -198,6 +227,11 @@ function statusOf(
   // K17: người dùng soi được cỡ căn thật, không soi được 1:N suy từ khổ A3.
   const withRatio = sizeText === null ? `tỷ lệ ${ratio ?? `${densityLabel} mm/px`}` : `tỷ lệ cho căn ${sizeText}`;
   const guess = guessSentence(input, sizeText);
+  // R9 (phản biện X): có mã lý do thì căn cứ do lý do nói; không ghép câu "không đọc được số kích thước" kẻo
+  // mâu thuẫn với "số đo trên bản vẽ…".
+  const hasReasons = (input.scaleReasons ?? []).length > 0;
+  const r9 = r9StatusOf(input, hasReasons ? `Máy ước ${withRatio}, chưa ai xác nhận.` : (guess ?? `Máy ước ${withRatio}, chưa ai xác nhận.`));
+  if (r9 !== null) return r9;
 
   switch (input.source) {
     // UX-R2 K05/K50: câu trạng thái chỉ nói tình hình; lời dẫn duy nhất nằm ở dải trên bản vẽ.

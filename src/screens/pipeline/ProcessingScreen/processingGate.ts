@@ -197,7 +197,10 @@ export function deriveProcessingGate(props: ProcessingScreenProps): ProcessingGa
   // `needsReview` không bao giờ ra 'ready' (FIX-P0-15): tỷ lệ tạm mà có kích thước từng báo "Sẵn sàng".
   const reasons: readonly ProcessingReviewReason[] = summary.reviewReasons ?? [];
   // Tỷ lệ ước lượng nói trước nguồn tỷ lệ: người đọc cần biết số nào chưa đáng tin.
-  const scaleNote = summary.scaleEstimated === true ? SCALE_ESTIMATED_NOTE : summary.scaleSourceNote;
+  // R9: máy chủ có `scaleState` thì câu trạng thái + lý do thay câu cũ.
+  const scaleNote =
+    summary.scaleStateNote ?? (summary.scaleEstimated === true ? SCALE_ESTIMATED_NOTE : summary.scaleSourceNote);
+  const stateLabel = summary.scaleStateLabel;
   if (reasons.length > 0) {
     const rows = reviewRowsOf(reasons, summary.reviewChecks ?? []);
     const isScaleUnresolved = reasons.includes('scaleUnresolved');
@@ -214,7 +217,7 @@ export function deriveProcessingGate(props: ProcessingScreenProps): ProcessingGa
       chipLabel: 'Xong · cần xem lại',
       chipVariant: 'attention',
       title: rows.length === 1 ? 'Còn 1 việc cần xem lại' : `Còn ${String(rows.length)} việc cần xem lại`,
-      scaleValue: isScaleUnresolved ? 'Cần kiểm' : SCALE_PROPOSED_LABEL,
+      scaleValue: stateLabel ?? (isScaleUnresolved ? 'Cần kiểm' : SCALE_PROPOSED_LABEL),
       ...(scaleNote !== undefined ? { scaleNote } : {}),
       isScaleOk: !isScaleUnresolved,
       reviewRows: rows,
@@ -232,7 +235,9 @@ export function deriveProcessingGate(props: ProcessingScreenProps): ProcessingGa
     chipVariant: 'verified',
     title: 'Sẵn sàng duyệt tầng',
     scaleValue:
-      scaleKnown && noDimension ? 'Đã đặt' : scaleNote !== undefined ? 'Máy đề xuất' : SCALE_PROPOSED_LABEL,
+      scaleKnown && noDimension
+        ? 'Đã đặt'
+        : (stateLabel ?? (scaleNote !== undefined ? 'Máy đề xuất' : SCALE_PROPOSED_LABEL)),
     ...(scaleNote !== undefined ? { scaleNote } : {}),
     isScaleOk: true,
     action: { label: GO_REVIEW_LABEL, isForward: true, onClick: summary.onReviewWalls },

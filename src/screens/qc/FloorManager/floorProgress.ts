@@ -11,7 +11,7 @@
 
 import { millimetres, millimetresToMetres } from '@/domain/units/types';
 import { formatNumber } from '@/lib/format/number';
-import { SCALE_STATE_VIEWS } from '@/lib/viewmodel/provisionalScale';
+import { SCALE_MEASURE_SUFFIX, SCALE_STATE_VIEWS } from '@/lib/viewmodel/provisionalScale';
 
 import type { FloorRowVm } from './floorManagerTypes';
 import { elevationSignedText, heightMmText } from './floorFormat';
@@ -46,7 +46,6 @@ export function floorStepOf(row: FloorRowVm): FloorStepVm {
 
   /* Chip dùng tên + màu chung của trạng thái tỷ lệ (UX-R2 K46). Chưa có tỷ lệ: diện tích theo tỷ lệ
      mặc định là số sai, nên không in (K12); tỷ lệ cần kiểm: số tạm, ghi rõ "≈ … (tạm)". */
-  // ponytail: chuỗi diện tích tạm viết tại chỗ; đổi sang measureTextOf 3 tham số khi provisionalScale.ts có.
   if (row.isScaleMissing) {
     return {
       label: SCALE_STATE_VIEWS.missing.name,
@@ -56,12 +55,14 @@ export function floorStepOf(row: FloorRowVm): FloorStepVm {
     };
   }
 
-  if (row.scaleState === 'check') {
+  const suffix = SCALE_MEASURE_SUFFIX[row.scaleState];
+  if (suffix !== '') {
+    const view = SCALE_STATE_VIEWS[row.scaleState];
     return {
-      label: SCALE_STATE_VIEWS.check.name,
-      tone: SCALE_STATE_VIEWS.check.statusCode,
-      nextText: 'xác nhận tỷ lệ, rồi duyệt tường, phòng',
-      summaryText: `${row.wallCountText} tường, ${row.roomCountText} phòng, ≈ ${row.areaText} (tạm)`,
+      label: view.name,
+      tone: 'attention',
+      nextText: `${(view.action ?? '').toLowerCase()}, rồi duyệt tường, phòng`,
+      summaryText: `${row.wallCountText} tường, ${row.roomCountText} phòng, ≈ ${row.areaText}${suffix}`,
     };
   }
 

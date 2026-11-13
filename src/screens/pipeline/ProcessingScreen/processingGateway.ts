@@ -97,7 +97,14 @@ import { createProgressStream } from '@/lib/realtime/progressStream';
 import type { ProgressStreamSource, ProgressStreamState } from '@/lib/realtime/progressStream';
 import { createBeaconTransport, createTelemetrySender } from '@/lib/telemetry/sender';
 import type { TelemetrySender } from '@/lib/telemetry/sender';
-import { isScaleEstimated, isScaleMissing } from '@/lib/viewmodel/provisionalScale';
+import {
+  isScaleEstimated,
+  isScaleMissing,
+  SCALE_STATE_VIEWS,
+  scaleReasonsSentenceOf,
+  scaleStateMessageOf,
+  scaleStateOf,
+} from '@/lib/viewmodel/provisionalScale';
 import { noteRatioOf } from '@/screens/pipeline/ScaleCalibration/scaleCheck';
 
 /** Số lượt gần nhất tab "Nhật ký" liệt kê (N5-08). */
@@ -258,6 +265,12 @@ export interface ProcessingExtractionSummary {
   readonly readiness?: FloorReadiness;
   /** N16 `scaleBasis` là cửa / độ dày tường / mặc định: tỷ lệ máy ước lượng, nên hiệu chỉnh. */
   readonly scaleEstimated?: true;
+  /** R9: tên trạng thái tỷ lệ (`SCALE_STATE_VIEWS`) khi N16 có `scaleState`. */
+  readonly scaleStateLabel?: string;
+  /** R9: câu trạng thái + lý do (`scaleStateMessageOf`); số tin được thì chỉ câu căn cứ. */
+  readonly scaleStateNote?: string;
+  /** R9: tỷ lệ tầng chỉ ước lượng / chưa xác định — được nói trước ở màn Xử lý. */
+  readonly scaleStateNeedsAttention?: true;
   readonly roomCount: number;
   /**
    * Đường bao các phòng của tầng (mm). Hook cộng mọi tầng bằng `totalArea` — cộng mm² rồi
@@ -839,14 +852,26 @@ export function toExtractionSummary(
       : [...walls, ...openings, ...furniture, ...rooms].filter(
           (item) => !item.reviewed && item.confidence < confidenceThreshold,
         ).length;
+  // R9: tỷ lệ đọc từ bản vẽ (`determined`) không phải lý do xem lại — cùng luật readiness của máy chủ mới.
+  const scaleSettled = document.scaleState === 'determined' || document.scaleState === 'userCalibrated';
   const readiness: FloorReadiness | undefined =
     document.readiness ??
-    (document.scaleStatus === 'unresolved' ? { state: 'needsReview', reasons: ['scaleUnresolved'] } : undefined);
+    (document.scaleStatus === 'unresolved' && !scaleSettled ? { state: 'needsReview', reasons: ['scaleUnresolved'] } : undefined);
   const isProposed =
     document.scaleStatus === 'unresolved' &&
     !isScaleMissing(document.scaleSource) &&
     document.level.scaleMillimetresPerPixel !== undefined;
   const noteRatio = isProposed ? noteRatioOf(document.level.scaleMillimetresPerPixel, document.sourceDpi) : null;
+  const scaleState =
+    document.scaleState === undefined ? undefined : scaleStateOf(document.scaleStatus, document.scaleSource, document.scaleState);
+  // Số tin được thì chỉ nói căn cứ, không mời hiệu chỉnh; người dùng đã hiệu chỉnh thì nói đúng nguồn ấy
+  // (máy chủ gửi `scaleReasons: []` cho `userCalibrated` — e2e R9 mục 8).
+  const attentionNote = scaleState === undefined ? null : scaleStateMessageOf(scaleState, document.scaleReasons);
+  const scaleStateNote =
+    scaleState === undefined
+      ? null
+      : (attentionNote ??
+        scaleReasonsSentenceOf(scaleState === 'confirmed' ? ['human'] : document.scaleReasons));
 
   return {
     wallCount: walls.length,
@@ -857,6 +882,9 @@ export function toExtractionSummary(
       document.level.scaleMillimetresPerPixel !== undefined && document.scaleStatus === undefined,
     ...(readiness !== undefined ? { readiness } : {}),
     ...(isScaleEstimated(document.scaleBasis) ? { scaleEstimated: true } : {}),
+    ...(scaleState !== undefined ? { scaleStateLabel: SCALE_STATE_VIEWS[scaleState].name } : {}),
+    ...(scaleStateNote !== null ? { scaleStateNote } : {}),
+    ...(attentionNote !== null ? { scaleStateNeedsAttention: true as const } : {}),
     ...(isScaleMissing(document.scaleSource) ? { scaleMissing: true } : {}),
     ...(isProposed ? { scaleProposed: true } : {}),
     ...(noteRatio !== null ? { scaleNoteRatio: noteRatio } : {}),

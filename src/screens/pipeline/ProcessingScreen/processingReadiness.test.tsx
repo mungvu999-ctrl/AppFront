@@ -122,6 +122,47 @@ describe('deriveProcessingGate — readiness', () => {
     expect(gate.title).toBe('Còn 3 việc cần xem lại');
   });
 
+  it('R9: câu trạng thái + lý do thay câu cũ, giá trị là tên trạng thái; lối "Đặt tỷ lệ" vẫn đi trước', () => {
+    const onCalibrateScale = vi.fn();
+    const gate = deriveProcessingGate({
+      ...scenarioFor('success'),
+      summary: {
+        ...SAMPLE_SUMMARY,
+        reviewReasons: ['scaleUnresolved'],
+        scaleEstimated: true,
+        scaleStateLabel: 'Tỷ lệ ước lượng',
+        scaleStateNote: 'Tỷ lệ ước lượng: Ước từ bề rộng cửa đi (giả định 745 mm).',
+        onCalibrateScale,
+      },
+    });
+
+    expect(gate.scaleValue).toBe('Tỷ lệ ước lượng');
+    expect(gate.scaleNote).toBe('Tỷ lệ ước lượng: Ước từ bề rộng cửa đi (giả định 745 mm).');
+    gate.action?.onClick();
+    expect(onCalibrateScale).toHaveBeenCalled();
+  });
+
+  it('R9: N16 có scaleState thì tóm tắt mang tên trạng thái và câu lý do; đọc từ bản vẽ chỉ nói căn cứ, không cần xem lại', () => {
+    const unresolved = { scaleStatus: 'unresolved', scaleSource: 'pipeline' };
+    const estimated = toExtractionSummary(documentWith({ ...unresolved, scaleState: 'estimated', scaleReasons: ['door'] }), 0.75);
+    expect(estimated.scaleStateLabel).toBe('Tỷ lệ ước lượng');
+    expect(estimated.scaleStateNote).toMatch(/^Tỷ lệ ước lượng: Ước từ bề rộng cửa đi \(giả định 745 mm\)\./u);
+
+    const measured = toExtractionSummary(documentWith({ ...unresolved, scaleState: 'determined', scaleReasons: ['chain'] }), 0.75);
+    expect(measured.scaleStateLabel).toBe('Tỷ lệ đọc từ bản vẽ');
+    expect(measured.scaleStateNote).toBe('Đọc từ chuỗi kích thước trên bản vẽ.');
+    expect(measured.readiness).toBeUndefined();
+    expect(measured).not.toHaveProperty('scaleStateNeedsAttention');
+    expect(estimated.scaleStateNeedsAttention).toBe(true);
+
+    // e2e R9 mục 8: sau khi người dùng hiệu chỉnh, nguồn là người dùng — không phải "chuỗi kích thước".
+    const calibrated = toExtractionSummary(documentWith({ scaleState: 'userCalibrated', scaleReasons: [] }), 0.75);
+    expect(calibrated.scaleStateLabel).toBe('Tỷ lệ đã xác nhận');
+    expect(calibrated.scaleStateNote).toBe('Do bạn hiệu chỉnh bằng một kích thước đã biết.');
+    expect(calibrated.scaleStateNote).not.toContain('chuỗi kích thước');
+    expect(toExtractionSummary(documentWith(unresolved), 0.75)).not.toHaveProperty('scaleStateLabel');
+  });
+
   it('BENCH3D-11: tỷ lệ ước lượng (scaleBasis cửa/tường/mặc định) ghi nhãn cạnh tỷ lệ', () => {
     const gate = deriveProcessingGate({
       ...scenarioFor('success'),

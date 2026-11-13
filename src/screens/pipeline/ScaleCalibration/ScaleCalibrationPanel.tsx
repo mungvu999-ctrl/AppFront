@@ -177,16 +177,27 @@ export function ScaleCalibrationPanel({
               />
             </>
           )}
+          {/* R9: số máy chỉ ước / chưa xác định — đo trước, áp sau. */}
+          {panel.measureFirst !== undefined && (
+            <Button fullWidth onClick={actions.onPlaceSegment} variant="primary">
+              {panel.measureFirst.label}
+            </Button>
+          )}
           <Button
             disabled={!panel.canApply}
             fullWidth
             loading={panel.isApplying}
             onClick={actions.onApply}
             ref={applyButtonRef}
-            variant="primary"
+            variant={panel.measureFirst === undefined ? 'primary' : 'secondary'}
           >
             {panel.isApplying ? APPLY_APPLYING : (panel.applyLabel ?? APPLY_PRIMARY)}
           </Button>
+          {panel.measureFirst?.acceptLabel !== undefined && actions.onRequestAcceptMachine !== undefined && (
+            <Button onClick={actions.onRequestAcceptMachine} size="sm" variant="ghost">
+              {panel.measureFirst.acceptLabel}
+            </Button>
+          )}
           {panel.applyMissingHint !== undefined && (
             <p className="text-[12px] text-text-secondary">{panel.applyMissingHint}</p>
           )}

@@ -125,7 +125,15 @@ import { formatNumber, formatPercent, MISSING_VALUE } from '@/lib/format/number'
 import { formatCombo, keyCapLabels, parseCombo } from '@/lib/input/shortcutRegistry';
 import { MODIFIER_SHORTCUTS } from '@/lib/tools/shortcuts';
 import { queryKeys } from '@/lib/query/queryKeys';
-import { isScaleMissing, provisionalScaleNoticeOf, TINY_FOOTPRINT_MM } from '@/lib/viewmodel/provisionalScale';
+import { isScaleMissing, provisionalScaleNoticeOf, scaleStateOf, TINY_FOOTPRINT_MM } from '@/lib/viewmodel/provisionalScale';
+import {
+  ACCEPT_MACHINE_CONFIRM,
+  ACCEPT_MACHINE_LABEL,
+  machineScaleGateOf,
+  MEASURE_FIRST_HINT,
+  MEASURE_FIRST_LABEL,
+  MEASURE_FIRST_NOTICE,
+} from './machineScaleGate';
 import { ROUTES } from '@/routes/paths';
 import { commit } from '@/store/commit';
 import { useStore } from '@/store';
@@ -345,6 +353,8 @@ function confirmedLayerDocument(document: FloorLayerDocument, revision: number):
   const confirmed = { ...document, revision: Math.max(document.revision, revision) };
   delete confirmed.scaleStatus;
   delete confirmed.scaleSource;
+  delete confirmed.scaleState;
+  delete confirmed.scaleReasons;
 
   return confirmed;
 }
@@ -2016,6 +2026,11 @@ export function useScaleCalibration(
   applyScopeRef.current = effectiveApplyScope;
 
   /** "Áp": PUT trước, `commit` sau — kho chỉ đổi tỷ lệ khi máy chủ đã nhận (A5). */
+  /* R9: hộp xác nhận nhận số máy ước lượng (phản biện X F5). */
+  const [isAcceptMachineOpen, setAcceptMachineOpen] = useState(false);
+  const onRequestAcceptMachine = useCallback(() => setAcceptMachineOpen(true), []);
+  const onCancelAcceptMachine = useCallback(() => setAcceptMachineOpen(false), []);
+
   const onApply = useCallback(() => {
     const ratio = proposedRatioRef.current;
 
@@ -2081,6 +2096,11 @@ export function useScaleCalibration(
       },
     );
   }, [commitSaved, floorId, gateway, levelId, projectId, rememberProvisional, saveScale]);
+
+  const onConfirmAcceptMachine = useCallback(() => {
+    setAcceptMachineOpen(false);
+    onApply();
+  }, [onApply]);
 
   /* UX41 U56: lượt áp hỏng vì mất mạng — có mạng lại thì gửi lại đúng lượt ấy, một lần. */
   const onApplyRef = useRef(onApply);
@@ -2737,7 +2757,13 @@ export function useScaleCalibration(
 
   const isEmptyState = state === 'empty';
   // K12: máy không đo được tỷ lệ (`project_default`) thì câu đỏ — đúng màn người dùng phải đặt tỷ lệ.
-  const provisionalNotice = provisionalScaleNoticeOf(floorLayer.scaleStatus, floorLayer.scaleSource);
+  // R9: có `scaleState` thì câu nói trạng thái + lý do; đọc từ bản vẽ thì không nhắc.
+  const provisionalNotice = provisionalScaleNoticeOf(
+    floorLayer.scaleStatus,
+    floorLayer.scaleSource,
+    floorLayer.scaleState,
+    floorLayer.scaleReasons,
+  );
   const effectiveMethod: ScaleCalibrationMethod = rows.length === 0 ? 'referenceLine' : method;
 
   const cursorPixels = useMemo<PixelPoint>(() => {
@@ -2749,7 +2775,6 @@ export function useScaleCalibration(
   }, [cursorPoint, frame]);
 
   const model = useMemo<ScaleCalibrationViewModel>(() => {
-    const canApply = proposedRatio !== null;
     const oneDecimal = (ratio: number): string => formatNumber(ratio, { maxFractionDigits: 1 });
     const sizeSuffix = (ratio: number): string => {
       const size = planSizeAt(layerDocument, ratio);
@@ -2759,7 +2784,10 @@ export function useScaleCalibration(
     const noteRatio = noteRatioOf(pipelineRatio, sourceDpi);
     /* UX-02: máy chọn sẵn mốc từ chuỗi kích thước, người dùng chưa chạm gì. */
     const isRowProposal = !hasStartedWork && applyOutcome === null && selectedRow !== null;
-    const isMachineProposal = canApply && (isAutoSuggestion || isRowProposal);
+    const isMachineProposal = proposedRatio !== null && (isAutoSuggestion || isRowProposal);
+    // R9 (phản biện X F5): số máy chỉ ước / chưa xác định không áp bằng nút chính.
+    const machineGate = machineScaleGateOf(isMachineProposal, floorLayer.scaleState, floorLayer.scaleReasons);
+    const canApply = proposedRatio !== null && machineGate === null;
 
     return {
       state,
@@ -2852,8 +2880,16 @@ export function useScaleCalibration(
         applyScope: effectiveApplyScope,
         applyScopeOptions,
         canApply,
-        ...(canApply ? {} : { applyMissingHint: COPY.applyMissingHint }),
-        ...(isMachineProposal ? { applyLabel: COPY.machineApplyLabel } : {}),
+        ...(canApply ? {} : { applyMissingHint: machineGate === null ? COPY.applyMissingHint : MEASURE_FIRST_HINT }),
+        ...(isMachineProposal && machineGate === null ? { applyLabel: COPY.machineApplyLabel } : {}),
+        ...(machineGate === null
+          ? {}
+          : {
+              measureFirst: {
+                label: MEASURE_FIRST_LABEL,
+                ...(machineGate.allowAcceptMachine ? { acceptLabel: ACCEPT_MACHINE_LABEL } : {}),
+              },
+            }),
         ...(applyNotice !== null ? { applyBlockedNotice: applyNotice } : {}),
         canOpenViewer3d: applyOutcome === 'success',
         isApplying,
@@ -2882,6 +2918,16 @@ export function useScaleCalibration(
           planSizeMm: planSizeAt(layerDocument, proposedRatio ?? storedRatio ?? provisionalRatio),
           dimensionCount: layerDocument?.dimensions.length ?? 0,
           isGuess: storedRatio === null && typedRatio === null && proposedScale === null && drag === null && selectedRow === null,
+          // R9: chỉ khi số đang hiện vẫn là của máy — chưa ai gõ / kéo / chọn, hoặc máy chọn sẵn mốc / ước lượng
+          // (không thì thẻ nói "Đo được tỷ lệ…" ở tầng chưa xác định — e2e R9 mục 4).
+          ...(floorLayer.scaleState === undefined ||
+          !(
+            (storedRatio === null && typedRatio === null && proposedScale === null && drag === null && selectedRow === null) ||
+            (storedRatio === null && isMachineProposal)
+          )
+            ? {}
+            : { scaleState: scaleStateOf(floorLayer.scaleStatus, floorLayer.scaleSource, floorLayer.scaleState) }),
+          ...(floorLayer.scaleReasons === undefined ? {} : { scaleReasons: floorLayer.scaleReasons }),
         }),
         ...(layerDocument !== undefined &&
         layerDocument.layer.walls.length > 0 &&
@@ -2960,6 +3006,8 @@ export function useScaleCalibration(
             ? COPY.ratioEntryNotice(formatNumber(ratioDenominator), formatScaleDensity(ratioEntryRatio))
           : areaEntryRatio !== null && areaM2 !== null && areaPlanSize !== null
             ? COPY.areaEntryNotice(formatNumber(areaM2), planSizeText(areaPlanSize))
+          : machineGate !== null
+            ? MEASURE_FIRST_NOTICE
           : isAutoSuggestion && pipelineRatio !== null
             ? noteRatio !== null
               ? COPY.noteSuggestionNotice(formatNumber(noteRatio), oneDecimal(pipelineRatio), sizeSuffix(pipelineRatio))
@@ -2979,6 +3027,9 @@ export function useScaleCalibration(
       ...(provisionalNotice?.level === 'violation' ? { missingScaleNotice: provisionalNotice.message } : {}),
       saveBlock,
       readFailure,
+      ...(isAcceptMachineOpen && machineGate?.allowAcceptMachine === true
+        ? { acceptMachineConfirm: ACCEPT_MACHINE_CONFIRM }
+        : {}),
       ...(allFloors !== null
         ? {
             allFloorsConfirm: {
@@ -3005,7 +3056,11 @@ export function useScaleCalibration(
     isApplying,
     provisionalNotice,
     provisionalRatio,
+    floorLayer.scaleReasons,
     floorLayer.scaleSource,
+    floorLayer.scaleState,
+    floorLayer.scaleStatus,
+    isAcceptMachineOpen,
     isSuggestionActive,
     isAutoSuggestion,
     pipelineRatio,
@@ -3099,6 +3154,9 @@ export function useScaleCalibration(
       onChangeApplyScope,
       onConfirmAllFloors,
       onCancelAllFloors,
+      onRequestAcceptMachine,
+      onConfirmAcceptMachine,
+      onCancelAcceptMachine,
       onToggleCollapsed,
       onGoToPreprocessing,
       onRetry,
@@ -3108,6 +3166,9 @@ export function useScaleCalibration(
     [
       onPickDimensionChip,
       onApply,
+      onCancelAcceptMachine,
+      onConfirmAcceptMachine,
+      onRequestAcceptMachine,
       onCancelAllFloors,
       onChangeDrawingRatio,
       onChangeFlatArea,

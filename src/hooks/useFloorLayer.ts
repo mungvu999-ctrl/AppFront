@@ -10,7 +10,7 @@ import { queryKeys } from '@/lib/query/queryKeys';
 import { useStore } from '@/store';
 import { replaceFloorLayer } from '@/store/commit';
 import { floorMetaEntryOf } from '@/store/spatialSlice';
-import type { ScaleSource } from '@/lib/viewmodel/provisionalScale';
+import type { ScaleSource, WireScaleState } from '@/lib/viewmodel/provisionalScale';
 
 /**
  * Lượt đọc N16 của MỘT tầng cho màn một tầng (F-04x-2 bước 4).
@@ -56,6 +56,10 @@ export interface UseFloorLayerResult {
   readonly scaleStatus: 'unresolved' | undefined;
   /** Nguồn tỷ lệ tạm (chỉ khi có `scaleStatus`): `project_default` = máy không đo được (UX-R1 K12). */
   readonly scaleSource: ScaleSource | undefined;
+  /** N16 `scaleState` (R9) của tầng trong kho; vắng = máy chủ cũ hoặc tỷ lệ người đặt. */
+  readonly scaleState: WireScaleState | undefined;
+  /** N16 `scaleReasons` (R9) của tầng trong kho. */
+  readonly scaleReasons: readonly string[] | undefined;
   readonly refetch: () => void;
 }
 
@@ -80,6 +84,16 @@ export function applyFloorLayerDocument(projectId: string, floorId: string, docu
       projectId,
       ...(document.scaleStatus === undefined ? {} : { floorScaleStatus: { [floorId]: document.scaleStatus } }),
       ...(scale.scaleSource === undefined ? {} : { floorScaleSource: { [floorId]: scale.scaleSource } }),
+      ...(scale.scaleState === undefined && scale.scaleReasons === undefined
+        ? {}
+        : {
+            floorScaleDetail: {
+              [floorId]: {
+                ...(scale.scaleState === undefined ? {} : { scaleState: scale.scaleState }),
+                ...(scale.scaleReasons === undefined ? {} : { scaleReasons: scale.scaleReasons }),
+              },
+            },
+          }),
     });
 
     return;
@@ -99,7 +113,12 @@ export function applyFloorLayerDocument(projectId: string, floorId: string, docu
   const meta = state.floorMeta[floorId];
 
   if (meta !== undefined && document.revision === meta.revision) {
-    if (meta.scaleStatus !== scale.scaleStatus || meta.scaleSource !== scale.scaleSource) {
+    if (
+      meta.scaleStatus !== scale.scaleStatus ||
+      meta.scaleSource !== scale.scaleSource ||
+      meta.scaleState !== scale.scaleState ||
+      meta.scaleReasons?.join() !== scale.scaleReasons?.join()
+    ) {
       state.updateFloorMeta(floorId, scale);
     }
 
@@ -130,6 +149,8 @@ export function useFloorLayer({ projectId, floorId, read }: UseFloorLayerOptions
   const metaRevision = useStore((state) => state.floorMeta[floorId]?.revision);
   const scaleStatus = useStore((state) => state.floorMeta[floorId]?.scaleStatus);
   const scaleSource = useStore((state) => state.floorMeta[floorId]?.scaleSource);
+  const scaleState = useStore((state) => state.floorMeta[floorId]?.scaleState);
+  const scaleReasons = useStore((state) => state.floorMeta[floorId]?.scaleReasons);
   const storeProjectId = useStore((state) => state.spatialProjectId);
   const hasFloor = useStore((state) => state.spatial?.byId[floorId] !== undefined);
 
@@ -145,5 +166,5 @@ export function useFloorLayer({ projectId, floorId, read }: UseFloorLayerOptions
   }, [refetchQuery]);
   const errorMessage = useMemo(() => (query.error === null ? null : errorMessageOf(query.error)), [query.error]);
 
-  return { data, isPending: query.isPending, error: query.error, errorMessage, scaleStatus, scaleSource, refetch };
+  return { data, isPending: query.isPending, error: query.error, errorMessage, scaleStatus, scaleSource, scaleState, scaleReasons, refetch };
 }

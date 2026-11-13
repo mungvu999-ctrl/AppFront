@@ -58,6 +58,16 @@ describe('floorScaleStateOf', () => {
     expect(floorScaleStateOf('unresolved', 'pipeline', 13.9, true)).toBe('missing');
     expect(floorScaleStateOf(undefined, undefined, 13.9, true)).toBe('confirmed');
   });
+
+  it('R9: theo scaleState; unresolved không bao giờ thành missing (tầng vẫn dựng 3D) trừ mặc định dự án / hình vô lý', () => {
+    expect(floorScaleStateOf('unresolved', 'pipeline', 13.9, false, 'determined')).toBe('measured');
+    expect(floorScaleStateOf('unresolved', 'pipeline', 4.73, false, 'estimated')).toBe('estimated');
+    expect(floorScaleStateOf('unresolved', 'pipeline', 4.73, false, 'unresolved')).toBe('undetermined');
+    expect(floorScaleStateOf('unresolved', 'project_default', 1, false, 'unresolved')).toBe('missing');
+    expect(floorScaleStateOf('unresolved', 'pipeline', 4.73, true, 'determined')).toBe('missing');
+    expect(floorScaleStateOf(undefined, undefined, 13.9, true, 'userCalibrated')).toBe('confirmed');
+    expect(floorScaleStateOf('unresolved', 'pipeline', undefined, false, 'estimated')).toBe('missing');
+  });
 });
 
 describe('scaleImplausibleOf', () => {
