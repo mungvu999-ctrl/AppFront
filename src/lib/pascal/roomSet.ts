@@ -156,6 +156,18 @@ const SHAPE_RANGE: Readonly<Record<string, Readonly<Record<string, { readonly d:
   L: { sofa: { d: [0.75, 2.2] }, desk: { d: [0.45, 1.5] } },
 };
 /**
+ * LSA vòng 18 — "hộp góc": hộp vai sofa cạnh ngắn ≥ 1,30 m và dài/ngắn ≤ 1,8 (19 hộp / 15 căn đo ở F:/runs/m18/LS: ngắn
+ * 1,31–2,38, tỉ lệ 1,07–1,73) là sofa góc/chữ L. sceneRepair không kẹp sâu hộp này về hồ sơ sofa thẳng; bộ chọn chỉ cho mẫu
+ * dáng L (`shape === 'L'`) vào hộp góc và loại mẫu L khỏi mọi hộp sofa khác (`shapedMemberOf`).
+ */
+export const CORNER_SOFA_SHORT_M = 1.3;
+export const CORNER_SOFA_RATIO = 1.8;
+export const isCornerSofaBox = (w: number, d: number): boolean => {
+  const [s, l] = [Math.min(w, d), Math.max(w, d)];
+  // Sâu quá dải công năng của chính sofa L (SHAPE_RANGE.L.sofa, 2,2 m) → không phải hộp sofa góc: đi đường sofa thẳng như cũ.
+  return s >= CORNER_SOFA_SHORT_M - 1e-9 && s <= (SHAPE_RANGE.L?.sofa?.d[1] ?? Infinity) + 1e-9 && l <= s * CORNER_SOFA_RATIO + 1e-9;
+};
+/**
  * `user` = hộp người dùng xác nhận: chỉ cấm CO NHỎ dưới cỡ sử dụng (hệ số cao đều < cận dưới `sy`), không kiểm dải w/d/h.
  * Cận dưới chiều dài giường (sâu) không có dung sai: giường đôi ≥ 1,90 m, giường đơn ≥ 1,85 m.
  */
@@ -601,6 +613,40 @@ export const hardRejectOf = (m: SetMember, folder: string, ctx: SetContext, skip
   return undefined;
 };
 
+/**
+ * LSA vòng 18 — pool theo dáng của món vai sofa. Hộp góc (`isCornerSofaBox`) của món AI chưa xác nhận/ghim: chỉ mẫu L qua
+ * ràng buộc cứng (mẫu concept dáng thẳng mất quyền ưu tiên); không mẫu L nào qua → pool thẳng như cũ. Mọi món khác (hộp
+ * thẳng, cỡ người dùng, ghim, mẫu người dùng, twin): bỏ mẫu L khỏi pool và concept → pool/dải hoà y như trước khi có mẫu L.
+ * ponytail: mẫu L dựng theo hộp, không lật gương — dữ liệu chưa có cờ chân L trái/phải; thêm cờ + lật khi cần khớp chân.
+ */
+const shapedMemberOf = (m: SetMember, ctx: SetContext): SetMember => {
+  if (m.role !== 'sofa') return m;
+  const isL = (x: string): boolean => (ctx.qualityOf ?? defaultQualityOf)(x)?.shape === 'L';
+  const corner =
+    !m.fixed &&
+    m.sizeFrom !== 'user' &&
+    m.userModel === undefined &&
+    m.pinTo === undefined &&
+    (m.box === undefined ? isCornerSofaBox(m.short, m.long) : isCornerSofaBox(m.box.w, m.box.d));
+  const ls = m.pool.filter(isL);
+  const lm = { ...m, pool: ls };
+  const c = m.concept;
+  if (corner && ls.some((x) => hardRejectOf(lm, x, ctx) === undefined)) {
+    return c === undefined || isL(c.folder) || c.reject !== undefined ? lm : { ...lm, concept: { ...c, reject: 'hộp góc: ưu tiên mẫu dáng L' } };
+  }
+  const conceptL = c !== undefined && c.reject === undefined && isL(c.folder);
+  // Mẫu luật cũ (món chưa ghim) cũng xếp hạng trên cả thư viện sofa nên có thể ra mẫu L: hộp thẳng thì bỏ (đi đường mẫu dựng
+  // sẵn/phương án cuối), không để fail-keep/fallback giữ sofa L ở hộp thẳng.
+  const legacyL = !m.fixed && m.pinTo === undefined && m.current !== null && isL(m.current);
+  if (ls.length === 0 && !conceptL && !legacyL) return m;
+  return {
+    ...m,
+    pool: m.pool.filter((x) => !isL(x)),
+    ...(conceptL ? { concept: { ...c, reject: 'mẫu dáng L ở hộp sofa thẳng' } } : {}),
+    ...(legacyL ? { current: null } : {}),
+  };
+};
+
 /** Đặc trưng màu của một mẫu (tính một lần mỗi lượt `roomSetOf`), chỉ từ Lab ĐO + tỉ phần; nhãn chất liệu chỉ dùng để nhận gỗ. */
 interface Feat {
   readonly tier: number;
@@ -977,7 +1023,10 @@ export const roomSetOf = (
 ): Map<string, SetDecision> => {
   // LF1: món mẫu người dùng góp ngữ cảnh bằng quyết định ẢO (như món AI), không bằng mẫu người dùng.
   const decided: ReadonlyMap<string, SetDecision> = new Map([...decidedIn].map(([id, d]) => [id, d.ai ?? d] as const));
-  const inSet = members.filter((m) => SET_ROLES.includes(m.role)).sort(byPlace);
+  const inSet = members
+    .filter((m) => SET_ROLES.includes(m.role))
+    .map((m) => shapedMemberOf(m, ctx))
+    .sort(byPlace);
   /** M18 L2: hộp hiện hành của thành viên cụm đã đi theo neo (hộp đã lưu dịch/xoay theo tư thế cụm); vắng = hộp đã lưu. */
   const shifted = new Map<string, { readonly box: SetBox; readonly pose: Pose; readonly by: string }>();
   const boxOf = (m: SetMember): SetBox | undefined => shifted.get(m.id)?.box ?? m.box;

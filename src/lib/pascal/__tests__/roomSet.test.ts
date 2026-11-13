@@ -19,6 +19,7 @@ import {
   CEILING_GAP_M,
   DARK_SEAT_SHARE,
   hardRejectOf,
+  isCornerSofaBox,
   layersOf,
   paletteOf,
   ROOMSET_VERSION,
@@ -745,6 +746,11 @@ describe('roomset lượt 3 — mỗi món chỉ nhận mẫu qua ràng buộc c
         checked += 1;
         const m = members.find((x) => x.id === d.id) as SetMember;
         if (m.fixed) expect(d).toMatchObject({ cause: 'pinned', to: m.current });
+        // LSA vòng 18: sofa luật cũ dáng L chỉ còn ở hộp góc có mẫu L qua ràng buộc; còn lại bỏ luật cũ (không ra mẫu L ở hộp thẳng).
+        if (!m.fixed && m.role === 'sofa' && real(m.current ?? '')?.shape === 'L') {
+          if (real(d.to ?? '')?.shape === 'L') expect(isCornerSofaBox(m.short, m.long)).toBe(true);
+          continue;
+        }
         // Codex M17-1 #2: luật cũ bị cấm → null (sổ ghi lý do), không bao giờ mẫu cấm.
         if (d.cause === 'fallback' && d.to === null) expect(d.why).toMatch(/bị cấm/);
         else if (d.cause === 'fallback') expect(d.to).toBe(m.current);
