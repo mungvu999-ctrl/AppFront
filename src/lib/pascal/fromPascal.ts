@@ -73,7 +73,7 @@ import {
   toSpatialGraph,
   type PascalIdBook,
 } from './toSpatial';
-import type { PascalNodeType, PascalScene } from './types';
+import type { PascalNode, PascalNodeType, PascalScene } from './types';
 
 /** Vì sao một lượt thay đổi của Pascal không thành lệnh được. */
 export type PascalRefusalCode = 'PASCAL_NO_CHANGE' | 'PASCAL_UNKNOWN_NODE' | 'PASCAL_WALL_BELOW_OPENING';
@@ -258,12 +258,25 @@ const asChange = <K extends EntityKind>(change: EntityChangeOfKind<K>): EntityCh
  */
 const READ_ONLY_KEYS = ['variant', 'heightMm', 'liftMm', 'finish', 'edited', 'clearAreaM2', 'detectedThicknessMm'] as const;
 
-const carriedFrom = (before: object, after: object): Readonly<Record<string, unknown>> => {
+/**
+ * M18 LF3 — món đồ có trường AppFront thì node Pascal MANG chiều cao (`asset.dimensions` × `scale`) và độ nâng
+ * (`position[1]`): `toSpatial.itemFieldsOf` viết `heightMm`/`liftMm` khi node khác lúc nạp, vắng = đúng như lúc nạp
+ * (vắng). Mang từ lớp đã lưu thì co cao → lưu → Ctrl+Z → lưu giữ cao mới. Chỉ mang khi node không biểu diễn được
+ * (không có trường AppFront).
+ */
+const NODE_SIZED_KEYS: ReadonlySet<string> = new Set(['heightMm', 'liftMm']);
+
+const isSizedNode = (node: PascalNode | undefined): boolean =>
+  node?.type === 'item' && node.metadata?.appfront?.fields !== undefined;
+
+const carriedFrom = (before: object, after: object, sized = false): Readonly<Record<string, unknown>> => {
   const was = before as Readonly<Record<string, unknown>>;
   const now = after as Readonly<Record<string, unknown>>;
 
   return Object.fromEntries(
-    READ_ONLY_KEYS.filter((key) => now[key] === undefined && was[key] !== undefined).map((key) => [
+    READ_ONLY_KEYS.filter(
+      (key) => now[key] === undefined && was[key] !== undefined && !(sized && NODE_SIZED_KEYS.has(key)),
+    ).map((key) => [
       key,
       was[key],
     ]),
@@ -287,8 +300,9 @@ const carriedFrom = (before: object, after: object): Readonly<Record<string, unk
 const withReviewOfPrevious = <K extends EntityKind>(
   before: EntityByKind[K],
   after: EntityByKind[K],
+  sized: boolean,
 ): EntityByKind[K] => ({
-  ...carriedFrom(before, after),
+  ...carriedFrom(before, after, sized),
   ...after,
   confidence: before.confidence,
   source: before.source,
@@ -300,6 +314,7 @@ const changeBetween = <K extends EntityKind>(
   kind: K,
   before: SpatialEntity | undefined,
   after: SpatialEntity | undefined,
+  node?: PascalNode,
 ): EntityChange | null => {
   const from = before !== undefined && isEntityOfKind(kind, before) ? before : null;
   const to = after !== undefined && isEntityOfKind(kind, after) ? after : null;
@@ -312,7 +327,7 @@ const changeBetween = <K extends EntityKind>(
     return asChange(changeForRemove(kind, from));
   }
 
-  const settled = withReviewOfPrevious<K>(from, to);
+  const settled = withReviewOfPrevious<K>(from, to, kind === 'furniture' && isSizedNode(node));
 
   /* Hình học không đổi: không có lệnh. `reviewed` lấy từ "trước", nên một cú sửa
      túi `metadata.appfront` bên Pascal không duyệt được gì — duyệt chỉ ở màn QC (A5). */
@@ -519,7 +534,7 @@ export const createPascalEditCommand = (input: PascalEditInput): PascalEditResul
       isEntityOfKind('furniture', now) &&
       isEntityOfKind('furniture', before) &&
       !sameValue(before.centre, now.centre);
-    const change = changeBetween(kind, before, moved ? withRoomOfCentre(now, after.rooms) : now);
+    const change = changeBetween(kind, before, moved ? withRoomOfCentre(now, after.rooms) : now, scene.nodes[nodeId]);
 
     if (change !== null) {
       changes.push(change);
@@ -540,6 +555,7 @@ export const createPascalEditCommand = (input: PascalEditInput): PascalEditResul
       'furniture',
       graphEntity(input.graph, minted),
       now !== undefined && isEntityOfKind('furniture', now) ? withRoomOfCentre(now, after.rooms) : undefined,
+      node,
     );
 
     seen.add(minted);
