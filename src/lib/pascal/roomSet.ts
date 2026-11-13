@@ -1207,7 +1207,7 @@ export const roomSetOf = (
       }
       // F8: không mẫu nào của vai vừa → mẫu NHỎ HƠN cùng nhóm đồ chứa, cùng kiểm (cỡ thật, ≤ REAL_GROW_M, không chồng tường/cửa/
       // đồ đạc, chất lượng + công năng theo vai mới). Vai mới ghi vào sổ (`role`) để dựng cảnh áp lưng / đo công năng đúng vai.
-      for (const sib of lead === undefined && forceable ? (m.smaller ?? []) : []) {
+      for (const sib of lead === undefined ? (m.smaller ?? []) : []) {
         const sm: SetMember = { ...real, role: sib.role };
         const fit = sib.pool.flatMap((f) => {
           const d = ctx.dimsOf(f);
@@ -1251,13 +1251,25 @@ export const roomSetOf = (
     const cur = m.current;
     if (r.to !== null || cur === null || !BED_ROLES.has(m.role)) return r;
     // Chỉ khi mẫu cũ CHỈ thiếu chăn gối: trong công năng, không chồng thêm — không bao giờ giữ giường thu nhỏ / đè đồ (bất biến 2).
-    const why = forbiddenOf(m, cur, undefined);
-    if (why !== 'giường chưa hoàn chỉnh') return r;
+    // Codex M17-13: lý do đầu của forbiddenOf che các lý do sau → kiểm ĐỘC LẬP công năng, trần, va chạm (tường/cửa và đồ đạc
+    // ngân sách riêng như tầng cỡ thật).
+    if (forbiddenOf(m, cur, undefined) !== 'giường chưa hoàn chỉnh') return r;
+    const dims = ctx.dimsOf(cur);
+    const shown = m.shownOf?.(cur) ?? dims;
+    if (dims === undefined || shown === undefined) return r;
+    if (m.sizeFrom !== 'user' && functionalMissOf(m.role, dims, shown) !== undefined) return r;
+    if (m.sizeFrom !== 'user' && m.ceilingM !== undefined && (m.liftM ?? 0) + shown[1] > m.ceilingM - CEILING_GAP_M) return r;
     const b = m.box;
-    const zones = m.lifted === true || b === undefined ? [] : [...placed, ...pendingOf(m)].filter((z) => !tucked(m.kind, z.kind));
-    const hit = (rect: PlanRect | undefined): number => (rect === undefined ? 0 : zones.reduce((t, z) => t + overlapAreaM2(rect, z), 0));
-    if (b !== undefined && hit(shownRectOf(m, cur)) > hit(boxRectOf(b)) + ROOM_OVERLAP_TOL_M2) return r;
-    return { to: cur, why: `${r.why}; giữ giường luật cũ${why === undefined ? '' : ` dù ${why}`} — giường không bị ẩn` };
+    const rect = shownRectOf(m, cur);
+    if (b !== undefined && rect !== undefined && m.lifted !== true) {
+      const zones = [...placed, ...pendingOf(m)].filter((z) => !tucked(m.kind, z.kind));
+      const all = (x: PlanRect): number => zones.reduce((t, z) => t + overlapAreaM2(x, z), 0);
+      const wall = (x: PlanRect): number => structural.reduce((t, z) => t + overlapAreaM2(x, z), 0);
+      const box = boxRectOf(b);
+      if (wall(rect) > wall(box) + ROOM_OVERLAP_TOL_M2) return r;
+      if (all(rect) - wall(rect) > all(box) - wall(box) + ROOM_OVERLAP_TOL_M2) return r;
+    }
+    return { to: cur, why: `${r.why}; giữ giường luật cũ dù giường chưa hoàn chỉnh — giường không bị ẩn` };
   };
 
   // Bảng màu bộ (vòng 17, L1): mẫu đã có của từng món (ghim / đã chốt lượt trước / đã chốt trong lượt) — chưa chốt thì

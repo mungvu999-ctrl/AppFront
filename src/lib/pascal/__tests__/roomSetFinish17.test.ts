@@ -214,21 +214,30 @@ describe('R7 — cỡ thật: mẫu GẦN cỡ hộp nhất trong dải hợp b�
   });
 });
 
-describe('R8b — giường không bao giờ bị ẩn (set17 nt03t)', () => {
+describe('R8b — giường không bị ẩn chỉ vì thiếu chăn gối (set17 nt03t)', () => {
   const bare = { ...q('singleBed', [part('bedding', 1, [90, 0, 3], 'fabric')]), completeness: { v: 'partial', by: 'm' } } as unknown as ModelQuality;
   const full = q('singleBed', [part('bedding', 1, [90, 0, 3], 'fabric')]);
   const QS: Record<string, ModelQuality> = { 'bed-bare': bare, 'bed-full': full };
   const DS: Record<string, Dims> = { 'bed-bare': [0.99, 0.9, 2.14], 'bed-full': [0.95, 1.0, 2.0] };
   const ctx8: SetContext = { tierOf: () => 0, tiers: 5, dimsOf: (id) => DS[id], palette: {}, qualityOf: (id) => QS[id] };
-  // Hộp 0,70 × 1,71 m kẹp giữa hai tường: giường thật nào cũng lấn tường → mọi tầng trượt.
-  const box = { cx: 0, cy: 0, w: 0.7, d: 1.71, rot: 0 };
-  const walls: SetZone[] = [{ cx: -0.45, cy: 0, w: 0.2, d: 4, rotationDeg: 0 }, { cx: 0.45, cy: 0, w: 0.2, d: 4, rotationDeg: 0 }];
+  const fit = (w: number, d: number) => (f: string): Dims | undefined => (DS[f] === undefined ? undefined : [w, (DS[f] as Dims)[1], d]);
+  // Hộp 0,9 × 1,95 m giữa hai tường (mép trong ±0,45): giường thật 0,95 m lấn tường → mọi tầng trượt.
+  const box = { cx: 0, cy: 0, w: 0.9, d: 1.95, rot: 0 };
+  const walls: SetZone[] = [{ cx: -0.55, cy: 0, w: 0.2, d: 4, rotationDeg: 0 }, { cx: 0.55, cy: 0, w: 0.2, d: 4, rotationDeg: 0 }];
 
-  it('mọi tầng trượt → giữ giường luật cũ (dù chưa hoàn chỉnh), sổ ghi lý do — không null', () => {
-    const m = mem('b', 'singleBed', ['bed-full'], { current: 'bed-bare', box, shownOf: stretch(0.7, 1.71) });
+  it('mọi tầng trượt, giường cũ chỉ thiếu chăn gối (trong công năng, không chồng thêm) → giữ, sổ ghi lý do — không null', () => {
+    // Pool rỗng, không mẫu dựng sẵn: mọi tầng trượt (có giường đủ chăn vừa hộp thì bộ chọn lấy nó — đúng).
+    const m = mem('b', 'singleBed', [], { current: 'bed-bare', box, shownOf: fit(0.9, 1.95) });
     const d = roomSetOf('r', [m], new Map(), ctx8, walls).get('b');
     expect(d?.to).toBe('bed-bare');
     expect(d?.why).toMatch(/giường không bị ẩn/);
+  });
+
+  it('Codex M17-13: giường cũ ngoài công năng (0,5 × 1,0 m) hoặc chạm trần → vẫn null, không giữ', () => {
+    const tiny = mem('t', 'singleBed', ['bed-full'], { current: 'bed-bare', box: { cx: 0, cy: 0, w: 0.5, d: 1.0, rot: 0 }, shownOf: fit(0.5, 1.0) });
+    expect(roomSetOf('r', [tiny], new Map(), ctx8, walls).get('t')?.to).toBeNull();
+    const low = mem('c', 'singleBed', ['bed-full'], { current: 'bed-bare', box, ceilingM: 0.8, shownOf: fit(0.9, 1.95) });
+    expect(roomSetOf('r', [low], new Map(), ctx8, walls).get('c')?.to).toBeNull();
   });
 
   it('món không phải giường vẫn ẩn như cũ', () => {
