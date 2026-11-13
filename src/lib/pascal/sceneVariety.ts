@@ -997,6 +997,13 @@ const SMALLER_STORAGE: Partial<Record<FurnitureRole, readonly FurnitureRole[]>> 
   dresser: ['nightstand'],
   cabinet: ['nightstand'],
 };
+/** M18 LSB: hộp tủ áo sâu dưới ngưỡng này (tủ áo thật sâu ≥ 0,5 m) là kệ TV / tủ thấp do AI vẽ — đồ chứa nông, không phải tủ áo. */
+const SHALLOW_CLOSET_M = 0.45;
+/** Hộp tủ áo nông ngoài phòng ngủ (tủ áo là công năng phòng ngủ) → được thử thêm tủ thấp ở bậc đồ chứa nhỏ hơn (T3). */
+export const shallowClosetOf = (role: string, depthM: number, usage: RoomUsage | undefined): boolean =>
+  role === 'closet' && depthM < SHALLOW_CLOSET_M && usage !== 'bedroom';
+/** Vai đồ chứa nông thử (xếp theo cỡ) cho hộp tủ áo nông; tủ thấp chỉ vào đây để T0 không biến tủ áo thường thành tủ. */
+const SHALLOW_STORAGE: readonly FurnitureRole[] = ['bookshelf', 'dresser', 'cabinet'];
 
 /**
  * Mẫu thư viện máy chủ ĐỔI ĐƯỢC của vai (thẻ "Đổi mẫu", M18 LA): cùng tập bộ chọn thấy (`visibleOf` − QC loại), trừ mẫu
@@ -1049,6 +1056,8 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
     const concept = pinned || twinPin !== undefined ? undefined : conceptOf(role, style);
     const [short, long] = footprintOf(f);
     const box = setBoxOf(f);
+    // Tủ áo nông của món AI chưa xác nhận / đồ tự sinh, ngoài phòng ngủ (tủ áo là công năng phòng ngủ).
+    const shallow = !pinned && twinPin === undefined && !userSeen && sizeFromOf(f) !== 'user' && shallowClosetOf(role, short, room.usage);
     return {
       id: f.id,
       role,
@@ -1067,9 +1076,9 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
       // Mẫu dựng sẵn của vai: phương án cuối khi luật cũ trượt dáng/công năng (roomSet `fallbackOf`).
       ...(ROLE_MODELS[role][0] === undefined ? {} : { stock: ROLE_MODELS[role][0] }),
       pool: pinned || twinPin !== undefined ? [] : setPoolOf(f, role, style),
-      ...(pinned || twinPin !== undefined || SMALLER_STORAGE[role] === undefined
+      ...(pinned || twinPin !== undefined || (!shallow && SMALLER_STORAGE[role] === undefined)
         ? {}
-        : { smaller: SMALLER_STORAGE[role].map((r) => ({ role: r, pool: setPoolOf(f, r, style) })) }),
+        : { smaller: (shallow ? SHALLOW_STORAGE : (SMALLER_STORAGE[role] ?? [])).map((r) => ({ role: r, pool: setPoolOf(f, r, style) })) }),
       fixed: pinned,
       ...(userSeen ? { userModel: pin ?? null } : {}),
       ...(concept === undefined
