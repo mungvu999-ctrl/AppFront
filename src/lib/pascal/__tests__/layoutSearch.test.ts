@@ -164,7 +164,9 @@ describe('tiếp cận: phòng chữ L, tủ chắn cổ chai', () => {
     const r = searchPlacement(room, bed, [{ modelId: 'single-bed', dims: [0.92, 0.5, 2.0] }], [closet(0.5)]);
     if (!('unplaced' in r)) throw new Error('khe 0,5 m phải chặn lối');
     expect(r.unplaced.reason).toContain('không có lối từ cửa');
-    expect(r.unplaced.tried.bfs).toBe(MAX_BFS);
+    // F8: MAX_BFS tư thế rẻ nhất + đại diện mỗi nhóm (mẫu, cạnh, góc) chưa kiểm — trần 2 × MAX_BFS.
+    expect(r.unplaced.tried.bfs).toBeGreaterThan(MAX_BFS);
+    expect(r.unplaced.tried.bfs).toBeLessThanOrEqual(2 * MAX_BFS);
   });
 
   it('khe 0,7 m: đạt, giữ chỗ cũ', () => {

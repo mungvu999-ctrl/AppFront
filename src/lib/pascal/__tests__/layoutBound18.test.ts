@@ -131,4 +131,5 @@ describe('LF1: phòng thường giữ y hệt bản trước khi sửa', () => {
     expect(fnv1a(JSON.stringify(run))).toBe(EXPECTED);
   });
 });
-const EXPECTED = 2100185880;
+// F8: 2100185880 → 1409893946 — chỉ 5 dòng 'unplaced' đổi (lý do nêu lối khi có tư thế hợp lệ mà không lối; bfs ≤ 2 × MAX_BFS); không tư thế/mẫu được chọn nào đổi (F:/runs/m18/F8/normal-before.txt ↔ normal-after.txt).
+const EXPECTED = 1409893946;

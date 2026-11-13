@@ -922,16 +922,38 @@ export const searchPlacement = (
       if (best === undefined || mm(cost) < mm(best.cost)) best = { f, cost, reach };
       if (reach) break;
     }
+    // F8: món chính — các tư thế rẻ nhất thường là một chùm gần trùng (cùng mẫu, cùng cạnh, cùng góc, trượt 0,1 m) nên
+    // hỏng lối cùng lúc và ăn hết MAX_BFS. Khi cả chùm đó hỏng: kiểm thêm tư thế rẻ nhất của mỗi nhóm (mẫu, cạnh, góc)
+    // chưa kiểm, theo thứ tự chi phí, tối đa thêm maxBfs BFS (trần 2 × maxBfs, tất định).
+    // ponytail: một đại diện mỗi nhóm — nhóm có đại diện hỏng mà tư thế trượt xa hơn tới được vẫn bị bỏ.
+    if (hardAccess && chosen === undefined) {
+      const groupOf = (f: Feasible): string => `${f.model.modelId}|${f.pose.edge ?? -1}|${mm(f.pose.rot)}`;
+      const seen = new Set(feasible.slice(0, bfs).map(groupOf));
+      const limit = bfs + maxBfs;
+      for (const f of feasible.slice(bfs)) {
+        if (bfs >= limit) break;
+        const g = groupOf(f);
+        if (seen.has(g)) continue;
+        seen.add(g);
+        bfs += 1;
+        if (reaches(f)) {
+          chosen = f;
+          break;
+        }
+      }
+    }
     if (!hardAccess) {
       chosen = best?.f ?? feasible[0];
       unreached = best !== undefined && !best.reach;
-    } else if (chosen === undefined && feasible.length > 0) {
-      rejects.set('không có lối từ cửa tới khoảng sử dụng', feasible.length);
     }
   }
   const tried: Tried = { models: models.length, poses, bfs };
   if (chosen === undefined) {
-    const top = [...rejects.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+    // Có tư thế qua mọi kiểm hình học mà không tư thế nào có lối → lý do là lối đi, không phải lý do loại nhiều nhất.
+    const wayless = needsAccess && hardAccess && feasible.length > 0;
+    const top = wayless
+      ? (['không có lối từ cửa tới khoảng sử dụng', feasible.length] as const)
+      : [...rejects.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
     const head = piece.movable ? 'Không tìm được chỗ' : 'Món đã xác nhận, không tự dời';
     const why = top === undefined ? (models.length === 0 ? 'không có mẫu' : 'không có tư thế') : top[0];
     return { unplaced: { reason: `${head}: ${why} (thử ${models.length} mẫu, ${poses} tư thế)`, tried } };
