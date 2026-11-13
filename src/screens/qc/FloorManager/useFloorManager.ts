@@ -410,7 +410,7 @@ export function floorScaleMissingOf(graph: NormalizedSpatial, level: Level, meta
 /** Trạng thái tỷ lệ của dòng tầng (chip chung `SCALE_STATE_VIEWS`); kho chưa biết là tạm thì coi như đã xác nhận. */
 export function floorRowScaleStateOf(graph: NormalizedSpatial, level: Level, meta: FloorMetaEntry | undefined): ScaleState {
   return meta?.scaleStatus === 'unresolved'
-    ? floorScaleStateOf(meta.scaleStatus, meta.scaleSource, level.scaleMillimetresPerPixel, scaleImplausibleOf(graph, level.id))
+    ? floorScaleStateOf(meta.scaleStatus, meta.scaleSource, level.scaleMillimetresPerPixel, scaleImplausibleOf(graph, level.id), meta.scaleState)
     : 'confirmed';
 }
 

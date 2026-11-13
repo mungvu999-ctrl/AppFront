@@ -183,6 +183,10 @@ export interface ProcessingSummaryViewModel {
   readonly reviewChecks?: readonly string[];
   /** Tỷ lệ máy ước lượng (cửa, độ dày tường, mặc định — N16 `scaleBasis`), không đọc từ số trên bản vẽ. */
   readonly scaleEstimated?: true;
+  /** R9: tên trạng thái tỷ lệ của tầng xong đầu tiên đáng chú ý (N16 `scaleState`). */
+  readonly scaleStateLabel?: string;
+  /** R9: câu trạng thái + lý do tỷ lệ đi cùng `scaleStateLabel`. */
+  readonly scaleStateNote?: string;
   readonly onReviewWalls: () => void;
   readonly onCalibrateScale: () => void;
   /** UX-30: người chỉ muốn ngắm thì đi thẳng tới 3D, cạnh lối đi tiếp chính. */

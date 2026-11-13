@@ -19,6 +19,9 @@ import { type ReadScale, useScaleStatus } from './useScaleStatus';
 
 export const SCALE_HIDDEN_PREFIX = 'Không dựng (chưa có tỷ lệ): ';
 export const SCALE_PROVISIONAL_PREFIX = 'Kích thước có thể lệch: ';
+/** R9: tầng tỷ lệ chưa xác định / chỉ ước lượng — số đo trong trình sửa chưa đánh dấu từng số, dải nói thay. */
+export const SCALE_UNDETERMINED_PREFIX = 'Tỷ lệ chưa xác định, kích thước chỉ gần đúng: ';
+export const SCALE_ESTIMATED_PREFIX = 'Tỷ lệ ước lượng, kích thước chỉ gần đúng: ';
 export const SCALE_ALL_MISSING_TITLE = 'Chưa dựng được mô hình 3D';
 export const SCALE_ALL_MISSING_BODY = 'Máy không đo được tỷ lệ của bản vẽ. Đặt tỷ lệ để dựng mô hình.';
 /** UX41 U22: người xem không đặt được tỷ lệ — nói ai làm được, không bày nút. */
@@ -33,16 +36,26 @@ export const SCALE_NEXT_REASON = 'Tỷ lệ chưa hiệu chỉnh — nên đặt
 const TONE_TEXT = { danger: 'text-[var(--pa-danger)]', warn: 'text-[var(--pa-warn)]' } as const;
 
 
-function ScaleLine({ tone, text, href }: { readonly tone: 'danger' | 'warn'; readonly text: string; readonly href?: string }) {
+interface ScaleLineProps {
+  readonly tone: 'danger' | 'warn';
+  readonly text: string;
+  readonly href?: string;
+  /** Chữ của lối sửa: "Đặt tỷ lệ" (đỏ, máy chủ cũ) hoặc "Hiệu chỉnh tỷ lệ" (R9). */
+  readonly linkLabel?: string;
+  /** R9: câu trạng thái + lý do, hiện ở chú thích khi trỏ vào dòng. */
+  readonly note?: string | null;
+}
+
+function ScaleLine({ tone, text, href, linkLabel = 'Đặt tỷ lệ', note = null }: ScaleLineProps) {
   return (
     <p className="m-0 flex min-w-0 items-center gap-2 whitespace-nowrap">
       <TriangleAlert aria-hidden="true" className={`h-3.5 w-3.5 shrink-0 ${TONE_TEXT[tone]}`} />
-      <span className="min-w-0 truncate" title={text}>
+      <span className="min-w-0 truncate" title={note === null ? text : `${text}. ${note}`}>
         {text}
       </span>
       {href === undefined ? null : (
         <a className={LINK_CLASS} href={href}>
-          Đặt tỷ lệ
+          {linkLabel}
         </a>
       )}
     </p>
@@ -67,23 +80,26 @@ export function ScaleBanner({
   }, [floorId]);
   if (scale.status !== 'unresolved') return null;
   const missing = scale.missing.length > 0;
-  // `floorId` là tầng đỏ đầu tiên khi có, không thì tầng vàng đầu tiên: lối sửa nằm ở dòng của nó.
+  // `floorId` là tầng đỏ đầu tiên khi có, không thì tầng vàng đầu tiên: lối sửa nằm ở dòng đầu tiên.
   const href = readOnly ? undefined : ROUTES.project.scale(projectId, scale.floorId);
+  const lines: readonly ScaleLineProps[] = [
+    ...(missing ? [{ tone: 'danger' as const, text: `${SCALE_HIDDEN_PREFIX}${floorNamesOf(scale.missing)}` }] : []),
+    ...(scale.undetermined.length > 0
+      ? [{ tone: 'warn' as const, text: `${SCALE_UNDETERMINED_PREFIX}${floorNamesOf(scale.undetermined)}`, linkLabel: 'Hiệu chỉnh tỷ lệ', note: scale.undeterminedNote }]
+      : []),
+    ...(scale.provisional.length > 0 ? [{ tone: 'warn' as const, text: `${SCALE_PROVISIONAL_PREFIX}${floorNamesOf(scale.provisional)}` }] : []),
+    ...(scale.estimated.length > 0
+      ? [{ tone: 'warn' as const, text: `${SCALE_ESTIMATED_PREFIX}${floorNamesOf(scale.estimated)}`, linkLabel: 'Hiệu chỉnh tỷ lệ', note: scale.estimatedNote }]
+      : []),
+  ];
   return (
     <div
       className={`pointer-events-auto flex max-w-[calc(100vw-32px)] flex-col gap-0.5 rounded-xl border bg-[var(--pa-surface)] px-3 py-1.5 text-[13px] text-[var(--pa-text)] shadow-[var(--pa-shadow-float)] ${missing ? 'border-[var(--pa-danger)]' : 'border-[var(--pa-warn)]'}`}
       role="status"
     >
-      {missing ? (
-        <ScaleLine {...(href === undefined ? {} : { href })} text={`${SCALE_HIDDEN_PREFIX}${floorNamesOf(scale.missing)}`} tone="danger" />
-      ) : null}
-      {scale.provisional.length > 0 ? (
-        <ScaleLine
-          {...(missing || href === undefined ? {} : { href })}
-          text={`${SCALE_PROVISIONAL_PREFIX}${floorNamesOf(scale.provisional)}`}
-          tone="warn"
-        />
-      ) : null}
+      {lines.map((line, index) => (
+        <ScaleLine key={line.text} {...line} {...(index > 0 || href === undefined ? {} : { href })} />
+      ))}
     </div>
   );
 }

@@ -214,6 +214,27 @@ describe('store/commit.ts', () => {
       expect(useStore.getState().floorMeta[floorId]).toEqual({ revision: 3 });
     });
 
+    it('R9: carries scaleState/scaleReasons with scaleStatus; a sent scale (user calibration) drops them — measures lose ≈', () => {
+      replaceFloorLayer(floorId, {
+        layer: layerWithoutFirstWall(),
+        revision: 2,
+        scaleStatus: 'unresolved',
+        scaleSource: 'pipeline',
+        scaleState: 'estimated',
+        scaleReasons: ['door'],
+      });
+      expect(useStore.getState().floorMeta[floorId]).toEqual({
+        revision: 2,
+        scaleReasons: ['door'],
+        scaleSource: 'pipeline',
+        scaleState: 'estimated',
+        scaleStatus: 'unresolved',
+      });
+
+      replaceFloorLayer(floorId, { layer: layerWithoutFirstWall(), revision: 3 }, { scaleSent: true });
+      expect(useStore.getState().floorMeta[floorId]).toEqual({ revision: 3 });
+    });
+
     it('adds a missing floor with its level in one set, keeping history and other floors', () => {
       const wall = firstSampleWall();
 

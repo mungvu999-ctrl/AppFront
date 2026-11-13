@@ -125,7 +125,7 @@ import { formatNumber, formatPercent, MISSING_VALUE } from '@/lib/format/number'
 import { formatCombo, keyCapLabels, parseCombo } from '@/lib/input/shortcutRegistry';
 import { MODIFIER_SHORTCUTS } from '@/lib/tools/shortcuts';
 import { queryKeys } from '@/lib/query/queryKeys';
-import { isScaleMissing, provisionalScaleNoticeOf, TINY_FOOTPRINT_MM } from '@/lib/viewmodel/provisionalScale';
+import { isScaleMissing, provisionalScaleNoticeOf, scaleStateOf, TINY_FOOTPRINT_MM } from '@/lib/viewmodel/provisionalScale';
 import { ROUTES } from '@/routes/paths';
 import { commit } from '@/store/commit';
 import { useStore } from '@/store';
@@ -2737,7 +2737,13 @@ export function useScaleCalibration(
 
   const isEmptyState = state === 'empty';
   // K12: máy không đo được tỷ lệ (`project_default`) thì câu đỏ — đúng màn người dùng phải đặt tỷ lệ.
-  const provisionalNotice = provisionalScaleNoticeOf(floorLayer.scaleStatus, floorLayer.scaleSource);
+  // R9: có `scaleState` thì câu nói trạng thái + lý do; đọc từ bản vẽ thì không nhắc.
+  const provisionalNotice = provisionalScaleNoticeOf(
+    floorLayer.scaleStatus,
+    floorLayer.scaleSource,
+    floorLayer.scaleState,
+    floorLayer.scaleReasons,
+  );
   const effectiveMethod: ScaleCalibrationMethod = rows.length === 0 ? 'referenceLine' : method;
 
   const cursorPixels = useMemo<PixelPoint>(() => {
@@ -2882,6 +2888,12 @@ export function useScaleCalibration(
           planSizeMm: planSizeAt(layerDocument, proposedRatio ?? storedRatio ?? provisionalRatio),
           dimensionCount: layerDocument?.dimensions.length ?? 0,
           isGuess: storedRatio === null && typedRatio === null && proposedScale === null && drag === null && selectedRow === null,
+          // R9: chỉ khi số đang hiện vẫn là của máy (chưa ai gõ / kéo / chọn).
+          ...(floorLayer.scaleState === undefined ||
+          !(storedRatio === null && typedRatio === null && proposedScale === null && drag === null && selectedRow === null)
+            ? {}
+            : { scaleState: scaleStateOf(floorLayer.scaleStatus, floorLayer.scaleSource, floorLayer.scaleState) }),
+          ...(floorLayer.scaleReasons === undefined ? {} : { scaleReasons: floorLayer.scaleReasons }),
         }),
         ...(layerDocument !== undefined &&
         layerDocument.layer.walls.length > 0 &&
@@ -3005,7 +3017,10 @@ export function useScaleCalibration(
     isApplying,
     provisionalNotice,
     provisionalRatio,
+    floorLayer.scaleReasons,
     floorLayer.scaleSource,
+    floorLayer.scaleState,
+    floorLayer.scaleStatus,
     isSuggestionActive,
     isAutoSuggestion,
     pipelineRatio,

@@ -1454,6 +1454,11 @@ export function useProcessingScreen(options: UseProcessingScreenOptions): Proces
     const scaleEstimated = floorStatuses.some(
       (status, index) => status === 'done' && extractions[index]?.scaleEstimated === true,
     );
+    // R9: tầng xong có câu tỷ lệ (ước lượng / chưa xác định) nói trước; không thì tên trạng thái của tầng đầu.
+    const doneExtractions = extractions.filter((_, index) => floorStatuses[index] === 'done');
+    const scaleStateOwner =
+      doneExtractions.find((extraction) => extraction?.scaleStateNote !== undefined) ??
+      doneExtractions.find((extraction) => extraction?.scaleStateLabel !== undefined);
     const goTo = (route: (projectId: string, floorId: string) => string, index = doneIndex) => () => {
       const upload = uploadsRef.current[index];
 
@@ -1468,6 +1473,8 @@ export function useProcessingScreen(options: UseProcessingScreenOptions): Proces
       ...(reviewReasons.length > 0 ? { reviewReasons } : {}),
       ...(reviewChecks.length > 0 ? { reviewChecks } : {}),
       ...(scaleEstimated ? { scaleEstimated: true as const } : {}),
+      ...(scaleStateOwner?.scaleStateLabel === undefined ? {} : { scaleStateLabel: scaleStateOwner.scaleStateLabel }),
+      ...(scaleStateOwner?.scaleStateNote === undefined ? {} : { scaleStateNote: scaleStateOwner.scaleStateNote }),
     };
 
     if (parts.length === 0) {

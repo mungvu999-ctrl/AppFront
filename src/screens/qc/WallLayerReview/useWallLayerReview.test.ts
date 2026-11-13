@@ -1860,6 +1860,18 @@ describe('tỷ lệ tạm (F-04x-2)', () => {
     expect(inspector.lengthLabel).toBe('Chưa có — cần đặt tỷ lệ');
   });
 
+  it('R9: chiều dài thanh tra theo scaleState — đọc từ bản vẽ số trơn, ước lượng / chưa xác định có hậu tố', () => {
+    const labelOf = (scaleState: 'determined' | 'estimated' | 'unresolved') =>
+      toWallInspector(wallAt(0), FIXTURE_LEVEL, undefined, 'unresolved', 'mm', 'pipeline', undefined, undefined, scaleState).lengthLabel;
+
+    expect(labelOf('determined')).toMatch(/^[\d.]+ mm$/u);
+    expect(labelOf('estimated')).toMatch(/^[\d.]+ mm \(ước lượng\)$/u);
+    expect(labelOf('unresolved')).toMatch(/^[\d.]+ mm \(chưa xác định\)$/u);
+    expect(
+      toWallInspector(wallAt(0), FIXTURE_LEVEL, undefined, 'unresolved', 'm', 'pipeline', undefined, undefined, 'estimated').lengthLabel,
+    ).toMatch(/^≈.+ \(ước lượng\)$/u);
+  });
+
   it('U07: nhãn tường nhớ qua lần tải lại, theo dự án và tầng', () => {
     writeWallCodeMemory('p1', 'L1', new Map([['W-a', 'W-004'], ['W-b', 'W-009']]));
 

@@ -194,7 +194,7 @@ import { lowerFirst } from '@/lib/format/sentence';
 import { describeConfidence } from '@/lib/format/semantic';
 import { boxAround } from '@/lib/input/dragDrop';
 import { createUndoTicket, UNDO_WINDOW_MS, type UndoTicket } from '@/lib/mutations/undoTicket';
-import { isScaleMissing, type ScaleSource } from '@/lib/viewmodel/provisionalScale';
+import { isScaleMissing, measureTextOf, type ScaleSource, type WireScaleState } from '@/lib/viewmodel/provisionalScale';
 import { applyRollbackPatches, commit } from '@/store/commit';
 import { useStore } from '@/store';
 
@@ -770,12 +770,9 @@ export function provisionalMeasureText(
   formatted: string,
   scaleStatus?: 'unresolved',
   scaleSource?: ScaleSource,
+  scaleState?: WireScaleState,
 ): string {
-  if (scaleStatus !== 'unresolved') {
-    return formatted;
-  }
-
-  return isScaleMissing(scaleSource) ? MISSING_SCALE_MEASURE_TEXT : `≈ ${formatted} (tạm)`;
+  return measureTextOf(formatted, scaleStatus, scaleSource, scaleState);
 }
 
 export function measureRoom(
@@ -783,6 +780,7 @@ export function measureRoom(
   scale: Scale,
   scaleStatus?: 'unresolved',
   scaleSource?: ScaleSource,
+  scaleState?: WireScaleState,
 ): RoomLabelMeasures {
   const outlineMm = room.outline.map(toPointMm);
   const rect = computeLargestInnerRectangle(outlineMm);
@@ -795,11 +793,11 @@ export function measureRoom(
     /* Tầng ở tỉ lệ tạm thì số đo chưa tin được (F-04x-2). */
     ...(hasClear && room.clearAreaM2 !== undefined
       ? {
-          areaText: provisionalMeasureText(`${formatArea(room.clearAreaM2)} ${CLEAR_AREA_SUFFIX}`, scaleStatus, scaleSource),
-          centerlineAreaText: provisionalMeasureText(`${centerline} ${CENTERLINE_AREA_SUFFIX}`, scaleStatus, scaleSource),
+          areaText: provisionalMeasureText(`${formatArea(room.clearAreaM2)} ${CLEAR_AREA_SUFFIX}`, scaleStatus, scaleSource, scaleState),
+          centerlineAreaText: provisionalMeasureText(`${centerline} ${CENTERLINE_AREA_SUFFIX}`, scaleStatus, scaleSource, scaleState),
         }
-      : { areaText: provisionalMeasureText(centerline, scaleStatus, scaleSource) }),
-    perimeterText: provisionalMeasureText(formatLength(computePerimeter(outlineMm)), scaleStatus, scaleSource),
+      : { areaText: provisionalMeasureText(centerline, scaleStatus, scaleSource, scaleState) }),
+    perimeterText: provisionalMeasureText(formatLength(computePerimeter(outlineMm)), scaleStatus, scaleSource, scaleState),
     labelAnchorMm:
       rect === null ? computeCentroid(outlineMm) : computeCentroid(cornersOfRectangle(rect)),
     labelBoxPx:
@@ -853,12 +851,14 @@ export function summaryOf(
   violations: readonly Violation[],
   scaleStatus?: 'unresolved',
   scaleSource?: ScaleSource,
+  scaleState?: WireScaleState,
 ): RoomLabelSummaryViewModel {
   return {
     totalAreaText: provisionalMeasureText(
       formatArea(totalArea(rooms.map((room) => room.outline.map(toPointMm)))),
       scaleStatus,
       scaleSource,
+      scaleState,
     ),
     roomCount: rooms.length,
     unnamedCount: rooms.filter((room) => !hasRoomName(room)).length,

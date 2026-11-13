@@ -1,7 +1,14 @@
 import type { NormalizedSpatial } from '@/domain/spatial/normalize';
 import { entitiesOfKind } from '@/lib/commands/business/shared';
 import { formatNumber } from '@/lib/format/number';
-import { isMeasuredScaleImplausible, isScaleMissing, type ScaleSource, type ScaleState } from '@/lib/viewmodel/provisionalScale';
+import {
+  isMeasuredScaleImplausible,
+  isScaleMissing,
+  scaleStateOf,
+  type ScaleSource,
+  type ScaleState,
+  type WireScaleState,
+} from '@/lib/viewmodel/provisionalScale';
 
 /**
  * Trạng thái cổng chung của tầng: ba lớp bắt buộc Tường · Cửa và nội thất · Phòng,
@@ -122,7 +129,13 @@ export function floorScaleStateOf(
   scaleSource: ScaleSource | undefined,
   millimetresPerPixel: number | undefined,
   implausible = false,
+  scaleState?: WireScaleState,
 ): FloorScaleState {
+  // R9: máy chủ nói rõ trạng thái thì theo nó; hình vô lý vẫn là chưa có (trừ tỷ lệ người đặt).
+  if (scaleState !== undefined && millimetresPerPixel !== undefined) {
+    const state = scaleStateOf(scaleStatus, scaleSource, scaleState);
+    return implausible && state !== 'confirmed' ? 'missing' : state;
+  }
   if (scaleIsConfirmed(scaleStatus, millimetresPerPixel)) return 'confirmed';
   return millimetresPerPixel === undefined || isScaleMissing(scaleSource) || implausible ? 'missing' : 'check';
 }

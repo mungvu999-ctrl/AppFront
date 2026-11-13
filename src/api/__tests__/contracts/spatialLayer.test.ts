@@ -261,6 +261,30 @@ describe('FloorLayerDocumentSchema', () => {
         .success,
     ).toBe(false);
   });
+
+  it('R9: nhận scaleState + scaleReasons (mã lạ vẫn qua); vắng thì không sinh khoá; trạng thái lạ bị từ chối', () => {
+    const estimated = FloorLayerDocumentSchema.parse({
+      ...minimalDocument,
+      level: calibratedLevel,
+      scaleStatus: 'unresolved',
+      scaleSource: 'pipeline',
+      scaleState: 'estimated',
+      scaleReasons: ['door', 'futureCode'],
+    });
+    expect(estimated.scaleState).toBe('estimated');
+    expect(estimated.scaleReasons).toEqual(['door', 'futureCode']);
+
+    const legacy = FloorLayerDocumentSchema.parse({ ...minimalDocument, level: calibratedLevel, scaleStatus: 'unresolved' });
+    expect(legacy).not.toHaveProperty('scaleState');
+    expect(legacy).not.toHaveProperty('scaleReasons');
+
+    expect(FloorLayerDocumentSchema.safeParse({ ...minimalDocument, scaleState: 'missing' }).success).toBe(false);
+    expect(FloorLayerDocumentSchema.safeParse({ ...minimalDocument, scaleReasons: [''] }).success).toBe(false);
+    expect(
+      FloorLayerDocumentSchema.parse({ ...minimalDocument, level: calibratedLevel, scaleState: 'userCalibrated', scaleReasons: [] })
+        .scaleState,
+    ).toBe('userCalibrated');
+  });
 });
 
 describe('FloorLayerWriteBodySchema', () => {

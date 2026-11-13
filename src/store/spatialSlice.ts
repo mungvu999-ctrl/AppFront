@@ -3,7 +3,7 @@ import type { TemporalState } from 'zundo';
 import { applyPatch, type SpatialPatch } from '../domain/spatial/applyPatch';
 import type { NormalizedSpatial } from '../domain/spatial/normalize';
 import { graphVersionOf } from '../lib/versioning/graphVersion';
-import type { ScaleSource } from '../lib/viewmodel/provisionalScale';
+import type { FloorScaleDetail, ScaleSource, WireScaleState } from '../lib/viewmodel/provisionalScale';
 
 /**
  * Saved spatial data of the floor being viewed, in the normalized form built
@@ -20,23 +20,35 @@ export interface FloorMetaEntry {
   scaleStatus?: 'unresolved';
   /** Only with `scaleStatus`: `'project_default'` = the server could not measure the floor at all (UX-R1 K12). */
   scaleSource?: ScaleSource;
+  /** Only with `scaleStatus`: N16 `scaleState` (R9) — determined / estimated / unresolved. Absent from an old server. */
+  scaleState?: WireScaleState;
+  /** Only with `scaleStatus`: N16 `scaleReasons` (R9), codes shown as Vietnamese sentences. */
+  scaleReasons?: readonly string[];
 }
 
-/** Scale keys as N16 or a held entry carries them; either may be absent. */
+/** Scale keys as N16 or a held entry carries them; any may be absent. */
 export interface FloorScaleKeys {
   readonly scaleStatus?: 'unresolved' | undefined;
   readonly scaleSource?: ScaleSource | undefined;
+  readonly scaleState?: WireScaleState | undefined;
+  readonly scaleReasons?: readonly string[] | undefined;
 }
 
 /** A `floorMeta` entry: `scaleSource` is kept only together with `scaleStatus` (both absent once the scale is real). */
 export function floorMetaEntryOf(revision: number, scale?: FloorScaleKeys): FloorMetaEntry {
-  const { scaleSource, scaleStatus } = scale ?? {};
+  const { scaleReasons, scaleSource, scaleState, scaleStatus } = scale ?? {};
 
   if (scaleStatus === undefined) {
     return { revision };
   }
 
-  return scaleSource === undefined ? { revision, scaleStatus } : { revision, scaleStatus, scaleSource };
+  return {
+    revision,
+    scaleStatus,
+    ...(scaleSource === undefined ? {} : { scaleSource }),
+    ...(scaleState === undefined ? {} : { scaleState }),
+    ...(scaleReasons === undefined ? {} : { scaleReasons }),
+  };
 }
 
 /** Where a loaded graph came from: the project and the revision each floor was read at. */
@@ -47,6 +59,8 @@ export interface SpatialSource {
   floorScaleStatus?: Readonly<Record<string, 'unresolved'>>;
   /** `scaleSource` of the floors in `floorScaleStatus` (N16 only). */
   floorScaleSource?: Readonly<Record<string, ScaleSource>>;
+  /** N16 `scaleState`/`scaleReasons` (R9) of the floors in `floorScaleStatus`. */
+  floorScaleDetail?: Readonly<Record<string, FloorScaleDetail>>;
 }
 
 /**
@@ -118,7 +132,11 @@ export const createSpatialSlice: StateCreator<SpatialSlice> = (set, _get, api) =
   setSpatial: (spatial, versionId, source) => {
     const floorMeta: Record<string, FloorMetaEntry> = Object.fromEntries(
       Object.entries(source?.floorRevisions ?? {}).map(([floorId, revision]) => {
-        const scale = { scaleSource: source?.floorScaleSource?.[floorId], scaleStatus: source?.floorScaleStatus?.[floorId] };
+        const scale = {
+          ...source?.floorScaleDetail?.[floorId],
+          scaleSource: source?.floorScaleSource?.[floorId],
+          scaleStatus: source?.floorScaleStatus?.[floorId],
+        };
 
         return [floorId, floorMetaEntryOf(revision, scale)];
       }),

@@ -77,6 +77,9 @@ const DOT_CLASS: Readonly<Record<ScaleStateView['statusCode'] | 'neutral', strin
 const SCALE_TEXT_CLASS: Readonly<Record<FloorScaleState, string>> = {
   missing: 'text-state-violation-text',
   check: 'text-state-attention-text',
+  undetermined: 'text-state-attention-text',
+  estimated: 'text-state-attention-text',
+  measured: '',
   confirmed: '',
 };
 

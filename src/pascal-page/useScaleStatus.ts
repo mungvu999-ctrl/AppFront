@@ -8,6 +8,10 @@
  * kích thước 3D sai hẳn; `provisional` — tỷ lệ máy đo, chưa ai xác nhận. `floorId` là tầng cần sửa
  * trước (tầng sai hẳn đầu tiên).
  *
+ * R9: N16 có `scaleState` thì tách thêm — `measured` (đọc từ bản vẽ) và `confirmed` ra khỏi dải;
+ * `estimated` (chỉ ước) và `undetermined` (chưa xác định) mỗi nhóm một dòng, kèm câu lý do. Không nhóm
+ * R9 nào bị bỏ khỏi cảnh 3D trừ `missing` (mặc định dự án / hình vô lý) — như trước.
+ *
  * Tầng đọc N16 lỗi thì không biết tỷ lệ của nó (chỉ ghi log một lần): không giấu tầng ấy khỏi cảnh,
  * nhưng hình vô lý thì vẫn nhắc "có thể sai" — để một tầng hỏng không giấu cảnh báo của cả nhà.
  *
@@ -19,6 +23,7 @@ import { useEffect, useState } from 'react';
 import type { FloorLayerDocument } from '@/api/schemas/spatialLayer';
 import { denormalizeSpatial } from '@/domain/spatial/normalize';
 import type { Level } from '@/domain/spatial/types';
+import { scaleStateMessageOf } from '@/lib/viewmodel/provisionalScale';
 import { floorScaleStateOf, scaleImplausibleOf } from '@/screens/qc/shared/floorReviewGateModel';
 import { type RootState, useStore } from '@/store';
 
@@ -34,15 +39,22 @@ export type ScaleStatus =
       readonly missingIds: readonly string[];
       /** Mọi tầng đều sai hẳn: cảnh 3D trống. */
       readonly allMissing: boolean;
-      /** Tên tầng tỷ lệ máy đo, chưa xác nhận. */
+      /** Tên tầng tỷ lệ máy đo, chưa xác nhận (máy chủ cũ, không có `scaleState`). */
       readonly provisional: readonly string[];
+      /** R9: tên tầng tỷ lệ chưa xác định (thiếu căn cứ / nguồn mâu thuẫn). */
+      readonly undetermined: readonly string[];
+      /** R9: tên tầng tỷ lệ chỉ ước lượng. */
+      readonly estimated: readonly string[];
+      /** R9: câu trạng thái + lý do của tầng đầu mỗi nhóm (`scaleStateMessageOf`); `null` khi không có. */
+      readonly undeterminedNote: string | null;
+      readonly estimatedNote: string | null;
     };
 
 /** Phần N16 cần đọc: trạng thái, nguồn tỷ lệ và mm/px của tầng (dự phòng khi kho thiếu). */
 export type ReadScale = (
   floorId: string,
 ) => Promise<
-  Pick<FloorLayerDocument, 'scaleStatus' | 'scaleSource'> & { readonly level?: { readonly scaleMillimetresPerPixel?: number } }
+  Pick<FloorLayerDocument, 'scaleStatus' | 'scaleSource' | 'scaleState' | 'scaleReasons'> & { readonly level?: { readonly scaleMillimetresPerPixel?: number } }
 >;
 
 let failureLogged = false;
@@ -67,9 +79,14 @@ type FloorMeta = RootState['floorMeta'];
  * `scaleStatus`, nên "vắng" có thể là "đã đặt" hoặc "chưa biết".
  */
 const readOrKnown = (read: ReadScale, floorMeta: FloorMeta) => (floorId: string) => {
-  const { scaleSource, scaleStatus } = floorMeta[floorId] ?? {};
+  const { scaleReasons, scaleSource, scaleState, scaleStatus } = floorMeta[floorId] ?? {};
   if (scaleStatus === undefined) return read(floorId);
-  return Promise.resolve(scaleSource === undefined ? { scaleStatus } : { scaleStatus, scaleSource });
+  return Promise.resolve({
+    scaleStatus,
+    ...(scaleSource === undefined ? {} : { scaleSource }),
+    ...(scaleState === undefined ? {} : { scaleState }),
+    ...(scaleReasons === undefined ? {} : { scaleReasons }),
+  });
 };
 
 async function readScaleStatus(spatial: Spatial, read: ReadScale, floorMeta: FloorMeta): Promise<ScaleStatus> {
@@ -83,6 +100,9 @@ async function readScaleStatus(spatial: Spatial, read: ReadScale, floorMeta: Flo
   }
   const missing: Level[] = [];
   const provisional: Level[] = [];
+  const undetermined: Level[] = [];
+  const estimated: Level[] = [];
+  const notes: { undetermined: string | null; estimated: string | null } = { undetermined: null, estimated: null };
   levels.forEach((level, index) => {
     const result = results[index];
     const implausible = scaleImplausibleOf(spatial, level.id);
@@ -90,14 +110,20 @@ async function readScaleStatus(spatial: Spatial, read: ReadScale, floorMeta: Flo
       if (implausible) provisional.push(level);
       return;
     }
-    const { scaleStatus, scaleSource } = result.value;
+    const { scaleReasons, scaleStatus, scaleSource, scaleState } = result.value;
     const document = 'level' in result.value ? result.value.level : undefined;
     if (scaleStatus !== 'unresolved') return;
     const millimetresPerPixel = level.scaleMillimetresPerPixel ?? document?.scaleMillimetresPerPixel;
-    const state = floorScaleStateOf(scaleStatus, scaleSource, millimetresPerPixel, implausible);
+    const state = floorScaleStateOf(scaleStatus, scaleSource, millimetresPerPixel, implausible, scaleState);
+    if (state === 'measured' || state === 'confirmed') return;
+    if (state === 'undetermined' || state === 'estimated') {
+      (state === 'undetermined' ? undetermined : estimated).push(level);
+      notes[state] ??= scaleStateMessageOf(state, scaleReasons);
+      return;
+    }
     (state === 'missing' ? missing : provisional).push(level);
   });
-  const first = missing[0] ?? provisional[0];
+  const first = missing[0] ?? undetermined[0] ?? provisional[0] ?? estimated[0];
   const names = (list: readonly Level[]) => list.map((level) => level.name);
   return first === undefined
     ? { status: 'resolved' }
@@ -108,6 +134,10 @@ async function readScaleStatus(spatial: Spatial, read: ReadScale, floorMeta: Flo
         missingIds: missing.map((level) => level.id),
         allMissing: missing.length === levels.length,
         provisional: names(provisional),
+        undetermined: names(undetermined),
+        estimated: names(estimated),
+        undeterminedNote: notes.undetermined,
+        estimatedNote: notes.estimated,
       };
 }
 

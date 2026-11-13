@@ -1740,8 +1740,11 @@ export function useWallLayerReview(
             ? { valueText: String(Math.round(lengthMm)), unit: 'mm' as const }
             : { valueText: formatNumber(millimetresToMetres(millimetres(lengthMm)), { fractionDigits: 2 }), unit: 'm' as const };
 
-    return { ...toWallInspector(wall, level, wallCodes, floorLayer.scaleStatus, lengthUnit, floorLayer.scaleSource, confidenceThreshold, suspectIds), lengthEdit };
-  }, [confidenceThreshold, floorLayer.scaleSource, floorLayer.scaleStatus, lengthUnit, level, selectedWallId, suspectIds, wallById, wallCodes]);
+    return {
+      ...toWallInspector(wall, level, wallCodes, floorLayer.scaleStatus, lengthUnit, floorLayer.scaleSource, confidenceThreshold, suspectIds, floorLayer.scaleState),
+      lengthEdit,
+    };
+  }, [confidenceThreshold, floorLayer.scaleSource, floorLayer.scaleState, floorLayer.scaleStatus, lengthUnit, level, selectedWallId, suspectIds, wallById, wallCodes]);
 
   /* Bộ đếm chạy 12 → 13 ở nấc `standard` (260 ms) — xem ghi chú đầu file. */
   /* Nhãn đọc-màn-hình lấy số THẬT, không phải số đang đếm lên (G69) — đếm lên chỉ là hiệu ứng. */

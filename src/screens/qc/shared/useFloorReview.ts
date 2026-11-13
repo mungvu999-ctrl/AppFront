@@ -71,7 +71,7 @@ export function useFloorReview(projectId: string, floorId: string): FloorReview 
     const level = entitiesOfKind(graph, 'level').find((item) => item.id === floorId);
     if (level === undefined) return null;
     const implausible = scaleImplausibleOf(graph, floorId);
-    return floorScaleStateOf(keys.scaleStatus, keys.scaleSource, level.scaleMillimetresPerPixel, implausible);
+    return floorScaleStateOf(keys.scaleStatus, keys.scaleSource, level.scaleMillimetresPerPixel, implausible, keys.scaleState);
   }, [floorId, graph, keys]);
 
   return { graph, storeSpatial, scale };

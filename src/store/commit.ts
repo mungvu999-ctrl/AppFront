@@ -10,7 +10,7 @@ import { replaceLevelEntities } from '../domain/spatial/replaceLevelEntities';
 import type { SpatialEntity } from '../domain/spatial/normalize';
 import type { Dimension, EntityId, Level } from '../domain/spatial/types';
 import { floorMetaEntryOf, versionIdFor, type FloorMetaEntry } from './spatialSlice';
-import type { ScaleSource } from '../lib/viewmodel/provisionalScale';
+import type { ScaleSource, WireScaleState } from '../lib/viewmodel/provisionalScale';
 
 /**
  * The selection as it stands right now, for a command recorder to stamp on its history step.
@@ -230,6 +230,9 @@ export interface FloorLayerReplacement {
   scaleStatus?: 'unresolved';
   /** From N16, only with `scaleStatus`: where the provisional scale came from. */
   scaleSource?: ScaleSource;
+  /** From N16, only with `scaleStatus`: R9 `scaleState` / `scaleReasons`. */
+  scaleState?: WireScaleState;
+  scaleReasons?: readonly string[];
 }
 
 export interface ReplaceFloorLayerOptions {

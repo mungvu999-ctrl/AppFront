@@ -92,7 +92,14 @@ import { GLASS_WALL_PAINT, isGlassWall } from '@/domain/walls/glass';
 import { changeForUpdate, createCommand } from '@/lib/commands/createCommand';
 import type { Command } from '@/lib/commands/types';
 import type { ToolOutcome } from '@/lib/tools/toolMachine';
-import { isScaleMissing, type ScaleSource, type ScaleStatus } from '@/lib/viewmodel/provisionalScale';
+import {
+  isScaleMissing,
+  SCALE_MEASURE_SUFFIX,
+  scaleStateOf,
+  type ScaleSource,
+  type ScaleStatus,
+  type WireScaleState,
+} from '@/lib/viewmodel/provisionalScale';
 import {
   createIncrementalRuleRunner,
   dispatch,
@@ -1237,7 +1244,6 @@ export const formatCentrelineLength = (wall: Wall, level: Level, unit: ProjectLe
   });
 
 const NO_SCALE_LENGTH_TEXT = 'Chưa có — cần đặt tỷ lệ';
-const PROVISIONAL_LENGTH_SUFFIX = ' (tạm)';
 
 /**
  * MỘT quy tắc chiều dài cho danh sách và thanh tra (K16): milimét nguyên ("5.757"). Tỷ lệ máy đo
@@ -1262,6 +1268,7 @@ export function wallLengthLabelOf(
   scaleStatus?: ScaleStatus,
   scaleSource?: ScaleSource,
   unit: ProjectLengthUnit = 'mm',
+  scaleState?: WireScaleState,
 ): string {
   const number = wallLengthNumberOf(centrelineLength(toGeometryWall(wall, level)), scaleStatus, scaleSource);
 
@@ -1269,10 +1276,12 @@ export function wallLengthLabelOf(
     return NO_SCALE_LENGTH_TEXT;
   }
 
-  const isProvisional = scaleStatus === 'unresolved';
+  // R9: hậu tố theo trạng thái — "(tạm)" máy chủ cũ, "(ước lượng)", "(chưa xác định)"; đọc từ bản vẽ thì không.
+  const suffix = SCALE_MEASURE_SUFFIX[scaleStateOf(scaleStatus, scaleSource, scaleState)];
+  const isProvisional = suffix !== '';
   const text = unit === 'mm' ? `${number} mm` : `${isProvisional ? '≈' : ''}${formatCentrelineLength(wall, level, unit)}`;
 
-  return isProvisional ? `${text}${PROVISIONAL_LENGTH_SUFFIX}` : text;
+  return `${text}${suffix}`;
 }
 
 /** Tỷ lệ của tầng — "12 mm/px". Tầng chưa hiệu chỉnh thì trả dấu thiếu, không phải "undefined". */
@@ -1499,6 +1508,7 @@ export function toWallInspector(
   scaleSource?: ScaleSource,
   threshold: number = CONFIDENCE_SUGGESTED_THRESHOLD,
   suspectIds?: ReadonlySet<string>,
+  scaleState?: WireScaleState,
 ): WallInspectorViewModel {
   return {
     id: wall.id,
@@ -1507,7 +1517,7 @@ export function toWallInspector(
     detectedNote: detectedNoteOf(wall),
     isLongWall: centrelineLength(toGeometryWall(wall, level)) > LONG_WALL_MM,
     /* Cùng quy tắc với cột "Dài, mm" của danh sách: tỷ lệ tạm "≈… (tạm)", thiếu tỷ lệ thì nói rõ (K16). */
-    lengthLabel: wallLengthLabelOf(wall, level, scaleStatus, scaleSource, unit),
+    lengthLabel: wallLengthLabelOf(wall, level, scaleStatus, scaleSource, unit, scaleState),
     /*
      * Chiều cao ở CÙNG cột milimét với chiều dài.
      *
