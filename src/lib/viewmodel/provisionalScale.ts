@@ -35,7 +35,7 @@ export const SCALE_ESTIMATED_NOTE = 'Tỷ lệ ước lượng — nên hiệu c
  * Ba trạng thái tỷ lệ của một tầng (UX-R2 K50/K20/K46) — MỘT nguồn chữ và màu cho thanh bước,
  * cổng, dải, chip Các tầng, Xử lý, Quy chuẩn và 3D: `missing` đỏ (máy không đo được, đang dùng
  * mặc định dự án — khoá các bước sau), `check` vàng (máy đo được, cần người kiểm — không khoá),
- * `confirmed` xanh (người đã đặt/xác nhận; A5: xanh chỉ cho việc người duyệt).
+ * `confirmed` xanh (không còn việc: người đã đặt, hoặc máy đọc từ nhiều số đo đồng thuận trên bản vẽ).
  */
 export type ScaleState = 'missing' | 'check' | 'confirmed';
 
@@ -51,7 +51,7 @@ export interface ScaleStateView {
 export const SCALE_STATE_VIEWS = {
   missing: { name: 'Chưa có tỷ lệ', statusCode: 'violation', action: 'Đặt tỷ lệ' },
   check: { name: 'Tỷ lệ cần kiểm', statusCode: 'attention', action: 'Xác nhận tỷ lệ' },
-  confirmed: { name: 'Tỷ lệ đã xác nhận', statusCode: 'verified', action: null },
+  confirmed: { name: 'Đã có tỷ lệ', statusCode: 'verified', action: null },
 } as const satisfies Readonly<Record<ScaleState, ScaleStateView>>;
 
 /**

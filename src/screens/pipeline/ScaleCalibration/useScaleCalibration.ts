@@ -342,7 +342,7 @@ function levelIn(spatial: NormalizedSpatial | null, levelId: string): Level | nu
  * `dimensions` của tài liệu đổi ra pixel theo tỷ lệ cũ của chính tài liệu. Lượt đọc lại sau thay hẳn.
  */
 function confirmedLayerDocument(document: FloorLayerDocument, revision: number): FloorLayerDocument {
-  const confirmed = { ...document, revision: Math.max(document.revision, revision) };
+  const confirmed: FloorLayerDocument = { ...document, revision: Math.max(document.revision, revision), scaleBasis: 'human' };
   delete confirmed.scaleStatus;
   delete confirmed.scaleSource;
 
@@ -2882,6 +2882,7 @@ export function useScaleCalibration(
           planSizeMm: planSizeAt(layerDocument, proposedRatio ?? storedRatio ?? provisionalRatio),
           dimensionCount: layerDocument?.dimensions.length ?? 0,
           isGuess: storedRatio === null && typedRatio === null && proposedScale === null && drag === null && selectedRow === null,
+          isReadFromDrawing: layerDocument?.scaleBasis === 'chain',
         }),
         ...(layerDocument !== undefined &&
         layerDocument.layer.walls.length > 0 &&
@@ -2971,7 +2972,7 @@ export function useScaleCalibration(
             : !hasStartedWork && applyOutcome === null && selectedRow !== null
               ? COPY.preselectedNotice(formatNumber(selectedRow.realLength))
               : !hasStartedWork && lowConfidenceCount === 0 && applyOutcome === null && rows.length > 0
-                ? COPY.pickDimensionNotice(formatNumber(rows.length))
+                ? storedRatio === null ? COPY.pickDimensionNotice(formatNumber(rows.length)) : null
                 : COPY.partialNotice,
       forbiddenNotice: state === 'forbidden' ? COPY.forbiddenNotice : null,
       successNotice: state === 'success' ? COPY.successNotice : null,

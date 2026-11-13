@@ -50,6 +50,8 @@ export interface ScaleCheckInput {
   readonly dimensionCount?: number;
   /** D1: tỷ lệ đang hiện chỉ là máy đoán (chưa ai xác nhận, chưa ai gõ/đo). */
   readonly isGuess?: boolean;
+  /** Tỷ lệ tầng do máy đọc từ nhiều số đo đồng thuận (N16 `scaleBasis: 'chain'`), chưa ai đặt: không bắt xác nhận. */
+  readonly isReadFromDrawing?: boolean;
 }
 
 export interface ScaleCheckViewModel {
@@ -204,6 +206,12 @@ function statusOf(
     case 'proposed':
       return { tone: 'neutral', label: 'Chưa xác nhận', sentence: guess ?? `Đo được ${withRatio}.` };
     case 'stored':
+      if (input.isReadFromDrawing === true) {
+        // A5: xanh chỉ cho việc người duyệt, tỷ lệ máy đọc giữ màu trung tính.
+        return knownTone === 'attention'
+          ? { tone: 'attention', label: 'Đọc từ bản vẽ, lệch kích thước', sentence: `Đang dùng ${withRatio}. Kiểm lại kích thước đã biết bên phải.` }
+          : { tone: 'neutral', label: 'Đọc từ bản vẽ', sentence: `Máy đọc từ các số kích thước trên bản vẽ, ${withRatio}.` };
+      }
       return knownTone === 'attention'
         ? { tone: 'attention', label: 'Đã xác nhận, lệch kích thước', sentence: `Đang dùng ${withRatio}. Kiểm lại kích thước đã biết bên phải.` }
         : { tone: 'verified', label: 'Đã xác nhận', sentence: `Đang dùng ${withRatio}.` };

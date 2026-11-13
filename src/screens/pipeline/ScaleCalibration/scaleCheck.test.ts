@@ -90,6 +90,26 @@ describe('scaleCheck', () => {
     expect(off.status.label).toBe('Đã xác nhận, lệch kích thước');
   });
 
+  it('tỷ lệ máy đọc từ bản vẽ: không ghi "Đã xác nhận", không tô xanh; lệch kích thước vẫn báo', () => {
+    const read = buildScaleCheck({
+      mmPerPx: 24.878,
+      source: 'stored',
+      shortEdgePx: 837,
+      knownDimension: { realLength: 4000, pixelLength: 162 },
+      isReadFromDrawing: true,
+    });
+    expect(read.status).toMatchObject({ tone: 'neutral', label: 'Đọc từ bản vẽ', source: 'stored' });
+
+    const off = buildScaleCheck({
+      mmPerPx: 17.887,
+      source: 'stored',
+      shortEdgePx: 837,
+      knownDimension: { realLength: 4000, pixelLength: 162 },
+      isReadFromDrawing: true,
+    });
+    expect(off.status).toMatchObject({ tone: 'attention', label: 'Đọc từ bản vẽ, lệch kích thước' });
+  });
+
   it('[K17] biết cỡ căn: số to là cỡ căn thật, mm/px và 1:N lùi xuống dòng chi tiết', () => {
     const check = buildScaleCheck({
       mmPerPx: 24.878,

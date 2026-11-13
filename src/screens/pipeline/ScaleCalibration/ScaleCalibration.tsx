@@ -74,6 +74,7 @@ import { ScaleCalibrationSidebar } from './ScaleCalibrationSidebar';
 import type { ScaleCalibrationProps, ScaleCalibrationState, ScaleCalibrationViewModel } from './types';
 
 const L23_TASK = 'Xác nhận tỷ lệ của tầng để mọi số đo ra đúng kích thước thật.';
+const L23_TASK_STORED = 'Tầng đã có tỷ lệ. Chỉ cần đổi khi cỡ căn không đúng.';
 const SCREEN_ARIA_LABEL = 'Tỷ lệ bản vẽ';
 const CANVAS_REGION_ARIA_LABEL = 'Khung bản vẽ để hiệu chỉnh tỷ lệ';
 const NOTICE_REGION_ARIA_LABEL = 'Trạng thái của màn hiệu chỉnh tỷ lệ';
@@ -282,7 +283,7 @@ export function ScaleCalibration({ actions, floorNav, model }: ScaleCalibrationP
               floorId={floorNav.floorId}
               gate={<FloorReviewGate floorId={floorNav.floorId} inline projectId={floorNav.projectId} />}
               projectId={floorNav.projectId}
-              task={L23_TASK}
+              task={hasStoredScale ? L23_TASK_STORED : L23_TASK}
             >
               {/* Hai panel cuộn chung trong cột; khối nút Xác nhận dính đáy cột (panel phải `contents` để nút dính theo cả vùng cuộn). */}
               <div className="flex min-h-0 flex-1 flex-col overflow-y-auto [&>*]:xl:!w-full [&>*]:xl:!border-x-0 [&>section:first-child]:!flex-none [&>section:first-child]:xl:!overflow-visible [&>section:last-child]:!contents [&>section:last-child>*]:!flex-none [&>section:last-child>*]:!overflow-visible [&>section:last-child>div:last-child]:sticky [&>section:last-child>div:last-child]:bottom-0 [&>section:last-child>div:last-child]:z-10">

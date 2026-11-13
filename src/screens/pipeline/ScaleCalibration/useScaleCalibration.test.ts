@@ -781,6 +781,39 @@ describe('useScaleCalibration — áp dụng: PUT trước, commit sau (F-04x-2 
     expect(model.panel.dimension.rows[0]?.pixelLength).toBeCloseTo(130, 6);
   });
 
+  it('tỷ lệ máy đọc từ số đo (N16 chain, vắng scaleStatus): không dải nhắc, không ghi "Đã xác nhận"', async () => {
+    useStore.getState().setSpatial(null, null);
+    const harness = await makeHarness();
+    const real = await harness.gateway.readLayer({ floorId: FLOOR_ID, projectId: PROJECT_ID });
+    const dimension = {
+      id: 'M-001',
+      levelId: real.level.id,
+      kind: 'linear',
+      referenceIds: [],
+      line: { start: { x: 1000, y: 500 }, end: { x: 2300, y: 500 } },
+      valueMm: 1300,
+      confidence: 0.98,
+      source: 'ai',
+      reviewed: false,
+    } as unknown as (typeof real.dimensions)[number];
+    const gateway = withScaleCapabilities(harness.gateway, {
+      readLayer: async () => ({
+        ...real,
+        scaleBasis: 'chain',
+        level: { ...real.level, scaleMillimetresPerPixel: 10 },
+        dimensions: [dimension],
+      }) as typeof real,
+    });
+    const mounted = mountHook(gateway);
+    await settle(mounted);
+    await settleAsync();
+
+    const model = mounted.result.current.model;
+    expect(model.state).toBe('partial');
+    expect(model.partialNotice).toBeNull();
+    expect(model.panel.scaleCheck?.status).toMatchObject({ label: 'Đọc từ bản vẽ', source: 'stored' });
+  });
+
   it('kho rỗng và N16 hỏng thì bấm áp nói lý do tại chỗ, không im lặng, không PUT (B-V5-01)', async () => {
     useStore.getState().setSpatial(null, null);
     const harness = await makeHarness();
