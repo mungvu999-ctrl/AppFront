@@ -23,7 +23,7 @@ import { useEffect, useState } from 'react';
 import type { FloorLayerDocument } from '@/api/schemas/spatialLayer';
 import { denormalizeSpatial } from '@/domain/spatial/normalize';
 import type { Level } from '@/domain/spatial/types';
-import { scaleStateMessageOf } from '@/lib/viewmodel/provisionalScale';
+import { scaleReasonsSentenceOf, scaleStateMessageOf } from '@/lib/viewmodel/provisionalScale';
 import { floorScaleStateOf, scaleImplausibleOf } from '@/screens/qc/shared/floorReviewGateModel';
 import { type RootState, useStore } from '@/store';
 
@@ -48,6 +48,9 @@ export type ScaleStatus =
       /** R9: câu trạng thái + lý do của tầng đầu mỗi nhóm (`scaleStateMessageOf`); `null` khi không có. */
       readonly undeterminedNote: string | null;
       readonly estimatedNote: string | null;
+      /** R9: chỉ câu lý do (`scaleReasonsSentenceOf`) của tầng đầu mỗi nhóm — hiện thành chữ dưới dòng. */
+      readonly undeterminedReason: string | null;
+      readonly estimatedReason: string | null;
     };
 
 /** Phần N16 cần đọc: trạng thái, nguồn tỷ lệ và mm/px của tầng (dự phòng khi kho thiếu). */
@@ -103,6 +106,7 @@ async function readScaleStatus(spatial: Spatial, read: ReadScale, floorMeta: Flo
   const undetermined: Level[] = [];
   const estimated: Level[] = [];
   const notes: { undetermined: string | null; estimated: string | null } = { undetermined: null, estimated: null };
+  const reasons: { undetermined: string | null; estimated: string | null } = { undetermined: null, estimated: null };
   levels.forEach((level, index) => {
     const result = results[index];
     const implausible = scaleImplausibleOf(spatial, level.id);
@@ -119,6 +123,7 @@ async function readScaleStatus(spatial: Spatial, read: ReadScale, floorMeta: Flo
     if (state === 'undetermined' || state === 'estimated') {
       (state === 'undetermined' ? undetermined : estimated).push(level);
       notes[state] ??= scaleStateMessageOf(state, scaleReasons);
+      reasons[state] ??= scaleReasonsSentenceOf(scaleReasons);
       return;
     }
     (state === 'missing' ? missing : provisional).push(level);
@@ -138,6 +143,8 @@ async function readScaleStatus(spatial: Spatial, read: ReadScale, floorMeta: Flo
         estimated: names(estimated),
         undeterminedNote: notes.undetermined,
         estimatedNote: notes.estimated,
+        undeterminedReason: reasons.undetermined,
+        estimatedReason: reasons.estimated,
       };
 }
 

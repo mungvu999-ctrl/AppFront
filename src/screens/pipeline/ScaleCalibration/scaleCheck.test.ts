@@ -202,11 +202,24 @@ describe('D1 câu trạng thái khi máy đoán', () => {
 
     const estimated = at('estimated', ['door']);
     expect(estimated).toMatchObject({ tone: 'attention', label: 'Tỷ lệ ước lượng' });
-    expect(estimated.sentence).toMatch(/^Ước từ bề rộng cửa đi \(giả định 745 mm\)\. .*Hiệu chỉnh bằng một kích thước đã biết/u);
+    expect(estimated.sentence).toMatch(/^Ước từ bề rộng cửa đi \(giả định 745 mm\)\. Máy ước .*Hiệu chỉnh bằng một kích thước đã biết/u);
     expect(at('undetermined', ['door', 'sourceConflict']).label).toBe('Tỷ lệ chưa xác định');
     const measured = at('measured', ['chain']);
     expect(measured).toMatchObject({ tone: 'neutral', label: 'Tỷ lệ đọc từ bản vẽ' });
     expect(measured.sentence).not.toContain('Hiệu chỉnh bằng');
+    // Phản biện X: lý do "mâu thuẫn số đo" không đi cùng câu "không đọc được số kích thước".
+    const conflict = buildScaleCheck({
+      mmPerPx: 4.734,
+      source: 'provisional',
+      shortEdgePx: 837,
+      knownDimension: null,
+      dimensionCount: 0,
+      isGuess: true,
+      scaleState: 'undetermined',
+      scaleReasons: ['chain', 'sourceConflict'],
+    }).status.sentence;
+    expect(conflict).toContain('mâu thuẫn');
+    expect(conflict).not.toContain('không đọc được số kích thước');
     // Số máy đề xuất sẵn (chưa ai gõ / kéo) cũng mang trạng thái R9; số người gõ thì không có scaleState.
     expect(
       buildScaleCheck({ mmPerPx: 4.734, source: 'proposed', shortEdgePx: 837, knownDimension: null, scaleState: 'estimated' }).status.label,

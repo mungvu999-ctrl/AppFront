@@ -347,6 +347,20 @@ export function ScaleCalibration({ actions, floorNav, model }: ScaleCalibrationP
 
       {l23 ? null : <StatusBar {...model.statusBar} />}
 
+      {model.acceptMachineConfirm !== undefined &&
+        actions.onConfirmAcceptMachine !== undefined &&
+        actions.onCancelAcceptMachine !== undefined && (
+          <Modal
+            isOpen
+            onClose={actions.onCancelAcceptMachine}
+            primaryAction={{ label: model.acceptMachineConfirm.confirmLabel, onClick: actions.onConfirmAcceptMachine }}
+            returnFocusRef={applyButtonRef}
+            secondaryAction={{ label: model.acceptMachineConfirm.cancelLabel, onClick: actions.onCancelAcceptMachine }}
+            title={model.acceptMachineConfirm.title}
+          >
+            {model.acceptMachineConfirm.message}
+          </Modal>
+        )}
       {model.allFloorsConfirm !== undefined && (
         <Modal
           isOpen

@@ -126,6 +126,14 @@ import { formatCombo, keyCapLabels, parseCombo } from '@/lib/input/shortcutRegis
 import { MODIFIER_SHORTCUTS } from '@/lib/tools/shortcuts';
 import { queryKeys } from '@/lib/query/queryKeys';
 import { isScaleMissing, provisionalScaleNoticeOf, scaleStateOf, TINY_FOOTPRINT_MM } from '@/lib/viewmodel/provisionalScale';
+import {
+  ACCEPT_MACHINE_CONFIRM,
+  ACCEPT_MACHINE_LABEL,
+  machineScaleGateOf,
+  MEASURE_FIRST_HINT,
+  MEASURE_FIRST_LABEL,
+  MEASURE_FIRST_NOTICE,
+} from './machineScaleGate';
 import { ROUTES } from '@/routes/paths';
 import { commit } from '@/store/commit';
 import { useStore } from '@/store';
@@ -2016,6 +2024,11 @@ export function useScaleCalibration(
   applyScopeRef.current = effectiveApplyScope;
 
   /** "Áp": PUT trước, `commit` sau — kho chỉ đổi tỷ lệ khi máy chủ đã nhận (A5). */
+  /* R9: hộp xác nhận nhận số máy ước lượng (phản biện X F5). */
+  const [isAcceptMachineOpen, setAcceptMachineOpen] = useState(false);
+  const onRequestAcceptMachine = useCallback(() => setAcceptMachineOpen(true), []);
+  const onCancelAcceptMachine = useCallback(() => setAcceptMachineOpen(false), []);
+
   const onApply = useCallback(() => {
     const ratio = proposedRatioRef.current;
 
@@ -2081,6 +2094,11 @@ export function useScaleCalibration(
       },
     );
   }, [commitSaved, floorId, gateway, levelId, projectId, rememberProvisional, saveScale]);
+
+  const onConfirmAcceptMachine = useCallback(() => {
+    setAcceptMachineOpen(false);
+    onApply();
+  }, [onApply]);
 
   /* UX41 U56: lượt áp hỏng vì mất mạng — có mạng lại thì gửi lại đúng lượt ấy, một lần. */
   const onApplyRef = useRef(onApply);
@@ -2755,7 +2773,6 @@ export function useScaleCalibration(
   }, [cursorPoint, frame]);
 
   const model = useMemo<ScaleCalibrationViewModel>(() => {
-    const canApply = proposedRatio !== null;
     const oneDecimal = (ratio: number): string => formatNumber(ratio, { maxFractionDigits: 1 });
     const sizeSuffix = (ratio: number): string => {
       const size = planSizeAt(layerDocument, ratio);
@@ -2765,7 +2782,10 @@ export function useScaleCalibration(
     const noteRatio = noteRatioOf(pipelineRatio, sourceDpi);
     /* UX-02: máy chọn sẵn mốc từ chuỗi kích thước, người dùng chưa chạm gì. */
     const isRowProposal = !hasStartedWork && applyOutcome === null && selectedRow !== null;
-    const isMachineProposal = canApply && (isAutoSuggestion || isRowProposal);
+    const isMachineProposal = proposedRatio !== null && (isAutoSuggestion || isRowProposal);
+    // R9 (phản biện X F5): số máy chỉ ước / chưa xác định không áp bằng nút chính.
+    const machineGate = machineScaleGateOf(isMachineProposal, floorLayer.scaleState, floorLayer.scaleReasons);
+    const canApply = proposedRatio !== null && machineGate === null;
 
     return {
       state,
@@ -2858,8 +2878,16 @@ export function useScaleCalibration(
         applyScope: effectiveApplyScope,
         applyScopeOptions,
         canApply,
-        ...(canApply ? {} : { applyMissingHint: COPY.applyMissingHint }),
-        ...(isMachineProposal ? { applyLabel: COPY.machineApplyLabel } : {}),
+        ...(canApply ? {} : { applyMissingHint: machineGate === null ? COPY.applyMissingHint : MEASURE_FIRST_HINT }),
+        ...(isMachineProposal && machineGate === null ? { applyLabel: COPY.machineApplyLabel } : {}),
+        ...(machineGate === null
+          ? {}
+          : {
+              measureFirst: {
+                label: MEASURE_FIRST_LABEL,
+                ...(machineGate.allowAcceptMachine ? { acceptLabel: ACCEPT_MACHINE_LABEL } : {}),
+              },
+            }),
         ...(applyNotice !== null ? { applyBlockedNotice: applyNotice } : {}),
         canOpenViewer3d: applyOutcome === 'success',
         isApplying,
@@ -2972,6 +3000,8 @@ export function useScaleCalibration(
             ? COPY.ratioEntryNotice(formatNumber(ratioDenominator), formatScaleDensity(ratioEntryRatio))
           : areaEntryRatio !== null && areaM2 !== null && areaPlanSize !== null
             ? COPY.areaEntryNotice(formatNumber(areaM2), planSizeText(areaPlanSize))
+          : machineGate !== null
+            ? MEASURE_FIRST_NOTICE
           : isAutoSuggestion && pipelineRatio !== null
             ? noteRatio !== null
               ? COPY.noteSuggestionNotice(formatNumber(noteRatio), oneDecimal(pipelineRatio), sizeSuffix(pipelineRatio))
@@ -2991,6 +3021,9 @@ export function useScaleCalibration(
       ...(provisionalNotice?.level === 'violation' ? { missingScaleNotice: provisionalNotice.message } : {}),
       saveBlock,
       readFailure,
+      ...(isAcceptMachineOpen && machineGate?.allowAcceptMachine === true
+        ? { acceptMachineConfirm: ACCEPT_MACHINE_CONFIRM }
+        : {}),
       ...(allFloors !== null
         ? {
             allFloorsConfirm: {
@@ -3021,6 +3054,7 @@ export function useScaleCalibration(
     floorLayer.scaleSource,
     floorLayer.scaleState,
     floorLayer.scaleStatus,
+    isAcceptMachineOpen,
     isSuggestionActive,
     isAutoSuggestion,
     pipelineRatio,
@@ -3114,6 +3148,9 @@ export function useScaleCalibration(
       onChangeApplyScope,
       onConfirmAllFloors,
       onCancelAllFloors,
+      onRequestAcceptMachine,
+      onConfirmAcceptMachine,
+      onCancelAcceptMachine,
       onToggleCollapsed,
       onGoToPreprocessing,
       onRetry,
@@ -3123,6 +3160,9 @@ export function useScaleCalibration(
     [
       onPickDimensionChip,
       onApply,
+      onCancelAcceptMachine,
+      onConfirmAcceptMachine,
+      onRequestAcceptMachine,
       onCancelAllFloors,
       onChangeDrawingRatio,
       onChangeFlatArea,

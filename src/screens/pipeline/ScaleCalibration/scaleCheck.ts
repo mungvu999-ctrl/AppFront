@@ -227,7 +227,10 @@ function statusOf(
   // K17: người dùng soi được cỡ căn thật, không soi được 1:N suy từ khổ A3.
   const withRatio = sizeText === null ? `tỷ lệ ${ratio ?? `${densityLabel} mm/px`}` : `tỷ lệ cho căn ${sizeText}`;
   const guess = guessSentence(input, sizeText);
-  const r9 = r9StatusOf(input, guess ?? `Máy ước ${withRatio}, chưa ai xác nhận.`);
+  // R9 (phản biện X): có mã lý do thì căn cứ do lý do nói; không ghép câu "không đọc được số kích thước" kẻo
+  // mâu thuẫn với "số đo trên bản vẽ…".
+  const hasReasons = (input.scaleReasons ?? []).length > 0;
+  const r9 = r9StatusOf(input, hasReasons ? `Máy ước ${withRatio}, chưa ai xác nhận.` : (guess ?? `Máy ước ${withRatio}, chưa ai xác nhận.`));
   if (r9 !== null) return r9;
 
   switch (input.source) {

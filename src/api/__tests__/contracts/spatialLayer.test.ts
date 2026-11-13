@@ -262,7 +262,7 @@ describe('FloorLayerDocumentSchema', () => {
     ).toBe(false);
   });
 
-  it('R9: nhận scaleState + scaleReasons (mã lạ vẫn qua); vắng thì không sinh khoá; trạng thái lạ bị từ chối', () => {
+  it('R9: nhận scaleState + scaleReasons (mã lạ vẫn qua); vắng thì không sinh khoá; trạng thái lạ đọc là estimated', () => {
     const estimated = FloorLayerDocumentSchema.parse({
       ...minimalDocument,
       level: calibratedLevel,
@@ -278,7 +278,9 @@ describe('FloorLayerDocumentSchema', () => {
     expect(legacy).not.toHaveProperty('scaleState');
     expect(legacy).not.toHaveProperty('scaleReasons');
 
-    expect(FloorLayerDocumentSchema.safeParse({ ...minimalDocument, scaleState: 'missing' }).success).toBe(false);
+    // Trạng thái lạ của máy chủ tương lai không làm vỡ trang: đọc là `estimated`; chuỗi rỗng vẫn bị từ chối.
+    expect(FloorLayerDocumentSchema.parse({ ...minimalDocument, scaleState: 'futureState' }).scaleState).toBe('estimated');
+    expect(FloorLayerDocumentSchema.safeParse({ ...minimalDocument, scaleState: '' }).success).toBe(false);
     expect(FloorLayerDocumentSchema.safeParse({ ...minimalDocument, scaleReasons: [''] }).success).toBe(false);
     expect(
       FloorLayerDocumentSchema.parse({ ...minimalDocument, level: calibratedLevel, scaleState: 'userCalibrated', scaleReasons: [] })

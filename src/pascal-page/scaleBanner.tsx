@@ -19,7 +19,10 @@ import { type ReadScale, useScaleStatus } from './useScaleStatus';
 
 export const SCALE_HIDDEN_PREFIX = 'Không dựng (chưa có tỷ lệ): ';
 export const SCALE_PROVISIONAL_PREFIX = 'Kích thước có thể lệch: ';
-/** R9: tầng tỷ lệ chưa xác định / chỉ ước lượng — số đo trong trình sửa chưa đánh dấu từng số, dải nói thay. */
+/**
+ * R9: tầng tỷ lệ chưa xác định / chỉ ước lượng. GIỚI HẠN: nhãn số đo trong trình vẽ Pascal (vendor —
+ * floorplan-dimension-renderer, quick-measure) CHƯA mang dấu ≈; dải này (kèm câu lý do bằng chữ) nói thay.
+ */
 export const SCALE_UNDETERMINED_PREFIX = 'Tỷ lệ chưa xác định, kích thước chỉ gần đúng: ';
 export const SCALE_ESTIMATED_PREFIX = 'Tỷ lệ ước lượng, kích thước chỉ gần đúng: ';
 export const SCALE_ALL_MISSING_TITLE = 'Chưa dựng được mô hình 3D';
@@ -44,10 +47,12 @@ interface ScaleLineProps {
   readonly linkLabel?: string;
   /** R9: câu trạng thái + lý do, hiện ở chú thích khi trỏ vào dòng. */
   readonly note?: string | null;
+  /** R9: câu lý do ngắn hiện thành chữ dưới dòng (không chỉ trong chú thích). */
+  readonly reason?: string | null;
 }
 
-function ScaleLine({ tone, text, href, linkLabel = 'Đặt tỷ lệ', note = null }: ScaleLineProps) {
-  return (
+function ScaleLine({ tone, text, href, linkLabel = 'Đặt tỷ lệ', note = null, reason = null }: ScaleLineProps) {
+  const line = (
     <p className="m-0 flex min-w-0 items-center gap-2 whitespace-nowrap">
       <TriangleAlert aria-hidden="true" className={`h-3.5 w-3.5 shrink-0 ${TONE_TEXT[tone]}`} />
       <span className="min-w-0 truncate" title={note === null ? text : `${text}. ${note}`}>
@@ -59,6 +64,13 @@ function ScaleLine({ tone, text, href, linkLabel = 'Đặt tỷ lệ', note = nu
         </a>
       )}
     </p>
+  );
+  if (reason === null) return line;
+  return (
+    <div className="flex min-w-0 flex-col">
+      {line}
+      <p className="m-0 max-w-[560px] pl-[22px] text-[12px] leading-snug text-[var(--pa-text-2)]">{reason}</p>
+    </div>
   );
 }
 
@@ -85,11 +97,11 @@ export function ScaleBanner({
   const lines: readonly ScaleLineProps[] = [
     ...(missing ? [{ tone: 'danger' as const, text: `${SCALE_HIDDEN_PREFIX}${floorNamesOf(scale.missing)}` }] : []),
     ...(scale.undetermined.length > 0
-      ? [{ tone: 'warn' as const, text: `${SCALE_UNDETERMINED_PREFIX}${floorNamesOf(scale.undetermined)}`, linkLabel: 'Hiệu chỉnh tỷ lệ', note: scale.undeterminedNote }]
+      ? [{ tone: 'warn' as const, text: `${SCALE_UNDETERMINED_PREFIX}${floorNamesOf(scale.undetermined)}`, linkLabel: 'Hiệu chỉnh tỷ lệ', note: scale.undeterminedNote, reason: scale.undeterminedReason }]
       : []),
     ...(scale.provisional.length > 0 ? [{ tone: 'warn' as const, text: `${SCALE_PROVISIONAL_PREFIX}${floorNamesOf(scale.provisional)}` }] : []),
     ...(scale.estimated.length > 0
-      ? [{ tone: 'warn' as const, text: `${SCALE_ESTIMATED_PREFIX}${floorNamesOf(scale.estimated)}`, linkLabel: 'Hiệu chỉnh tỷ lệ', note: scale.estimatedNote }]
+      ? [{ tone: 'warn' as const, text: `${SCALE_ESTIMATED_PREFIX}${floorNamesOf(scale.estimated)}`, linkLabel: 'Hiệu chỉnh tỷ lệ', note: scale.estimatedNote, reason: scale.estimatedReason }]
       : []),
   ];
   return (

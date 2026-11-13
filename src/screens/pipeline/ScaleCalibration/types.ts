@@ -502,6 +502,11 @@ export interface ScalePanelViewModel {
   /** UX-02: nhãn nút khi đang đề xuất tỷ lệ máy đọc/đặt sẵn ("Xác nhận tỷ lệ máy đề xuất"); vắng thì nhãn thường. */
   readonly applyLabel?: string;
   /**
+   * R9: số máy đề xuất chỉ ước lượng / chưa xác định — nút chính là "Đo một đoạn đã biết" (`onPlaceSegment`),
+   * nút áp khoá (`canApply` false). `acceptLabel` = nút phụ nhận số máy qua hộp xác nhận; vắng khi nguồn mâu thuẫn.
+   */
+  readonly measureFirst?: { readonly label: string; readonly acceptLabel?: string };
+  /**
    * Lượt áp hay hoàn tác gần nhất cần nói gì: không áp được và vì sao (B-V5-01), PUT
    * hỏng, báo cáo "áp mọi tầng", hay tỷ lệ cũ được đặt lại. Vắng khi không có gì để nói.
    */
@@ -663,6 +668,13 @@ export interface ScaleCalibrationViewModel {
   readonly missingScaleNotice?: string;
   /** Hộp thoại A9 trước "Áp cho mọi tầng". Vắng khi không mở. */
   readonly allFloorsConfirm?: ScaleAllFloorsConfirm;
+  /** R9: hộp xác nhận "Dùng tạm tỷ lệ máy ước lượng" đang mở (sai có thể tới ±40 %). */
+  readonly acceptMachineConfirm?: {
+    readonly title: string;
+    readonly message: string;
+    readonly confirmLabel: string;
+    readonly cancelLabel: string;
+  };
   /** Dải xung đột/khoá lưu của bộ lưu lớp chung, có "Tải lại" (BUG-598). Vắng khi tầng lưu được. */
   readonly saveBlock?: FloorLayerSaveBlock | null;
   /** Lượt đọc N16 404 (dự án/tầng không mở được) — cả màn thay bằng một lối ra (G45). */
@@ -778,6 +790,10 @@ export interface ScaleCalibrationActions {
   readonly onZoomToNumbers?: () => void;
   /** Đồng ý ở hộp thoại A9: gửi tỷ lệ cho từng tầng có bản vẽ, nối tiếp. */
   readonly onConfirmAllFloors: () => void;
+  /** R9: mở / đồng ý / huỷ hộp xác nhận nhận số máy ước lượng; tuỳ chọn để bộ mẫu cũ khỏi khai. */
+  readonly onRequestAcceptMachine?: () => void;
+  readonly onConfirmAcceptMachine?: () => void;
+  readonly onCancelAcceptMachine?: () => void;
   /** Huỷ hộp thoại A9: không gửi gì, màn giữ trạng thái trước. */
   readonly onCancelAllFloors: () => void;
 
@@ -849,6 +865,7 @@ export interface ScaleCalibrationPanelProps {
     | 'onPickDimensionChip'
     | 'onPlaceSegment'
     | 'onRemeasure'
+    | 'onRequestAcceptMachine'
     | 'onSelectDimensionRow'
     | 'onToggleCollapsed'
     | 'onUseSuggestedScale'

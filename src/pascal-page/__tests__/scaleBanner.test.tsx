@@ -217,9 +217,14 @@ describe('ScaleBanner (R9 scaleState)', () => {
       return {};
     });
     const banner = await screen.findByRole('status');
-    const [first, second] = Array.from(banner.querySelectorAll('p'));
+    const [first, firstReason, second, secondReason] = Array.from(banner.querySelectorAll('p'));
     expect(first?.textContent).toBe(`${SCALE_UNDETERMINED_PREFIX}Level 2Hiệu chỉnh tỷ lệ`);
+    // Phản biện X F4: lý do hiện thành chữ, không chỉ trong chú thích.
+    expect(firstReason?.textContent).toBe(
+      'Đọc từ chuỗi kích thước trên bản vẽ; Số đo trên bản vẽ mâu thuẫn với ước từ cửa và tường.',
+    );
     expect(second?.textContent).toBe(`${SCALE_ESTIMATED_PREFIX}Level 1`);
+    expect(secondReason?.textContent).toBe('Ước từ bề rộng cửa đi (giả định 745 mm).');
     expect(banner.textContent).not.toContain('Level 0');
     expect(second?.querySelector('span')?.getAttribute('title')).toContain('Ước từ bề rộng cửa đi (giả định 745 mm)');
     expect(screen.getByRole('link', { name: 'Hiệu chỉnh tỷ lệ' }).getAttribute('href')).toBe(
