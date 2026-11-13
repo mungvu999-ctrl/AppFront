@@ -137,7 +137,7 @@ export const rectsOverlap = (a: Rect, b: Rect, gapMm = 0): boolean => {
 const SWING_PROBE_MM = 300;
 
 /**
- * Vùng mở của mọi cửa đi trên tầng. Cửa bản lề: rộng × rộng CHỈ ở phía cánh quét — phía theo luật
+ * Vùng mở của mọi cửa đi trên tầng. Cửa bản lề: rộng × rộng (cửa đôi: rộng × nửa rộng) CHỈ ở phía cánh quét — phía theo luật
  * `swingDirectionOf` (đảo khi `reversed`), +1 = pháp tuyến trái của trục tường; không phòng nào ở cả
  * hai bên (thiếu dữ liệu để biết hướng) thì giữ cả hai phía. Cửa trượt/ô trống: rộng × 600 cả hai bên
  * (không cánh quét). Lối qua cửa phía không quét do vùng trước cửa trong phòng lo (`DOOR_APPROACH_MM`).
@@ -155,7 +155,8 @@ export const doorSwingRects = (graph: SpatialGraph, levelId: LevelId): Rect[] =>
     const dir = { x: (end.x - start.x) / length, y: (end.y - start.y) / length };
     const along = o.offsetMm + o.widthMm / 2;
     const sliding = o.swing === 'sliding' || o.swing === 'fixed';
-    const depth = sliding ? SLIDING_SWING_DEPTH_MM : o.widthMm;
+    // Cửa đôi: mỗi cánh rộng nửa ô cửa nên quét sâu nửa bề rộng (LD vòng 18; trước: cả bề rộng, 2,04 × 2,04 m).
+    const depth = sliding ? SLIDING_SWING_DEPTH_MM : o.swing === 'double' ?o.widthMm / 2 : o.widthMm;
     const at = (reach: number, side: number): Point => ({
       x: start.x + dir.x * along - dir.y * reach * side,
       y: start.y + dir.y * along + dir.x * reach * side,

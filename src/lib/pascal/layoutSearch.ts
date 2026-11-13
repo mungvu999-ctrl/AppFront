@@ -33,6 +33,12 @@ export const K_MODELS = 6;
 export const K_POSES = 48;
 /** Số lần BFS tiếp cận tối đa cho một món. */
 export const MAX_BFS = 8;
+/**
+ * LD: cửa rộng hơn mức này (m) — cửa đi đôi, cửa lùa ra lô gia — chỉ cần MỘT dải lối (rộng mức này + lề mỗi bên,
+ * sâu như vùng trước cửa) ở đầu trái / giữa / đầu phải còn trống, không phải cả bề rộng × DOOR_APPROACH. Cửa đơn
+ * (≤ 0,95 m trong dữ liệu) không đổi.
+ */
+const DOOR_PASS_M = 1.0;
 /** Dời tâm xa nhất (m) — cùng mức sceneRepair MAX_SHIFT_MM 1500. */
 export const MAX_SHIFT_M = 1.5;
 const STEP_M = 0.1;
@@ -335,9 +341,22 @@ export const doorApproachRect = (door: LayoutDoor): Block => {
   };
 };
 
+const wideDoor = (door: LayoutDoor): boolean => door.widthM > DOOR_PASS_M + 1e-9;
+/** Dải lối của cửa rộng: rộng DOOR_PASS_M + lề mỗi bên, sâu như vùng trước cửa, ở đầu trái / giữa / đầu phải vùng. */
+const passSlotsOf = (door: LayoutDoor): Block[] => {
+  const a = doorApproachRect(door);
+  const w = DOOR_PASS_M + (2 * OPENING_MARGIN_MM) / MM_PER_M;
+  const t = (a.rotationDeg * Math.PI) / 180;
+  const off = (a.w - w) / 2;
+  return [-off, 0, off].map((s) => ({ ...a, cx: a.cx + s * Math.cos(t), cy: a.cy + s * Math.sin(t), w }));
+};
+/** Vùng trước cửa còn chặn với các footprint `feet`: cửa thường luôn chặn; cửa rộng khi không còn dải lối nào trống. */
+const approachShut = (door: LayoutDoor, feet: readonly Rect[]): boolean =>
+  !wideDoor(door) || !passSlotsOf(door).some((s) => !feet.some((f) => rectsOverlap(s, f)));
+/** Vật chặn cố định: khối phòng + vùng trước cửa thường + đồ đã đặt. Vùng trước cửa rộng: checkPoseWith xét riêng. */
 const blockersOf = (room: LayoutRoom, placed: readonly Block[]): Block[] => [
   ...room.blocks,
-  ...room.doors.map(doorApproachRect),
+  ...room.doors.filter((d) => !wideDoor(d)).map(doorApproachRect),
   ...placed,
 ];
 
@@ -492,6 +511,11 @@ const checkPoseWith = (
   const blockers = blockersOf(room, placed).filter((b) => b.id !== piece.id && (b.id === undefined || !ignore.has(b.id)));
   const hit = blockers.find((b) => rectsOverlap(foot, b));
   if (hit !== undefined) return { ok: false, reason: `chạm ${ORIGIN_VI[hit.origin]}` };
+  // LD: cửa rộng — chặn khi footprint chạm vùng trước cửa VÀ cùng đồ đã đặt che hết mọi dải lối.
+  const feet = blockers.filter((b) => b.origin === 'fixed' || b.origin === 'set');
+  if (room.doors.some((d) => wideDoor(d) && rectsOverlap(foot, doorApproachRect(d)) && approachShut(d, [...feet, foot]))) {
+    return { ok: false, reason: `chạm ${ORIGIN_VI.approach}` };
+  }
   const zoneBlockers = blockers.filter((b) => b.origin !== 'approach');
   let softM2 = 0;
   for (const spec of specs) {
@@ -750,8 +774,13 @@ export const layoutIssuesOf = (room: LayoutRoom, pieces: readonly PlacedPiece[])
   // ponytail: trần MAX_ISSUE_PIECES món đầu theo id (phòng thật ≪ 64); cần sổ đủ cho phòng lớn hơn thì chia ô không gian.
   const sorted = [...pieces].sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_ISSUE_PIECES);
   const walls = room.blocks.filter((b) => b.origin === 'wall');
-  const doorZones = [...room.blocks.filter((b) => b.origin === 'swing'), ...room.doors.map(doorApproachRect)];
   const solids = room.blocks.filter((b) => b.origin === 'fixed' || b.origin === 'set');
+  // LD: vùng trước cửa rộng chỉ tính khi mặt bằng cuối che hết mọi dải lối của cửa (như checkPoseWith).
+  const feetAll = [...solids, ...sorted.map((p) => p.rect)];
+  const doorZones = [
+    ...room.blocks.filter((b) => b.origin === 'swing'),
+    ...room.doors.filter((d) => approachShut(d, feetAll)).map(doorApproachRect),
+  ];
   const issues: LayoutIssue[] = [];
   const m2 = (v: number): number => Math.round(v * 1000) / 1000;
   const footprints = [...walls, ...solids, ...sorted.map((p) => p.rect)];
@@ -1054,6 +1083,8 @@ export const layoutRoomOf = (
     openings: e.openings.map((s) => ({ from: s.fromMm / MM_PER_M, to: s.toMm / MM_PER_M })),
   })));
   const walls = new Map(graph.walls.filter((w) => w.levelId === room.levelId).map((w) => [w.id, w]));
+  /** LD: cửa lùa/cố định của phòng — không cánh quét; vùng 0,6 m cả bề rộng thừa với vùng trước cửa (dải lối) → bỏ. */
+  const trackDoors = new Set<string>();
   const doors: LayoutDoor[] = graph.openings.flatMap((o) => {
     const wall = walls.get(o.wallId);
     if (o.kind !== 'door' || wall === undefined) return [];
@@ -1079,7 +1110,9 @@ export const layoutRoomOf = (
         },
       };
     }
-    return best === undefined ? [] : [best.door];
+    if (best === undefined) return [];
+    if (o.swing === 'sliding' || o.swing === 'fixed') trackDoors.add(o.id);
+    return [best.door];
   });
   const xs = room.outline.map((p) => p.x / MM_PER_M);
   const ys = room.outline.map((p) => p.y / MM_PER_M);
@@ -1094,7 +1127,10 @@ export const layoutRoomOf = (
   };
   const blocks: Block[] = [
     ...wallRects(graph, room.levelId).map((r) => ({ ...rectM(r), origin: 'wall' as const })),
-    ...doorSwingRects(graph, room.levelId).map((r) => ({ ...rectM(r), origin: 'swing' as const })),
+    ...doorSwingRects({ ...graph, openings: graph.openings.filter((o) => !trackDoors.has(o.id)) }, room.levelId).map((r) => ({
+      ...rectM(r),
+      origin: 'swing' as const,
+    })),
   ].filter(near);
   return { id: room.id, outline: room.outline.map(metresOf), edges, doors, blocks: [...blocks, ...extra] };
 };
