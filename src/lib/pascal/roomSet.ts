@@ -1982,8 +1982,9 @@ export const roomSetOf = (
         });
         if (to !== null && fb?.at !== undefined && fb.move !== undefined) applyMove(m, to, fb.at, fb.move);
         else if (to !== null) placeOf(memberAs(m, fb?.uniform), to, fb?.uniform === 'real');
-        // Mẫu mặc định của loại (phương án cuối `null`) dựng trong hộp: chiếm chỗ bằng cả hộp.
-        else if (m.box !== undefined && m.lifted !== true) placed.push({ ...boxRectOf(m.box), id: m.id, ...(m.kind === undefined ? {} : { kind: m.kind }) });
+        // Mẫu mặc định của loại (phương án cuối `null`) dựng trong hộp: chiếm chỗ bằng cả hộp. LF6: món "chưa bố trí được"
+        // (`unplaced`, node ẩn) không chiếm chỗ — hộp của nó không được chặn món sau (cn13: giường đôi ẩn chặn giường đơn).
+        else if (m.box !== undefined && m.lifted !== true && fb?.unplaced === undefined) placed.push({ ...boxRectOf(m.box), id: m.id, ...(m.kind === undefined ? {} : { kind: m.kind }) });
       }
     }
     for (const m of todo) {

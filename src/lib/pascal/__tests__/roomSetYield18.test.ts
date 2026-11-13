@@ -51,6 +51,7 @@ const DIMS: Record<string, Dims> = {
   ac1: [0.8, 0.8, 0.8],
   tb1: [0.8, 0.75, 0.8],
   ch1: [0.45, 0.85, 0.5],
+  db1: [2.9, 0.5, 3.4],
 };
 const QUAL: Record<string, ModelQuality> = {
   sb1: q('singleBed', false),
@@ -62,6 +63,7 @@ const QUAL: Record<string, ModelQuality> = {
   ac1: q('armchair'),
   tb1: q('diningTable'),
   ch1: q('diningChair'),
+  db1: q('doubleBed'),
 };
 const ctx: SetContext = { tierOf: () => 0, tiers: 1, dimsOf: (id) => DIMS[id], palette: {}, qualityOf: (id) => QUAL[id] };
 
@@ -171,6 +173,19 @@ describe('roomSetOf — ghế nhóm nhường món chính (LT6)', () => {
     expect(out.get('F-bed')?.to).toBeNull();
     expect(out.get('F-bed')?.unplaced?.reason).toContain('chạm đồ đã đặt');
     expect(out.get('F-tb')?.to).not.toBeNull();
+    expect(ruleOverlaps(out)).toEqual([]);
+  });
+});
+
+// LF6 (cn13 ngủ 2): món "chưa bố trí được" (node ẩn) không chiếm chỗ — hộp của giường đôi ẩn không được chặn giường đơn.
+describe('LF6 — món chưa bố trí được không chặn món sau', () => {
+  it('giường đôi không đặt được (ẩn) → hộp của nó không chặn giường đơn dời cỡ thật', () => {
+    const dbl = member('F-db', 'doubleBed', { cx: 1.75, cy: 1.65, w: 1.8, d: 3.0 }, { kind: 'bed', pool: ['db1'], current: 'db1' });
+    const out = run('bedroom|x|y#0,0', [dbl, bed()]);
+    expect(out.get('F-db')?.to).toBeNull();
+    expect(out.get('F-db')?.unplaced).toBeDefined();
+    expect(out.get('F-bed')?.to).not.toBeNull();
+    expect(out.get('F-bed')?.unplaced).toBeUndefined();
     expect(ruleOverlaps(out)).toEqual([]);
   });
 });

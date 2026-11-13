@@ -520,6 +520,7 @@ export interface ClusterFit {
  * Thành viên không movable đứng yên; thành viên movable bị chặn ở chỗ mới thì thử đứng yên. Chỗ nào cũng không vừa → null.
  * `placed` phải đã gồm footprint neo ở tư thế mới (searchPlacement lo việc này).
  */
+const NO_IGNORE: ReadonlySet<string> = new Set();
 export const placeCluster = (
   room: LayoutRoom,
   anchor: Piece,
@@ -576,7 +577,9 @@ export const placeCluster = (
     };
     const night = bed && m.role === 'nightstand';
     const tuck = tucked(m.role, anchor.role) ? new Set([anchor.id]) : new Set<string>();
-    const ok = (p: Pose): boolean => checkPoseWith(m, p, room, blocks, specsOf(m, []), tuck).ok;
+    // LF6 (cn22: bàn xoay 180°, ghế đứng yên vẫn được miễn "kê dưới bàn" → chồng thân bàn): thành viên KHÔNG đi theo neo
+    // đã dời/xoay mất quan hệ kê dưới — kiểm chồng neo như mọi món; chồng thì tư thế neo bị bỏ (null).
+    const ok = (p: Pose): boolean => checkPoseWith(m, p, room, blocks, specsOf(m, []), p === stay && moved ? NO_IGNORE : tuck).ok;
     let fit: Pose | undefined;
     // Món đã xác nhận đứng yên, không kiểm lại (chồng sẵn là lỗi dữ liệu, không chặn cả cụm).
     if (!m.movable) fit = stay;
@@ -967,13 +970,56 @@ const NEAR_M = 1;
  * LayoutRoom (m) từ phòng + đồ thị (mm): cạnh (roomEdges), cửa đi trên cạnh phòng, khối tường + vùng mở cửa gần phòng.
  * Đồ cố định/đồ đã đặt bên gọi tự thêm (qua `placed` của searchPlacement hoặc `extra`).
  */
+/** Nối các đoạn liền nhau (kẽ ≤ 1 mm) của danh sách đoạn đã sắp. */
+const joinSpans = (xs: readonly Span[]): Span[] =>
+  [...xs].sort((p, q) => p.from - q.from).reduce<Span[]>((acc, s) => {
+    const last = acc[acc.length - 1];
+    if (last !== undefined && s.from <= last.to + 1e-3) acc[acc.length - 1] = { from: last.from, to: Math.max(last.to, s.to) };
+    else acc.push({ ...s });
+    return acc;
+  }, []);
+/**
+ * LF6: đỉnh thẳng hàng của outline (chỗ vách khác chạm vào tường) chia một bức tường thành hai cạnh → `freeSpans` theo
+ * từng cạnh không đủ dài cho đầu giường/tủ dù cả bức tường đủ (nt03t ngủ 3: tường 2,84 m chia 1,22 + 1,62 → giường cỡ
+ * thật 0 tư thế). Gộp cạnh liền kề cùng hướng, cùng pháp tuyến trong; nửa dày tường lấy lớn nhất (an toàn).
+ */
+const mergeCollinear = (edges: readonly LayoutEdge[]): LayoutEdge[] => {
+  const same = (p: LayoutEdge, q: LayoutEdge): boolean => {
+    if (p.lengthM <= 0 || q.lengthM <= 0) return false;
+    const dp = { x: (p.b.x - p.a.x) / p.lengthM, y: (p.b.y - p.a.y) / p.lengthM };
+    const dq = { x: (q.b.x - q.a.x) / q.lengthM, y: (q.b.y - q.a.y) / q.lengthM };
+    return Math.hypot(p.b.x - q.a.x, p.b.y - q.a.y) < 1e-3 && Math.abs(dp.x * dq.y - dp.y * dq.x) < 1e-3 && dp.x * dq.x + dp.y * dq.y > 0;
+  };
+  const join = (p: LayoutEdge, q: LayoutEdge): LayoutEdge => {
+    const shift = (xs: readonly Span[]): Span[] => xs.map((s) => ({ from: s.from + p.lengthM, to: s.to + p.lengthM }));
+    return {
+      a: p.a,
+      b: q.b,
+      lengthM: p.lengthM + q.lengthM,
+      inward: p.inward,
+      wallHalfM: Math.max(p.wallHalfM, q.wallHalfM),
+      walled: joinSpans([...p.walled, ...shift(q.walled)]),
+      openings: joinSpans([...p.openings, ...shift(q.openings)]),
+    };
+  };
+  const out: LayoutEdge[] = [];
+  for (const e of edges) {
+    const last = out[out.length - 1];
+    if (last !== undefined && same(last, e)) out[out.length - 1] = join(last, e);
+    else out.push(e);
+  }
+  const first = out[0];
+  const last = out[out.length - 1];
+  if (out.length > 2 && first !== undefined && last !== undefined && same(last, first)) out.splice(0, 1, join(last, first)), out.pop();
+  return out;
+};
 export const layoutRoomOf = (
   room: Pick<Room, 'id' | 'levelId' | 'outline'>,
   graph: SpatialGraph,
   extra: readonly Block[] = [],
 ): LayoutRoom => {
   const edgesMm = roomEdges(room, graph);
-  const edges: LayoutEdge[] = edgesMm.map((e) => ({
+  const edges: LayoutEdge[] = mergeCollinear(edgesMm.map((e) => ({
     a: metresOf(e.a),
     b: metresOf(e.b),
     lengthM: e.lengthMm / MM_PER_M,
@@ -981,7 +1027,7 @@ export const layoutRoomOf = (
     wallHalfM: e.wallHalfMm / MM_PER_M,
     walled: e.walled.map((s) => ({ from: s.fromMm / MM_PER_M, to: s.toMm / MM_PER_M })),
     openings: e.openings.map((s) => ({ from: s.fromMm / MM_PER_M, to: s.toMm / MM_PER_M })),
-  }));
+  })));
   const walls = new Map(graph.walls.filter((w) => w.levelId === room.levelId).map((w) => [w.id, w]));
   const doors: LayoutDoor[] = graph.openings.flatMap((o) => {
     const wall = walls.get(o.wallId);
