@@ -324,7 +324,7 @@ export function replaceFloorLayer(
  * dropped (`replaceFloorLayer` alone would keep it). Error handling stays with the caller.
  */
 export function applyFloorLayerRead(floorId: string, read: FloorLayerReplacement): void {
-  const { dimensions, layer, level, revision, scaleSource, scaleStatus } = read;
+  const { dimensions, layer, level, revision, scaleReasons, scaleSource, scaleState, scaleStatus } = read;
 
   replaceFloorLayer(
     floorId,
@@ -335,6 +335,8 @@ export function applyFloorLayerRead(floorId: string, read: FloorLayerReplacement
       ...(level === undefined ? {} : { level }),
       ...(scaleStatus === undefined ? {} : { scaleStatus }),
       ...(scaleSource === undefined ? {} : { scaleSource }),
+      ...(scaleState === undefined ? {} : { scaleState }),
+      ...(scaleReasons === undefined ? {} : { scaleReasons }),
     },
     { external: true },
   );

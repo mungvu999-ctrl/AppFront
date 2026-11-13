@@ -353,6 +353,8 @@ function confirmedLayerDocument(document: FloorLayerDocument, revision: number):
   const confirmed = { ...document, revision: Math.max(document.revision, revision) };
   delete confirmed.scaleStatus;
   delete confirmed.scaleSource;
+  delete confirmed.scaleState;
+  delete confirmed.scaleReasons;
 
   return confirmed;
 }

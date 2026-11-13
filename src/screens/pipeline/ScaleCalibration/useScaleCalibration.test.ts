@@ -1060,6 +1060,29 @@ describe('useScaleCalibration — tầng tỷ lệ tạm (scaleStatus unresolved
     expect(mounted.result.current.model.state).toBe('success');
   });
 
+  it('R9: sau khi người dùng hiệu chỉnh, N16 trong cache bỏ cả scaleState/scaleReasons (màn Xử lý không còn "ước lượng")', async () => {
+    useStore.getState().setSpatial(null, null);
+    simulateProvisionalScale(FLOOR_ID, PROVISIONAL_RATIO, 'pipeline', { scaleState: 'estimated', scaleReasons: ['door'] });
+    const harness = await makeHarness();
+    const queryClient = createTestQueryClient();
+    const mounted = mountHook(harness.gateway, { queryClient });
+    const cached = (): Awaited<ReturnType<ScaleCalibrationGateway['readLayer']>> | undefined =>
+      queryClient.getQueryData(queryKeys.layer.byFloor(PROJECT_ID, FLOOR_ID));
+
+    await settle(mounted);
+    await settleAsync();
+    expect(cached()?.scaleState).toBe('estimated');
+
+    await typeReference(mounted, PROVISIONAL_REAL_LENGTH);
+    await applyNow(mounted);
+
+    expect(harness.writeLayer).toHaveBeenCalledTimes(1);
+    expect(cached()).toBeDefined();
+    expect(cached()?.scaleStatus).toBeUndefined();
+    expect(cached()?.scaleState).toBeUndefined();
+    expect(cached()?.scaleReasons).toBeUndefined();
+  });
+
   it('hoàn tác trên tầng từng tỷ lệ tạm → một PUT tỷ lệ cũ, kèm câu của bước 5', async () => {
     const { harness, mounted } = await mountProvisional();
 
