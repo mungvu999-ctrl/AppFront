@@ -222,7 +222,11 @@ export function measureTextOf(
   scaleSource?: ScaleSource,
   scaleState?: WireScaleState,
 ): string {
-  const state = scaleStateOf(scaleStatus, scaleSource, scaleState);
+  return measureTextOfState(formatted, scaleStateOf(scaleStatus, scaleSource, scaleState));
+}
+
+/** Như `measureTextOf` khi màn đã có sẵn `ScaleState` của tầng, khỏi dựng lại từ khoá N16. */
+export function measureTextOfState(formatted: string, state: ScaleState): string {
   if (state === 'missing') return MISSING_MEASURE_TEXT;
   const suffix = SCALE_MEASURE_SUFFIX[state];
   return suffix === '' ? formatted : `≈ ${formatted}${suffix}`;
@@ -300,20 +304,18 @@ export function isScaleTrusted(
   return state === 'measured' || state === 'confirmed';
 }
 
-/** Một tầng trong tổng cộng nhiều tầng: tên để gọi khi tầng đó không tin được. */
-export interface FloorScaleRef {
+/** Một tầng trong tổng cộng nhiều tầng: tên để gọi khi số của tầng đó không tin được. */
+export interface FloorMeasureRef {
   readonly name: string;
-  readonly scaleStatus: ScaleStatus;
-  readonly scaleSource?: ScaleSource;
-  readonly scaleState?: WireScaleState;
+  readonly state: ScaleState;
 }
 
 /**
  * Chữ cho một con số cộng từ NHIỀU tầng. Tầng nào không tin được thì gọi tên tầng đó ra, vì dấu ≈
  * đặt trên số tổng không cho biết tầng nào ước — và không được im lặng chỉ vì đa số tầng đã đo.
  */
-export function totalMeasureTextOf(formatted: string, floors: readonly FloorScaleRef[]): string {
-  const loose = floors.filter((f) => !isScaleTrusted(f.scaleStatus, f.scaleSource, f.scaleState));
+export function totalMeasureTextOf(formatted: string, floors: readonly FloorMeasureRef[]): string {
+  const loose = floors.filter((f) => f.state !== 'measured' && f.state !== 'confirmed');
   if (loose.length === 0) return formatted;
   if (loose.length === floors.length) return `≈ ${formatted} (ước lượng)`;
   return `≈ ${formatted} (ước lượng ở ${loose.map((f) => f.name).join(', ')})`;

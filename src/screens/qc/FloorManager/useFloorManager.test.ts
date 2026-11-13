@@ -25,6 +25,7 @@ import { normalizeSpatial, type NormalizedSpatial } from '@/domain/spatial/norma
 import { totalArea } from '@/domain/rooms/area';
 import type { Level, LevelId } from '@/domain/spatial/types';
 import { metres, metresToMillimetres, millimetres } from '@/domain/units/types';
+import { millimetresPerPixel } from '@/domain/units/scale';
 import { createApiClient, type ApiResult } from '@/api/client';
 import { FloorSchema, type Floor } from '@/api/contracts';
 import { ApiErrorBodySchema } from '@/api/schemas/errors';
@@ -65,6 +66,7 @@ import {
   FLOOR_RESTORE_WINDOW_MS,
   metreDraftText,
   misplacedFloorNameWarning,
+  floorRowScaleStateOf,
   nextNewFloorName,
   useFloorManager,
   type UseFloorManagerOptions,
@@ -1825,5 +1827,52 @@ describe('W4b — ẩn khỏi 3D đọc từ máy chủ, lùi khi lưu hỏng', 
     });
     expect(rowOf(mounted, roofId).isHiddenIn3d).toBe(false);
     expect(mounted.result.current.unsupportedNotices).toEqual([]);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* R10 làn S: nhãn tỷ lệ của dòng tầng.                                        */
+/* -------------------------------------------------------------------------- */
+
+describe('floorRowScaleStateOf', () => {
+  const graph = createFloorManagerSampleGraph();
+  const sampleLevel = levelsOf(graph).find(
+    (candidate) => String(candidate.id) === String(FLOOR_MANAGER_SAMPLE_GROUND_ID),
+  );
+  /* Tầng mẫu chưa có tỷ lệ; gắn một tỷ lệ có thật vào để phép kiểm nói về TRẠNG THÁI, không về "chưa có số". */
+  const level =
+    sampleLevel === undefined ? undefined : { ...sampleLevel, scaleMillimetresPerPixel: millimetresPerPixel(10) };
+
+  it('kho chưa biết gì về tỷ lệ tầng thì để yên là đã xác nhận', () => {
+    expect(sampleLevel).toBeDefined();
+    if (level === undefined) return;
+
+    expect(floorRowScaleStateOf(graph, level, undefined)).toBe('confirmed');
+    expect(floorRowScaleStateOf(graph, level, { revision: 2 })).toBe('confirmed');
+  });
+
+  it('tầng máy chủ nói là ước lượng thì mang nhãn ước lượng', () => {
+    if (level === undefined) return;
+
+    expect(floorRowScaleStateOf(graph, level, { revision: 2, scaleStatus: 'unresolved', scaleState: 'estimated' })).toBe(
+      'estimated',
+    );
+  });
+
+  it('R10: tầng đã chấp nhận số máy (hết scaleStatus) KHÔNG được gắn nhãn xanh "đã xác nhận"', () => {
+    if (level === undefined) return;
+
+    // Luật cũ `scaleStatus === 'unresolved' ? ... : 'confirmed'` trả 'confirmed' ở đây.
+    expect(floorRowScaleStateOf(graph, level, { revision: 2, scaleState: 'estimated', scaleReasons: ['door', 'userAccepted'] })).toBe(
+      'estimated',
+    );
+  });
+
+  it('tầng người dùng tự hiệu chỉnh bằng kích thước thật thì mới là đã xác nhận', () => {
+    if (level === undefined) return;
+
+    expect(floorRowScaleStateOf(graph, level, { revision: 2, scaleState: 'userCalibrated', scaleReasons: ['human'] })).toBe(
+      'confirmed',
+    );
   });
 });
