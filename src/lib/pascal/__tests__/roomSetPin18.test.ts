@@ -1,6 +1,7 @@
 /**
- * M18 LA (S3) — món NGƯỜI DÙNG ghim mẫu ("Đổi mẫu", `userPin`) vẫn là vật cản + giữ mẫu, nhưng không dẫn nhóm / không góp
- * bảng màu, gỗ tham chiếu: sửa một món không làm anh em đổi mẫu khi tải lại. Ghim khác (twin `pinTo`, khe) giữ hành vi cũ.
+ * M18 LA (S3, LF1) — món mẫu NGƯỜI DÙNG ("Đổi mẫu", `userModel`) vào bộ chọn như món AI chưa ghim (ngữ cảnh anh em y như
+ * trước khi đổi), chỉ đầu ra riêng thay bằng mẫu người dùng: sửa một món không làm anh em đổi mẫu khi tải lại. Ghim khác
+ * (twin `pinTo`, khe, model không hậu tố) giữ hành vi cũ.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -73,45 +74,43 @@ const chairsAt = [
 const toOf = (out: ReadonlyMap<string, { readonly to: string | null }>, ids: readonly string[]): (string | null | undefined)[] =>
   ids.map((id) => out.get(id)?.to);
 
-describe('S3: ghim một ghế ăn không kéo các ghế cùng bàn', () => {
+describe('S3/LF1: đổi mẫu một ghế ăn (người dùng) không kéo bàn và các ghế cùng bàn', () => {
   const free = chairsAt.map(([id, cx, cy]) => chair(id, cx, cy));
   const base = roomSetOf('r', [table, ...free], new Map(), ctx);
   const shared = base.get('c2')?.to as string;
   const other = shared === 'chair-a' ? 'chair-b' : 'chair-a';
-  const pinOf = (extra: Partial<SetMember>): SetMember[] => [
-    table,
-    chair('c1', -0.35, 0.7, { fixed: true, current: other, pool: [], ...extra }),
-    ...free.slice(1),
-  ];
+  const ids = ['t', 'c2', 'c3', 'c4'];
 
   it('mốc: không ghim → cả bàn một mẫu', () => {
     expect(toOf(base, ['c1', 'c2', 'c3', 'c4'])).toEqual([shared, shared, shared, shared]);
   });
 
-  it('người dùng ghim c1 mẫu khác → c2..c4 giữ đúng quyết định như khi không ghim; c1 giữ mẫu ghim', () => {
-    const out = roomSetOf('r', pinOf({ userPin: true }), new Map(), ctx);
-    expect(out.get('c1')).toMatchObject({ to: other, cause: 'pinned' });
-    expect(toOf(out, ['c2', 'c3', 'c4'])).toEqual(toOf(base, ['c2', 'c3', 'c4']));
+  it('người dùng đổi c1 sang mẫu khác → bàn + c2..c4 giữ đúng quyết định như trước khi đổi; c1 giữ mẫu người dùng', () => {
+    const out = roomSetOf('r', [table, chair('c1', -0.35, 0.7, { userModel: other }), ...free.slice(1)], new Map(), ctx);
+    expect(out.get('c1')).toMatchObject({ to: other, cause: 'pinned', ai: { to: shared } });
+    expect(out.get('c1')?.at).toBeUndefined();
+    expect(toOf(out, ids)).toEqual(toOf(base, ids));
   });
 
-  it('ghim không phải của người dùng (cặp đã nhận, khe…) vẫn dẫn nhóm như cũ', () => {
-    const out = roomSetOf('r', pinOf({}), new Map(), ctx);
+  it('ghim không phải của người dùng (cặp đã nhận, khe, model không hậu tố) vẫn dẫn nhóm như cũ', () => {
+    const out = roomSetOf('r', [table, chair('c1', -0.35, 0.7, { fixed: true, current: other, pool: [] }), ...free.slice(1)], new Map(), ctx);
     expect(toOf(out, ['c2', 'c3', 'c4'])).toEqual([other, other, other]);
   });
 });
 
-describe('S3: đổi mẫu sofa (người dùng ghim) không đổi bàn trà', () => {
-  const sofa = (current: string, userPin: boolean): SetMember => ({
+describe('S3/LF1: đổi mẫu sofa (người dùng) không đổi bàn trà (ca Codex M18-1 #1)', () => {
+  /** Sofa AI chưa ghim: bộ chọn chỉ có óc chó → bàn trà theo gỗ sofa = ct-walnut. */
+  const aiSofa = (extra: Partial<SetMember> = {}): SetMember => ({
     id: 's',
     role: 'sofa',
     short: 0.9,
     long: 2,
-    current,
-    pool: [],
-    fixed: true,
-    ...(userPin ? { userPin: true } : {}),
-    sizeFrom: 'user',
+    current: 'sofa-walnut',
+    pool: ['sofa-walnut'],
+    fixed: false,
+    sizeFrom: 'ai',
     box: { cx: 0, cy: 1.2, w: 2, d: 0.9, rot: 0 },
+    ...extra,
   });
   const coffee: SetMember = {
     id: 'ct',
@@ -124,14 +123,24 @@ describe('S3: đổi mẫu sofa (người dùng ghim) không đổi bàn trà', 
     sizeFrom: 'ai',
     box: { cx: 0, cy: 0, w: 1, d: 0.6, rot: 0 },
   };
-  const ctOf = (s: SetMember): string | null | undefined => roomSetOf('r', [s, coffee], new Map(), ctx).get('ct')?.to;
 
-  it('sofa gỗ sồi ↔ óc chó do người dùng chọn: bàn trà cùng một mẫu', () => {
-    expect(ctOf(sofa('sofa-walnut', true))).toBe(ctOf(sofa('sofa-oak', true)));
+  it('trước đổi: sofa óc chó → bàn trà ct-walnut; sau đổi sofa sang sồi (người dùng) → bàn trà vẫn ct-walnut', () => {
+    const before = roomSetOf('r', [aiSofa(), coffee], new Map(), ctx);
+    expect(toOf(before, ['s', 'ct'])).toEqual(['sofa-walnut', 'ct-walnut']);
+    const after = roomSetOf('r', [aiSofa({ userModel: 'sofa-oak' }), coffee], new Map(), ctx);
+    expect(after.get('s')).toMatchObject({ to: 'sofa-oak', cause: 'pinned', ai: { to: 'sofa-walnut' } });
+    expect(after.get('ct')?.to).toBe('ct-walnut');
+  });
+
+  it('quyết định đã chốt ở lượt trước (planRoom lười rồi finishRoomSet): anh em đọc quyết định ảo, không mẫu người dùng', () => {
+    const first = roomSetOf('r', [aiSofa({ userModel: 'sofa-oak' })], new Map(), ctx);
+    const again = roomSetOf('r', [aiSofa({ userModel: 'sofa-oak' }), coffee], first, ctx);
+    expect(again.get('ct')?.to).toBe('ct-walnut');
   });
 
   it('mốc: ghim không phải người dùng vẫn dẫn gỗ tham chiếu (bàn trà theo gỗ sofa)', () => {
-    expect(ctOf(sofa('sofa-walnut', false))).toBe('ct-walnut');
-    expect(ctOf(sofa('sofa-oak', false))).toBe('ct-oak');
+    const pinned = (current: string): SetMember => aiSofa({ current, pool: [], fixed: true, sizeFrom: 'user' });
+    expect(roomSetOf('r', [pinned('sofa-walnut'), coffee], new Map(), ctx).get('ct')?.to).toBe('ct-walnut');
+    expect(roomSetOf('r', [pinned('sofa-oak'), coffee], new Map(), ctx).get('ct')?.to).toBe('ct-oak');
   });
 });

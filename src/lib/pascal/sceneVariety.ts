@@ -1033,9 +1033,13 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
   });
   const members: SetMember[] = [...room.members.values()].map(({ f, role, override }) => {
     const twinPin = SET_PINNED.get(f.id);
-    const pinned = twinPin === undefined && isPinned(f);
-    const concept = pinned || twinPin !== undefined ? undefined : conceptOf(role, style);
     const pin = twinPin ?? (f.model === undefined ? undefined : (SAVED_FOLDER.exec(f.model.src)?.[1] ?? null));
+    // M18 LA (S3, LF1): mẫu NGƯỜI DÙNG chọn qua "Đổi mẫu" (hậu tố cỡ-đã-thấy, không khe/twin): món vào bộ chọn NHƯ MÓN AI
+    // CHƯA GHIM (pool, luật cũ, concept) + `userModel` — anh em giữ đúng quyết định như trước khi đổi. `model` lưu từ trước
+    // (không hậu tố: vòng cũ, cặp nhận, mẫu luật) giữ hành vi ghim cũ.
+    const userSeen = twinPin === undefined && f.slots === undefined && f.model !== undefined && isUserSeenModelId(f.model.id);
+    const pinned = twinPin === undefined && !userSeen && isPinned(f);
+    const concept = pinned || twinPin !== undefined ? undefined : conceptOf(role, style);
     const [short, long] = footprintOf(f);
     const box = setBoxOf(f);
     return {
@@ -1050,7 +1054,7 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
       long,
       // Món chưa ghim: mẫu luật cũ CHỈ là phương án cuối + để sổ so (`from`).
       // Mẫu luật cũ của món chưa ghim không chứa mẫu concept: concept trượt ràng buộc cứng thì không quay lại qua `fallback`/`fail-keep`.
-      current: pin !== undefined ? pin : baseFolderOf(f, style, room.usage, override, !pinned),
+      current: pin !== undefined && !userSeen ? pin : baseFolderOf(f, style, room.usage, override, !pinned),
       // Mẫu dựng sẵn của vai: phương án cuối khi luật cũ trượt dáng/công năng (roomSet `fallbackOf`).
       ...(ROLE_MODELS[role][0] === undefined ? {} : { stock: ROLE_MODELS[role][0] }),
       pool: pinned || twinPin !== undefined ? [] : setPoolOf(f, role, style),
@@ -1058,9 +1062,7 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
         ? {}
         : { smaller: SMALLER_STORAGE[role].map((r) => ({ role: r, pool: setPoolOf(f, r, style) })) }),
       fixed: pinned,
-      // M18 LA (S3): mẫu NGƯỜI DÙNG chọn qua "Đổi mẫu" (hậu tố cỡ-đã-thấy): vật cản + giữ mẫu, không dẫn bảng màu/nhóm.
-      // `model` lưu từ trước (không hậu tố: vòng cũ, cặp nhận, mẫu luật) giữ hành vi ghim cũ.
-      ...(pinned && f.model !== undefined && isUserSeenModelId(f.model.id) ? { userPin: true } : {}),
+      ...(userSeen ? { userModel: pin ?? null } : {}),
       ...(concept === undefined
         ? {}
         : {

@@ -371,10 +371,12 @@ export interface SetMember {
   /** Ghim (mẫu người dùng chọn, khe vật liệu, twin của cặp đã nhận): không đổi, làm chuẩn. Mẫu concept không phải ghim. */
   readonly fixed: boolean;
   /**
-   * M18 LA (S3): món ghim do NGƯỜI DÙNG chọn mẫu ("Đổi mẫu"). Vẫn là vật cản và giữ mẫu (`cause: 'pinned'`), nhưng KHÔNG góp
-   * bảng màu / gỗ tham chiếu / dẫn nhóm — sửa một món không làm anh em đổi mẫu khi tải lại. Ghim khác (twin, khe) như cũ.
+   * M18 LA (S3, LF1): mẫu NGƯỜI DÙNG chọn ("Đổi mẫu"; `null` = ngoài thư viện). Mọi trường khác của món mô tả nó NHƯ MÓN AI
+   * CHƯA GHIM (`fixed: false`, pool, luật cũ, concept): bộ chọn tính nó y như trước khi đổi (vai, hộp, chọn mẫu, bảng màu,
+   * dẫn nhóm theo mẫu bộ chọn sẽ chọn) — anh em sau tải lại = anh em trước khi đổi. Chỉ đầu ra riêng của món thay bằng mẫu
+   * này (`cause: 'pinned'`, quyết định ảo ở `ai`), không dời/đổi cỡ. Ghim khác (twin, khe, model không hậu tố) như cũ.
    */
-  readonly userPin?: boolean;
+  readonly userModel?: string | null;
   /**
    * Mẫu concept AI chọn cho vai (món chưa ghim): ứng viên ƯU TIÊN — qua mọi ràng buộc cứng của món (như `pool`, kể cả va
    * chạm) thì chọn nó không so chi phí (`cause: 'concept'`); không qua thì đi đường chọn bình thường. `reject` = lý do bên
@@ -480,6 +482,8 @@ export interface SetDecision {
   readonly layout?: readonly LayoutIssue[];
   /** T4: không bố trí được — lý do + số thử. */
   readonly unplaced?: { readonly reason: string; readonly tried: Tried };
+  /** LF1: món mẫu người dùng (`SetMember.userModel`): quyết định ẢO như món AI chưa ghim — ngữ cảnh anh em ở các lượt sau. */
+  readonly ai?: SetDecision;
 }
 
 /** M18 L2: hình học phòng cho thang bố trí lại + sổ chung cả căn (ngân sách món còn lại, thời gian ms). */
@@ -936,11 +940,13 @@ const conceptMemberOf = (m: SetMember): SetMember => (m.concept?.shownOf === und
 export const roomSetOf = (
   roomKey: string,
   members: readonly SetMember[],
-  decided: ReadonlyMap<string, SetDecision>,
+  decidedIn: ReadonlyMap<string, SetDecision>,
   ctx: SetContext,
   zones: readonly SetZone[] = [],
   layout?: SetLayout,
 ): Map<string, SetDecision> => {
+  // LF1: món mẫu người dùng góp ngữ cảnh bằng quyết định ẢO (như món AI), không bằng mẫu người dùng.
+  const decided: ReadonlyMap<string, SetDecision> = new Map([...decidedIn].map(([id, d]) => [id, d.ai ?? d] as const));
   const inSet = members.filter((m) => SET_ROLES.includes(m.role)).sort(byPlace);
   /** M18 L2: hộp hiện hành của thành viên cụm đã đi theo neo (hộp đã lưu dịch/xoay theo tư thế cụm); vắng = hộp đã lưu. */
   const shifted = new Map<string, { readonly box: SetBox; readonly pose: Pose; readonly by: string }>();
@@ -955,8 +961,8 @@ export const roomSetOf = (
   const anchorRole = roles[0];
   const memo: Memo = new Map();
   const folderOfFixed = (m: SetMember): string | null => (m.fixed ? m.current : (decided.get(m.id)?.to ?? null));
-  /** Mẫu cố định GÓP NGỮ CẢNH (bảng màu, gỗ, dẫn nhóm): món người dùng ghim (`userPin`) không góp — chỉ chiếm chỗ. */
-  const leadOf = (m: SetMember): string | null => (m.userPin === true ? null : folderOfFixed(m));
+  /** Mẫu cố định GÓP NGỮ CẢNH (bảng màu, gỗ, dẫn nhóm). Món mẫu người dùng không `fixed`: góp bằng quyết định ảo. */
+  const leadOf = folderOfFixed;
   // Bảng màu phòng: tường + đồ cố định/đã chốt (gỗ trung bình theo tỉ phần, họ nhấn, độ sáng bề mặt cứng).
   const fixedFolders = inSet.flatMap((m) => {
     const f = leadOf(m);
@@ -1366,7 +1372,7 @@ export const roomSetOf = (
   };
 
   /** M18 hợp đồng: bộ chọn chỉ tự dời món AI chưa xác nhận / đồ sinh — không ghim, không cỡ người dùng, không twin, không ghim người dùng. */
-  const movableOf = (x: SetMember): boolean => !x.fixed && x.sizeFrom !== 'user' && x.pinTo === undefined && x.userPin !== true;
+  const movableOf = (x: SetMember): boolean => !x.fixed && x.sizeFrom !== 'user' && x.pinTo === undefined && x.userModel === undefined;
   /** Cụm đi theo neo (chưa chốt): tủ đầu giường sát giường, ghế của bàn (`tableOf`), bàn trà trước sofa. */
   const clusterOf = (m: SetMember, b: SetBox): SetMember[] =>
     inSet.filter((x) => {
@@ -1540,7 +1546,6 @@ export const roomSetOf = (
     // `to: null` đã quyết (phương án cuối) là quyết định, không phải "chưa quyết" — không hồi sinh concept dự đoán.
     const own = inSet.map((m) => {
       const d = out.get(m.id) ?? decided.get(m.id);
-      if (m.userPin === true) return null;
       return d !== undefined ? d.to : m.fixed ? m.current : aheadOf(m);
     });
     const sofas = inSet.flatMap((m, i) => {
@@ -1562,7 +1567,7 @@ export const roomSetOf = (
     /** Ngữ cảnh chấm theo nhóm (bàn của nhóm ghế): gỗ tham chiếu + gỗ bàn cho `pair`. */
     const refsOf = (key: string): ItemRefs => {
       const table = key === '' ? undefined : inSet.find((m) => m.id === key);
-      const tableFolder = table === undefined || table.userPin === true ? null : (out.get(table.id)?.to ?? folderOfFixed(table) ?? table.current);
+      const tableFolder = table === undefined ? null : (out.get(table.id)?.to ?? folderOfFixed(table) ?? table.current);
       const tf = tableFolder === null ? undefined : featOf(tableFolder, ctx, memo);
       const wood =
         tf?.woodLab ??
@@ -1714,7 +1719,7 @@ export const roomSetOf = (
         [...new Set(fs)].sort((a, b) => fs.filter((x) => x === b).length - fs.filter((x) => x === a).length || a.localeCompare(b))[0];
       const groupFolders = (inner: boolean): string[] =>
         group.flatMap((x) => {
-          if (keyOf.get(x.id) !== key || todoIds.has(x.id) !== inner || x.userPin === true) return [];
+          if (keyOf.get(x.id) !== key || todoIds.has(x.id) !== inner) return [];
           const f = out.get(x.id)?.to ?? decided.get(x.id)?.to ?? folderOfFixed(x);
           return typeof f === 'string' ? [f] : [];
         });
@@ -1814,6 +1819,29 @@ export const roomSetOf = (
       addHard(to);
     }
   }
+  // LF1: món mẫu người dùng — đầu ra riêng = mẫu người dùng tại hộp đã lưu (không dời/co); quyết định ảo giữ ở `ai`.
+  for (const m of inSet) {
+    const ai = out.get(m.id);
+    if (m.userModel === undefined || ai === undefined) continue;
+    shifted.delete(m.id);
+    const r = m.lifted === true ? undefined : m.userModel === null ? (m.box === undefined ? undefined : boxRectOf(m.box)) : shownRectOf(m, m.userModel);
+    if (r === undefined) finalRect.delete(m.id);
+    else finalRect.set(m.id, r);
+    out.set(m.id, {
+      id: m.id,
+      role: m.role,
+      from: m.userModel,
+      to: m.userModel,
+      rule: 'keep',
+      cause: 'pinned',
+      anchor: ai.anchor,
+      ...(m.sizeFrom === undefined ? {} : { by: m.sizeFrom }),
+      ...(ai.group === undefined ? {} : { group: ai.group }),
+      pool: m.pool.length,
+      why: 'mẫu người dùng chọn: giữ mẫu, không dời; anh em chọn theo quyết định ảo như món AI (`ai`)',
+      ai,
+    });
+  }
   // Đầu dò (vòng 17): mẫu giữ/ghim/cỡ người dùng ngoài phạm vi công năng — ghi sổ, không đổi.
   for (const m of inSet) {
     const d = out.get(m.id);
@@ -1834,7 +1862,10 @@ export const roomSetOf = (
       out.set(id, { ...d, at: s.pose, moved: { ...(anchor === undefined ? { dx: 0, dy: 0, dRot: 0 } : movedOf(box, s.pose, anchor)), cluster: [s.by] } });
     }
     // Lỗi bố trí: baseline = hộp ĐÃ LƯU; sau quyết định = mặt bằng cuối (món ẩn bỏ ra). Khoá mới so baseline → origin 'rule'.
-    const floor = inSet.filter((m) => m.lifted !== true && m.box !== undefined);
+    // LF1: chỉ tính khi sổ cần — phòng có món ẩn (`to: null`, kể cả T4 chưa bố trí được) hoặc món đã dời/đi theo cụm (`at`).
+    // Phòng mọi món đứng tại hộp đã lưu: bỏ qua (sổ không có `layout`; metrics18 chỉ đọc `layout` của món ẩn).
+    const needLog = [...out.values()].some((d) => d.to === null || d.at !== undefined);
+    const floor = needLog ? inSet.filter((m) => m.lifted !== true && m.box !== undefined) : [];
     const base = layoutIssuesOf(layout.room, floor.map((m) => ({ id: m.id, role: m.role, rect: boxRectOf(m.box as SetBox) })));
     const after = layoutIssuesOf(
       layout.room,

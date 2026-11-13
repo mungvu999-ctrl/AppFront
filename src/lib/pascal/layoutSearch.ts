@@ -48,6 +48,10 @@ const BODY_CLEAR_M = 0.3;
 const COARSE_GRID_M2 = 80;
 const FINE_CELL_M = 0.1;
 const COARSE_CELL_M = 0.15;
+/** LF1: trần số ô lưới lối đi — vượt thì nở cỡ ô (hộp bao ≤ 400 m² ở ô 0,10 m / ≤ 900 m² ở 0,15 m không đổi). */
+export const MAX_GRID_CELLS = 40_000;
+/** LF1: trần số món `layoutIssuesOf` xét (đầu danh sách theo id) — cặp chồng ≤ C(64, 2). */
+export const MAX_ISSUE_PIECES = 64;
 /** Chồng dưới mức này (m²) coi như chạm mép. */
 const MIN_ISSUE_M2 = 0.001;
 /** Chi phí: dời 1 m, xoay 90°, xoay 180°, mỗi quan hệ cụm gãy, mỗi m² vùng soft bị lấn. */
@@ -401,7 +405,10 @@ export const posesOf = (piece: Piece, room: LayoutRoom, limit = K_POSES): Pose[]
         const hi = s.to - w / 2;
         if (hi < lo - 1e-9) continue;
         at(Math.min(hi, Math.max(lo, along)));
-        for (let k = 0; lo + k * STEP_M <= hi + 1e-9; k += 1) at(lo + k * STEP_M);
+        // LF1: chỉ lấy mẫu |t − along| ≤ MAX_SHIFT_M (xa hơn thì dời > MAX_SHIFT_M, `add` vốn loại) — ≤ 34 mẫu mỗi đoạn, tất định.
+        const k0 = Math.max(0, Math.floor((along - MAX_SHIFT_M - lo) / STEP_M) - 1);
+        const k1 = Math.ceil((along + MAX_SHIFT_M - lo) / STEP_M) + 1;
+        for (let k = k0; k <= k1 && lo + k * STEP_M <= hi + 1e-9; k += 1) at(lo + k * STEP_M);
       }
     });
   } else {
@@ -589,26 +596,63 @@ export const placeCluster = (
   return { members: out, broken };
 };
 
-/** Lưới chiếm chỗ: ô 0,10 m (phòng > 80 m² → 0,15) phủ hộp bao outline; tự do khi tâm trong outline và cách mọi footprint ≥ 0,30 m. */
+/** Khoảng chỉ số ô [lo, hi] theo một trục chứa mọi tâm ô cách hình (tâm `c`, nửa bao `half`) ≤ `pad` m — dư 1 ô mỗi phía. */
+const cellSpan = (c: number, half: number, pad: number, o: number, cell: number, n: number): readonly [number, number] => [
+  Math.max(0, Math.floor((c - half - pad - o) / cell) - 1),
+  Math.min(n - 1, Math.ceil((c + half + pad - o) / cell) + 1),
+];
+/** Nửa cạnh hộp bao trục của hình chữ nhật xoay. */
+const halfOf = (r: Rect): readonly [number, number] => {
+  const t = (r.rotationDeg * Math.PI) / 180;
+  const c = Math.abs(Math.cos(t));
+  const sn = Math.abs(Math.sin(t));
+  return [(c * r.w + sn * r.d) / 2, (sn * r.w + c * r.d) / 2];
+};
+/** Ô có tâm trong outline (theo cỡ ô) — dùng lại giữa các lần dựng lưới cùng phòng. */
+const INSIDE = new WeakMap<readonly Point[], { readonly cell: number; readonly inside: Uint8Array }>();
+
+/**
+ * Lưới chiếm chỗ: ô 0,10 m (phòng > 80 m² → 0,15; số ô > MAX_GRID_CELLS → nở ô) phủ hộp bao outline; tự do khi tâm trong
+ * outline và cách mọi footprint ≥ 0,30 m. Mỗi footprint chỉ duyệt ô trong hộp bao đã nở của nó (cùng kết quả như quét
+ * cả lưới: cách < 0,30 m ⇒ tâm ô nằm trong hộp bao nở 0,30 m).
+ */
 export const accessGrid = (room: LayoutRoom, footprints: readonly Rect[]): Grid => {
   const xs = room.outline.map((p) => p.x);
   const ys = room.outline.map((p) => p.y);
   const x0 = Math.min(...xs);
   const y0 = Math.min(...ys);
-  const cell = areaOf(room.outline) > COARSE_GRID_M2 ? COARSE_CELL_M : FINE_CELL_M;
-  const nx = Math.max(1, Math.ceil((Math.max(...xs) - x0) / cell));
-  const ny = Math.max(1, Math.ceil((Math.max(...ys) - y0) / cell));
-  const free = new Uint8Array(nx * ny);
-  const outlineMm = room.outline.map(toPointMm);
-  const reach = footprints.map((f) => Math.hypot(f.w, f.d) / 2 + BODY_CLEAR_M);
-  for (let j = 0; j < ny; j += 1) {
-    for (let i = 0; i < nx; i += 1) {
-      const p = { x: x0 + (i + 0.5) * cell, y: y0 + (j + 0.5) * cell };
-      if (!outlineContains(outlineMm, toPointMm(p))) continue;
-      const clear = footprints.every(
-        (f, k) => Math.hypot(p.x - f.cx, p.y - f.cy) >= (reach[k] ?? 0) || distToRect(p, f) >= BODY_CLEAR_M - 1e-9,
-      );
-      if (clear) free[j * nx + i] = 1;
+  const spanX = Math.max(...xs) - x0;
+  const spanY = Math.max(...ys) - y0;
+  const countOf = (c: number): number => Math.max(1, Math.ceil(spanX / c)) * Math.max(1, Math.ceil(spanY / c));
+  let cell = areaOf(room.outline) > COARSE_GRID_M2 ? COARSE_CELL_M : FINE_CELL_M;
+  if (countOf(cell) > MAX_GRID_CELLS) {
+    cell = Math.sqrt((spanX * spanY) / MAX_GRID_CELLS);
+    while (countOf(cell) > MAX_GRID_CELLS) cell *= 1.01;
+  }
+  const nx = Math.max(1, Math.ceil(spanX / cell));
+  const ny = Math.max(1, Math.ceil(spanY / cell));
+  let hit = INSIDE.get(room.outline);
+  if (hit?.cell !== cell) {
+    const inside = new Uint8Array(nx * ny);
+    const outlineMm = room.outline.map(toPointMm);
+    for (let j = 0; j < ny; j += 1) {
+      for (let i = 0; i < nx; i += 1) {
+        if (outlineContains(outlineMm, toPointMm({ x: x0 + (i + 0.5) * cell, y: y0 + (j + 0.5) * cell }))) inside[j * nx + i] = 1;
+      }
+    }
+    hit = { cell, inside };
+    INSIDE.set(room.outline, hit);
+  }
+  const free = hit.inside.slice();
+  for (const f of footprints) {
+    const [hx, hy] = halfOf(f);
+    const [i0, i1] = cellSpan(f.cx, hx, BODY_CLEAR_M, x0, cell, nx);
+    const [j0, j1] = cellSpan(f.cy, hy, BODY_CLEAR_M, y0, cell, ny);
+    for (let j = j0; j <= j1; j += 1) {
+      for (let i = i0; i <= i1; i += 1) {
+        const k = j * nx + i;
+        if (free[k] === 1 && distToRect({ x: x0 + (i + 0.5) * cell, y: y0 + (j + 0.5) * cell }, f) < BODY_CLEAR_M - 1e-9) free[k] = 0;
+      }
     }
   }
   return { x0, y0, cell, nx, ny, free };
@@ -619,6 +663,11 @@ export const accessGrid = (room: LayoutRoom, footprints: readonly Rect[]): Grid 
  * với tới được (một ô đã tới cách hình ≤ 0,30 m — người đứng mép vùng). Không ô nguồn nào → false.
  */
 export const canReach = (grid: Grid, sources: readonly Rect[], targets: readonly (readonly Rect[])[]): boolean => {
+  const seen = reachedOf(grid, sources);
+  return seen !== null && reachesAll(grid, seen, targets);
+};
+/** BFS từ `sources`: 1 = ô tới được; `null` = không ô nguồn nào. */
+const reachedOf = (grid: Grid, sources: readonly Rect[]): Uint8Array | null => {
   const { x0, y0, cell, nx, ny, free } = grid;
   const centre = (k: number): Point => ({ x: x0 + ((k % nx) + 0.5) * cell, y: y0 + (Math.floor(k / nx) + 0.5) * cell });
   const seen = new Uint8Array(nx * ny);
@@ -632,7 +681,7 @@ export const canReach = (grid: Grid, sources: readonly Rect[], targets: readonly
       tail += 1;
     }
   }
-  if (tail === 0) return false;
+  if (tail === 0) return null;
   while (head < tail) {
     const k = queue[head] ?? 0;
     head += 1;
@@ -645,8 +694,23 @@ export const canReach = (grid: Grid, sources: readonly Rect[], targets: readonly
       tail += 1;
     }
   }
-  const reached = Array.from(queue.subarray(0, tail), centre);
-  return targets.every((group) => group.some((z) => reached.some((p) => distToRect(p, z) <= BODY_CLEAR_M + 1e-9)));
+  return seen;
+};
+/** Mỗi nhóm `targets` có một hình mà một ô đã tới cách ≤ 0,30 m — chỉ duyệt ô trong hộp bao đã nở của hình. */
+const reachesAll = (grid: Grid, seen: Uint8Array, targets: readonly (readonly Rect[])[]): boolean => {
+  const { x0, y0, cell, nx, ny } = grid;
+  const near = (z: Rect): boolean => {
+    const [hx, hy] = halfOf(z);
+    const [i0, i1] = cellSpan(z.cx, hx, BODY_CLEAR_M, x0, cell, nx);
+    const [j0, j1] = cellSpan(z.cy, hy, BODY_CLEAR_M, y0, cell, ny);
+    for (let j = j0; j <= j1; j += 1) {
+      for (let i = i0; i <= i1; i += 1) {
+        if (seen[j * nx + i] === 1 && distToRect({ x: x0 + (i + 0.5) * cell, y: y0 + (j + 0.5) * cell }, z) <= BODY_CLEAR_M + 1e-9) return true;
+      }
+    }
+    return false;
+  };
+  return targets.every((group) => group.some(near));
 };
 
 const needGroupsOf = (specs: readonly UseSpec[], foot: Rect): Rect[][] =>
@@ -677,7 +741,8 @@ const sumOverlap = (r: Rect, bs: readonly Rect[]): number =>
  * (trừ ghế kê dưới bàn) hoặc chồng khối cố định; use: vùng need không đạt; access: món chính không có lối từ cửa.
  */
 export const layoutIssuesOf = (room: LayoutRoom, pieces: readonly PlacedPiece[]): LayoutIssue[] => {
-  const sorted = [...pieces].sort((a, b) => a.id.localeCompare(b.id));
+  // ponytail: trần MAX_ISSUE_PIECES món đầu theo id (phòng thật ≪ 64); cần sổ đủ cho phòng lớn hơn thì chia ô không gian.
+  const sorted = [...pieces].sort((a, b) => a.id.localeCompare(b.id)).slice(0, MAX_ISSUE_PIECES);
   const walls = room.blocks.filter((b) => b.origin === 'wall');
   const doorZones = [...room.blocks.filter((b) => b.origin === 'swing'), ...room.doors.map(doorApproachRect)];
   const solids = room.blocks.filter((b) => b.origin === 'fixed' || b.origin === 'set');
@@ -686,6 +751,8 @@ export const layoutIssuesOf = (room: LayoutRoom, pieces: readonly PlacedPiece[])
   const footprints = [...walls, ...solids, ...sorted.map((p) => p.rect)];
   const grid = room.doors.length > 0 && sorted.some((p) => MAIN_ROLES.has(p.role)) ? accessGrid(room, footprints) : null;
   const sources = room.doors.map(doorApproachRect);
+  // Một BFS cho cả phòng: nguồn (cửa) và lưới như nhau với mọi món.
+  const seen = grid === null ? null : reachedOf(grid, sources);
   sorted.forEach((p, i) => {
     const wallM2 = sumOverlap(p.rect, walls);
     if (!insideM(p.rect, room.outline, 0) || wallM2 > MIN_ISSUE_M2) issues.push({ kind: 'wall', id: p.id, m2: m2(wallM2), origin: 'data' });
@@ -709,7 +776,7 @@ export const layoutIssuesOf = (room: LayoutRoom, pieces: readonly PlacedPiece[])
       });
       if (!clear) issues.push({ kind: 'use', id: p.id, with: spec.sides.join('/'), origin: 'data' });
     }
-    if (grid !== null && MAIN_ROLES.has(p.role) && !canReach(grid, sources, needGroupsOf(USE_ZONES[p.role] ?? [], p.rect))) {
+    if (grid !== null && MAIN_ROLES.has(p.role) && (seen === null || !reachesAll(grid, seen, needGroupsOf(USE_ZONES[p.role] ?? [], p.rect)))) {
       issues.push({ kind: 'access', id: p.id, origin: 'data' });
     }
   });

@@ -152,7 +152,8 @@ describe('roomSetOf — thang bố trí lại M18', () => {
     const pinned = run([bed({ fixed: true, current: 'sb1', pool: [] })], NT).get('F-bed');
     expect(pinned?.cause).toBe('pinned');
     expect(pinned?.at).toBeUndefined();
-    const userPin = run([bed({ fixed: true, userPin: true, current: 'sb1', pool: [] })], NT).get('F-bed');
+    const userPin = run([bed({ userModel: 'sb1' })], NT).get('F-bed');
+    expect(userPin).toMatchObject({ to: 'sb1', cause: 'pinned' });
     expect(userPin?.at).toBeUndefined();
     const twin = run([bed({ pinTo: 'sb1' })], NT).get('F-bed');
     expect(twin?.at).toBeUndefined();
