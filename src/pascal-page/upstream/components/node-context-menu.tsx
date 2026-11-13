@@ -9,7 +9,7 @@ import { useViewer } from '@pascal-app/viewer';
 import { Copy, Group, Move, PencilRuler, Scissors, Search, Spline, Trash2, Ungroup, type LucideIcon } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
 
-import { getNodeActions, isPlainClick, subscribeNodeActions, type NodeActions, type ScreenPoint } from '../lib/node-context-menu';
+import { getNodeActions, isPlainClick, runMenuAction, subscribeNodeActions, type NodeActions, type ScreenPoint } from '../lib/node-context-menu';
 
 // Cùng thứ tự và cùng chữ với `NodeActionMenu` (`scripts/pascal-vi/materials-ui.mjs`).
 const ITEMS: readonly { key: keyof NodeActions; label: string; icon: LucideIcon }[] = [
@@ -133,7 +133,7 @@ export function NodeContextMenu() {
           className={`${ITEM_CLASS} ${key === 'onDelete' ? 'text-[var(--pa-danger)]' : 'text-[var(--pa-text)]'}`}
           key={key}
           onClick={(event) => {
-            actions[key]?.(event);
+            runMenuAction(() => actions[key]?.(event), useViewer.getState());
             setAt(null);
           }}
           role="menuitem"

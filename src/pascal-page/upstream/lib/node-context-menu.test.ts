@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { CLICK_SLOP_PX, isPlainClick } from './node-context-menu';
+import { CLICK_SLOP_PX, isPlainClick, runMenuAction } from './node-context-menu';
 
 describe('isPlainClick', () => {
   const down = { x: 100, y: 100 };
@@ -19,5 +19,19 @@ describe('isPlainClick', () => {
 
   it('không có lúc nhấn trong trang thì không phải bấm', () => {
     expect(isPlainClick(null, down)).toBe(false);
+  });
+});
+
+describe('runMenuAction', () => {
+  it('hạ cờ cameraDragging (kẹt từ cú chuột phải mở menu) TRƯỚC khi chạy mục menu', () => {
+    const log: string[] = [];
+    runMenuAction(() => log.push('run'), { setCameraDragging: (dragging) => log.push(`drag=${String(dragging)}`) });
+    expect(log).toEqual(['drag=false', 'run']);
+  });
+
+  it('viewer không có setCameraDragging vẫn chạy mục menu', () => {
+    let ran = false;
+    runMenuAction(() => (ran = true), {});
+    expect(ran).toBe(true);
   });
 });

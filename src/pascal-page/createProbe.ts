@@ -38,6 +38,16 @@ export interface PascalProbe {
   editNode(id: string, patch: object): void;
   /** Bản sao JSON của một node (đọc trước `editNode` để vá sâu, vd. `metadata`); `null` khi không có. */
   node(id: string): unknown;
+  /** Dự phòng e2e (M18 LE): chọn node qua `useViewer.setSelection` — chỉ chọn, không sửa; test phải ghi rõ khi dùng. */
+  select(id: string): void;
+  /** Cờ thao tác của viewer (e2e M18 LE): `cameraDragging` = viewer coi chuột đang kéo camera → mọi `grid:*` bị bỏ. */
+  cameraDragging(): boolean | undefined;
+  /**
+   * Toạ độ màn hình (px CSS, theo viewport) của tâm hộp mesh của node, để test click chuột THẬT (M18 LE). Camera lấy qua
+   * `onBeforeRender` của mesh ở khung vẽ kế tiếp (gọi `kick` để renderer nhàn rỗi vẽ). `null` = node không có mesh / không
+   * vẽ trong ~2 s / tâm sau camera.
+   */
+  screenOf(id: string): Promise<{ x: number; y: number } | null>;
   /** Bật/tắt mọi đèn (công tắc trong `useInteractive.lampItems`) — C10 đo màu sàn khi tắt đèn. */
   setLights(on: boolean): void;
   /** Chẩn đoán vật liệu lúc chạy của các item có `src` chứa `match` (tên, loại, trong suốt, màu, kim loại, nhám, map). */
@@ -161,7 +171,7 @@ type CameraPose =
 /** Đúng phần store Pascal mà đầu dò đọc; `./probe` truyền store thật vào. */
 export interface PascalProbeStores {
   readonly useScene: { getState(): { nodes: object; updateNode(id: string, data: object): void } };
-  readonly useViewer: { getState(): { itemLoadFailures: object; shading?: string } };
+  readonly useViewer: { getState(): { itemLoadFailures: object; shading?: string; setSelection?(s: { selectedIds: string[] }): void } };
   readonly sceneRegistry: {
     nodes: { get(id: string): { userData: Record<string, unknown>; traverse?(fn: (o: ProbeObject) => void): void } | undefined };
   };
@@ -182,9 +192,22 @@ export interface PascalProbeStores {
   readonly renderer?: () => { gl: unknown; backend: string; tone: string | null } | undefined;
   /** Nhật ký lượt dựng cảnh; mặc định `sceneTrace` của trang. */
   readonly trace?: SceneTrace;
+  /** Đánh thức renderer nhàn rỗi (`realism/idle` `markDirty`) để `screenOf` bắt được một khung vẽ. */
+  readonly kick?: () => void;
 }
 
-export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter, useInteractive, look, repairs, layer, renderer, trace = sceneTrace }: PascalProbeStores): PascalProbe => {
+/** Phần three.js mà `screenOf` dùng (kiểu lỏng: createProbe không nhập three). */
+interface ProbeVec { x: number; y: number; z: number; clone(): ProbeVec; set(x: number, y: number, z: number): ProbeVec; applyMatrix4(m: unknown): ProbeVec; project(c: unknown): ProbeVec }
+interface ProbeMesh {
+  isMesh?: boolean;
+  visible?: boolean;
+  position: ProbeVec;
+  matrixWorld: unknown;
+  geometry?: { boundingBox: { min: ProbeVec; max: ProbeVec } | null; computeBoundingBox(): void };
+  onBeforeRender: (...args: unknown[]) => void;
+}
+
+export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter, useInteractive, look, repairs, layer, renderer, trace = sceneTrace, kick }: PascalProbeStores): PascalProbe => {
   const nodes = () => useScene.getState().nodes as Record<string, LooseNode>;
   const entries = () => Object.entries(nodes());
   const entriesOf = (type: string) => entries().filter(([, n]) => n.type === type);
@@ -255,6 +278,50 @@ export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter,
     node: (id) => {
       const found = nodes()[id];
       return found === undefined ? null : (JSON.parse(JSON.stringify(found)) as unknown);
+    },
+    select: (id) => useViewer.getState().setSelection?.({ selectedIds: [id] }),
+    cameraDragging: () => (useViewer.getState() as { cameraDragging?: boolean }).cameraDragging,
+    screenOf: async (id) => {
+      const meshes: ProbeMesh[] = [];
+      sceneRegistry.nodes.get(id)?.traverse?.((o) => {
+        const m = o as unknown as ProbeMesh;
+        if (m.isMesh === true && m.visible !== false && m.geometry) meshes.push(m);
+      });
+      if (meshes.length === 0) return null;
+      let camera: unknown;
+      const saved = meshes.map((m) => m.onBeforeRender);
+      meshes.forEach((m, i) => {
+        m.onBeforeRender = (...args: unknown[]) => {
+          camera ??= args[2];
+          saved[i]!.apply(m, args);
+        };
+      });
+      try {
+        for (let frame = 0; camera === undefined && frame < 120; frame += 1) {
+          kick?.();
+          await new Promise((f) => requestAnimationFrame(() => f(null)));
+        }
+      } finally {
+        meshes.forEach((m, i) => (m.onBeforeRender = saved[i]!));
+      }
+      if (camera === undefined) return null;
+      // Tâm hộp thế giới (gộp 8 góc hộp hình học của mọi mesh).
+      const lo = [Infinity, Infinity, Infinity];
+      const hi = [-Infinity, -Infinity, -Infinity];
+      for (const m of meshes) {
+        if (m.geometry!.boundingBox === null) m.geometry!.computeBoundingBox();
+        const { min, max } = m.geometry!.boundingBox!;
+        for (const cx of [min.x, max.x]) for (const cy of [min.y, max.y]) for (const cz of [min.z, max.z]) {
+          const p = m.position.clone().set(cx, cy, cz).applyMatrix4(m.matrixWorld);
+          [p.x, p.y, p.z].forEach((v, k) => ((lo[k] = Math.min(lo[k]!, v)), (hi[k] = Math.max(hi[k]!, v))));
+        }
+      }
+      const ndc = meshes[0]!.position.clone().set((lo[0]! + hi[0]!) / 2, (lo[1]! + hi[1]!) / 2, (lo[2]! + hi[2]!) / 2).project(camera);
+      if (ndc.z > 1) return null;
+      const canvas = (renderer?.()?.gl as { domElement?: HTMLCanvasElement } | undefined)?.domElement ?? document.querySelector('canvas');
+      if (!canvas) return null;
+      const r = canvas.getBoundingClientRect();
+      return { x: r.left + ((ndc.x + 1) / 2) * r.width, y: r.top + ((1 - ndc.y) / 2) * r.height };
     },
     setLights: (on) => {
       const { lampItems, setControlValue } = useInteractive.getState();

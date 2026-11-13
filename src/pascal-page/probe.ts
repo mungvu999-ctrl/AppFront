@@ -29,6 +29,7 @@ installPascalProbe(window.location.search, window, {
   sceneRegistry,
   emitter,
   useInteractive,
+  kick: () => markDirty('probe:screenOf', 500),
   repairs: () => sceneRepairStore.get().repairs,
   layer: () => sceneRepairStore.get().layer,
   renderer: () => (currentRenderer ? { gl: currentRenderer, backend: backendOf(currentRenderer), tone: activeTone(currentRenderer) } : undefined),

@@ -206,7 +206,7 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chrome
-      - run: pnpm e2e e2e/pascal-stability.spec.ts --workers=1 --retries=1
+      - run: pnpm e2e e2e/pascal-stability.spec.ts e2e/pascal-edit-path.spec.ts --workers=1 --retries=1
         env:
           E2E_PORT: '5191'
       - uses: actions/upload-artifact@v4
