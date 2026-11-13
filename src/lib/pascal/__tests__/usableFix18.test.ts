@@ -98,9 +98,10 @@ describe('F9 P1-2: lọc dáng L ở đường chọn tự động dùng chung (
     expect(modelFolderOf(sofa('S1', 2200, 900), style, 'livingRoom')).toBe('sofa');
   });
 
-  it('hộp góc 2,2 × 1,6 AI chưa xác nhận, không phòng → mẫu L', () => {
+  // CORNER_SOFA_PREFER TẮT: hộp góc cũng KHÔNG nhận mẫu L ở đường luật cũ (xem roomSet.ts, chấm mù vòng 18).
+  it('hộp góc 2,2 × 1,6 AI chưa xác nhận, không phòng → KHÔNG nhận mẫu L', () => {
     register();
-    expect(modelFolderOf(sofa('S2', 2200, 1600), style, 'livingRoom')).toBe(L);
+    expect(modelFolderOf(sofa('S2', 2200, 1600), style, 'livingRoom')).not.toBe(L);
   });
 
   it('hộp góc của món người dùng đã xác nhận → không nhận mẫu L', () => {

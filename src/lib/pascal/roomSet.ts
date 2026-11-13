@@ -160,6 +160,14 @@ const SHAPE_RANGE: Readonly<Record<string, Readonly<Record<string, { readonly d:
  * 1,31–2,38, tỉ lệ 1,07–1,73) là sofa góc/chữ L. sceneRepair không kẹp sâu hộp này về hồ sơ sofa thẳng; bộ chọn chỉ cho mẫu
  * dáng L (`shape === 'L'`) vào hộp góc và loại mẫu L khỏi mọi hộp sofa khác (`shapedMemberOf`).
  */
+/**
+ * ƯU TIÊN mẫu dáng L ở hộp góc: TẮT mặc định. Hai lượt chấm mù độc lập (4 giám khảo mỗi lượt, 12 căn chưa dùng)
+ * đều cho điểm ÂM và cùng một lời chê: 12 mẫu L của thư viện đều xám/tối, chỏi các phòng be–cam, và choán chỗ;
+ * phòng dùng sofa thẳng sáng màu (dù bị co vào hộp) được chấm tốt hơn ở 8/8 phiếu của các căn đó
+ * (F:/runs/m18/E/KET-QUA-rieng.txt). Bật lại khi thư viện có mẫu L tông ấm.
+ * TẮT = mọi hộp đi đường sofa thẳng: mẫu L bị loại khỏi pool, concept và mẫu luật cũ ở MỌI hộp (như trước vòng 18).
+ */
+export const CORNER_SOFA_PREFER = false;
 export const CORNER_SOFA_SHORT_M = 1.3;
 export const CORNER_SOFA_RATIO = 1.8;
 export const isCornerSofaBox = (w: number, d: number): boolean => {
@@ -623,6 +631,7 @@ const shapedMemberOf = (m: SetMember, ctx: SetContext): SetMember => {
   if (m.role !== 'sofa') return m;
   const isL = (x: string): boolean => (ctx.qualityOf ?? defaultQualityOf)(x)?.shape === 'L';
   const corner =
+    CORNER_SOFA_PREFER &&
     !m.fixed &&
     m.sizeFrom !== 'user' &&
     m.userModel === undefined &&

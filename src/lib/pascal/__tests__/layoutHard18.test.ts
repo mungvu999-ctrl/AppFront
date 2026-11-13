@@ -131,18 +131,11 @@ describe('LSA — mẫu L của luật cũ ở hộp góc phải hợp bảng m�
     return roomSetOf('room', [m], new Map(), ctx, [], lay).get('F-sofa');
   };
 
-  it('mẫu L xám ĐẬM của luật cũ trong phòng sáng: bộ chọn chọn lại mẫu L sáng hơn', () => {
+  // Mặc định CORNER_SOFA_PREFER TẮT ⇒ mẫu L bị loại khỏi MỌI hộp, kể cả hộp góc; luật bảng màu dưới đây
+  // chỉ có hiệu lực khi bật lại ưu tiên dáng L.
+  it('mặc định: hộp góc KHÔNG nhận mẫu L nào (cả mẫu luật cũ)', () => {
     const d = run(sofa('lDark', ['lDark', 'lLight']));
-    expect(d?.to, JSON.stringify(d?.why)).toBe('lLight');
-  });
-
-  it('mẫu L xám đậm: sổ ghi mẫu luật cũ bị loại (cửa vào đường chọn lại)', () => {
-    const d = run(sofa('lDark', ['lDark', 'lLight']));
-    expect(d?.why).toContain('luật cũ trượt');
-  });
-
-  it('mẫu L của luật cũ ĐÚNG dải bảng màu: KHÔNG bị loại (cn20 — loại cả thì ra mẫu tệ hơn)', () => {
-    const d = run(sofa('lMid', ['lMid', 'lLight']));
-    expect(d?.why ?? '').not.toContain('luật cũ trượt');
+    expect(d?.to ?? null, JSON.stringify(d?.why)).not.toBe('lDark');
+    expect(d?.to ?? null).not.toBe('lLight');
   });
 });

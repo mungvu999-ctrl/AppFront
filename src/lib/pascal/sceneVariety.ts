@@ -19,7 +19,7 @@ import { qualityOf } from './libraryQuality';
 import { rectOfFurniture, rectsOverlap } from './placement';
 import type { LayoutMove, LayoutRoom, Tried } from './layoutSearch';
 import type { Rect } from './placement';
-import { type Dims, fnv1a, isCornerSofaBox, LAYOUT_BUDGET, paletteOf, planRectOf, ROOMSET_ON, roomSetOf, SET_ROLES, autoBarred, licenceUnversioned, textureBroken, type SetDecision, type SetMember, type SetZone } from './roomSet';
+import { type Dims, fnv1a, CORNER_SOFA_PREFER, isCornerSofaBox, LAYOUT_BUDGET, paletteOf, planRectOf, ROOMSET_ON, roomSetOf, SET_ROLES, autoBarred, licenceUnversioned, textureBroken, type SetDecision, type SetMember, type SetZone } from './roomSet';
 import { GENERATED_DRESS_PREFIX } from './sceneDressing';
 import { accentKeyOf, harmonyKeyOf, LAYOUT_FLAGS_ON, roomHarmonyPlanOf, type LayoutFlag, type RoomHarmonyPlan } from './sceneHarmony';
 import { SCENE_RULES_OFF } from './sceneLayer';
@@ -432,6 +432,7 @@ const sofaShapeOkOf = (f: Shaped & Pick<Furniture, 'id'>, role: FurnitureRole): 
   const d = metresOf(f.boundingBox.max.y - f.boundingBox.min.y);
   const auto = isAuto(f) && (f as { readonly edited?: boolean }).edited !== true;
   const wantL =
+    CORNER_SOFA_PREFER &&
     auto &&
     isCornerSofaBox(w, d) &&
     libraryFoldersOf(role, f.variant).some((x) => isServerModel(x) && isL(x) && !QC_EXCLUDED.has(x) && !belowQuality(x, role));

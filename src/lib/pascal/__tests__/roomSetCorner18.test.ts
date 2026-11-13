@@ -62,11 +62,16 @@ describe('LSA vòng 18 — bộ chọn theo dáng (roomSetOf)', () => {
   });
   const pick = (m: SetMember): string | null | undefined => roomSetOf('R', [m], new Map(), ctx).get('s')?.to;
 
-  it('hộp góc 2,15 × 1,73 (ch13 F1Q9LO) của món AI → mẫu dáng L, dù mẫu thẳng rẻ hơn', () => {
-    expect(pick(sofa(2.15, 1.73))).toBe('ell');
+  // CORNER_SOFA_PREFER TẮT (chấm mù vòng 18 hai lượt đều âm): hộp góc cũng đi đường sofa thẳng.
+  it('hộp góc 2,15 × 1,73 (ch13 F1Q9LO) của món AI → mẫu thẳng, KHÔNG nhận mẫu L', () => {
+    expect(pick(sofa(2.15, 1.73))).toBe('line');
   });
-  it('hộp góc: concept dáng thẳng không giành chỗ của mẫu L', () => {
-    expect(pick(sofa(2.15, 1.73, { concept: { folder: 'line' } }))).toBe('ell');
+  it('hộp góc: concept dáng thẳng được giữ (mẫu L không giành chỗ)', () => {
+    expect(pick(sofa(2.15, 1.73, { concept: { folder: 'line' } }))).toBe('line');
+  });
+  it('bật ưu tiên dáng L thì hình học vẫn nhận đúng hộp góc (isCornerSofaBox không bị tắt theo)', () => {
+    expect(isCornerSofaBox(2.15, 1.73)).toBe(true);
+    expect(isCornerSofaBox(2.2, 1.2)).toBe(false);
   });
   it('hộp sofa thẳng 2,2 × 1,2 không bao giờ nhận mẫu L, kể cả mẫu L rẻ hơn / là concept', () => {
     const cheapL: SetContext = { ...ctx, tierOf: (x) => (x === 'ell' ? 0 : 50) };
