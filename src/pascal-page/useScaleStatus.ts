@@ -116,7 +116,9 @@ async function readScaleStatus(spatial: Spatial, read: ReadScale, floorMeta: Flo
     }
     const { scaleReasons, scaleStatus, scaleSource, scaleState } = result.value;
     const document = 'level' in result.value ? result.value.level : undefined;
-    if (scaleStatus !== 'unresolved') return;
+    /* R10 làn S: tầng người dùng đã chấp nhận số máy không còn `scaleStatus` nhưng số vẫn là số ước —
+       lối cũ bỏ qua hẳn tầng đó nên cả cảnh 3D hết cảnh báo dù mọi số đo vẫn là số ước. */
+    if (scaleStatus !== 'unresolved' && scaleState === undefined) return;
     const millimetresPerPixel = level.scaleMillimetresPerPixel ?? document?.scaleMillimetresPerPixel;
     const state = floorScaleStateOf(scaleStatus, scaleSource, millimetresPerPixel, implausible, scaleState);
     if (state === 'measured' || state === 'confirmed') return;

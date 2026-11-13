@@ -76,6 +76,7 @@ import { createUndoTicket } from '@/lib/mutations/undoTicket';
 import type { NotificationBus } from '@/lib/mutations/notificationBus';
 import { appNotificationBus } from '@/hooks/useNotifications';
 import { applyInvalidation } from '@/lib/query/invalidation';
+import { scaleStateOf, type ScaleState } from '@/lib/viewmodel/provisionalScale';
 import { useStore } from '@/store';
 import { commit } from '@/store/commit';
 import { selectRoomsWithArea, selectTotalAreaM2 } from '@/store/graphSelectors';
@@ -212,6 +213,7 @@ export function useRoomAreaPanel(options: UseRoomAreaPanelOptions): RoomAreaPane
   /* ---- Đọc kho ----------------------------------------------------------- */
 
   const spatial = useStore((state) => state.spatial);
+  const floorMeta = useStore((state) => state.floorMeta);
   const spatialLoading = useStore((state) => state.spatialLoading);
   const entries = useStore(selectRoomsWithArea);
   const storeTotalM2 = useStore(selectTotalAreaM2);
@@ -248,7 +250,17 @@ export function useRoomAreaPanel(options: UseRoomAreaPanelOptions): RoomAreaPane
 
   /* ---- Dựng dữ liệu hiển thị --------------------------------------------- */
 
-  const graph = useMemo(() => graphOf(spatial), [spatial]);
+  /* R10 làn S: mọi m² và mét của bảng này suy từ tỷ lệ — mang trạng thái tỷ lệ TỪNG TẦNG vào theo. */
+  const scaleStates = useMemo<Readonly<Record<string, ScaleState>>>(() => {
+    const out: Record<string, ScaleState> = {};
+    for (const [floorId, meta] of Object.entries(floorMeta)) {
+      if (meta === undefined) continue;
+      if (meta.scaleStatus === undefined && meta.scaleState === undefined) continue;
+      out[floorId] = scaleStateOf(meta.scaleStatus, meta.scaleSource, meta.scaleState);
+    }
+    return out;
+  }, [floorMeta]);
+  const graph = useMemo(() => graphOf(spatial, scaleStates), [scaleStates, spatial]);
 
   const visibleEntries = useMemo(
     () =>

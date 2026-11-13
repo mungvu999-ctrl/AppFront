@@ -43,6 +43,7 @@ import { millimetres, millimetresToMetres, type SquareMetres } from '@/domain/un
 import { toPointMm } from '@/lib/commands/business/shared';
 import { formatNumber } from '@/lib/format/number';
 import { confidenceLevel } from '@/lib/format/semantic';
+import { measureTextOfState, type ScaleState } from '@/lib/viewmodel/provisionalScale';
 import { UNNAMED_ROOM_LABEL } from '@/lib/viewmodel/toViewModel';
 import type { RoomWithArea } from '@/store/graphSelectors';
 
@@ -145,12 +146,18 @@ export interface RoomAreaGraph {
   readonly levels: readonly Level[];
   readonly walls: readonly Wall[];
   readonly openings: readonly Opening[];
+  /**
+   * R10 làn S: trạng thái tỷ lệ của từng tầng. Mọi m² và mét ở bảng này suy ra từ tỷ lệ, và đây là
+   * bảng người dùng đọc số nhiều nhất trong 3D — tầng vắng mặt ở đây coi như tin được.
+   */
+  readonly scaleStates?: Readonly<Record<string, ScaleState>>;
 }
 
 const NO_GRAPH: RoomAreaGraph = Object.freeze({
   levels: Object.freeze([]) as readonly Level[],
   walls: Object.freeze([]) as readonly Wall[],
   openings: Object.freeze([]) as readonly Opening[],
+  scaleStates: Object.freeze({}) as Readonly<Record<string, ScaleState>>,
 });
 
 const levelsOf = (spatial: NormalizedSpatial): readonly Level[] => {
@@ -201,12 +208,15 @@ const openingsOf = (spatial: NormalizedSpatial): readonly Opening[] => {
  * `SpatialGraph` phẳng: không có trường `byLevel` nào cho phòng (mục 5 của hợp
  * đồng toán), nên lọc theo tầng là `room.levelId === level.id` ở nơi cần.
  */
-export function graphOf(spatial: NormalizedSpatial | null): RoomAreaGraph {
+export function graphOf(
+  spatial: NormalizedSpatial | null,
+  scaleStates: Readonly<Record<string, ScaleState>> = {},
+): RoomAreaGraph {
   if (spatial === null) {
     return NO_GRAPH;
   }
 
-  return { levels: levelsOf(spatial), walls: wallsOf(spatial), openings: openingsOf(spatial) };
+  return { levels: levelsOf(spatial), walls: wallsOf(spatial), openings: openingsOf(spatial), scaleStates };
 }
 
 const outlineOf = (room: Room): readonly PointMm[] => room.outline.map(toPointMm);
@@ -284,6 +294,19 @@ export function statusOf(room: Room, areaM2: SquareMetres): RoomAreaStatus {
 const ratioOf = (value: number, largest: number): number =>
   largest > 0 ? Math.min(1, Math.max(0, value / largest)) : 0;
 
+/** Dấu ước lượng cho số của MỘT tầng; tầng không có trạng thái thì để số trần. */
+const markOf = (graph: RoomAreaGraph, levelId: string) => {
+  const state = graph.scaleStates?.[String(levelId)];
+  return (text: string): string => (state === undefined ? text : measureTextOfState(text, state));
+};
+
+/** Dấu cho tổng phụ của một nhóm: nhóm có tầng nào chưa tin được thì cả tổng mang dấu. */
+const groupMarkOf = (graph: RoomAreaGraph, entries: readonly RoomWithArea[]) => {
+  const states = entries.map((entry) => graph.scaleStates?.[String(entry.room.levelId)]);
+  const loose = states.find((state) => state !== undefined && state !== 'measured' && state !== 'confirmed');
+  return (text: string): string => (loose === undefined ? text : measureTextOfState(text, loose));
+};
+
 /** Một phòng, đã định dạng xong. `largestAreaM2` là phòng lớn nhất cùng nhóm. */
 export function buildRow(
   entry: RoomWithArea,
@@ -305,9 +328,9 @@ export function buildRow(
     usageLabel: describeUsage(room.usage),
     levelId: room.levelId,
     levelName: level?.name ?? UNKNOWN_LEVEL_LABEL,
-    areaText: areaText(entry.areaM2),
+    areaText: markOf(graph, room.levelId)(areaText(entry.areaM2)),
     areaRatio: ratioOf(entry.areaM2, largestAreaM2),
-    perimeterText: metresText(computePerimeter(outline)),
+    perimeterText: markOf(graph, room.levelId)(metresText(computePerimeter(outline))),
     // Chiều cao thông thuỷ là thuộc tính CỦA TẦNG (`Level.heightMm`), không của
     // từng phòng — đồ thị không lưu chiều cao riêng cho phòng, và trừ một hằng
     // số dày sàn không có nguồn là đúng thứ R-61 cấm.
@@ -375,7 +398,7 @@ function buildGroup(
     countText: countText(entries.length),
     // Tổng phụ đi qua domain: cộng ở mm², làm tròn MỘT lần. Không cộng các số
     // đã làm tròn của từng dòng lại với nhau.
-    subtotalText: areaText(totalArea(outlinesOf(entries))),
+    subtotalText: groupMarkOf(graph, entries)(areaText(totalArea(outlinesOf(entries)))),
     rows: sortEntries(entries, sort).map((entry) => buildRow(entry, graph, largest)),
   };
 }

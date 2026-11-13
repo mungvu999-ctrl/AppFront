@@ -98,6 +98,7 @@ import {
 import type { MeasurementRecord } from '@/types/measurement';
 import type { ProjectRole } from '@/types/project';
 import { ROUTES } from '@/routes/paths';
+import { SCALE_SEVERITY, scaleStateOf, type ScaleState } from '@/lib/viewmodel/provisionalScale';
 import { useStore } from '@/store';
 // Nhập THẲNG module thay vì qua cửa nhập của ViewerShell — xem ghi chú cùng
 // lý do trong `useMeasurementToolScene.ts`.
@@ -345,6 +346,7 @@ export function useMeasurementTool(options: UseMeasurementToolOptions): ViewerSh
   /* ---- Kho và cổng của vỏ ------------------------------------------------ */
 
   const storeSpatial = useStore((state) => state.spatial);
+  const floorMeta = useStore((state) => state.floorMeta);
   const spatial = options.spatial !== undefined ? options.spatial : storeSpatial;
 
   const shellGateway = useMemo(
@@ -703,6 +705,21 @@ export function useMeasurementTool(options: UseMeasurementToolOptions): ViewerSh
     }
   }, [attempt]);
 
+  /**
+   * R10 làn S: trạng thái tỷ lệ XẤU NHẤT trong mô hình. Một thước 3D không ghi nó thuộc tầng nào,
+   * nên nếu còn một tầng chưa tin được thì số đo nào cũng có thể là số ước — nói ra, đừng im.
+   */
+  const worstScaleState = useMemo((): ScaleState | undefined => {
+    let worst: ScaleState | undefined;
+    for (const meta of Object.values(floorMeta)) {
+      if (meta === undefined || (meta.scaleStatus === undefined && meta.scaleState === undefined)) continue;
+      const state = scaleStateOf(meta.scaleStatus, meta.scaleSource, meta.scaleState);
+      if (state === 'measured' || state === 'confirmed') continue;
+      if (worst === undefined || SCALE_SEVERITY[state] > SCALE_SEVERITY[worst]) worst = state;
+    }
+    return worst;
+  }, [floorMeta]);
+
   const draftRow = useMemo((): PinnedMeasurement | null => {
     if (attempt.kind !== 'measured') {
       return null;
@@ -721,8 +738,9 @@ export function useMeasurementTool(options: UseMeasurementToolOptions): ViewerSh
         staleReason: null,
       },
       unit,
+      worstScaleState,
     );
-  }, [attempt, mode, unit, rowsQuery.data]);
+  }, [attempt, mode, unit, rowsQuery.data, worstScaleState]);
 
   const draft = useMemo((): DraftMeasurement | null => {
     if (picks.length === 0) {
@@ -744,6 +762,7 @@ export function useMeasurementTool(options: UseMeasurementToolOptions): ViewerSh
               staleReason: null,
             },
             unit,
+            worstScaleState,
           ).valueLabel
         : null;
 
@@ -755,7 +774,7 @@ export function useMeasurementTool(options: UseMeasurementToolOptions): ViewerSh
       cursorPx: cursor.px,
       snap: cursor.snap,
     };
-  }, [picks.length, livePicks, liveAttempt, mode, unit, project, cursor.px, cursor.snap]);
+  }, [picks.length, livePicks, liveAttempt, mode, unit, project, cursor.px, cursor.snap, worstScaleState]);
 
   /* ---- Danh sách đã ghim ------------------------------------------------- */
 
@@ -767,7 +786,7 @@ export function useMeasurementTool(options: UseMeasurementToolOptions): ViewerSh
     }
 
     return records.map((record) => {
-      const row = formatMeasurementRow(toMeasurementRowCore(record), unit);
+      const row = formatMeasurementRow(toMeasurementRowCore(record), unit, worstScaleState);
 
       return {
         ...row,
@@ -775,7 +794,7 @@ export function useMeasurementTool(options: UseMeasurementToolOptions): ViewerSh
         screenPoints: projectAll(row.points, project),
       };
     });
-  }, [rowsQuery.data, unit, hidden, project]);
+  }, [rowsQuery.data, unit, hidden, project, worstScaleState]);
 
   /* ---- Hành động --------------------------------------------------------- */
 

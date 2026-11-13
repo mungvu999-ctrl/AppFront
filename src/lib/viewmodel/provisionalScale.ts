@@ -320,3 +320,16 @@ export function totalMeasureTextOf(formatted: string, floors: readonly FloorMeas
   if (loose.length === floors.length) return `≈ ${formatted} (ước lượng)`;
   return `≈ ${formatted} (ước lượng ở ${loose.map((f) => f.name).join(', ')})`;
 }
+
+/**
+ * Mức "đáng lo" của từng trạng thái, để chọn trạng thái XẤU NHẤT khi một con số bắc qua nhiều tầng
+ * và không nói được nó thuộc tầng nào. Số lớn hơn = cần nói rõ hơn với người dùng.
+ */
+export const SCALE_SEVERITY = {
+  measured: 0,
+  confirmed: 0,
+  check: 1,
+  estimated: 2,
+  undetermined: 3,
+  missing: 4,
+} as const satisfies Readonly<Record<ScaleState, number>>;
