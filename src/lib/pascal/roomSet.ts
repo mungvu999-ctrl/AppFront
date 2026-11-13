@@ -1573,7 +1573,7 @@ export const roomSetOf = (
       const blocks = blocksOf(m);
       let tried = NO_TRY;
       const reasons: string[] = [];
-      const tryTier = (role: string, cands: readonly Cand[], far = false): Placed | undefined => {
+      const tryTier = (role: string, cands: readonly Cand[], far = false, relax = false): Placed | undefined => {
         const first = cands[0];
         if (first === undefined) return undefined;
         const piece: Piece = { id: m.id, role, dims: first.dims, box: boxRectOf(b), wallBack: WALL_BACK_ROLES.has(role), movable: true };
@@ -1581,6 +1581,7 @@ export const roomSetOf = (
           members: pieces,
           budget: { models: cands.length },
           far,
+          relax,
         });
         const t = 'pose' in res ? res.tried : res.unplaced.tried;
         tried = { models: tried.models + t.models, poses: tried.poses + t.poses, bfs: tried.bfs + t.bfs };
@@ -1605,17 +1606,17 @@ export const roomSetOf = (
       const inc = BED_ROLES.has(m.role)
         ? libOf(real, cur === null ? m.pool : [...m.pool, cur], new Set([...CONCEPT_LENIENT, INCOMPLETE_BED])).filter((x) => !seen.has(x.modelId)).sort(byCost).slice(0, K_MODELS)
         : [];
-      const ladder = (far: boolean): FallbackPick | undefined => {
-        const lap = far ? ' (lượt 2: tường xa hơn 1,5 m)' : '';
-        const r1 = tryTier(m.role, t1, far);
+      const ladder = (far: boolean, relax = false): FallbackPick | undefined => {
+        const lap = `${far ? ' (lượt 2: tường xa hơn 1,5 m)' : ''}${relax ? ' (lượt mềm: nhận thiếu khoảng sử dụng)' : ''}`;
+        const r1 = tryTier(m.role, t1, far, relax);
         if (r1 !== undefined) return done(r1, `T1 dời cùng mẫu cỡ thật${lap}`);
-        const r2 = tryTier(m.role, t2, far);
+        const r2 = tryTier(m.role, t2, far, relax);
         if (r2 !== undefined) return done(r2, `T2 mẫu cùng vai nhỏ hơn (trong cỡ công năng)${lap}`);
-        const rb = tryTier(m.role, inc, far);
+        const rb = tryTier(m.role, inc, far, relax);
         if (rb !== undefined) return done(rb, `T1 dời giường cỡ thật${lap}`, undefined, `; nhận ${INCOMPLETE_BED} (thiếu chăn gối) — phương án giường duy nhất hợp lệ`);
         // T3: vai đồ chứa nhỏ hơn (SMALLER_STORAGE); giường không bao giờ thành đôn/tủ.
         for (const sib of BED_ROLES.has(m.role) ? [] : (m.smaller ?? [])) {
-          const r3 = tryTier(sib.role, bandOf(libOf({ ...real, role: sib.role }, sib.pool, CONCEPT_LENIENT)), far);
+          const r3 = tryTier(sib.role, bandOf(libOf({ ...real, role: sib.role }, sib.pool, CONCEPT_LENIENT)), far, relax);
           if (r3 !== undefined) return { ...done(r3, `T3 vai đồ chứa nhỏ hơn (${sib.role})${lap}`, sib.role), forced: `không mẫu ${m.role} nào đặt được` };
         }
         return undefined;
@@ -1623,7 +1624,15 @@ export const roomSetOf = (
       // M18 LW — lượt 2 (tường xa hơn MAX_SHIFT_M) chỉ khi cả thang lượt 1 trượt, chỉ món CHÍNH: món phụ vẫn buộc vào hộp
       // (REAL_GROW_M), dời nó sang tường xa là mất quan hệ với món nó phục vụ. Không chạy ở lượt ghế nhóm nhường (`seatsYield`):
       // dời xa không được đẩy món khác ra (cn17: sofa thứ hai dời 4,4 m ra sau bàn ăn, đẩy 2 ghế ăn). Lý do unplaced giữ lượt 1.
-      const picked = ladder(false) ?? (LAYOUT_MAIN_ROLES.has(m.role) && !seatsYield ? ladder(true) : undefined);
+      // M18 FA — lượt MỀM (cuối cùng, trước khi ẩn): vùng sử dụng là ràng buộc MỀM, ràng buộc CỨNG (outline, tường, cánh cửa,
+      // dải lối cửa, đồ cố định/đã đặt, lối từ cửa tới món) giữ nguyên. Món chỉ trượt vì thiếu khoảng sử dụng được DỰNG kèm lý do
+      // trong sổ + lỗi bố trí 'use' (layoutIssuesOf), không ẩn: "không lấy ẩn làm lời giải mặc định" (f07 — phòng ngủ mất giường).
+      // Chạy ở cùng tập tư thế mà lượt cứng đã được phép dùng (lượt 2 tường xa chỉ cho món chính ngoài lượt ghế nhường).
+      // Lượt mềm là phương án CUỐI: món chính còn lượt ghế nhóm nhường (seatRetryOf) thì nhường lượt đó chạy trước — không thì
+      // món đang hiện sẵn ở chỗ cũ (f28 sofa DSFCZS) bị đổi thành dời 5,6 m kèm vi phạm mềm.
+      const far = LAYOUT_MAIN_ROLES.has(m.role) && !seatsYield;
+      const softOk = seatsYield || !LAYOUT_MAIN_ROLES.has(m.role) || !inSet.some(pendingSeat);
+      const picked = ladder(false) ?? (far ? ladder(true) : undefined) ?? (softOk ? ladder(far, true) : undefined);
       if (picked !== undefined) return picked;
       return unplaced(reasons[0] ?? 'không có mẫu hợp lệ để thử dời (chất lượng / công năng / ngưỡng hợp bộ)', tried);
     } finally {

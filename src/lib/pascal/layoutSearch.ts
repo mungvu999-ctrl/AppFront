@@ -486,7 +486,10 @@ const missingM2 = (z: Rect, outline: readonly Point[], blockers: readonly Rect[]
   return (z.w * z.d * hit) / (nx * ny);
 };
 
-export type PoseCheck = { readonly ok: true; readonly softM2: number } | { readonly ok: false; readonly reason: string };
+/** `relaxed` (chỉ ở lượt `relax`): lý do các vùng `need` bị thiếu mà tư thế vẫn được nhận. */
+export type PoseCheck =
+  | { readonly ok: true; readonly softM2: number; readonly relaxed?: readonly string[] }
+  | { readonly ok: false; readonly reason: string };
 
 /**
  * Kiểm một tư thế: footprint trong outline (lùi 0,05), không chồng tường / vùng mở / vùng trước cửa / đồ cố định /
@@ -522,7 +525,11 @@ const specsOf = (piece: Piece, members: readonly Piece[]): readonly UseSpec[] =>
   return [{ sides: long, depthM: CHAIR_CLEAR_M, need: true }];
 };
 
-/** checkPose với vùng sử dụng cho sẵn; khối có id trong `ignore` (ghế kê dưới bàn của chính cụm) không tính. */
+/**
+ * checkPose với vùng sử dụng cho sẵn; khối có id trong `ignore` (ghế kê dưới bàn của chính cụm) không tính.
+ * FA: `relax` — vùng sử dụng (kể cả `need`) là ràng buộc MỀM: tư thế thiếu khoảng vẫn được nhận, lý do trả về
+ * trong `relaxed` (ràng buộc CỨNG — outline, tường, cánh cửa, dải lối cửa, đồ cố định/đã đặt — không đổi).
+ */
 const checkPoseWith = (
   piece: Piece,
   pose: Pose,
@@ -530,6 +537,7 @@ const checkPoseWith = (
   placed: readonly Block[],
   specs: readonly UseSpec[],
   ignore: ReadonlySet<string>,
+  relax = false,
 ): PoseCheck => {
   const foot = footprintOf(piece.dims, pose);
   if (!insideM(foot, room.outline, INSET_M)) return { ok: false, reason: 'ra ngoài phòng' };
@@ -544,19 +552,20 @@ const checkPoseWith = (
   }
   const zoneBlockers = blockers.filter((b) => b.origin !== 'approach');
   let softM2 = 0;
+  const relaxed: string[] = [];
   for (const spec of specs) {
     const zones = spec.sides.map((s) => zoneRect(foot, s, spec.depthM, spec.skipBackM));
     if (spec.need) {
       const clear = zones.some((z) => insideM(z, room.outline, 0) && !zoneBlockers.some((b) => rectsOverlap(z, b)));
-      if (!clear) {
-        const sides = spec.sides.map((s) => SIDE_VI[s]).join('/');
-        return { ok: false, reason: `thiếu khoảng sử dụng ${vi(spec.depthM)} m phía ${sides}` };
-      }
-    } else {
-      softM2 += Math.min(...zones.map((z) => missingM2(z, room.outline, zoneBlockers)));
+      if (clear) continue;
+      const sides = spec.sides.map((s) => SIDE_VI[s]).join('/');
+      const why = `thiếu khoảng sử dụng ${vi(spec.depthM)} m phía ${sides}`;
+      if (!relax) return { ok: false, reason: why };
+      relaxed.push(why);
     }
+    softM2 += Math.min(...zones.map((z) => missingM2(z, room.outline, zoneBlockers)));
   }
-  return { ok: true, softM2 };
+  return relaxed.length > 0 ? { ok: true, softM2, relaxed } : { ok: true, softM2 };
 };
 
 export interface ClusterFit {
@@ -870,6 +879,12 @@ export interface SearchOptions {
    * mọi kiểm hợp lệ giữ nguyên, lối từ cửa bắt buộc với MỌI vai (không phạt-mà-nhận như món phụ lượt 1).
    */
   readonly far?: boolean;
+  /**
+   * M18 FA — lượt cuối trước khi ẩn: vùng sử dụng (USE_ZONES, kể cả `need`) thành ràng buộc MỀM. Tư thế vi phạm mềm ít nhất
+   * thắng (hoà → chi phí như cũ, nên chỗ cũ được giữ); ràng buộc CỨNG và lối từ cửa tới MÓN vẫn bắt buộc. `move.why` ghi
+   * các vùng thiếu để sổ quyết định và chip giao diện nêu lý do.
+   */
+  readonly relax?: boolean;
 }
 export type SearchResult =
   | { readonly pose: Pose; readonly modelId: string; readonly move: LayoutMove; readonly tried: Tried }
@@ -880,6 +895,8 @@ interface Feasible {
   readonly pose: Pose;
   readonly fit: ClusterFit;
   readonly cost: number;
+  /** Vùng sử dụng `need` bị thiếu mà tư thế vẫn được nhận (chỉ lượt `relax`); rỗng ở lượt thường. */
+  readonly relaxed: readonly string[];
 }
 
 /**
@@ -922,7 +939,7 @@ export const searchPlacement = (
     specsByModel.set(model.modelId, specs);
     for (const pose of posesOf(p, room, maxPoses, opts.far === true)) {
       poses += 1;
-      const check = checkPoseWith(p, pose, room, base, specs, seatIds);
+      const check = checkPoseWith(p, pose, room, base, specs, seatIds, opts.relax === true);
       if (!check.ok) {
         rejects.set(check.reason, (rejects.get(check.reason) ?? 0) + 1);
         continue;
@@ -934,11 +951,13 @@ export const searchPlacement = (
         continue;
       }
       const cost = (model.cost ?? 0) + poseCost(pose) + BROKEN_COST * fit.broken.length + SOFT_COST_PER_M2 * check.softM2;
-      feasible.push({ model, pose, fit, cost });
+      feasible.push({ model, pose, fit, cost, relaxed: check.relaxed ?? [] });
     }
   }
+  // FA: ít vi phạm mềm hơn luôn thắng (ở lượt thường mọi `relaxed` đều rỗng → thứ tự không đổi).
   feasible.sort(
     (a, b) =>
+      a.relaxed.length - b.relaxed.length ||
       mm(a.cost) - mm(b.cost) ||
       a.model.modelId.localeCompare(b.model.modelId) ||
       mm(a.pose.cx) - mm(b.pose.cx) ||
@@ -959,7 +978,9 @@ export const searchPlacement = (
         return footprintOf(m?.dims ?? [0, 0, 0], mp.pose);
       });
       const grid = accessGrid(room, [...fixedFeet, ...base.filter((b) => b.origin !== 'approach' && b.origin !== 'swing'), foot, ...memberFeet]);
-      const targets = hardAccess ? needGroupsOf(specsByModel.get(f.model.modelId) ?? [], foot) : reachGroupsOf(piece.wallBack, foot);
+      // FA: ở lượt `relax` vùng `need` là mềm nên đích BFS là chỗ đứng cạnh MÓN (lối từ cửa tới món vẫn cứng).
+      const targets =
+        hardAccess && opts.relax !== true ? needGroupsOf(specsByModel.get(f.model.modelId) ?? [], foot) : reachGroupsOf(piece.wallBack, foot);
       return canReach(grid, doorSeedsOf(room.doors, grid.cell), targets);
     };
     // Món phụ: tư thế không tới được chỉ bị cộng ACCESS_COST; dừng khi tư thế sau không thể rẻ hơn tư thế tốt nhất.
@@ -1016,14 +1037,16 @@ export const searchPlacement = (
     const why = top === undefined ? (models.length === 0 ? 'không có mẫu' : 'không có tư thế') : top[0];
     return { unplaced: { reason: `${head}: ${why} (thử ${models.length} mẫu, ${poses} tư thế)`, tried } };
   }
-  const { pose, model, fit } = chosen;
+  const { pose, model, fit, relaxed } = chosen;
   const roleVi = ROLE_VI[piece.role] ?? 'món';
   const turn = pose.turnDeg >= 1 ? `, xoay ${Math.round(pose.turnDeg)}°` : '';
   const act = pose.shiftM > STILL_M || turn !== '' ? `Dời ${vi(pose.shiftM)} m${turn}` : 'Giữ chỗ';
   const cluster = fit.members.length > 0 ? `; cụm: ${fit.members.length} món` : '';
   const broken = fit.broken.length > 0 ? `, ${fit.broken.length} món không đi theo` : '';
   const noWay = unreached ? '; chưa có lối từ cửa tới món (chỉ phạt)' : '';
-  const why = `${act} để ${roleVi} cỡ thật ${vi(model.dims[0])} × ${vi(model.dims[2])} m không cắt tường/đồ khác${cluster}${broken}${noWay}`;
+  // FA: nhận vi phạm mềm thay vì ẩn món — lý do vào sổ quyết định; `layoutIssuesOf` sinh lỗi 'use' tương ứng cho giao diện.
+  const soft = relaxed.length > 0 ? `; nhận ${[...new Set(relaxed)].join('; ')}` : '';
+  const why = `${act} để ${roleVi} cỡ thật ${vi(model.dims[0])} × ${vi(model.dims[2])} m không cắt tường/đồ khác${cluster}${broken}${noWay}${soft}`;
   const move: LayoutMove = {
     id: piece.id,
     modelId: model.modelId,
