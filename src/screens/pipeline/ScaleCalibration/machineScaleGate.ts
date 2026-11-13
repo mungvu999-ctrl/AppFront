@@ -30,7 +30,7 @@ export const ACCEPT_MACHINE_LABEL = 'Dùng tạm tỷ lệ máy ước lượng'
 export const ACCEPT_MACHINE_CONFIRM = {
   title: 'Dùng tạm tỷ lệ máy ước lượng?',
   message:
-    'Máy chỉ ước tỷ lệ này, chưa đo từ kích thước nào trên bản vẽ: mọi chiều dài, diện tích và mô hình 3D có thể sai tới ±40 %. Nên đo một đoạn đã biết thay vì dùng số này.',
+    'Máy chỉ ước tỷ lệ này, chưa đo từ kích thước nào trên bản vẽ: mọi chiều dài, diện tích và mô hình 3D có thể sai tới ±40 %. Dùng tạm thì tầng vẫn ghi là tỷ lệ ước lượng, chưa xác nhận. Nên đo một đoạn đã biết thay vì dùng số này.',
   confirmLabel: 'Vẫn dùng số máy',
   cancelLabel: 'Đo một đoạn',
 } as const;

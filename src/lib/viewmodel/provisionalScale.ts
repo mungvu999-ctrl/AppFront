@@ -121,6 +121,7 @@ export const SCALE_REASON_TEXT: Readonly<Record<string, string>> = {
   estimateSpread: 'Ước từ cửa và từ tường lệch nhau',
   pageChanged: 'Trang bản vẽ đã đổi sau lần hiệu chỉnh',
   human: 'Do bạn hiệu chỉnh bằng một kích thước đã biết',
+  userAccepted: 'Bạn đã chấp nhận số của máy, chưa nhập kích thước thật',
 };
 
 /** Mã lạ (máy chủ mới hơn) hoặc `basisUnknown`: một câu chung, không vỡ màn. */

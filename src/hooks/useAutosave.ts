@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import type { ApiClient } from '@/api/client';
+import type { ScaleEvidence } from '@/api/schemas/spatialLayer';
+
+export type { ScaleEvidence };
 import type { FloorLayerSaver } from '@/lib/autosave/spatialLayerSave';
 import { getSessionSnapshot } from '@/lib/auth/state';
 import { guardBeforeUnload } from '@/lib/autosave/beforeUnload';
@@ -565,7 +568,7 @@ export interface FloorLayerAutosaveHandle {
    * Lưu tỉ lệ một tầng qua saver chung (F-04x-2 bước 5); trả khi máy chủ đã nhận, ném lỗi gốc
    * khi hỏng hay khi tầng đang bị khối (không gửi). `hint` = revision N15, chỉ vào thân chỉ tỉ lệ.
    */
-  saveScale: (floorId: string, ratio: number, hint?: number) => Promise<void>;
+  saveScale: (floorId: string, ratio: number, evidence: ScaleEvidence, hint?: number) => Promise<void>;
   /** Tầng đang bị khối — `saveScale` sẽ không gửi (câu báo "áp mọi tầng" tách riêng nhóm này). */
   isFloorBlocked: (floorId: string) => boolean;
 }
@@ -712,7 +715,7 @@ export function useFloorLayerAutosave({
   const discardFloor = useMemo(() => (target: string) => current.saver?.discardFloor(target), [current]);
 
   const saveScale = useMemo(
-    () => async (target: string, ratio: number, hint?: number) => {
+    () => async (target: string, ratio: number, evidence: ScaleEvidence, hint?: number) => {
       if (current.saver === null) {
         attachSaver(current, await getPipes());
       }
@@ -723,7 +726,7 @@ export function useFloorLayerAutosave({
       }
 
       try {
-        await current.saver.saveScale(target, ratio, hint);
+        await current.saver.saveScale(target, ratio, evidence, hint);
       } catch (error) {
         // Thân lớp + tỉ lệ hỏng tạm để tầng bẩn lại; đường này không qua engine, nên phải báo
         // nó — không thì không có lượt thử lại và nhãn vẫn "Đã lưu lúc …" (review-1 P2-3, A7).

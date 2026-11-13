@@ -220,7 +220,12 @@ const makeLayerDocument = (floor: Floor, revision: number, layer?: SpatialLayer)
           ...(scale.detail?.scaleReasons === undefined ? {} : { scaleReasons: [...scale.detail.scaleReasons] }),
           ...(scale.detail?.scaleBasis === undefined ? {} : { scaleBasis: scale.detail.scaleBasis }),
         }
-      : {}),
+      : scale?.accepted === true
+        ? {
+            scaleState: scale.detail?.scaleState ?? ('unresolved' as const),
+            scaleReasons: [...(scale.detail?.scaleReasons ?? []).filter((code) => code !== 'userAccepted'), 'userAccepted'],
+          }
+        : {}),
   };
 };
 
@@ -1298,6 +1303,8 @@ const writtenScales = new Map<
     source: 'pipeline' | 'project_default';
     /** R9: N16 `scaleState`/`scaleReasons`/`scaleBasis` của tỷ lệ tạm (chỉ khi `provisional`). */
     detail?: MockScaleDetail;
+    /** K4: tỉ lệ người là số máy được chấp nhận — N16 giữ `scaleState` của máy, thêm lý do `userAccepted`. */
+    accepted?: boolean;
   }
 >();
 
@@ -1336,6 +1343,11 @@ export const simulateProvisionalScale = (
     value: value as MillimetresPerPixel,
     ...(detail === undefined ? {} : { detail }),
   });
+};
+
+/** K4: tầng người đã chấp nhận số máy (PUT #35 `scaleEvidence: machineAccepted`) — độ tin vẫn là của máy. */
+export const simulateAcceptedScale = (floorId: string, value: number, detail: MockScaleDetail): void => {
+  writtenScales.set(floorId, { accepted: true, detail, provisional: false, source: 'pipeline', value: value as MillimetresPerPixel });
 };
 
 /** Tầng người dùng đã hiệu chỉnh tỷ lệ (N16 không còn `scaleStatus`) — như sau một lượt PUT #35. */
@@ -2206,10 +2218,16 @@ export const createMockApiClient = (): ApiClient => {
 
         // Thân chỉ tỉ lệ giữ lớp; có tỉ lệ → tỉ lệ nguồn `human`, gỡ `scaleStatus` (#35).
         if (body.scaleMillimetresPerPixel !== undefined) {
+          const previous = writtenScales.get(floorId);
+
           writtenScales.set(floorId, {
             provisional: false,
             source: 'pipeline',
             value: body.scaleMillimetresPerPixel as MillimetresPerPixel,
+            // K4: chấp nhận số máy giữ trạng thái máy; vắng `scaleEvidence` = đo thật (BE vắng = measured).
+            ...(body.scaleEvidence === 'machineAccepted'
+              ? { accepted: true, ...(previous?.detail === undefined ? {} : { detail: previous.detail }) }
+              : {}),
           });
         }
 

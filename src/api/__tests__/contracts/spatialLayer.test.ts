@@ -315,6 +315,21 @@ describe('FloorLayerWriteBodySchema', () => {
     expect(FloorLayerWriteBodySchema.safeParse({ layer, force: true }).success).toBe(false);
   });
 
+  it.each(['measured', 'machineAccepted'] as const)('thân PUT nhận scaleEvidence %s kèm tỉ lệ (K4)', (scaleEvidence) => {
+    expect(FloorLayerWriteBodySchema.parse({ scaleEvidence, scaleMillimetresPerPixel: 12.5 })).toStrictEqual({
+      scaleEvidence,
+      scaleMillimetresPerPixel: 12.5,
+    });
+  });
+
+  it.each([
+    ['giá trị lạ', { scaleEvidence: 'userCalibrated', scaleMillimetresPerPixel: 12.5 }],
+    ['không kèm tỉ lệ', { layer, scaleEvidence: 'measured' }],
+    ['null', { scaleEvidence: null, scaleMillimetresPerPixel: 12.5 }],
+  ])('từ chối scaleEvidence lạ: %s', (_label, body) => {
+    expect(FloorLayerWriteBodySchema.safeParse(body).success).toBe(false);
+  });
+
   it.each([
     ['layer', { layer: null }],
     ['scaleMillimetresPerPixel', { scaleMillimetresPerPixel: null }],
