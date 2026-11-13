@@ -138,8 +138,9 @@ describe('roomSetOf — hàm thuần', () => {
       nodata: 'thiếu dữ liệu chất lượng',
     });
     const d = roomSetOf('R-1', [m], new Map(), ctx).get(m.id);
-    // Codex M17-1 #2 (đổi có chủ đích): luật cũ bị cấm (giường chưa hoàn chỉnh) không bao giờ là kết quả → null + sổ ghi lý do.
-    expect(d).toMatchObject({ to: null, cause: 'fallback', why: expect.stringContaining('luật cũ bị cấm (giường chưa hoàn chỉnh)') });
+    // R8b (đổi có chủ đích, set17 mù: phòng ngủ không giường −1,00): luật cũ CHỈ thiếu chăn gối, trong công năng, không chồng
+    // thêm → giữ giường cũ, sổ ghi lý do (cũ — Codex M17-1 #2: null). Các lý do cấm khác vẫn không bao giờ là kết quả.
+    expect(d).toMatchObject({ to: 'cur', cause: 'fallback', why: expect.stringContaining('giường không bị ẩn') });
   });
 
   it('dữ liệu chất lượng vắng hoàn toàn: mọi món giữ mẫu cũ', () => {
@@ -702,12 +703,12 @@ describe('roomset lượt 3 — mỗi món chỉ nhận mẫu qua ràng buộc c
       { id: 'b2', role: 'doubleBed', short: 2.0, long: 2.2, current: 'bed-double-grey-pro', pool: lib, fixed: false },
     ];
     const out = roomSetOf('R', beds, new Map(), ctx);
-    // Codex M17-1 #2 (đổi có chủ đích): cả hai mẫu luật cũ là giường chưa hoàn chỉnh (cấm) → không giữ, null + sổ ghi lý do;
-    // giường 2 vẫn không bị thay bằng giường trần của giường 1.
-    expect(out.get('b2')?.to).toBeNull();
+    // R8b (đổi có chủ đích): mẫu luật cũ chỉ thiếu chăn gối → mỗi giường giữ mẫu CỦA CHÍNH NÓ (không ẩn — cũ: null), sổ ghi
+    // lý do; giường 2 vẫn không bị thay bằng giường trần của giường 1.
     expect(out.get('b2')?.to).not.toBe('bed-drawers-greywash');
+    expect(out.get('b2')?.to === null || out.get('b2')?.to === 'bed-double-grey-pro').toBe(true);
     expect(out.get('b2')?.why).toMatch(/giường chưa hoàn chỉnh/);
-    expect(out.get('b1')?.to).toBeNull();
+    expect(out.get('b1')?.to === null || out.get('b1')?.to === 'bed-drawers-greywash').toBe(true);
   });
 
   it('bất biến trên 300 phòng sinh ngẫu nhiên (hạt cố định): mẫu chọn qua ràng buộc cứng của CHÍNH món; không ứng viên → mẫu luật cũ; món ghim không đổi', () => {

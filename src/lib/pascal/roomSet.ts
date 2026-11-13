@@ -1103,7 +1103,7 @@ export const roomSetOf = (
    * (d) Còn lại `null`: sổ ghi lý do; toPascal không dựng mẫu thư viện nào cho món (chỗ giữ chỗ `asset://`), không bao giờ
    *     mẫu của vai gốc (vai hiệu lực do sceneVariety tính). Không bao giờ chọn mẫu co dưới phạm vi.
    */
-  const fallbackOf = (
+  const fallbackCoreOf = (
     m: SetMember,
     ev: { readonly legacyCost?: number; readonly concept?: { readonly f: string; readonly miss?: string } },
     costOf: (f: string) => number,
@@ -1170,8 +1170,10 @@ export const roomSetOf = (
     // Điều phối M17-2: null chỉ vì va chạm / ngoài công năng → mẫu dựng sẵn ở CỠ THẬT (không co, không méo, 'real') DÙ va chạm,
     // cờ `forced` cho đầu dò. Vẫn phải qua chất lượng/an toàn + trần ở cỡ thật (`forbiddenOf` trên cỡ thật). Khung đỏ (null) chỉ
     // còn khi lý do cấm là an toàn/chất lượng hoặc không có mẫu dựng sẵn hợp lệ. Cỡ người dùng xác nhận không dựng cỡ thật.
+    // Mẫu dựng sẵn chỉ cưỡng bức khi luật cũ trượt vì va chạm / công năng / không có (M17-2). R8b (set17 nt03t): mẫu THƯ VIỆN
+    // luôn được thử — lý do cấm của mẫu luật cũ (vd giường chưa hoàn chỉnh) không nói gì về ứng viên thư viện.
     const forceable = cur === null || forbid === 'va chạm' || (forbid?.startsWith(FUNC_REJECT) ?? false);
-    if (forceable && b !== undefined && m.sizeFrom !== 'user') {
+    if (b !== undefined && m.sizeFrom !== 'user') {
       // F6 (vòng 17, R2 cn08/s4pn): tầng cưỡng bức thử MỌI mẫu thư viện của vai ở cỡ thật (cùng kiểm chất lượng như (a)), không
       // chỉ mẫu dựng sẵn — mẫu dựng sẵn vân nhoè/lạc bộ chỉ là phương án cuối. Không được chồng đồ đạc (F7) hay
       // thân tường / vùng mở cửa quá phần hộp đã chồng (F5-2); vẫn ≤ REAL_GROW_M mỗi trục. Món chưa xác định không đặt được thì ẨN.
@@ -1185,7 +1187,7 @@ export const roomSetOf = (
         const cm = conceptMissOf(f);
         return forbiddenOf(real, f, cm === 'va chạm' ? undefined : cm) === undefined;
       };
-      const cands = [...new Set([...pool, ...(st === undefined ? [] : [st])])].flatMap((f) => {
+      const cands = [...new Set([...pool, ...(st === undefined || !forceable ? [] : [st])])].flatMap((f) => {
         const d = ctx.dimsOf(f);
         // F7 (R3 ch07: tủ cỡ thật đè giường + bàn ăn): không chồng đồ đạc quá phần hộp AI đã chồng — món chưa xác nhận thà ẩn
         // còn hơn đè đồ khác (giám khảo mù R2/R3). Tầng này chỉ còn cưỡng bức lý do công năng / luật cũ, không cưỡng bức va chạm.
@@ -1205,7 +1207,7 @@ export const roomSetOf = (
       }
       // F8: không mẫu nào của vai vừa → mẫu NHỎ HƠN cùng nhóm đồ chứa, cùng kiểm (cỡ thật, ≤ REAL_GROW_M, không chồng tường/cửa/
       // đồ đạc, chất lượng + công năng theo vai mới). Vai mới ghi vào sổ (`role`) để dựng cảnh áp lưng / đo công năng đúng vai.
-      for (const sib of lead === undefined ? (m.smaller ?? []) : []) {
+      for (const sib of lead === undefined && forceable ? (m.smaller ?? []) : []) {
         const sm: SetMember = { ...real, role: sib.role };
         const fit = sib.pool.flatMap((f) => {
           const d = ctx.dimsOf(f);
@@ -1222,7 +1224,7 @@ export const roomSetOf = (
         }
       }
       const stDims = st === undefined ? undefined : ctx.dimsOf(st);
-      if (st !== undefined && stDims !== undefined && stockOk(st)) {
+      if (forceable && st !== undefined && stDims !== undefined && stockOk(st)) {
         return grows(b, stDims)
           ? { to: null, why: 'phương án cuối: mẫu cỡ thật va chạm tường/cửa/đồ đạc — ẩn món' }
           : { to: null, why: `phương án cuối: hộp AI quá nhỏ cho vai — không mẫu cỡ thật nào vượt hộp dưới ${REAL_GROW_M} m` };
@@ -1233,6 +1235,29 @@ export const roomSetOf = (
       return { to: null, why: `phương án cuối: không mẫu hợp lệ — luật cũ bị cấm (${forbid}), mẫu dựng sẵn không đặt được` };
     }
     return { to: cur, why: `không ứng viên qua ràng buộc cứng — mẫu luật cũ` + (soft === undefined ? '' : `; luật cũ trượt (${soft})`) };
+  };
+  /**
+   * R8b (set17 nt03t: ba phòng ngủ mất giường — giường đơn thật chạm tường ở cỡ thật, mẫu luật cũ "chưa hoàn chỉnh"): món còn
+   * vai GIƯỜNG (vai này chỉ còn khi có bằng chứng mạnh, `roleDoubtOf`) không bị ẩn chỉ vì thiếu chăn gối: mọi tầng trượt mà mẫu
+   * luật cũ chỉ "chưa hoàn chỉnh" (trong công năng, không chồng thêm) thì giữ nó, ghi sổ — "giữ phương án hợp lệ có báo cáo".
+   */
+  const fallbackOf = (
+    m: SetMember,
+    ev: { readonly legacyCost?: number; readonly concept?: { readonly f: string; readonly miss?: string } },
+    costOf: (f: string) => number,
+    lead?: string,
+  ): ReturnType<typeof fallbackCoreOf> => {
+    const r = fallbackCoreOf(m, ev, costOf, lead);
+    const cur = m.current;
+    if (r.to !== null || cur === null || !BED_ROLES.has(m.role)) return r;
+    // Chỉ khi mẫu cũ CHỈ thiếu chăn gối: trong công năng, không chồng thêm — không bao giờ giữ giường thu nhỏ / đè đồ (bất biến 2).
+    const why = forbiddenOf(m, cur, undefined);
+    if (why !== 'giường chưa hoàn chỉnh') return r;
+    const b = m.box;
+    const zones = m.lifted === true || b === undefined ? [] : [...placed, ...pendingOf(m)].filter((z) => !tucked(m.kind, z.kind));
+    const hit = (rect: PlanRect | undefined): number => (rect === undefined ? 0 : zones.reduce((t, z) => t + overlapAreaM2(rect, z), 0));
+    if (b !== undefined && hit(shownRectOf(m, cur)) > hit(boxRectOf(b)) + ROOM_OVERLAP_TOL_M2) return r;
+    return { to: cur, why: `${r.why}; giữ giường luật cũ${why === undefined ? '' : ` dù ${why}`} — giường không bị ẩn` };
   };
 
   // Bảng màu bộ (vòng 17, L1): mẫu đã có của từng món (ghim / đã chốt lượt trước / đã chốt trong lượt) — chưa chốt thì
