@@ -46,10 +46,13 @@ import {
   PENDING_POLL_INTERVAL_MS,
   SSE_SILENCE_PROBE_MS,
 } from './processingGateway';
+import type { ProcessingExtractionSummary } from './processingGateway';
 import {
+  summaryScaleStateOf,
   useProcessingScreen,
   type ProcessingFloorUpload,
   type ProcessingScreenHookResult,
+  type SummaryScaleFloor,
 } from './useProcessingScreen';
 import type { ProcessingScreenProps } from './types';
 
@@ -1890,5 +1893,82 @@ describe('useProcessingScreen — QA-03e (SCR-12)', () => {
 
     expect(parsed.success).toBe(true);
     expect(parsed.success && 'error' in parsed.data).toBe(false);
+  });
+});
+
+describe('summaryScaleStateOf — nhãn tỷ lệ cùng tầng với số đếm (L-K3-1)', () => {
+  const BASE: ProcessingExtractionSummary = {
+    wallCount: 0,
+    openingCount: 0,
+    furnitureCount: 0,
+    dimensionCount: 0,
+    roomCount: 0,
+    roomOutlinesMm: [],
+    confidenceThreshold: null,
+    lowConfidenceCount: 0,
+  };
+  const DETERMINED = {
+    ...BASE,
+    scaleStateLabel: 'Tỷ lệ đọc từ bản vẽ',
+    scaleStateNote: 'Đọc từ chuỗi kích thước trên bản vẽ.',
+  };
+  const ESTIMATED = {
+    ...BASE,
+    scaleStateLabel: 'Tỷ lệ ước lượng',
+    scaleStateNote:
+      'Tỷ lệ ước lượng: Ước từ bề rộng cửa đi (giả định 745 mm). Hiệu chỉnh bằng một kích thước đã biết để số đo hết dấu ≈.',
+    scaleStateNeedsAttention: true as const,
+  };
+  const UNRESOLVED = {
+    ...BASE,
+    scaleStateLabel: 'Tỷ lệ chưa xác định',
+    scaleStateNote: 'Tỷ lệ chưa xác định: Ảnh giãn không đều theo hai chiều.',
+    scaleStateNeedsAttention: true as const,
+  };
+  const floor = (floorName: string, extraction: ProcessingExtractionSummary): SummaryScaleFloor => ({
+    floorName,
+    extraction,
+  });
+
+  it('2 tầng: tầng đang xem đọc từ bản vẽ, tầng kia ước lượng → nhãn của tầng đang xem, dòng riêng mang tên tầng kia', () => {
+    const result = summaryScaleStateOf(floor('Tầng 1', DETERMINED), [floor('Tầng 2', ESTIMATED)]);
+
+    expect(result.scaleStateLabel).toBe('Tỷ lệ đọc từ bản vẽ');
+    expect(result.scaleStateNote).toBe(
+      'Đọc từ chuỗi kích thước trên bản vẽ. Tầng 2: Tỷ lệ ước lượng — Ước từ bề rộng cửa đi (giả định 745 mm). Hiệu chỉnh bằng một kích thước đã biết để số đo hết dấu ≈.',
+    );
+  });
+
+  it('2 tầng: tầng đang xem ước lượng → nhãn và câu của chính nó, không lặp', () => {
+    const result = summaryScaleStateOf(floor('Tầng 1', ESTIMATED), [floor('Tầng 2', DETERMINED)]);
+
+    expect(result).toEqual({ scaleStateLabel: 'Tỷ lệ ước lượng', scaleStateNote: ESTIMATED.scaleStateNote });
+  });
+
+  it('1 tầng ước lượng (thẻ hiện tổng) → như cũ', () => {
+    expect(summaryScaleStateOf(null, [floor('Tầng 1', ESTIMATED)])).toEqual({
+      scaleStateLabel: 'Tỷ lệ ước lượng',
+      scaleStateNote: ESTIMATED.scaleStateNote,
+    });
+  });
+
+  it('3 tầng, 2 tầng khác cần chú ý → cả hai tên tầng', () => {
+    const result = summaryScaleStateOf(floor('Tầng 1', DETERMINED), [
+      floor('Tầng 2', ESTIMATED),
+      floor('Tầng 3', UNRESOLVED),
+    ]);
+
+    expect(result.scaleStateLabel).toBe('Tỷ lệ đọc từ bản vẽ');
+    expect(result.scaleStateNote).toContain('Tầng 2: Tỷ lệ ước lượng — Ước từ bề rộng cửa đi');
+    expect(result.scaleStateNote).toContain('Tầng 3: Tỷ lệ chưa xác định — Ảnh giãn không đều theo hai chiều.');
+  });
+
+  it('quá 3 tầng khác cần chú ý → kể 3 tên, còn lại "+N tầng"', () => {
+    const others = ['Tầng 2', 'Tầng 3', 'Tầng 4', 'Tầng 5', 'Tầng 6'].map((name) => floor(name, ESTIMATED));
+    const note = summaryScaleStateOf(floor('Tầng 1', DETERMINED), others).scaleStateNote ?? '';
+
+    expect(note).toContain('Tầng 4: ');
+    expect(note).not.toContain('Tầng 5: ');
+    expect(note).toMatch(/\+2 tầng khác cũng cần hiệu chỉnh tỷ lệ\.$/u);
   });
 });
