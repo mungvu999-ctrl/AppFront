@@ -105,8 +105,12 @@ export interface ExportPdfInput {
    */
   readonly sections?: readonly PdfSectionKind[];
   readonly attachments?: readonly PdfAttachmentInput[];
-  /** UX-23: tỷ lệ chưa xác nhận — mọi diện tích in kèm "(tạm)". */
-  readonly provisionalArea?: boolean;
+  /**
+   * UX-23 / R10: id của các tầng mà tỷ lệ chưa tin được — diện tích của RIÊNG những tầng đó in kèm
+   * "(tạm)". Trước đây là một boolean cho cả tệp, nên một tầng ước lượng làm bẩn mọi tầng đã đo mà
+   * không nói tầng nào; ngược lại tầng đã chấp nhận số máy thì mất dấu hoàn toàn.
+   */
+  readonly provisionalLevelIds?: readonly string[];
   /** IANA zone the cover date is written in. Tests should always name one. */
   readonly timeZone?: string;
 }
@@ -237,6 +241,22 @@ export function buildPdfFooter(pageNumber: number, pageCount: number, dataVersio
  * every report screen reads; the area is the building's stored gross floor
  * area, never a sum over the room rows.
  */
+/**
+ * Một số cộng từ nhiều tầng: tầng nào tỷ lệ chưa tin được thì gọi tên tầng đó ra. Dấu "(tạm)" đặt
+ * trên số tổng mà không nói tầng nào thì người cầm hồ sơ in không biết phải kiểm lại chỗ nào.
+ */
+function provisionalTotalTextOf(
+  text: string,
+  graph: SpatialGraph,
+  provisionalLevelIds: readonly string[],
+): string {
+  if (provisionalLevelIds.length === 0 || !/\d/.test(text)) return text;
+  const ids = new Set(provisionalLevelIds);
+  const names = graph.levels.filter((level) => ids.has(String(level.id))).map((level) => level.name);
+  if (names.length === 0 || names.length === graph.levels.length) return `≈ ${text} ${PROVISIONAL_AREA_SUFFIX}`;
+  return `≈ ${text} ${PROVISIONAL_AREA_SUFFIX} ở ${names.join(', ')}`;
+}
+
 export function buildCoverPage(input: ExportPdfInput, footer: PdfFooter): PdfCoverPage {
   const { building } = input.graph;
   const health = explainHealthScore(input.violations);
@@ -253,7 +273,15 @@ export function buildCoverPage(input: ExportPdfInput, footer: PdfFooter): PdfCov
     },
     { label: 'Người lập', text: textOrMissing(input.preparer.name) },
     { label: 'Phiên bản dữ liệu', text: textOrMissing(input.dataVersion) },
-    { label: 'Tổng diện tích', text: formatArea(building.grossFloorAreaM2) },
+    {
+      label: 'Tổng diện tích',
+      /* R10: số to nhất của hồ sơ in ra trước đây luôn hiện như số chắc — dấu tạm không tới trang bìa. */
+      text: provisionalTotalTextOf(
+        formatArea(building.grossFloorAreaM2),
+        input.graph,
+        input.provisionalLevelIds ?? [],
+      ),
+    },
     { label: 'Điểm chất lượng', text: `${countText(health.score)}/${countText(HEALTH_SCORE_MAX)}` },
     { label: 'Tổng vi phạm', text: countText(health.total) },
   ];
@@ -349,11 +377,12 @@ export function buildLevelSummaryPage(
 export function buildRoomAreasPage(
   graph: SpatialGraph,
   footer: PdfFooter,
-  provisionalArea = false,
+  provisionalLevelIds: readonly string[] = [],
 ): PdfRoomAreasPage {
-  // UX-23: diện tích từ tỷ lệ chưa xác nhận là số tạm, ghi rõ trên giấy.
-  const areaText = (text: string): string =>
-    provisionalArea && /\d/.test(text) ? `${text} ${PROVISIONAL_AREA_SUFFIX}` : text;
+  const provisional = new Set(provisionalLevelIds);
+  // UX-23: diện tích từ tỷ lệ chưa xác nhận là số tạm, ghi rõ trên giấy — theo TẦNG của phòng.
+  const areaText = (text: string, levelId: string): string =>
+    provisional.has(levelId) && /\d/.test(text) ? `${text} ${PROVISIONAL_AREA_SUFFIX}` : text;
   const rows: PdfTableRow[] = graph.rooms.map((room) => {
     const model = toRoomViewModel(room);
 
@@ -363,7 +392,7 @@ export function buildRoomAreasPage(
         model.label,
         levelNameOf(graph.levels, room.levelId),
         model.secondaryLine,
-        areaText(attributeText(model, 'Diện tích')),
+        areaText(attributeText(model, 'Diện tích'), room.levelId),
       ],
       statusCode: model.statusCode,
     };
@@ -374,7 +403,10 @@ export function buildRoomAreasPage(
     title: sectionTitle('roomAreas'),
     columns: ROOM_AREAS_COLUMNS,
     rows,
-    totalArea: { label: 'Tổng diện tích', text: areaText(formatArea(graph.building.grossFloorAreaM2)) },
+    totalArea: {
+      label: 'Tổng diện tích',
+      text: provisionalTotalTextOf(formatArea(graph.building.grossFloorAreaM2), graph, provisionalLevelIds),
+    },
     footer,
   };
 }
@@ -482,7 +514,7 @@ export function buildPdfDocument(input: ExportPdfInput): PdfDocument {
         pages.push(buildLevelSummaryPage(input.graph, input.violations, footer));
         break;
       case 'roomAreas':
-        pages.push(buildRoomAreasPage(input.graph, footer, input.provisionalArea));
+        pages.push(buildRoomAreasPage(input.graph, footer, input.provisionalLevelIds));
         break;
       case 'violations':
         pages.push(buildViolationsPage(input.graph, input.violations, footer));

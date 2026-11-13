@@ -583,14 +583,36 @@ export const SPATIAL_JSON_MIME_TYPE = 'application/json';
  * tượng** — đó là nơi duy nhất nó tồn tại; không có con số độ tin cậy nào ở cấp
  * đồ thị để bỏ.
  */
-export function toSpatialJson(graph: NormalizedSpatial, includeConfidence: boolean): string {
+export function toSpatialJson(
+  graph: NormalizedSpatial,
+  includeConfidence: boolean,
+  floorScales: Readonly<Record<string, FloorScaleExport>> = {},
+): string {
   const denormalized = denormalizeSpatial(graph);
+  /* R10 làn S: tệp cũ mang `scaleMillimetresPerPixel` và `areaM2` nhưng không mang trạng thái tỷ lệ,
+     nên người nhận tệp không có cách nào biết số nào là số máy ước. Ghi trạng thái vào từng tầng.
+     Ba khoá thêm nằm ngoài `Level` của domain — chỉ có trong tệp xuất, nên ép kiểu ở đúng chỗ này. */
+  const withScale: SpatialGraph = {
+    ...denormalized,
+    levels: denormalized.levels.map((level) => {
+      const scale = floorScales[String(level.id)];
+      return scale === undefined ? level : ({ ...level, ...scale } as typeof level);
+    }),
+  };
 
   return JSON.stringify(
-    includeConfidence ? denormalized : stripConfidence(denormalized),
+    includeConfidence ? withScale : stripConfidence(withScale),
     null,
     JSON_INDENT_SPACES,
   );
+}
+
+/** Trạng thái tỷ lệ của một tầng, viết kèm vào tệp JSON xuất ra. */
+export interface FloorScaleExport {
+  readonly scaleState?: string;
+  readonly scaleReasons?: readonly string[];
+  /** `false` = mọi số đo của tầng này suy từ một tỷ lệ máy ước, chưa người nào xác nhận. */
+  readonly isTrusted: boolean;
 }
 
 /** Hai dấu cách: tệp này để người đọc và để công cụ khác đọc, không để nén. */
@@ -894,8 +916,8 @@ export interface StartPdfExportInput {
   readonly dataVersion: string;
   readonly preparerName: string;
   readonly choice: PdfSectionChoice;
-  /** UX-23: có tầng chưa xác nhận tỷ lệ — diện tích trong hồ sơ là số tạm. */
-  readonly provisionalArea?: boolean;
+  /** UX-23 / R10: id các tầng chưa tin được tỷ lệ — chỉ diện tích của chúng in kèm "(tạm)". */
+  readonly provisionalLevelIds?: readonly string[];
 }
 
 export interface StartSpatialJsonExportInput {
@@ -903,6 +925,8 @@ export interface StartSpatialJsonExportInput {
   readonly projectName: string;
   readonly graph: NormalizedSpatial;
   readonly includeConfidence: boolean;
+  /** R10: trạng thái tỷ lệ từng tầng, ghi vào tệp để người nhận biết số nào là số ước. */
+  readonly floorScales?: Readonly<Record<string, FloorScaleExport>>;
 }
 
 /** Ép cảnh cho bài kiểm: tường minh, không biến ẩn. */
@@ -1102,7 +1126,7 @@ export function createExportPanelGateway(seed: ExportPanelGatewaySeed = {}): Exp
       publish(run, { ...run.snapshot, runningFormatId: 'spatial-json', progress: null });
 
       try {
-        const text = toSpatialJson(input.graph, input.includeConfidence);
+        const text = toSpatialJson(input.graph, input.includeConfidence, input.floorScales);
         const blob = new Blob([text], { type: SPATIAL_JSON_MIME_TYPE });
         const fileName = `${glbModule.toFileSlug(input.projectName)}_${glbModule.formatExportTimestamp(
           new Date(now()),
@@ -1134,7 +1158,7 @@ export function createExportPanelGateway(seed: ExportPanelGatewaySeed = {}): Exp
             exportedAt,
             preparer: { name: input.preparerName },
             sections: toPdfSections(input.choice),
-            provisionalArea: input.provisionalArea ?? false,
+            provisionalLevelIds: input.provisionalLevelIds ?? [],
           }),
         );
         const fileName = `${glbModule.toFileSlug(input.projectName)}_${glbModule.formatExportTimestamp(exportedAt)}.pdf`;
