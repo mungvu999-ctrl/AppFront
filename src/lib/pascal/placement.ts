@@ -11,6 +11,8 @@ import { outlineContains, signedAreaMm2 } from '@/domain/rooms/area';
 import type { Furniture, LevelId, Point, Room, SpatialGraph } from '@/domain/spatial/types';
 import { FURNITURE_KIND_LABELS, isFinitePoint, toPointMm } from '@/lib/commands/business/shared';
 
+import { insideOutline, swingDirectionOf } from './swingDirection';
+
 export interface Rect {
   readonly cx: number;
   readonly cy: number;
@@ -131,9 +133,19 @@ export const rectsOverlap = (a: Rect, b: Rect, gapMm = 0): boolean => {
   );
 };
 
-/** Vùng mở của mọi cửa đi trên tầng: rộng × rộng cả hai bên tường; trượt/cố định: rộng × 600. */
+/** Khoảng dò hai bên mặt tường để biết có phòng hay không (như `swingDirectionOf`), mm. */
+const SWING_PROBE_MM = 300;
+
+/**
+ * Vùng mở của mọi cửa đi trên tầng. Cửa bản lề: rộng × rộng CHỈ ở phía cánh quét — phía theo luật
+ * `swingDirectionOf` (đảo khi `reversed`), +1 = pháp tuyến trái của trục tường; không phòng nào ở cả
+ * hai bên (thiếu dữ liệu để biết hướng) thì giữ cả hai phía. Cửa trượt/ô trống: rộng × 600 cả hai bên
+ * (không cánh quét). Lối qua cửa phía không quét do vùng trước cửa trong phòng lo (`DOOR_APPROACH_MM`).
+ */
 export const doorSwingRects = (graph: SpatialGraph, levelId: LevelId): Rect[] => {
   const walls = new Map(graph.walls.filter((w) => w.levelId === levelId).map((w) => [w.id, w]));
+  // Đồ thị không có `rooms` (fixture cũ, đồ thị dựng dở) = thiếu dữ liệu hướng → hai phía như cũ.
+  const rooms = (graph.rooms ?? []).filter((r) => r.levelId === levelId && r.finish !== 'decking');
   return graph.openings.flatMap((o) => {
     const wall = walls.get(o.wallId);
     if (o.kind !== 'door' || wall === undefined) return [];
@@ -142,16 +154,22 @@ export const doorSwingRects = (graph: SpatialGraph, levelId: LevelId): Rect[] =>
     if (length < EPS) return [];
     const dir = { x: (end.x - start.x) / length, y: (end.y - start.y) / length };
     const along = o.offsetMm + o.widthMm / 2;
-    const depth = o.swing === 'sliding' || o.swing === 'fixed' ? SLIDING_SWING_DEPTH_MM : o.widthMm;
+    const sliding = o.swing === 'sliding' || o.swing === 'fixed';
+    const depth = sliding ? SLIDING_SWING_DEPTH_MM : o.widthMm;
+    const at = (reach: number, side: number): Point => ({
+      x: start.x + dir.x * along - dir.y * reach * side,
+      y: start.y + dir.y * along + dir.x * reach * side,
+    });
+    const probe = wall.thicknessMm / 2 + SWING_PROBE_MM;
+    const known = rooms.some((r) => insideOutline(at(probe, 1), r.outline) || insideOutline(at(probe, -1), r.outline));
+    const swingSide = (swingDirectionOf(o, wall, rooms) === 'inward') !== (o.reversed === true) ? 1 : -1;
+    const sides = sliding || !known ? [1, -1] : [swingSide];
     const reach = wall.thicknessMm / 2 + depth / 2;
     const rotationDeg = (Math.atan2(dir.y, dir.x) * 180) / Math.PI;
-    return [1, -1].map((side) => ({
-      cx: start.x + dir.x * along - dir.y * reach * side,
-      cy: start.y + dir.y * along + dir.x * reach * side,
-      w: o.widthMm,
-      d: depth,
-      rotationDeg,
-    }));
+    return sides.map((side) => {
+      const c = at(reach, side);
+      return { cx: c.x, cy: c.y, w: o.widthMm, d: depth, rotationDeg };
+    });
   });
 };
 
