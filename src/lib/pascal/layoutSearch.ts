@@ -230,9 +230,11 @@ const MAIN_ROLES: ReadonlySet<string> = new Set(['doubleBed', 'singleBed', 'clos
 /** Ghế kê dưới bàn không tính chồng (như tuckedSeat của placement.ts, theo vai). */
 const SEAT_ROLES: ReadonlySet<string> = new Set(['diningChair']);
 const TABLE_ROLES: ReadonlySet<string> = new Set(['diningTable', 'desk']);
-/** Món phụ: kiểm lối tới bằng BFS nhưng chỉ PHẠT ACCESS_COST, không loại. */
+/** Món phụ: kiểm lối tới bằng BFS nhưng chỉ PHẠT ACCESS_COST, không loại (lượt 1). */
 const SECONDARY_ROLES: ReadonlySet<string> = new Set(['nightstand', 'bookshelf', 'coffeeTable', 'armchair']);
 /** Lớn hơn chi phí dời xa nhất (1,5 m) → trong số tư thế đã BFS, tư thế tới được luôn thắng. */
+// ACCESS_COST = 2 > chi phí dời tối đa lượt 1 (1,5 m + xoay 0,4) → tư thế có lối luôn thắng tư thế không lối. Lượt 2 (`far`,
+// dời xa hơn MAX_SHIFT_M) không dùng phạt này: lối từ cửa là bắt buộc với mọi vai, nên giả định 1,5 m không bị phá.
 const ACCESS_COST = 2;
 /** Chỗ người đứng dùng món phụ (đích BFS). */
 const SECONDARY_REACH_M = 0.6;
@@ -389,8 +391,10 @@ const comparePose = (p: Pose, q: Pose): number =>
  * Tựa tường: lưng áp mặt tường mọi cạnh có tường (trừ ô mở), bước 0,10 m + điểm chiếu tâm hộp, dời ≤ 1,5 m.
  * Không tựa tường (hoặc phòng không cạnh nào có tường): lưới lệch bán kính 0,6 m × {rot, rot+90}.
  * Món không movable: chỉ đúng tâm/góc hộp gốc.
+ * `far` (M18 LW, lượt 2): mọi cạnh có tường, mỗi đoạn tường tự do ≤ 3 điểm (giữa + hai đầu), KHÔNG trần MAX_SHIFT_M; món
+ * không tựa tường không có tư thế lượt 2. Vẫn sắp theo chi phí dời tuyến tính và trần `limit`.
  */
-export const posesOf = (piece: Piece, room: LayoutRoom, limit = K_POSES): Pose[] => {
+export const posesOf = (piece: Piece, room: LayoutRoom, limit = K_POSES, far = false): Pose[] => {
   const [w, , d] = piece.dims;
   const { box } = piece;
   const byKey = new Map<string, Pose>();
@@ -399,7 +403,7 @@ export const posesOf = (piece: Piece, room: LayoutRoom, limit = K_POSES): Pose[]
     const cy = roundMm(y);
     const rot = normDeg(rotDeg);
     const shiftM = roundMm(Math.hypot(cx - box.cx, cy - box.cy));
-    if (shiftM > MAX_SHIFT_M + 1e-9) return;
+    if (!far && shiftM > MAX_SHIFT_M + 1e-9) return;
     const key = `${mm(cx)}|${mm(cy)}|${mm(rot)}`;
     if (byKey.has(key)) return;
     const turnDeg = Math.round(turnOf(rot, box.rotationDeg) * 100) / 100;
@@ -410,6 +414,7 @@ export const posesOf = (piece: Piece, room: LayoutRoom, limit = K_POSES): Pose[]
     return [...byKey.values()];
   }
   const walled = room.edges.some((e) => e.walled.length > 0);
+  if (far && !(piece.wallBack && walled)) return [];
   if (piece.wallBack && walled) {
     room.edges.forEach((e, i) => {
       if (e.lengthM <= 0) return;
@@ -423,6 +428,10 @@ export const posesOf = (piece: Piece, room: LayoutRoom, limit = K_POSES): Pose[]
         const lo = s.from + w / 2;
         const hi = s.to - w / 2;
         if (hi < lo - 1e-9) continue;
+        if (far) {
+          for (const t of [lo, (lo + hi) / 2, Math.max(lo, hi)]) at(t);
+          continue;
+        }
         at(Math.min(hi, Math.max(lo, along)));
         // LF1: chỉ lấy mẫu |t − along| ≤ MAX_SHIFT_M (xa hơn thì dời > MAX_SHIFT_M, `add` vốn loại) — ≤ 34 mẫu mỗi đoạn, tất định.
         const k0 = Math.max(0, Math.floor((along - MAX_SHIFT_M - lo) / STEP_M) - 1);
@@ -840,6 +849,11 @@ export interface SearchOptions {
   /** Thành viên cụm của món (tủ đầu giường, ghế của bàn, bàn trà của sofa). */
   readonly members?: readonly Piece[];
   readonly budget?: SearchBudget;
+  /**
+   * M18 LW — lượt 2: chỉ gọi khi lượt 1 (dời ≤ MAX_SHIFT_M) không đặt được. Tư thế `posesOf(…, far)` ở mọi tường của phòng;
+   * mọi kiểm hợp lệ giữ nguyên, lối từ cửa bắt buộc với MỌI vai (không phạt-mà-nhận như món phụ lượt 1).
+   */
+  readonly far?: boolean;
 }
 export type SearchResult =
   | { readonly pose: Pose; readonly modelId: string; readonly move: LayoutMove; readonly tried: Tried }
@@ -890,7 +904,7 @@ export const searchPlacement = (
     const p: Piece = { ...piece, dims: model.dims };
     const specs = specsOf(p, members);
     specsByModel.set(model.modelId, specs);
-    for (const pose of posesOf(p, room, maxPoses)) {
+    for (const pose of posesOf(p, room, maxPoses, opts.far === true)) {
       poses += 1;
       const check = checkPoseWith(p, pose, room, base, specs, seatIds);
       if (!check.ok) {
@@ -915,7 +929,7 @@ export const searchPlacement = (
       mm(a.pose.cy) - mm(b.pose.cy) ||
       mm(a.pose.rot) - mm(b.pose.rot),
   );
-  const hardAccess = MAIN_ROLES.has(piece.role);
+  const hardAccess = MAIN_ROLES.has(piece.role) || opts.far === true;
   const needsAccess = (hardAccess || SECONDARY_ROLES.has(piece.role)) && room.doors.length > 0;
   let chosen: Feasible | undefined;
   let unreached = false;

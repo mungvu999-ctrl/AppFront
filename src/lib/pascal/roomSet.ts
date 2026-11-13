@@ -1573,13 +1573,14 @@ export const roomSetOf = (
       const blocks = blocksOf(m);
       let tried = NO_TRY;
       const reasons: string[] = [];
-      const tryTier = (role: string, cands: readonly Cand[]): Placed | undefined => {
+      const tryTier = (role: string, cands: readonly Cand[], far = false): Placed | undefined => {
         const first = cands[0];
         if (first === undefined) return undefined;
         const piece: Piece = { id: m.id, role, dims: first.dims, box: boxRectOf(b), wallBack: WALL_BACK_ROLES.has(role), movable: true };
         const res = searchPlacement(lay.room, piece, cands.map(({ modelId, dims, cost }) => ({ modelId, dims, ...(cost === undefined ? {} : { cost }) })), blocks, {
           members: pieces,
           budget: { models: cands.length },
+          far,
         });
         const t = 'pose' in res ? res.tried : res.unplaced.tried;
         tried = { models: tried.models + t.models, poses: tried.poses + t.poses, bfs: tried.bfs + t.bfs };
@@ -1597,25 +1598,33 @@ export const roomSetOf = (
       });
       const lib = libOf(real, m.pool, CONCEPT_LENIENT);
       const t1 = uniq([...bandOf(lib), ...extraOf(cur, (f) => r9(costOf(f))), ...(m.stock === cur ? [] : extraOf(m.stock, () => FAIL_COST))]);
-      const r1 = tryTier(m.role, t1);
-      if (r1 !== undefined) return done(r1, 'T1 dời cùng mẫu cỡ thật');
       const minArea = Math.min(...t1.map((x) => x.area));
       const t2 = lib.filter((x) => !t1.some((y) => y.modelId === x.modelId) && x.area < minArea - 1e-9).sort((x, y) => x.area - y.area || byCost(x, y)).slice(0, K_MODELS);
-      const r2 = tryTier(m.role, t2);
-      if (r2 !== undefined) return done(r2, 'T2 mẫu cùng vai nhỏ hơn (trong cỡ công năng)');
-      if (BED_ROLES.has(m.role)) {
-        // Giường 'chưa hoàn chỉnh' (thiếu chăn gối) chỉ khi không còn phương án giường hoàn chỉnh / dựng sẵn nào đặt được.
-        const seen = new Set([...t1, ...t2].map((x) => x.modelId));
-        const skip = new Set([...CONCEPT_LENIENT, INCOMPLETE_BED]);
-        const inc = libOf(real, cur === null ? m.pool : [...m.pool, cur], skip).filter((x) => !seen.has(x.modelId)).sort(byCost).slice(0, K_MODELS);
-        const rb = tryTier(m.role, inc);
-        if (rb !== undefined) return done(rb, 'T1 dời giường cỡ thật', undefined, `; nhận ${INCOMPLETE_BED} (thiếu chăn gối) — phương án giường duy nhất hợp lệ`);
-      }
-      // T3: vai đồ chứa nhỏ hơn (SMALLER_STORAGE); giường không bao giờ thành đôn/tủ.
-      for (const sib of BED_ROLES.has(m.role) ? [] : (m.smaller ?? [])) {
-        const r3 = tryTier(sib.role, bandOf(libOf({ ...real, role: sib.role }, sib.pool, CONCEPT_LENIENT)));
-        if (r3 !== undefined) return { ...done(r3, `T3 vai đồ chứa nhỏ hơn (${sib.role})`, sib.role), forced: `không mẫu ${m.role} nào đặt được` };
-      }
+      // Giường 'chưa hoàn chỉnh' (thiếu chăn gối) chỉ khi không còn phương án giường hoàn chỉnh / dựng sẵn nào đặt được.
+      const seen = new Set([...t1, ...t2].map((x) => x.modelId));
+      const inc = BED_ROLES.has(m.role)
+        ? libOf(real, cur === null ? m.pool : [...m.pool, cur], new Set([...CONCEPT_LENIENT, INCOMPLETE_BED])).filter((x) => !seen.has(x.modelId)).sort(byCost).slice(0, K_MODELS)
+        : [];
+      const ladder = (far: boolean): FallbackPick | undefined => {
+        const lap = far ? ' (lượt 2: tường xa hơn 1,5 m)' : '';
+        const r1 = tryTier(m.role, t1, far);
+        if (r1 !== undefined) return done(r1, `T1 dời cùng mẫu cỡ thật${lap}`);
+        const r2 = tryTier(m.role, t2, far);
+        if (r2 !== undefined) return done(r2, `T2 mẫu cùng vai nhỏ hơn (trong cỡ công năng)${lap}`);
+        const rb = tryTier(m.role, inc, far);
+        if (rb !== undefined) return done(rb, `T1 dời giường cỡ thật${lap}`, undefined, `; nhận ${INCOMPLETE_BED} (thiếu chăn gối) — phương án giường duy nhất hợp lệ`);
+        // T3: vai đồ chứa nhỏ hơn (SMALLER_STORAGE); giường không bao giờ thành đôn/tủ.
+        for (const sib of BED_ROLES.has(m.role) ? [] : (m.smaller ?? [])) {
+          const r3 = tryTier(sib.role, bandOf(libOf({ ...real, role: sib.role }, sib.pool, CONCEPT_LENIENT)), far);
+          if (r3 !== undefined) return { ...done(r3, `T3 vai đồ chứa nhỏ hơn (${sib.role})${lap}`, sib.role), forced: `không mẫu ${m.role} nào đặt được` };
+        }
+        return undefined;
+      };
+      // M18 LW — lượt 2 (tường xa hơn MAX_SHIFT_M) chỉ khi cả thang lượt 1 trượt, chỉ món CHÍNH: món phụ vẫn buộc vào hộp
+      // (REAL_GROW_M), dời nó sang tường xa là mất quan hệ với món nó phục vụ. Không chạy ở lượt ghế nhóm nhường (`seatsYield`):
+      // dời xa không được đẩy món khác ra (cn17: sofa thứ hai dời 4,4 m ra sau bàn ăn, đẩy 2 ghế ăn). Lý do unplaced giữ lượt 1.
+      const picked = ladder(false) ?? (LAYOUT_MAIN_ROLES.has(m.role) && !seatsYield ? ladder(true) : undefined);
+      if (picked !== undefined) return picked;
       return unplaced(reasons[0] ?? 'không có mẫu hợp lệ để thử dời (chất lượng / công năng / ngưỡng hợp bộ)', tried);
     } finally {
       lay.run.ms += performance.now() - t0;
