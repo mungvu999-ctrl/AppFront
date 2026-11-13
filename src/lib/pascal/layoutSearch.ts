@@ -964,7 +964,9 @@ export const searchPlacement = (
       mm(a.pose.cy) - mm(b.pose.cy) ||
       mm(a.pose.rot) - mm(b.pose.rot),
   );
-  const hardAccess = MAIN_ROLES.has(piece.role) || opts.far === true;
+  // M18 FA — lượt nới chỉ nới VÙNG SỬ DỤNG: lối từ cửa vẫn là ràng buộc CỨNG cho mọi vai (cả vai phụ),
+  // không thì món phụ được nhận ở chỗ không vào được ("chỉ phạt") — Codex M18-8 P1.
+  const hardAccess = MAIN_ROLES.has(piece.role) || opts.far === true || opts.relax === true;
   const needsAccess = (hardAccess || SECONDARY_ROLES.has(piece.role)) && room.doors.length > 0;
   let chosen: Feasible | undefined;
   let unreached = false;

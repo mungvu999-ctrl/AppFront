@@ -94,6 +94,8 @@ describe('FA — vùng sử dụng là ràng buộc MỀM (f07: phòng ngủ m�
     const d = run([bed()], TIGHT).get('F-bed');
     expect(d?.why).toContain('lượt mềm');
     expect(d?.why).toContain('thiếu khoảng sử dụng');
+    // Lượt mềm thử tư thế GẦN trước: không được rơi sang lượt tường xa khi ngay cạnh hộp cũ đã đặt được (Codex M18-8 P2).
+    expect(d?.why ?? '').not.toContain('tường xa');
     expect(d?.layout?.some((i) => i.kind === 'use')).toBe(true);
   });
 

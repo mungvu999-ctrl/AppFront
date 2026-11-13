@@ -631,8 +631,17 @@ const shapedMemberOf = (m: SetMember, ctx: SetContext): SetMember => {
   const ls = m.pool.filter(isL);
   const lm = { ...m, pool: ls };
   const c = m.concept;
+  // Mẫu L của LUẬT CŨ ("mẫu chung" của nhóm) không chấm bảng màu. Giữ nguyên thì phòng sáng nhận sofa L xám đậm
+  // (f06, f19 — chấm mù vòng 18 lượt 1 thua cả hai phiếu). Chỉ bỏ khỏi `current` khi phần bọc TRỘI lệch dải L* của
+  // bảng màu phòng (SOFT_L), để bộ chọn chọn mẫu L hợp bảng màu; mẫu L đúng dải vẫn giữ (cn20 — bỏ cả thì ra mẫu tệ hơn).
+  const offPalette = (x: string): boolean => {
+    const [lo, hi] = SOFT_L[ctx.palette.light !== false ? 'light' : 'dark'];
+    return featOf(x, ctx, new Map()).soft.some((p) => p.share >= DARK_SEAT_SHARE && (p.lab[0] < lo || p.lab[0] > hi));
+  };
+  const legacyLCorner = !m.fixed && m.pinTo === undefined && m.current !== null && isL(m.current) && offPalette(m.current);
   if (corner && ls.some((x) => hardRejectOf(lm, x, ctx) === undefined)) {
-    return c === undefined || isL(c.folder) || c.reject !== undefined ? lm : { ...lm, concept: { ...c, reject: 'hộp góc: ưu tiên mẫu dáng L' } };
+    const km = legacyLCorner ? { ...lm, current: null } : lm;
+    return c === undefined || isL(c.folder) || c.reject !== undefined ? km : { ...km, concept: { ...c, reject: 'hộp góc: ưu tiên mẫu dáng L' } };
   }
   const conceptL = c !== undefined && c.reject === undefined && isL(c.folder);
   // Mẫu luật cũ (món chưa ghim) cũng xếp hạng trên cả thư viện sofa nên có thể ra mẫu L: hộp thẳng thì bỏ (đi đường mẫu dựng
@@ -1632,7 +1641,10 @@ export const roomSetOf = (
       // món đang hiện sẵn ở chỗ cũ (f28 sofa DSFCZS) bị đổi thành dời 5,6 m kèm vi phạm mềm.
       const far = LAYOUT_MAIN_ROLES.has(m.role) && !seatsYield;
       const softOk = seatsYield || !LAYOUT_MAIN_ROLES.has(m.role) || !inSet.some(pendingSeat);
-      const picked = ladder(false) ?? (far ? ladder(true) : undefined) ?? (softOk ? ladder(far, true) : undefined);
+      // Lượt mềm thử TƯ THẾ GẦN trước rồi mới tường xa, như lượt cứng: `far` chỉ lấy đầu/giữa/cuối đoạn tường
+      // nên bỏ sót chỗ đặt được ngay gần hộp cũ (giường vẫn bị ẩn) — Codex M18-8 P2.
+      const soft = () => (softOk ? (ladder(false, true) ?? (far ? ladder(true, true) : undefined)) : undefined);
+      const picked = ladder(false) ?? (far ? ladder(true) : undefined) ?? soft();
       if (picked !== undefined) return picked;
       return unplaced(reasons[0] ?? 'không có mẫu hợp lệ để thử dời (chất lượng / công năng / ngưỡng hợp bộ)', tried);
     } finally {
