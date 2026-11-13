@@ -283,3 +283,38 @@ export function scaleFloorsMessageOf(missing: readonly string[], provisional: re
 
   return parts.length === 0 ? null : `${parts.join('. ')}.`;
 }
+
+/**
+ * Số đo của tầng này có tin được không. Dùng cho mọi bề mặt chỉ cần quyết định "có đánh dấu hay
+ * không": `measured` (máy đọc từ bản vẽ) và `confirmed` (người hiệu chỉnh) là tin được, còn lại không.
+ *
+ * Thay cho lối cũ `scaleStatus === 'unresolved'`: từ R10/K4, tầng mà người dùng đã bấm chấp nhận số
+ * máy không còn `scaleStatus` nữa nhưng vẫn là số ước — luật cũ bỏ sót đúng những tầng đó.
+ */
+export function isScaleTrusted(
+  scaleStatus: ScaleStatus,
+  scaleSource?: ScaleSource,
+  scaleState?: WireScaleState,
+): boolean {
+  const state = scaleStateOf(scaleStatus, scaleSource, scaleState);
+  return state === 'measured' || state === 'confirmed';
+}
+
+/** Một tầng trong tổng cộng nhiều tầng: tên để gọi khi tầng đó không tin được. */
+export interface FloorScaleRef {
+  readonly name: string;
+  readonly scaleStatus: ScaleStatus;
+  readonly scaleSource?: ScaleSource;
+  readonly scaleState?: WireScaleState;
+}
+
+/**
+ * Chữ cho một con số cộng từ NHIỀU tầng. Tầng nào không tin được thì gọi tên tầng đó ra, vì dấu ≈
+ * đặt trên số tổng không cho biết tầng nào ước — và không được im lặng chỉ vì đa số tầng đã đo.
+ */
+export function totalMeasureTextOf(formatted: string, floors: readonly FloorScaleRef[]): string {
+  const loose = floors.filter((f) => !isScaleTrusted(f.scaleStatus, f.scaleSource, f.scaleState));
+  if (loose.length === 0) return formatted;
+  if (loose.length === floors.length) return `≈ ${formatted} (ước lượng)`;
+  return `≈ ${formatted} (ước lượng ở ${loose.map((f) => f.name).join(', ')})`;
+}
