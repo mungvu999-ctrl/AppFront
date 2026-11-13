@@ -68,4 +68,16 @@ describe('LF6 — thành viên cụm không đi theo phải kiểm chồng với
       expect(rectsOverlap(footprintOf(chair.dims, mp!.pose), foot), id).toBe(false);
     }
   });
+
+  // F7: ghế ĐÃ XÁC NHẬN (không movable) kê dưới bàn — bàn dời/xoay không được đè lên ghế đứng yên (miễn "kê dưới bàn" chỉ đúng
+  // khi quan hệ giữ nguyên).
+  it('bàn dời: ghế đã xác nhận đứng yên không nằm trong mặt bằng bàn mới', () => {
+    const room = layoutRoomOf({ id: 'R' as never, levelId: LEVEL, outline: corners }, graph);
+    const desk = { id: 'desk', role: 'desk', dims: [1.2, 0.75, 0.6] as const, box: { cx: 1.5, cy: 2.7, w: 1.14, d: 0.4, rotationDeg: 0 }, wallBack: true, movable: true };
+    const chair = { id: 'chair', role: 'diningChair', dims: [0.46, 0.8, 0.36] as const, box: { cx: 1.5, cy: 2.55, w: 0.46, d: 0.36, rotationDeg: 0 }, wallBack: false, movable: false };
+    const res = searchPlacement(room, desk, [{ modelId: 'desk', dims: desk.dims }], [], { members: [chair] });
+    if (!('pose' in res)) return;
+    const mp = res.move.members.find((x) => x.id === 'chair');
+    expect(rectsOverlap(footprintOf(chair.dims, mp!.pose), footprintOf(desk.dims, res.pose))).toBe(false);
+  });
 });

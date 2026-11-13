@@ -582,8 +582,11 @@ export const placeCluster = (
     const ok = (p: Pose): boolean => checkPoseWith(m, p, room, blocks, specsOf(m, []), p === stay && moved ? NO_IGNORE : tuck).ok;
     let fit: Pose | undefined;
     // Món đã xác nhận đứng yên, không kiểm lại (chồng sẵn là lỗi dữ liệu, không chặn cả cụm).
-    if (!m.movable) fit = stay;
-    else if (!night || !changed) fit = [follow, stay].find(ok);
+    // F7: …trừ khi neo đã dời/xoay mà đè lên nó — miễn "kê dưới bàn" (seatIds) chỉ đúng khi quan hệ giữ nguyên.
+    if (!m.movable) {
+      if (moved && rectsOverlap(footprintOf(m.dims, stay), anchorFoot)) return null;
+      fit = stay;
+    } else if (!night || !changed) fit = [follow, stay].find(ok);
     else {
       // Tủ đầu giường: theo cứng nếu vẫn kề đầu giường; không thì xếp lại sát cạnh dài phía đầu (bên cũ trước,
       // khe 0,01 → 0,15 m), rồi bên kia; hết chỗ mới đứng yên (gãy).
