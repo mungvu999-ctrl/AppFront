@@ -1454,10 +1454,13 @@ export function useProcessingScreen(options: UseProcessingScreenOptions): Proces
     const scaleEstimated = floorStatuses.some(
       (status, index) => status === 'done' && extractions[index]?.scaleEstimated === true,
     );
-    // R9: tầng xong có câu tỷ lệ (ước lượng / chưa xác định) nói trước; không thì tên trạng thái của tầng đầu.
+    // R9: tầng xong có tỷ lệ cần chú ý (ước lượng / chưa xác định) nói trước; không thì trạng thái của chính
+    // tầng đang xem (không mượn nguồn "chuỗi kích thước" của tầng khác — e2e R9 mục 8), rồi tầng xong đầu.
     const doneExtractions = extractions.filter((_, index) => floorStatuses[index] === 'done');
+    const focusedDone = floorStatuses[focusIndex] === 'done' ? extractions[focusIndex] : undefined;
     const scaleStateOwner =
-      doneExtractions.find((extraction) => extraction?.scaleStateNote !== undefined) ??
+      doneExtractions.find((extraction) => extraction?.scaleStateNeedsAttention === true) ??
+      (focusedDone?.scaleStateLabel !== undefined ? focusedDone : undefined) ??
       doneExtractions.find((extraction) => extraction?.scaleStateLabel !== undefined);
     const goTo = (route: (projectId: string, floorId: string) => string, index = doneIndex) => () => {
       const upload = uploadsRef.current[index];

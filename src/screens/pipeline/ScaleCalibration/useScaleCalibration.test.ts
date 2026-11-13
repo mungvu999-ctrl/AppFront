@@ -830,6 +830,27 @@ describe('useScaleCalibration — tầng tỷ lệ tạm (scaleStatus unresolved
     expect(measured.mounted.result.current.model.missingScaleNotice).toBeUndefined();
   });
 
+  it('R9: mốc máy chọn sẵn ở tầng chưa xác định — thẻ nói trạng thái, không "Đo được"; đo trước, không áp số máy', async () => {
+    useStore.getState().setSpatial(null, null);
+    simulateProvisionalScale(FLOOR_ID, PROVISIONAL_RATIO, 'pipeline', {
+      scaleState: 'unresolved',
+      scaleReasons: ['chain', 'anisotropic'],
+      scaleBasis: 'chain',
+    });
+    const harness = await makeHarness({ rows: sampleDimensionRows() });
+    const mounted = mountHook(harness.gateway);
+    await settle(mounted);
+    await settleAsync();
+
+    const { model } = mounted.result.current;
+    expect(model.panel.dimension.selectedRowId).not.toBeNull();
+    expect(model.panel.scaleCheck?.status.label).toBe('Tỷ lệ chưa xác định');
+    expect(model.panel.scaleCheck?.status.sentence).not.toMatch(/^Đo được/u);
+    expect(model.panel.scaleCheck?.status.sentence).toContain('Ảnh giãn không đều theo hai chiều');
+    expect(model.panel.canApply).toBe(false);
+    expect(model.panel.measureFirst).toEqual({ label: 'Đo một đoạn đã biết', acceptLabel: 'Dùng tạm tỷ lệ máy ước lượng' });
+  });
+
   it('[UX-R2 K05] tầng tỷ lệ máy đo có mốc: chọn sẵn mốc tốt nhất, một cú bấm Xác nhận là lưu', async () => {
     useStore.getState().setSpatial(null, null);
     simulateProvisionalScale(FLOOR_ID, PROVISIONAL_RATIO);

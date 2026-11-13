@@ -269,6 +269,8 @@ export interface ProcessingExtractionSummary {
   readonly scaleStateLabel?: string;
   /** R9: câu trạng thái + lý do (`scaleStateMessageOf`); số tin được thì chỉ câu căn cứ. */
   readonly scaleStateNote?: string;
+  /** R9: tỷ lệ tầng chỉ ước lượng / chưa xác định — được nói trước ở màn Xử lý. */
+  readonly scaleStateNeedsAttention?: true;
   readonly roomCount: number;
   /**
    * Đường bao các phòng của tầng (mm). Hook cộng mọi tầng bằng `totalArea` — cộng mm² rồi
@@ -862,11 +864,14 @@ export function toExtractionSummary(
   const noteRatio = isProposed ? noteRatioOf(document.level.scaleMillimetresPerPixel, document.sourceDpi) : null;
   const scaleState =
     document.scaleState === undefined ? undefined : scaleStateOf(document.scaleStatus, document.scaleSource, document.scaleState);
-  // Số tin được (đọc từ bản vẽ) thì chỉ nói căn cứ, không mời hiệu chỉnh.
+  // Số tin được thì chỉ nói căn cứ, không mời hiệu chỉnh; người dùng đã hiệu chỉnh thì nói đúng nguồn ấy
+  // (máy chủ gửi `scaleReasons: []` cho `userCalibrated` — e2e R9 mục 8).
+  const attentionNote = scaleState === undefined ? null : scaleStateMessageOf(scaleState, document.scaleReasons);
   const scaleStateNote =
     scaleState === undefined
       ? null
-      : (scaleStateMessageOf(scaleState, document.scaleReasons) ?? scaleReasonsSentenceOf(document.scaleReasons));
+      : (attentionNote ??
+        scaleReasonsSentenceOf(scaleState === 'confirmed' ? ['human'] : document.scaleReasons));
 
   return {
     wallCount: walls.length,
@@ -879,6 +884,7 @@ export function toExtractionSummary(
     ...(isScaleEstimated(document.scaleBasis) ? { scaleEstimated: true } : {}),
     ...(scaleState !== undefined ? { scaleStateLabel: SCALE_STATE_VIEWS[scaleState].name } : {}),
     ...(scaleStateNote !== null ? { scaleStateNote } : {}),
+    ...(attentionNote !== null ? { scaleStateNeedsAttention: true as const } : {}),
     ...(isScaleMissing(document.scaleSource) ? { scaleMissing: true } : {}),
     ...(isProposed ? { scaleProposed: true } : {}),
     ...(noteRatio !== null ? { scaleNoteRatio: noteRatio } : {}),

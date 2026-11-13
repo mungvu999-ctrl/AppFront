@@ -120,6 +120,7 @@ export const SCALE_REASON_TEXT: Readonly<Record<string, string>> = {
   anisotropic: 'Ảnh giãn không đều theo hai chiều',
   estimateSpread: 'Ước từ cửa và từ tường lệch nhau',
   pageChanged: 'Trang bản vẽ đã đổi sau lần hiệu chỉnh',
+  human: 'Do bạn hiệu chỉnh bằng một kích thước đã biết',
 };
 
 /** Mã lạ (máy chủ mới hơn) hoặc `basisUnknown`: một câu chung, không vỡ màn. */

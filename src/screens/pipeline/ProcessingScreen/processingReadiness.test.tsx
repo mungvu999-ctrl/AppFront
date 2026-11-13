@@ -152,6 +152,14 @@ describe('deriveProcessingGate — readiness', () => {
     expect(measured.scaleStateLabel).toBe('Tỷ lệ đọc từ bản vẽ');
     expect(measured.scaleStateNote).toBe('Đọc từ chuỗi kích thước trên bản vẽ.');
     expect(measured.readiness).toBeUndefined();
+    expect(measured).not.toHaveProperty('scaleStateNeedsAttention');
+    expect(estimated.scaleStateNeedsAttention).toBe(true);
+
+    // e2e R9 mục 8: sau khi người dùng hiệu chỉnh, nguồn là người dùng — không phải "chuỗi kích thước".
+    const calibrated = toExtractionSummary(documentWith({ scaleState: 'userCalibrated', scaleReasons: [] }), 0.75);
+    expect(calibrated.scaleStateLabel).toBe('Tỷ lệ đã xác nhận');
+    expect(calibrated.scaleStateNote).toBe('Do bạn hiệu chỉnh bằng một kích thước đã biết.');
+    expect(calibrated.scaleStateNote).not.toContain('chuỗi kích thước');
     expect(toExtractionSummary(documentWith(unresolved), 0.75)).not.toHaveProperty('scaleStateLabel');
   });
 

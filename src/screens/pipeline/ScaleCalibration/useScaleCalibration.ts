@@ -2916,9 +2916,13 @@ export function useScaleCalibration(
           planSizeMm: planSizeAt(layerDocument, proposedRatio ?? storedRatio ?? provisionalRatio),
           dimensionCount: layerDocument?.dimensions.length ?? 0,
           isGuess: storedRatio === null && typedRatio === null && proposedScale === null && drag === null && selectedRow === null,
-          // R9: chỉ khi số đang hiện vẫn là của máy (chưa ai gõ / kéo / chọn).
+          // R9: chỉ khi số đang hiện vẫn là của máy — chưa ai gõ / kéo / chọn, hoặc máy chọn sẵn mốc / ước lượng
+          // (không thì thẻ nói "Đo được tỷ lệ…" ở tầng chưa xác định — e2e R9 mục 4).
           ...(floorLayer.scaleState === undefined ||
-          !(storedRatio === null && typedRatio === null && proposedScale === null && drag === null && selectedRow === null)
+          !(
+            (storedRatio === null && typedRatio === null && proposedScale === null && drag === null && selectedRow === null) ||
+            (storedRatio === null && isMachineProposal)
+          )
             ? {}
             : { scaleState: scaleStateOf(floorLayer.scaleStatus, floorLayer.scaleSource, floorLayer.scaleState) }),
           ...(floorLayer.scaleReasons === undefined ? {} : { scaleReasons: floorLayer.scaleReasons }),
