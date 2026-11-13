@@ -279,12 +279,22 @@ const layoutPlacedOf = (furniture: Furniture, levelHeightMm: number | undefined,
   const pose = layoutPoseOf(furniture.id);
   if (pose === undefined) return furniture;
   const folder = roomSetMoveOf(furniture.id)?.modelId;
+  const { min, max } = furniture.boundingBox;
+  // M18 LT4: hộp theo HƯỚNG MẪU ở tư thế mới — cạnh dài hộp theo cạnh dài mẫu (`to`, khung cục bộ). Bộ chọn có thể xoay
+  // 90° món mà hộp AI đã lưu nằm ngang mẫu; giữ nguyên hộp thì hộp (khung chọn, `asset.dimensions`, lượt kéo-lưu) vuông góc
+  // với mẫu thấy được → tủ áo lưu thành 0,6 × 2,1 m chĩa ra giữa phòng. Đổi rộng ↔ sâu giữ chữ ký bộ (cạnh ngắn/dài).
+  const dims = folder === undefined ? undefined : CATALOG_MODELS[folder]?.dimensions;
+  const w0 = max.x - min.x;
+  const d0 = max.y - min.y;
+  const swap = dims !== undefined && w0 !== d0 && dims[0] !== dims[2] && w0 > d0 !== dims[0] > dims[2];
+  const w = swap ? d0 : w0;
+  const d = swap ? w0 : d0;
   const backM =
     folder !== undefined && levelHeightMm !== undefined && roomSetUniformOf(furniture.id, folder) === 'real'
       ? (itemFitOf(
           folder,
-          metresOf(furniture.boundingBox.max.x - furniture.boundingBox.min.x),
-          metresOf(furniture.boundingBox.max.y - furniture.boundingBox.min.y),
+          metresOf(w),
+          metresOf(d),
           furniture.heightMm,
           levelHeightMm,
           false,
@@ -295,16 +305,16 @@ const layoutPlacedOf = (furniture: Furniture, levelHeightMm: number | undefined,
   const yaw = yawOf(pose.rot);
   const x = Math.round((pose.cx - backM * Math.sin(yaw)) * 1000);
   const y = Math.round((pose.cy - backM * Math.cos(yaw)) * 1000);
-  const dx = x - furniture.centre.x;
-  const dy = y - furniture.centre.y;
-  const { min, max } = furniture.boundingBox;
+  // Tâm hộp giữ đúng độ lệch tâm-hộp ↔ `centre` đã lưu (thường 0).
+  const bx = (min.x + max.x) / 2 + x - furniture.centre.x;
+  const by = (min.y + max.y) / 2 + y - furniture.centre.y;
   return {
     ...furniture,
     centre: { x: millimetres(x), y: millimetres(y) },
     rotationDeg: degrees(pose.rot),
     boundingBox: {
-      min: { x: millimetres(min.x + dx), y: millimetres(min.y + dy) },
-      max: { x: millimetres(max.x + dx), y: millimetres(max.y + dy) },
+      min: { x: millimetres(bx - w / 2), y: millimetres(by - d / 2) },
+      max: { x: millimetres(bx + w / 2), y: millimetres(by + d / 2) },
     },
   };
 };
@@ -1703,6 +1713,11 @@ export const toPascalScene = (
     contextUsageOf,
     (f) => isAdoptedPair(f) || isRealFit(f),
   );
+  // M18 LT4: chốt bộ của MỌI phòng (mẫu + dời chỗ) trước node đầu tiên. Lập lười (món đầu tiên hỏi `modelFolderOf`, thường
+  // trong `itemNodeOf`) chạy SAU `layoutPlacedOf` của chính món ấy → món dựng ở hộp đã lưu trong khi sổ ghi nó đã dời; anh
+  // em chọn trên giả định sai. Cùng thành viên (đồ đã lưu, `contextRolesOf`) → cùng quyết định như lập lười; đồ sinh vào sổ
+  // sau (`addRoomSetMembers`) nhận quyết định này làm đã chốt, không dời lại món đã dựng.
+  finishRoomSet(style);
 
   /** Vòng 18: món đã dời (bản sao ở tư thế mới) theo id + các lần dời, cho trang trí/chặn chồng/chip. */
   const layoutShown = new Map<string, Furniture>();
