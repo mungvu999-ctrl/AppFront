@@ -352,9 +352,25 @@ const passSlotsOf = (door: LayoutDoor): Block[] => {
   const off = (a.w - w) / 2;
   return [-off, 0, off].map((s) => ({ ...a, cx: a.cx + s * Math.cos(t), cy: a.cy + s * Math.sin(t), w }));
 };
-/** Vùng trước cửa còn chặn với các footprint `feet`: cửa thường luôn chặn; cửa rộng khi không còn dải lối nào trống. */
-const approachShut = (door: LayoutDoor, feet: readonly Rect[]): boolean =>
-  !wideDoor(door) || !passSlotsOf(door).some((s) => !feet.some((f) => rectsOverlap(s, f)));
+/**
+ * Vùng trước cửa còn chặn với các footprint `feet` và tường `walls`: cửa thường luôn chặn; cửa rộng khi không còn dải lối nào
+ * trống. F9: tường (vật cản kết cấu) cũng che dải — so với dải bỏ lề (đúng DOOR_PASS_M, nằm trọn trong bề rộng cửa) để tường
+ * vuông góc ở mép cửa không tính là che.
+ */
+const approachShut = (door: LayoutDoor, feet: readonly Rect[], walls: readonly Rect[] = []): boolean =>
+  !wideDoor(door) ||
+  !passSlotsOf(door).some((s) => !feet.some((f) => rectsOverlap(s, f)) && !walls.some((w) => rectsOverlap({ ...s, w: DOOR_PASS_M }, w)));
+/**
+ * Ô gieo BFS của cửa (F9): dải ngay trong ô cửa, rộng bằng cửa, sâu tới hết hàng ô tự do đầu tiên (BODY_CLEAR_M + một ô) tính từ
+ * mặt tường — không gieo cả vùng trước cửa 0,9 m, vốn có thể chứa ô nằm sau một tường trong mà từ ô cửa không tới được.
+ */
+const doorSeedsOf = (doors: readonly LayoutDoor[], cell: number): Rect[] =>
+  doors.map((door) => {
+    const a = doorApproachRect(door);
+    const depth = BODY_CLEAR_M + cell + 1e-6;
+    const off = door.wallHalfM + depth / 2;
+    return { cx: door.at.x + door.inward.x * off, cy: door.at.y + door.inward.y * off, w: door.widthM, d: depth, rotationDeg: a.rotationDeg };
+  });
 /** Vật chặn cố định: khối phòng + vùng trước cửa thường + đồ đã đặt. Vùng trước cửa rộng: checkPoseWith xét riêng. */
 const blockersOf = (room: LayoutRoom, placed: readonly Block[]): Block[] => [
   ...room.blocks,
@@ -522,7 +538,8 @@ const checkPoseWith = (
   if (hit !== undefined) return { ok: false, reason: `chạm ${ORIGIN_VI[hit.origin]}` };
   // LD: cửa rộng — chặn khi footprint chạm vùng trước cửa VÀ cùng đồ đã đặt che hết mọi dải lối.
   const feet = blockers.filter((b) => b.origin === 'fixed' || b.origin === 'set');
-  if (room.doors.some((d) => wideDoor(d) && rectsOverlap(foot, doorApproachRect(d)) && approachShut(d, [...feet, foot]))) {
+  const walls = blockers.filter((b) => b.origin === 'wall');
+  if (room.doors.some((d) => wideDoor(d) && rectsOverlap(foot, doorApproachRect(d)) && approachShut(d, [...feet, foot], walls))) {
     return { ok: false, reason: `chạm ${ORIGIN_VI.approach}` };
   }
   const zoneBlockers = blockers.filter((b) => b.origin !== 'approach');
@@ -788,15 +805,14 @@ export const layoutIssuesOf = (room: LayoutRoom, pieces: readonly PlacedPiece[])
   const feetAll = [...solids, ...sorted.map((p) => p.rect)];
   const doorZones = [
     ...room.blocks.filter((b) => b.origin === 'swing'),
-    ...room.doors.filter((d) => approachShut(d, feetAll)).map(doorApproachRect),
+    ...room.doors.filter((d) => approachShut(d, feetAll, walls)).map(doorApproachRect),
   ];
   const issues: LayoutIssue[] = [];
   const m2 = (v: number): number => Math.round(v * 1000) / 1000;
   const footprints = [...walls, ...solids, ...sorted.map((p) => p.rect)];
   const grid = room.doors.length > 0 && sorted.some((p) => MAIN_ROLES.has(p.role)) ? accessGrid(room, footprints) : null;
-  const sources = room.doors.map(doorApproachRect);
-  // Một BFS cho cả phòng: nguồn (cửa) và lưới như nhau với mọi món.
-  const seen = grid === null ? null : reachedOf(grid, sources);
+  // Một BFS cho cả phòng: nguồn (ô cửa) và lưới như nhau với mọi món.
+  const seen = grid === null ? null : reachedOf(grid, doorSeedsOf(room.doors, grid.cell));
   sorted.forEach((p, i) => {
     const wallM2 = sumOverlap(p.rect, walls);
     if (!insideM(p.rect, room.outline, 0) || wallM2 > MIN_ISSUE_M2) issues.push({ kind: 'wall', id: p.id, m2: m2(wallM2), origin: 'data' });
@@ -936,7 +952,6 @@ export const searchPlacement = (
   if (!needsAccess) chosen = feasible[0];
   else {
     const fixedFeet = room.blocks.filter((b) => b.origin === 'wall' || b.origin === 'fixed' || b.origin === 'set');
-    const sources = room.doors.map(doorApproachRect);
     const reaches = (f: Feasible): boolean => {
       const foot = footprintOf(f.model.dims, f.pose);
       const memberFeet = f.fit.members.map((mp) => {
@@ -945,7 +960,7 @@ export const searchPlacement = (
       });
       const grid = accessGrid(room, [...fixedFeet, ...base.filter((b) => b.origin !== 'approach' && b.origin !== 'swing'), foot, ...memberFeet]);
       const targets = hardAccess ? needGroupsOf(specsByModel.get(f.model.modelId) ?? [], foot) : reachGroupsOf(piece.wallBack, foot);
-      return canReach(grid, sources, targets);
+      return canReach(grid, doorSeedsOf(room.doors, grid.cell), targets);
     };
     // Món phụ: tư thế không tới được chỉ bị cộng ACCESS_COST; dừng khi tư thế sau không thể rẻ hơn tư thế tốt nhất.
     let best: { f: Feasible; cost: number; reach: boolean } | undefined;

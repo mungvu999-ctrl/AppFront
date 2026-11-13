@@ -19,7 +19,7 @@ import { qualityOf } from './libraryQuality';
 import { rectOfFurniture, rectsOverlap } from './placement';
 import type { LayoutMove, LayoutRoom, Tried } from './layoutSearch';
 import type { Rect } from './placement';
-import { type Dims, fnv1a, LAYOUT_BUDGET, paletteOf, planRectOf, ROOMSET_ON, roomSetOf, SET_ROLES, autoBarred, licenceUnversioned, textureBroken, type SetDecision, type SetMember, type SetZone } from './roomSet';
+import { type Dims, fnv1a, isCornerSofaBox, LAYOUT_BUDGET, paletteOf, planRectOf, ROOMSET_ON, roomSetOf, SET_ROLES, autoBarred, licenceUnversioned, textureBroken, type SetDecision, type SetMember, type SetZone } from './roomSet';
 import { GENERATED_DRESS_PREFIX } from './sceneDressing';
 import { accentKeyOf, harmonyKeyOf, LAYOUT_FLAGS_ON, roomHarmonyPlanOf, type LayoutFlag, type RoomHarmonyPlan } from './sceneHarmony';
 import { SCENE_RULES_OFF } from './sceneLayer';
@@ -418,8 +418,27 @@ const belowQuality = (folder: string, role: FurnitureRole): boolean => {
   if (autoBarred(q)) return true;
   return (role === 'doubleBed' || role === 'singleBed') && q.completeness !== undefined && q.completeness.v !== 'full';
 };
+/**
+ * F9 vòng 18 — lọc dáng L ở đường chọn tự động ngoài bộ chọn phòng (luật cũ khi roomset tắt, món không phòng, món lệch chữ ký,
+ * mẫu concept ở đường luật cũ): vai sofa, hộp góc (`isCornerSofaBox`) của món tự động (`isAuto`, chưa sửa tay) có mẫu L đạt →
+ * chỉ mẫu L; mọi hộp khác → không mẫu L. Đang lập bộ (`setPlanning`, mẫu luật cũ của thành viên) → không lọc: `shapedMemberOf`
+ * (roomSet.ts) lọc đúng luật này trên pool/concept/luật cũ của thành viên, đổi luật cũ ở đây làm lệch nhóm mẫu chung của bộ
+ * (phát lại F9 lượt đầu: cn13/cn17 sofa góc rơi về fail-keep). Trả bộ lọc `folder → được dùng`; vai khác luôn được.
+ */
+const sofaShapeOkOf = (f: Shaped & Pick<Furniture, 'id'>, role: FurnitureRole): ((folder: string) => boolean) => {
+  if (role !== 'sofa' || setPlanning) return () => true;
+  const isL = (folder: string): boolean => qualityOf(folder)?.shape === 'L';
+  const w = metresOf(f.boundingBox.max.x - f.boundingBox.min.x);
+  const d = metresOf(f.boundingBox.max.y - f.boundingBox.min.y);
+  const auto = isAuto(f) && (f as { readonly edited?: boolean }).edited !== true;
+  const wantL =
+    auto &&
+    isCornerSofaBox(w, d) &&
+    libraryFoldersOf(role, f.variant).some((x) => isServerModel(x) && isL(x) && !QC_EXCLUDED.has(x) && !belowQuality(x, role));
+  return (folder) => isL(folder) === wantL;
+};
 const libraryModelOf = (f: Shaped & Pick<Furniture, 'id'> & Partial<Pick<Furniture, 'roomId'>>, role: FurnitureRole, style: SceneStyle): string | null => {
-  const all = libraryFoldersOf(role, f.variant).filter(isServerModel);
+  const all = libraryFoldersOf(role, f.variant).filter(isServerModel).filter(sofaShapeOkOf(f, role));
   const pick = rankedLibraryPickOf(f, role, style, all);
   if (pick === null || (!QC_EXCLUDED.has(pick) && !belowQuality(pick, role))) return pick;
   // Mẫu bị loại (libraryQc.json) hoặc dưới chuẩn hoàn thiện (vòng 13: giường chưa đủ chăn gối): xếp hạng
@@ -685,8 +704,9 @@ const baseFolderOf = (f: FolderInput, style: SceneStyle, usage?: RoomUsage, role
     const x = libraryModelOf(f, role, style);
     return x === excluded ? null : x;
   };
+  const shapeOk = sofaShapeOkOf(f, role);
   const preferred = (style.prefer[role] ?? []).filter((folder) =>
-    catalogue.includes(folder) ? isNearBest(folder) : !noConcept && isServerModel(folder),
+    catalogue.includes(folder) ? isNearBest(folder) : !noConcept && isServerModel(folder) && shapeOk(folder),
   );
   const key = PER_ITEM_ROLES.has(role) ? f.id : `${f.roomId ?? 'none'}|${role}`;
   const hashed = (folders: readonly string[]): string => folders[fnv1a(key) % folders.length] as string;
