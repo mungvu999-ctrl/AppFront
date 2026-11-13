@@ -1048,7 +1048,9 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
       kind: f.kind,
       ...(box === undefined ? {} : { box }),
       ...(liftOf(f) === 0 ? {} : { lifted: true, liftM: metresOf(liftOf(f)) }),
-      sizeFrom: sizeFromOf(f),
+      // LF2: lưu sau "Đổi mẫu" làm máy chủ đặt `edited` (BE provenance) — quyết định ảo bỏ cờ ấy để anh em thấy đúng nguồn cỡ
+      // như trước khi đổi. ponytail: món đã sửa+lưu TRƯỚC khi đổi mẫu cũng mất cờ ở đây; thêm dấu riêng nếu ca ấy cần.
+      sizeFrom: userSeen ? sizeFromOf({ ...f, edited: false }) : sizeFromOf(f),
       ...(f.heightMm === undefined ? {} : { heightM: metresOf(f.heightMm) }),
       short,
       long,

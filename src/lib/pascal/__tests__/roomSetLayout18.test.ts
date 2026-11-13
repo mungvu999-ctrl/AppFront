@@ -25,7 +25,7 @@ const roomOf = (w: number, h: number): LayoutRoom => {
       ({ ...HUMAN, id: `W-0000000WALL${i}`, levelId: LVL, centreline: { start, end: outline[(i + 1) % 4] as Point }, thicknessMm: 200, heightMm: 2700, kind: 'envelope', openingIds: [] }) as Wall,
   );
   const door = { ...HUMAN, id: 'O-0000000DOOR1', wallId: 'W-0000000WALL2', kind: 'door', offsetMm: 200, widthMm: 800, heightMm: 2100, sillHeightMm: 0, swing: 'left' } as unknown as Opening;
-  const graph = { walls, openings: [door] } as unknown as SpatialGraph;
+  const graph = { walls, openings: [door], rooms: [] } as unknown as SpatialGraph;
   return layoutRoomOf({ id: 'R-1', levelId: LVL, outline } as never, graph);
 };
 
@@ -194,5 +194,29 @@ describe('roomSetOf — thang bố trí lại M18', () => {
     const a = JSON.stringify([...run([bed()], NT)]);
     const b = JSON.stringify([...run([bed()], NT)]);
     expect(a).toBe(b);
+  });
+});
+
+// M18 LT2: món CHÍNH bố trí trước; đồ PHỤ chưa chốt còn tự dời được không làm vật chặn (chúng quyết định sau với món chính đã đặt).
+describe('roomSetOf — đồ phụ chưa chốt nhường món chính', () => {
+  // Hộp tủ thấp AI 1,6 × 1,6 giữa phòng 2,83 × 3,3: mọi tư thế giường thật 0,92 × 2,0 (dọc / ngang, sát tường nào) đều cắt hộp.
+  const cab = (over: Partial<SetMember> = {}): SetMember =>
+    member('F-cab', 'cabinet', { cx: 1.41, cy: 1.65, w: 1.6, d: 1.6 }, { kind: 'cabinet', pool: ['cab1'], current: 'cab1', ...over });
+
+  it('tủ phụ AI chưa xác nhận: giường không bị ẩn vì "chạm đồ đã đặt"; tủ quyết định sau (tại chỗ / dời / chưa bố trí có lý do)', () => {
+    const out = run([bed(), cab()], NT);
+    const b = out.get('F-bed');
+    expect(b?.to).not.toBeNull();
+    expect(b?.unplaced).toBeUndefined();
+    const c = out.get('F-cab');
+    expect(c?.to !== null || (c?.unplaced?.reason ?? '') !== '').toBe(true);
+  });
+
+  it('tủ phụ đã xác nhận (cỡ người dùng) vẫn chặn như cũ', () => {
+    for (const over of [{ sizeFrom: 'user' as const }, { userModel: 'cab1' }]) {
+      const b = run([bed(), cab(over)], NT).get('F-bed');
+      expect(b?.to).toBeNull();
+      expect(b?.unplaced?.reason).toContain('chạm đồ đã đặt');
+    }
   });
 });

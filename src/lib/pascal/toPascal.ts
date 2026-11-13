@@ -98,7 +98,16 @@ import {
   type UnplacedItem,
 } from './sceneLayer';
 import { layoutRoomOf, type MemberPose, type Pose } from './layoutSearch';
-import { isUserSeenModelId, itemFitOf, REAL_BACK_SHIFT_FIELD, REAL_FIT_FIELD, realFitModelIdOf, userSeenBaseIdOf } from './itemFit';
+import {
+  isUserExactModelId,
+  isUserSeenModelId,
+  itemFitOf,
+  REAL_BACK_SHIFT_FIELD,
+  REAL_FIT_FIELD,
+  realFitModelIdOf,
+  userModelFitOf,
+  userSeenBaseIdOf,
+} from './itemFit';
 import { USER_SEEN_FIELD } from './toSpatial';
 import {
   furnishingUsageOf,
@@ -1039,10 +1048,14 @@ const itemNodeOf = (
     model !== null && furniture.model === undefined && roomSetUniformOf(furniture.id, model.folder);
   // Cặp nhận đã lưu cỡ nhìn thấy + tâm đã gồm độ áp lưng: không dựng CỠ THẬT lần nữa (áp lưng hai lần = trôi mỗi lượt lưu).
   const uniform = exactFit && setUniform === 'real' ? false : setUniform;
+  // LF2: mẫu NGƯỜI DÙNG (hậu tố `model.id`) dựng bằng đúng phép thẻ "Đổi mẫu" dùng trong phiên (`userModelFitOf`).
+  const userModel = furniture.model !== undefined && isUserSeenModelId(furniture.model.id);
   const fit =
     model === null
       ? null
-      : itemFitOf(
+      : userModel
+        ? userModelFitOf(model.folder, furniture.boundingBox, furniture.heightMm, levelHeightMm, exactFit)
+        : itemFitOf(
           model.folder,
           widthM,
           depthM,
@@ -1100,7 +1113,8 @@ const itemNodeOf = (
           ? modelSrcOf(fit.folder)
           : (furniture.model?.src ??
             (fit === null ? `asset://appfront/${furniture.kind}` : modelSrcOf(fit.folder))),
-      dimensions: [widthM, heightM, depthM],
+      // Mẫu người dùng: cỡ hiển thị (như thẻ "Đổi mẫu" đặt) — co giãn rồi lưu thì lượt về lưu đúng cỡ đang thấy.
+      dimensions: userModel && fit !== null ? fit.shownM : [widthM, heightM, depthM],
       ...(fit === null ? {} : { offset: fit.offset, rotation: fit.rotation, scale: fit.scale }),
       // Đèn của bản vẽ (cây/bàn/trần/tường) phát sáng thật, bật sẵn, theo phong cách.
       ...(lampOf === undefined ? {} : { interactive: lampOf }),
@@ -1118,8 +1132,8 @@ const itemNodeOf = (
         ...(furniture.variant === undefined ? {} : { variant: furniture.variant }),
         ...(furniture.heightMm === undefined ? {} : { heightMm: furniture.heightMm }),
         ...(furniture.liftMm === undefined ? {} : { liftMm: furniture.liftMm }),
-        // M18 LA: mẫu người dùng đã lưu cỡ đang thấy (hậu tố `model.id`) → lượt về tiếp tục lưu cỡ ấy.
-        ...(furniture.model !== undefined && isUserSeenModelId(furniture.model.id) ? { [USER_SEEN_FIELD]: true } : {}),
+        // M18 LA/LF2: mẫu người dùng (hậu tố `model.id`) → lượt về giữ hậu tố.
+        ...(userModel ? { [USER_SEEN_FIELD]: true } : {}),
         ...(uniform === 'real' && fit !== null && fit.backShiftM !== 0
           ? { [REAL_BACK_SHIFT_FIELD]: fit.backShiftM }
           : {}),
@@ -1792,12 +1806,12 @@ export const toPascalScene = (
     const built = ruleFolder === undefined ? laidOut : withoutModel(laidOut);
     const folderFor = ruleFolder ?? sinkFolder;
     // Cặp nhận: hộp đã lưu là cỡ nhìn thấy (`toSpatial`) → dựng khớp đúng hộp, giữ cỡ người dùng co giãn.
-    // M18 LA: mẫu người dùng chọn đã lưu cỡ đang thấy (`USER_SEEN_SUFFIX`) → khớp đúng hộp + `heightMm`. Bản lưu cũ (có
-    // `model`, không hậu tố) giữ phép khớp thường.
+    // LF2: mẫu người dùng đã co giãn (`USER_EXACT_SUFFIX`: hộp đã lưu = cỡ đang thấy) → khớp đúng hộp + `heightMm`. Chỉ đổi
+    // mẫu (`USER_SEEN_SUFFIX`) → `userModelFitOf` thường vào hộp đã lưu. Bản lưu cũ (có `model`, không hậu tố) như trước.
     const exact =
       isAdoptedPair(furniture) ||
       isRealFit(furniture) ||
-      (furniture.model !== undefined && isUserSeenModelId(furniture.model.id));
+      (furniture.model !== undefined && isUserExactModelId(furniture.model.id));
     const rawNode =
       arms === null
         ? itemNodeOf(

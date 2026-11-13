@@ -151,8 +151,12 @@ test.describe('Đường chỉnh sửa thật trang 3D', () => {
       const edited = put.body.layer!.furniture.filter((f) => f.model !== undefined);
       expect(edited.length, 'chỉ món đã đổi có model').toBe(1);
       const wireId = edited[0]!.id;
-      expect(edited[0]!.model!.id.replace(/~seen$/u, '')).toBe(modelB);
+      // LF2: chỉ đổi mẫu → model.id + '~seen' (không '~fit'), hộp/cao/góc giữ đúng bản gốc (đầu vào bộ chọn không đổi).
+      expect(edited[0]!.model!.id).toBe(`${modelB}~seen`);
       expect(edited[0]!.model!.src).not.toMatch(/sig=/u);
+      const orig = originalFurniture.get(wireId)!;
+      expect(edited[0]!.boundingBox, 'đổi mẫu không đổi hộp').toEqual(orig.boundingBox);
+      expect(edited[0]!.heightMm, 'đổi mẫu không ghi heightMm').toBe(orig.heightMm);
       const siblingsKept = async () => {
         const now = srcMap(await itemsOf(page));
         return Object.keys(src0).filter((id) => id !== sofaId && now[id] !== src0[id]);
@@ -176,6 +180,7 @@ test.describe('Đường chỉnh sửa thật trang 3D', () => {
       const boxW = (f: WireFurniture) => f.boundingBox.max.x - f.boundingBox.min.x;
       expect(Math.abs(boxW(wire2) - size2[0]), `hộp PUT ${boxW(wire2)} vs thấy ${size2[0]}`).toBeLessThanOrEqual(2);
       expect(Math.abs((wire2.heightMm ?? 0) - size2[1])).toBeLessThanOrEqual(2);
+      expect(wire2.model?.id, 'co giãn: hộp lưu = cỡ đang thấy').toBe(`${modelB}~fit~seen`);
       await card.locator('span.font-medium').first().click(); // rời ô nhập (phím tắt Pascal bỏ qua ô nhập)
 
       // 4 — Ctrl+Z: về cỡ trước; Ctrl+Z: về mẫu trước. Ctrl+Shift+Z ×2: lại như sau sửa.
@@ -184,7 +189,10 @@ test.describe('Đường chỉnh sửa thật trang 3D', () => {
       await expect.poll(async () => shownMm(await nodeOf(page, sofaId))[0]).toBe(size1[0]);
       expect((await nodeOf(page, sofaId))?.asset?.id).toBe(modelB);
       put = await nextSave(n, 'undo cỡ');
-      expect(Math.abs(boxW(put.body.layer!.furniture.find((f) => f.id === wireId)!) - size1[0])).toBeLessThanOrEqual(2);
+      // LF2: về "chỉ đổi mẫu" → hộp đã lưu = hộp gốc (cỡ thấy = userModelFitOf(hộp gốc, mẫu B) = size1).
+      const wireUndo = put.body.layer!.furniture.find((f) => f.id === wireId)!;
+      expect(wireUndo.boundingBox).toEqual(originalFurniture.get(wireId)!.boundingBox);
+      expect(wireUndo.model?.id).toBe(`${modelB}~seen`);
       n = putStatus.length;
       await page.keyboard.press('Control+z');
       await expect.poll(async () => (await nodeOf(page, sofaId))?.asset?.src?.match(/sig=(\d+)/u)?.[1]).toBe(modelA);
@@ -197,7 +205,7 @@ test.describe('Đường chỉnh sửa thật trang 3D', () => {
       await expect.poll(async () => shownMm(await nodeOf(page, sofaId))[0]).toBe(size2[0]);
       put = await nextSave(n, 'redo');
       const wireRedo = put.body.layer!.furniture.find((f) => f.id === wireId)!;
-      expect(wireRedo.model?.id.replace(/~seen$/u, '')).toBe(modelB);
+      expect(wireRedo.model?.id).toBe(`${modelB}~fit~seen`);
       expect(Math.abs(boxW(wireRedo) - size2[0])).toBeLessThanOrEqual(2);
 
       // 3b — dời: inspector Pascal của trang không có ô số vị trí → chuột phải lên sofa → "Di chuyển" → rê chuột tới sàn trống →
@@ -231,7 +239,7 @@ test.describe('Đường chỉnh sửa thật trang 3D', () => {
       const dScene = Math.hypot(afterMove.position![0] - before.position![0], afterMove.position![2] - before.position![2]) * 1000;
       console.log(`dời: cảnh ${dScene.toFixed(1)} mm, PUT ${dMm.toFixed(1)} mm`);
       expect(Math.abs(dMm - dScene)).toBeLessThanOrEqual(2);
-      expect(wireMove.model?.id.replace(/~seen$/u, '')).toBe(modelB);
+      expect(wireMove.model?.id).toBe(`${modelB}~fit~seen`);
 
       // 6 — món AI khác: không model, hộp như bản gốc.
       const others = put.body.layer!.furniture.filter((f) => f.id !== wireId);

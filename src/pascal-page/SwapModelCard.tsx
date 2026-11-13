@@ -7,8 +7,8 @@
  * (id catalog đóng gói) chỉ còn là đường lùi khi thư viện máy chủ lỗi/offline.
  *
  * Đổi = `useScene.updateNode(id, { asset, … })` — cùng lối inspector dùng, nên lịch sử (Ctrl+Z) của Pascal ghi lại và bộ tự
- * lưu → cầu `onSave` → PUT chạy. Mẫu mới khớp bằng ĐÚNG phép dựng cảnh (`itemFitOf`) và node mang cờ `USER_SEEN_FIELD`:
- * lượt về lưu cỡ đang thấy, lượt dựng sau khớp đúng hộp — cỡ lúc đổi = cỡ sau tải lại.
+ * lưu → cầu `onSave` → PUT chạy. Mẫu mới khớp vào HỘP ĐÃ LƯU bằng `userModelFitOf` (cùng phép `toPascal` dùng khi tải lại) và
+ * node mang cờ `USER_SEEN_FIELD` (lượt về ghi hậu tố `model.id`); hộp/cao/góc đã lưu không đổi — cỡ lúc đổi = cỡ sau tải lại.
  *
  * Không nhập `@pascal-app/*` (vitest không nạp được gói chưa dựng): `main.tsx` truyền store và
  * `CATALOG_ITEMS` thật vào, như `createProbe`.
@@ -28,7 +28,8 @@ import {
   thumbnailOf,
 } from '@/lib/pascal/furnitureCatalog';
 import { bodyOfPascalId } from '@/lib/pascal/ids';
-import { itemFitOf, REAL_FIT_FIELD } from '@/lib/pascal/itemFit';
+import { userModelFitOf } from '@/lib/pascal/itemFit';
+import { ADOPTED_FIT_FIELD } from '@/lib/pascal/sceneDressing';
 import { roleOf, roomSetRoleOf, swapPoolOf } from '@/lib/pascal/sceneVariety';
 import { USER_SEEN_FIELD } from '@/lib/pascal/toSpatial';
 
@@ -191,29 +192,35 @@ export const isCurrentModel = (asset: SwapAsset, item: SwapCatalogItem): boolean
   return folder !== undefined && folder === folderOf(item.src);
 };
 
+/** Hộp ĐÃ LƯU của món (mm, `metadata.appfront.fields.boundingBox`); node không có thì hộp `asset.dimensions` quanh 0. */
+const savedBoxOf = (node: SwapNode, asset: SwapAsset): { min: { x: number; y: number }; max: { x: number; y: number } } => {
+  const box = fieldsOf(node)['boundingBox'] as { min?: { x?: unknown; y?: unknown }; max?: { x?: unknown; y?: unknown } } | undefined;
+  const [minX, minY, maxX, maxY] = [box?.min?.x, box?.min?.y, box?.max?.x, box?.max?.y].map(numberOf);
+  if (minX !== undefined && minY !== undefined && maxX !== undefined && maxY !== undefined) return { min: { x: minX, y: minY }, max: { x: maxX, y: maxY } };
+  const [w = 1, , d = 1] = asset.dimensions ?? [];
+  return { min: { x: -w * 500, y: -d * 500 }, max: { x: w * 500, y: d * 500 } };
+};
+
 /**
- * Bản cập nhật node khi đổi sang `item` (null = mẫu không khớp được): khớp mẫu mới vào hộp của món (`asset.dimensions`,
- * khung tâm `position`) bằng đúng `itemFitOf` lượt dựng dùng — cùng `heightMm`, trần tầng, và CỠ THẬT nếu món đang dựng
- * cỡ thật (`REAL_FIT_FIELD`). `asset.dimensions` = cỡ hiển thị; độ áp lưng (`backShiftM`) chuyển vào `position` để tâm
- * node = tâm nhìn thấy (lượt về lưu tâm ấy, lượt dựng sau khớp đúng hộp không áp lưng lần nữa). `node.scale` giữ nguyên.
+ * Bản cập nhật node khi đổi sang `item` (null = mẫu không khớp được). LF2: đổi mẫu KHÔNG đổi hộp/`heightMm`/góc/vị trí đã
+ * lưu — mẫu mới khớp vào HỘP ĐÃ LƯU bằng `userModelFitOf`, đúng phép `toPascal` dùng khi tải lại món có `model` mẫu người
+ * dùng, nên cỡ lúc đổi = cỡ sau tải lại mà không cần lưu cỡ đang thấy; bộ chọn (anh em) thấy đúng đầu vào như trước khi đổi.
+ * `asset.dimensions` = cỡ hiển thị. `node.scale` (co giãn chưa lưu) giữ nguyên — lượt về khi đó lưu cỡ đang thấy (khớp đúng).
  */
 export const swapUpdateOf = (node: SwapNode, item: SwapCatalogItem, levelHeightMm = DEFAULT_LEVEL_HEIGHT_MM): object | null => {
   const asset = node.asset;
   const folder = fitFolderOf(item);
   if (asset === undefined || folder === undefined) return null;
   const fields = fieldsOf(node);
-  const real = typeof fields[REAL_FIT_FIELD] === 'object' && fields[REAL_FIT_FIELD] !== null;
-  const [w = 1, , d = 1] = asset.dimensions ?? [];
-  const fit = itemFitOf(folder, w, d, numberOf(fields['heightMm']), levelHeightMm, false, real ? 'real' : false, real ? roleOfNode(node) : undefined);
+  const fit = userModelFitOf(folder, savedBoxOf(node, asset), numberOf(fields['heightMm']), levelHeightMm);
   if (fit === null) return null;
-  const [ox, oy, oz] = fit.offset;
-  const back = fit.backShiftM * (node.scale?.[2] ?? 1);
-  const [px, py, pz] = node.position ?? [0, 0, 0];
-  const yaw = node.rotation?.[1] ?? 0;
   // `surface` cũ thuộc mẫu cũ (độ cao mặt đặt đồ) — bỏ đi chứ không mang sang mẫu khác.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- tách `surface` ra để bỏ.
   const { surface: _surface, ...rest } = asset;
   const appfront = node.metadata?.appfront;
+  // Khớp đúng hộp (cặp nhận / mẫu người dùng đã co giãn) thuộc mẫu cũ: mẫu mới khớp thường vào hộp đã lưu.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- tách `ADOPTED_FIT_FIELD` ra để bỏ.
+  const { [ADOPTED_FIT_FIELD]: _exact, ...kept } = fields;
   return {
     asset: {
       ...rest,
@@ -222,13 +229,12 @@ export const swapUpdateOf = (node: SwapNode, item: SwapCatalogItem, levelHeightM
       thumbnail: item.thumbnail,
       src: item.src,
       dimensions: fit.shownM,
-      offset: [ox, oy, oz - fit.backShiftM],
+      offset: fit.offset,
       rotation: fit.rotation,
       scale: fit.scale,
     },
-    ...(back === 0 ? {} : { position: [px + back * Math.sin(yaw), py, pz + back * Math.cos(yaw)] }),
-    // Node AppFront: đánh dấu "mẫu người dùng, cỡ đang thấy" để lượt về lưu cỡ ấy. Node không có siêu dữ liệu AppFront giữ nguyên.
-    ...(appfront === undefined ? {} : { metadata: { ...node.metadata, appfront: { ...appfront, fields: { ...fields, [USER_SEEN_FIELD]: true } } } }),
+    // Node AppFront: đánh dấu "mẫu người dùng" để lượt về ghi hậu tố `model.id`. Node không có siêu dữ liệu AppFront giữ nguyên.
+    ...(appfront === undefined ? {} : { metadata: { ...node.metadata, appfront: { ...appfront, fields: { ...kept, [USER_SEEN_FIELD]: true } } } }),
   };
 };
 

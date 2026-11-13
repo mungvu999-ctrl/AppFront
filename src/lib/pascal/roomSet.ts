@@ -1068,11 +1068,19 @@ export const roomSetOf = (
     return (SCALE_W * (Math.abs(Math.log(s[0] / d[0])) + Math.abs(Math.log(s[2] / d[2])))) / 2;
   };
   /** Ứng viên lọt của món: mẫu → chi phí (qua ràng buộc cứng + va chạm), lý do loại theo số lượng. */
-  // Món bộ CHƯA chốt (kể cả cùng vai) giữ chỗ bằng cả hộp của nó (mặt bằng ⊆ hộp: bảo thủ).
+  /** M18 hợp đồng: bộ chọn chỉ tự dời món AI chưa xác nhận / đồ sinh — không ghim, không cỡ người dùng, không twin, không ghim người dùng. */
+  const movableOf = (x: SetMember): boolean => !x.fixed && x.sizeFrom !== 'user' && x.pinTo === undefined && x.userModel === undefined;
+  /**
+   * M18 LT2: món CHÍNH (`LAYOUT_MAIN_ROLES`) không bị chặn bởi đồ PHỤ chưa chốt còn tự dời được (AI chưa xác nhận / đồ sinh):
+   * đồ phụ quyết định SAU với món chính đã ở `placed` → tự tại chỗ / dời / vai nhỏ / chưa bố trí. Đồ phụ đã xác nhận (ghim,
+   * cỡ người dùng, mẫu người dùng, cố định) vẫn chặn.
+   */
+  const yieldsTo = (m: SetMember, x: SetMember): boolean => LAYOUT_MAIN_ROLES.has(m.role) && !LAYOUT_MAIN_ROLES.has(x.role) && movableOf(x);
+  // Món bộ CHƯA chốt (kể cả cùng vai) giữ chỗ bằng cả hộp của nó (mặt bằng ⊆ hộp: bảo thủ) — trừ đồ phụ nhường món chính.
   const pendingOf = (m: SetMember): SetZone[] =>
     inSet.flatMap((x) => {
       const xb = boxOf(x);
-      return x.id === m.id || x.fixed || x.lifted === true || xb === undefined || decided.has(x.id) || out.has(x.id)
+      return x.id === m.id || x.fixed || x.lifted === true || xb === undefined || decided.has(x.id) || out.has(x.id) || yieldsTo(m, x)
         ? []
         : [{ ...boxRectOf(xb), id: x.id, ...(x.kind === undefined ? {} : { kind: x.kind }) }];
     });
@@ -1371,8 +1379,6 @@ export const roomSetOf = (
     return { to: cur, why: `${r.why}; giữ giường luật cũ dù giường chưa hoàn chỉnh — giường không bị ẩn` };
   };
 
-  /** M18 hợp đồng: bộ chọn chỉ tự dời món AI chưa xác nhận / đồ sinh — không ghim, không cỡ người dùng, không twin, không ghim người dùng. */
-  const movableOf = (x: SetMember): boolean => !x.fixed && x.sizeFrom !== 'user' && x.pinTo === undefined && x.userModel === undefined;
   /** Cụm đi theo neo (chưa chốt): tủ đầu giường sát giường, ghế của bàn (`tableOf`), bàn trà trước sofa. */
   const clusterOf = (m: SetMember, b: SetBox): SetMember[] =>
     inSet.filter((x) => {

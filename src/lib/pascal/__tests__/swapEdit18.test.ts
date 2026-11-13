@@ -12,12 +12,12 @@ import { isCurrentModel, swapCandidates, swapUpdateOf } from '@/pascal-page/Swap
 
 import { createPascalEditCommand } from '../fromPascal';
 import { CATALOG_MODELS, clearServerLibrary, modelSrcOf, registerServerLibrary } from '../furnitureCatalog';
-import { itemFitOf, USER_SEEN_SUFFIX } from '../itemFit';
+import { itemFitOf, USER_EXACT_SUFFIX, USER_SEEN_SUFFIX, userModelFitOf } from '../itemFit';
 import QUALITY from '../libraryQuality.json' with { type: 'json' };
 import { adoptedFurnitureIdOf } from '../sceneDressing';
 import { standardSceneOf } from '../sceneStandard';
 import { sceneStyleOf } from '../sceneStyles';
-import type { LayerStyle } from '../sceneVariety';
+import { roomSetReport, type LayerStyle } from '../sceneVariety';
 import { USER_SEEN_FIELD } from '../toSpatial';
 import type { PascalItemNode, PascalNode, PascalScene } from '../types';
 
@@ -120,7 +120,7 @@ const swapped = (scene: PascalScene): { node: PascalItemNode; pick: string } => 
   return { node: { ...sofa, ...update } as PascalItemNode, pick: pick!.id };
 };
 
-describe('T4: đổi mẫu máy chủ + co giãn → lưu → dựng lại → lưu lần 2', () => {
+describe('LF2 T4: đổi mẫu máy chủ + co giãn → lưu → dựng lại → lưu lần 2', () => {
   it('cỡ/tâm nhìn thấy giữ ≤ 1 mm; bản lưu = cỡ đang thấy + model có hậu tố; lưu lại không trôi; anh em cùng mẫu', () => {
     const graph = roomGraph('livingRoom', [aiSofa()]);
     const scene = sceneOf(graph);
@@ -131,8 +131,8 @@ describe('T4: đổi mẫu máy chủ + co giãn → lưu → dựng lại → l
 
     const saved = apply(graph, commit(graph, withNode(scene, edited), [nodeId]));
     const stored = saved.furniture.find((f) => f.id === SOFA)!;
-    expect(stored.model).toEqual({ id: `${pick}${USER_SEEN_SUFFIX}`, src: `/items/${pick}/model.glb` });
-    // Hộp + cao đã lưu = cỡ đang thấy (không phải hộp AI × co giãn).
+    expect(stored.model).toEqual({ id: `${pick}${USER_EXACT_SUFFIX}`, src: `/items/${pick}/model.glb` });
+    // Co giãn là thay đổi chủ ý: hộp + cao đã lưu = cỡ đang thấy (không phải hộp AI × co giãn).
     near([stored.boundingBox.max.x - stored.boundingBox.min.x, stored.heightMm as number, stored.boundingBox.max.y - stored.boundingBox.min.y], before.size);
 
     const reloaded = sceneOf(saved);
@@ -158,6 +158,119 @@ describe('T4: đổi mẫu máy chủ + co giãn → lưu → dựng lại → l
     // Anh em cùng phòng (đồ sinh, đồ khác): cùng mẫu như lần mở đầu.
     const siblings = Object.values(scene.nodes).filter((n): n is PascalItemNode => n.type === 'item' && n.id !== nodeId && n.metadata?.appfront?.fields?.['roomId'] === ROOM);
     expect(siblings.map((n) => `${n.id}=${model(reloaded.nodes[n.id])}`)).toEqual(siblings.map((n) => `${n.id}=${model(n)}`));
+  });
+});
+
+/** Món AI chưa xác nhận tâm (cx, cy), cạnh w × d mm (ca Codex M18-2). */
+const aiAt = (id: string, variant: string, cx: number, cy: number, w: number, d: number): Furniture =>
+  aiSofa({ id, variant, centre: { x: cx, y: cy }, boundingBox: { min: { x: cx - w / 2, y: cy - d / 2 }, max: { x: cx + w / 2, y: cy + d / 2 } } } as Partial<Furniture>);
+const ARM = 'F-0000000AR018';
+const codexGraph = (): SpatialGraph =>
+  roomGraph('livingRoom', [
+    aiAt(SOFA, 'sofa', 2500, 3100, 2088, 1050),
+    aiAt('F-0000000CT018', 'coffeeTable', 2287, 1796, 1208, 462),
+    aiAt(ARM, 'armchair', 771, 2794, 726, 604),
+  ]);
+/** Quyết định bộ chọn của lượt dựng vừa chạy: id → mẫu (món mẫu người dùng: quyết định ẢO). */
+const decisions = (): Record<string, string> =>
+  Object.fromEntries(
+    Object.values(roomSetReport())
+      .flatMap((r) => r.items)
+      .map((d) => [d.id, String((d as { ai?: { to?: unknown } }).ai?.to ?? d.to)]),
+  );
+const roomModels = (scene: PascalScene): Record<string, string> =>
+  Object.fromEntries(
+    Object.values(scene.nodes)
+      .filter((n): n is PascalItemNode => n.type === 'item' && n.id !== nodeId && n.metadata?.appfront?.fields?.['roomId'] === ROOM)
+      .map((n) => [n.id, model(n)]),
+  );
+/** Như máy chủ sau PUT (BE provenance): món AI người dùng đổi mang `edited: true`. */
+const serverEdited = (g: SpatialGraph, ids: readonly string[]): SpatialGraph => ({
+  ...g,
+  furniture: g.furniture.map((f) => (ids.includes(f.id) ? ({ ...f, edited: true } as Furniture) : f)),
+});
+
+describe('LF2: đổi mẫu không ghi đè đầu vào bộ chọn (ca Codex M18-2)', () => {
+  const swapTo = (scene: PascalScene, id: string): PascalItemNode => {
+    const sofa = scene.nodes[nodeId] as PascalItemNode;
+    const pick = swapCandidates(sofa as never, []).find((o) => o.id === id);
+    expect(pick, `thẻ có ${id}`).toBeDefined();
+    return { ...sofa, ...swapUpdateOf(sofa as never, pick!, 3000) } as PascalItemNode;
+  };
+  const PICK = 'sofa-cognac-leather-2';
+
+  it('sofa → sofa-cognac-leather-2: lưu giữ hộp/cao/góc, chỉ thêm model ~seen; tải lại: cỡ/tâm ≤ 2 mm, ghế bành + mọi anh em giữ mẫu, quyết định ảo như trước', () => {
+    const graph = codexGraph();
+    const scene = sceneOf(graph);
+    const before = decisions();
+    const models0 = roomModels(scene);
+    const node = swapTo(scene, PICK);
+    const fit = userModelFitOf(PICK, aiAt(SOFA, 'sofa', 2500, 3100, 2088, 1050).boundingBox, undefined, 3000)!;
+    expect(node.asset.scale).toEqual(fit.scale);
+    const shown = { size: seenMm(node, PICK), centre: seenCentre(node) };
+
+    const saved = apply(graph, commit(graph, withNode(scene, node), [nodeId]));
+    const original = graph.furniture.find((f) => f.id === SOFA)!;
+    const stored = saved.furniture.find((f) => f.id === SOFA)!;
+    expect(stored.model).toEqual({ id: `${PICK}${USER_SEEN_SUFFIX}`, src: `/items/${PICK}/model.glb` });
+    expect(stored.heightMm, 'đổi mẫu không ghi heightMm').toBeUndefined();
+    expect(stored.boundingBox).toEqual(original.boundingBox);
+    expect(stored.centre).toEqual(original.centre);
+    expect(stored.rotationDeg).toBe(original.rotationDeg);
+    expect(saved.furniture.filter((f) => f.id !== SOFA)).toEqual(graph.furniture.filter((f) => f.id !== SOFA));
+
+    // Tải lại: đúng bản lưu, và như máy chủ trả sau PUT (cờ `edited` BE đặt cho món vừa đổi).
+    for (const back of [saved, serverEdited(saved, [SOFA])]) {
+      const reloaded = sceneOf(back);
+      const after = decisions();
+      expect(after[ARM], 'ghế bành giữ mẫu').toBe(before[ARM]);
+      expect(after[SOFA], 'quyết định ảo của sofa như trước khi đổi').toBe(before[SOFA]);
+      expect(after).toEqual(before);
+      expect(roomModels(reloaded)).toEqual(models0);
+      const again = reloaded.nodes[nodeId] as PascalItemNode;
+      expect(again.asset.id).toBe(PICK);
+      near(seenMm(again, PICK), shown.size, 2);
+      near(seenCentre(again), shown.centre, 2);
+      expect(() => commit(back, reloaded, [nodeId])).toThrow(/không có gì để ghi/);
+    }
+  });
+
+  it('đổi mẫu → co giãn → lưu (cỡ đang thấy, ~fit~seen) → tải lại khớp ≤ 2 mm; hoàn tác co giãn → hộp AI + ~seen; hoàn tác đổi mẫu → không model', () => {
+    const graph = codexGraph();
+    const scene = sceneOf(graph);
+    const original = graph.furniture.find((f) => f.id === SOFA)!;
+    const swappedNode = swapTo(scene, PICK);
+    const scaled = { ...swappedNode, scale: [1.3, 1.1, 0.9] } as PascalItemNode;
+    const shown = { size: seenMm(scaled, PICK), centre: seenCentre(scaled) };
+    const saved = apply(graph, commit(graph, withNode(scene, scaled), [nodeId]));
+    const stored = saved.furniture.find((f) => f.id === SOFA)!;
+    expect(stored.model?.id).toBe(`${PICK}${USER_EXACT_SUFFIX}`);
+    near([stored.boundingBox.max.x - stored.boundingBox.min.x, stored.heightMm as number, stored.boundingBox.max.y - stored.boundingBox.min.y], shown.size, 2);
+    const reloaded = sceneOf(serverEdited(saved, [SOFA]));
+    const again = reloaded.nodes[nodeId] as PascalItemNode;
+    near(seenMm(again, PICK), shown.size, 2);
+    near(seenCentre(again), shown.centre, 2);
+    expect(() => commit(saved, reloaded, [nodeId])).toThrow(/không có gì để ghi/);
+
+    // Ctrl+Z co giãn (cùng phiên): node về ảnh sau đổi mẫu → hộp/cao AI, hậu tố chỉ-đổi-mẫu.
+    const undoScale = apply(saved, commit(saved, withNode(scene, swappedNode), [nodeId])).furniture.find((f) => f.id === SOFA)!;
+    expect(undoScale.model?.id).toBe(`${PICK}${USER_SEEN_SUFFIX}`);
+    expect(undoScale.boundingBox).toEqual(original.boundingBox);
+    // `heightMm` không xét: fromPascal `carriedFrom` mang `heightMm` cũ khi lượt về không viết (chung mọi món, ngoài làn LF2).
+    // Ctrl+Z đổi mẫu: node về ảnh lúc nạp → không còn model.
+    const undoSwap = apply(saved, commit(saved, withNode(scene, scene.nodes[nodeId] as PascalNode), [nodeId])).furniture.find((f) => f.id === SOFA)!;
+    expect(undoSwap.model).toBeUndefined();
+    expect(undoSwap.boundingBox).toEqual(original.boundingBox);
+  });
+
+  it('đổi hai lần trong phiên (A → B → C) = đổi thẳng A → C: thẻ khớp vào hộp ĐÃ LƯU, không vào cỡ mẫu B', () => {
+    const scene = sceneOf(codexGraph());
+    const viaB = swapTo(scene, PICK);
+    const other = swapCandidates(viaB as never, []).find((o) => o.id !== PICK && !isCurrentModel(viaB.asset as never, o))!;
+    const twice = { ...viaB, ...swapUpdateOf(viaB as never, other, 3000) } as PascalItemNode;
+    const direct = { ...(scene.nodes[nodeId] as PascalItemNode), ...swapUpdateOf(scene.nodes[nodeId] as never, other, 3000) } as PascalItemNode;
+    expect(twice.asset).toEqual(direct.asset);
+    expect(twice.position).toEqual(direct.position);
   });
 });
 
