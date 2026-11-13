@@ -1262,8 +1262,9 @@ describe('useScaleCalibration — áp mọi tầng (A9)', () => {
     await settleAsync();
 
     expect(harness.writeLayer.mock.calls.map(([input]) => [input.floorId, input.baseVersion, input.body])).toEqual([
-      [FLOORS[0].floorId, 4, { scaleEvidence: 'measured', scaleMillimetresPerPixel: REFERENCE_SCALE.millimetresPerPixel }],
-      [FLOORS[1].floorId, 5, { scaleEvidence: 'measured', scaleMillimetresPerPixel: REFERENCE_SCALE.millimetresPerPixel }],
+      // K4: tầng ĐÍCH chưa ai đo kích thước thật nào trên chính nó — chép tỷ lệ sang là chấp nhận số máy.
+      [FLOORS[0].floorId, 4, { scaleEvidence: 'machineAccepted', scaleMillimetresPerPixel: REFERENCE_SCALE.millimetresPerPixel }],
+      [FLOORS[1].floorId, 5, { scaleEvidence: 'machineAccepted', scaleMillimetresPerPixel: REFERENCE_SCALE.millimetresPerPixel }],
     ]);
     expect(maxInFlight).toBe(1);
 
@@ -2325,6 +2326,58 @@ describe('useScaleCalibration — K4: chấp nhận số máy khác hiệu chu�
       scaleEvidence: 'machineAccepted',
       scaleMillimetresPerPixel: expect.any(Number) as number,
     });
+  });
+
+  it('bấm chip kích thước OCR rồi kéo đoạn: KHÔNG gõ mm nào nên vẫn là machineAccepted', async () => {
+    /* Bấm chip điền sẵn vào ô số mm chính con số MÁY đọc. Kéo một đoạn trùng đường kích thước đó
+       không đưa thêm một kích thước thật nào — nâng lên "người dùng hiệu chỉnh" là nâng độ tin
+       mà không có căn cứ mới (R10 K4). */
+    simulateProvisionalScale(FLOOR_ID, PROVISIONAL_RATIO, 'pipeline', {
+      scaleState: 'estimated',
+      scaleReasons: ['door'],
+      scaleBasis: 'door',
+    });
+    const base = await makeHarness();
+    const gateway = withScaleCapabilities(base.gateway, {
+      readDimensionChips: async () => [
+        { id: 'n1', text: '10275', valueMm: millimetres(10275), box: { min: { x: 0.1, y: 0.1 }, max: { x: 0.2, y: 0.12 } } },
+      ],
+    });
+    const mounted = await mountFloor(base, gateway);
+
+    await act(async () => {
+      mounted.result.current.actions.onPickDimensionChip?.('n1');
+    });
+    await dragReferenceLine(mounted);
+    await applyNow(mounted);
+
+    expect(scaleCalls(base).map(([, evidence]) => evidence)).toEqual(['machineAccepted']);
+  });
+
+  it('bấm chip rồi TỰ SỬA số mm thành kích thước thật: đó mới là measured', async () => {
+    simulateProvisionalScale(FLOOR_ID, PROVISIONAL_RATIO, 'pipeline', {
+      scaleState: 'estimated',
+      scaleReasons: ['door'],
+      scaleBasis: 'door',
+    });
+    const base = await makeHarness();
+    const gateway = withScaleCapabilities(base.gateway, {
+      readDimensionChips: async () => [
+        { id: 'n1', text: '10275', valueMm: millimetres(10275), box: { min: { x: 0.1, y: 0.1 }, max: { x: 0.2, y: 0.12 } } },
+      ],
+    });
+    const mounted = await mountFloor(base, gateway);
+
+    await act(async () => {
+      mounted.result.current.actions.onPickDimensionChip?.('n1');
+    });
+    await dragReferenceLine(mounted);
+    await act(async () => {
+      mounted.result.current.actions.onChangeRealLength(typedNumber(REFERENCE_REAL_LENGTH));
+    });
+    await applyNow(mounted);
+
+    expect(scaleCalls(base).map(([, evidence]) => evidence)).toEqual(['measured']);
   });
 
   it('dùng tạm tỷ lệ máy ước lượng gửi machineAccepted; cache N16 vẫn "ước lượng" + userAccepted', async () => {

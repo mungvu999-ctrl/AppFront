@@ -313,6 +313,13 @@ const COPY = {
 const appliedToastTitle = (ratioLabel: string, floorCount: number): string =>
   floorCount > 1 ? `Đã áp tỷ lệ ${ratioLabel} cho ${floorCount} tầng` : `Đã áp tỷ lệ ${ratioLabel} cho tầng này`;
 
+/**
+ * K4: "Áp cho mọi tầng" chép tỷ lệ của tầng ĐANG ĐO sang các tầng khác. Trên chính những tầng kia
+ * chưa ai đo kích thước thật nào, nên chúng chỉ là "đã chấp nhận số máy" — gọi chúng là
+ * "người dùng hiệu chỉnh" là nâng độ tin mà không có căn cứ mới.
+ */
+const ALL_FLOORS_EVIDENCE: ScaleEvidence = 'machineAccepted';
+
 /** Ví dụ `"Áp tỷ lệ này cho 3 tầng có bản vẽ?"`. */
 const allFloorsTitle = (count: string): string => `Áp tỷ lệ này cho ${count} tầng có bản vẽ?`;
 
@@ -1063,6 +1070,12 @@ export function useScaleCalibration(
   dragRef.current = drag;
   const [nudgeTarget, setNudgeTarget] = useState<NudgeTarget>('end');
   const [realLengthText, setRealLengthText] = useState('');
+  /**
+   * K4: số mm trong ô là số MÁY đọc (đặt sẵn khi bấm một chip kích thước OCR), người dùng chưa sửa.
+   * Kéo một đoạn với số đặt sẵn này thì người dùng không hề đưa vào kích thước thật nào — đó vẫn là
+   * chấp nhận số máy, không phải hiệu chỉnh.
+   */
+  const [isRealLengthFromChip, setIsRealLengthFromChip] = useState(false);
   /** UX41 U01: chữ "1:100" người dùng gõ, gắn theo tầng để đổi tầng không mang sang. */
   const [ratioEntry, setRatioEntry] = useState<{ readonly floorId: string; readonly text: string } | null>(null);
   /** UX-R4 U11: diện tích căn (m²) người dùng gõ, gắn theo tầng như `ratioEntry`. */
@@ -1299,7 +1312,13 @@ export function useScaleCalibration(
    * đoạn + gõ mm. Chọn một hàng kích thước máy đọc, thẻ gợi ý, số máy đặt sẵn = `machineAccepted`.
    */
   const proposalEvidence: ScaleEvidence =
-    typedRatio !== null || (computedMethod === 'referenceLine' && proposedScale !== null && !isSuggestionActive)
+    typedRatio !== null ||
+    (computedMethod === 'referenceLine' &&
+      proposedScale !== null &&
+      !isSuggestionActive &&
+      /* Số mm là số máy đọc đặt sẵn từ chip kích thước: kéo đoạn trùng chính chữ số đó không phải
+         là đưa vào một kích thước thật, nên không được nâng lên "người dùng hiệu chỉnh". */
+      !isRealLengthFromChip)
       ? 'measured'
       : 'machineAccepted';
   /** Đang đề nghị một số máy — chỉ áp cho tầng này (K4). Chưa có đề nghị thì chưa ẩn gì. */
@@ -1773,6 +1792,7 @@ export function useScaleCalibration(
       setPickedChip({ floorId, id: chipId });
       setMethod('referenceLine');
       setRealLengthText(String(target.valueMm));
+      setIsRealLengthFromChip(true);
 
       if (currentFrame !== null && size.width > 0 && size.height > 0) {
         const min = toPixelPoint(currentFrame, target.box.min);
@@ -1786,6 +1806,8 @@ export function useScaleCalibration(
 
   const onChangeRealLength = useCallback((text: string) => {
     setRealLengthText(text);
+    // Người dùng tự gõ thì số không còn là số máy đặt sẵn nữa.
+    setIsRealLengthFromChip(false);
   }, []);
 
   const onConfirmRealLength = useCallback(() => {
@@ -1795,6 +1817,7 @@ export function useScaleCalibration(
   const onRemeasure = useCallback(() => {
     setDrag(null);
     setRealLengthText('');
+    setIsRealLengthFromChip(false);
     setNudgeTarget('end');
   }, []);
 
@@ -2222,7 +2245,7 @@ export function useScaleCalibration(
           rememberProvisional(target.floorId);
 
           try {
-            await saveScale(target.floorId, ratio, 'measured', target.revision);
+            await saveScale(target.floorId, ratio, ALL_FLOORS_EVIDENCE, target.revision);
             saved.push(target);
           } catch (error: unknown) {
             failed.push(target.name);
@@ -2236,7 +2259,7 @@ export function useScaleCalibration(
         commitSaved(
           saved.map((target) => target.floorId),
           ratio,
-          'measured',
+          ALL_FLOORS_EVIDENCE,
         );
         setOfflineFloors(offline.length > 0 ? { ratio, targets: offline } : null);
         setApplyOutcome(saved.length > 0 && failed.length === 0 && blocked.length === 0 ? 'success' : 'failed');
