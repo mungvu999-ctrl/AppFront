@@ -45,7 +45,7 @@ const q = (role: string, frame: readonly [number, number, number]): ModelQuality
   }) as ModelQuality;
 
 /** Hai tủ cùng vai: `wide` (1,6 × 0,5) hợp tông hơn, `narrow` (0,8 × 0,5) lệch tông. */
-const DIMS: Record<string, Dims> = { wide: [1.6, 1.8, 0.5], narrow: [0.8, 1.8, 0.5], deep: [0.8, 1.8, 1.0], slim: [0.8, 1.8, 0.5] };
+const DIMS: Record<string, Dims> = { wide: [1.6, 1.8, 0.5], narrow: [0.8, 1.8, 0.5], deep: [0.8, 1.8, 0.7], slim: [0.8, 1.8, 0.5] };
 const TABLE: Record<string, ModelQuality> = {
   wide: q('closet', [62, 8, 24]),
   narrow: q('closet', [45, 25, 10]),
@@ -93,8 +93,9 @@ describe('roomSetOf — vùng mở cửa và tường từ đồ thị thật', 
     expect(d?.top?.map(([f]) => f)).toEqual(['wide', 'narrow']);
   });
 
-  it('tường: mẫu sâu 1,0 m xuyên thân tường (y -0,1..0,1) bị loại "va chạm", mẫu mỏng được chọn; không tường thì mẫu sâu thắng', () => {
-    const box = { cx: 1.0, cy: 0.5, w: 0.8, d: 1.0 };
+  it('tường: mẫu sâu 0,7 m xuyên thân tường (y -0,1..0,1) bị loại "va chạm", mẫu mỏng được chọn; không tường thì mẫu sâu thắng', () => {
+    // Vòng 17: tủ áo sâu 1,0 m nay trượt "ngoài công năng" (FUNC_RANGE closet sâu ≤ 0,7) → dùng tủ sâu 0,7 m, hộp y 0,01..0,71.
+    const box = { cx: 1.0, cy: 0.36, w: 0.8, d: 0.7 };
     const d = run(closet(box, ['deep', 'slim']), zonesOf(graphOf(false)));
     expect(d?.to).toBe('slim');
     expect(d?.rejects).toEqual({ 'va chạm': 1 });

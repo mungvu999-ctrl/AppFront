@@ -71,6 +71,7 @@ import { isServerModel, modelSrcOf, namedFolderOf, serverKindOf, serverModelPath
 import { appFrontIdOf, bodyOfPascalId, BUILDING_NODE_ID, toPascalId } from './ids';
 import { LIBRARY_MATERIAL_IDS } from './libraryMaterialIds';
 import { libRoles2BaseIdOf } from './libraryRoles2';
+import { REAL_BACK_SHIFT_FIELD, REAL_FIT_FIELD, realFitModelIdOf } from './itemFit';
 import { worldBoxOf } from './orientDetected';
 import { roofOf } from './roofs';
 import { DRESSING_OFF_MAX } from './sceneLayer';
@@ -743,9 +744,11 @@ export const isLooseGenerated = (node: PascalNode | undefined): boolean =>
  * góc khác `fields.rotationDeg` (chỉ khi lượt đi có ghi trường này), hoặc đã đổi mẫu.
  * Lượt nạp đầu khai mọi node là "đã đổi" nên không được nhận nuôi gì ở đó.
  */
-export const isEditedGenerated = (node: PascalNode | undefined): boolean => {
-  if (node?.type !== 'item' || adoptableRoomOf(node) === null) return false;
+export const isEditedGenerated = (node: PascalNode | undefined): boolean =>
+  node?.type === 'item' && adoptableRoomOf(node) !== null && isEditedItem(node);
 
+/** Món đã bị người dùng dời / kéo / xoay / nâng / sơn / đổi mẫu so với siêu dữ liệu lượt đi (luật của `isEditedGenerated`). */
+const isEditedItem = (node: PascalItemNode): boolean => {
   const fields = fieldsOf(node);
   const min = readCorner(fields, 'min');
   const max = readCorner(fields, 'max');
@@ -780,6 +783,19 @@ const seenSizeM = (item: PascalItemNode): PascalVec3 => {
   const shown = fields[SHOWN_SIZE_FIELD];
   const valid = Array.isArray(shown) && shown.length === 3 && shown.every((v) => typeof v === 'number' && v > 0);
   return folder !== null && valid && modelSrcOf(folder) === item.asset.src ? (shown as unknown as PascalVec3) : item.asset.dimensions;
+};
+
+/**
+ * `REAL_FIT_FIELD` của node khi mẫu vẫn là mẫu lượt đi dựng (người dùng chưa "Đổi mẫu"): thư mục + cỡ hiển thị (m, chỉ có ở
+ * lượt dựng cỡ thật từ hộp AI), hoặc null.
+ */
+const realFitOf = (item: PascalItemNode): { readonly folder: string; readonly shownM?: PascalVec3 } | null => {
+  const raw = fieldsOf(item)[REAL_FIT_FIELD];
+  if (typeof raw !== 'object' || raw === null) return null;
+  const { folder, shownM } = raw as { folder?: unknown; shownM?: unknown };
+  if (typeof folder !== 'string' || !MODEL_SRC.test(serverModelPath(folder)) || modelSrcOf(folder) !== item.asset.src) return null;
+  const valid = Array.isArray(shownM) && shownM.length === 3 && shownM.every((v) => typeof v === 'number' && v > 0);
+  return valid ? { folder, shownM: shownM as unknown as PascalVec3 } : { folder };
 };
 
 /** Cùng cỡ, đặt quanh tâm: hộp lượt đi của món rời có thể ở khung riêng (lan can quanh gốc toạ độ); màn 2D đọc hộp thế giới. */
@@ -857,9 +873,18 @@ const collectItem = (scene: PascalScene, item: PascalItemNode, levelId: LevelId,
   if (!isGeneratedNodeId(item.id) || adoptedOne) {
     const fields = fieldsOf(item);
     const knownId = appFrontIdOf('furniture', item.id);
+    // Món sinh vừa nhận / đồ thật của cặp nhận: lưu CỠ NHÌN THẤY (mẫu × khớp × co giãn của người dùng) cả ba trục.
+    // Món AI CỠ THẬT (`REAL_FIT_FIELD`) người dùng vừa sửa: cũng lưu cỡ nhìn thấy + mẫu đang thấy (Codex M17-2 #3) — lượt
+    // dựng sau khớp đúng hộp; chưa sửa thì không ghi gì (giữ hộp AI, lượt dựng sau roomSet chọn lại như cũ).
+    const realFit = realFitOf(item);
+    const realSeen = realFit?.shownM !== undefined && !roomAdopted && isEditedItem(item) ? realFit.shownM : null;
+    const seen = roomAdopted || fields[ADOPTED_FIT_FIELD] === true ? seenSizeM(item) : realSeen;
+    // Món CỠ THẬT áp lưng tường bằng `asset.offset`: lưu cỡ nhìn thấy thì tâm lưu = tâm nhìn thấy (dời z cục bộ × co
+    // giãn người dùng, xoay theo yaw) — lượt dựng lại khớp đúng hộp, không còn độ dời ấy (Codex M17-1 #5).
+    const back = seen === null ? 0 : (readNumber(fields, REAL_BACK_SHIFT_FIELD) ?? 0) * item.scale[2];
     const centre: Point = {
-      x: millimetresOf(item.position[0]),
-      y: millimetresOf(item.position[2]),
+      x: millimetresOf(item.position[0] + back * Math.sin(item.rotation[1])),
+      y: millimetresOf(item.position[2] + back * Math.cos(item.rotation[1])),
     };
     const min = readCorner(fields, 'min');
     const max = readCorner(fields, 'max');
@@ -870,9 +895,9 @@ const collectItem = (scene: PascalScene, item: PascalItemNode, levelId: LevelId,
     // Hướng tự đoán (`orientDetected`, góc gốc 0) mà người dùng chưa xoay: trả lại góc 0 + hộp gốc, để món
     // không thành "đã sửa" chỉ vì cách hiển thị. Xoay rồi thì góc mới là của người dùng.
     const shownDeg = readNumber(fields, 'rotationDeg');
-    const autoKept = fields['autoFacing'] === true && shownDeg !== null && rotationDeg === normaliseDegrees(asDegrees(shownDeg));
-    // Món sinh vừa nhận / đồ thật của cặp nhận: lưu CỠ NHÌN THẤY (mẫu × khớp × co giãn của người dùng) cả ba trục.
-    const seen = roomAdopted || fields[ADOPTED_FIT_FIELD] === true ? seenSizeM(item) : null;
+    // Lưu cỡ nhìn thấy (hộp theo trục riêng của món) thì giữ góc đang thấy — góc 0 + hộp cục bộ là quay sai món tự hướng.
+    const autoKept =
+      seen === null && fields['autoFacing'] === true && shownDeg !== null && rotationDeg === normaliseDegrees(asDegrees(shownDeg));
 
     collector.furniture.push({
       ...reviewOf(item, knownId !== null),
@@ -890,6 +915,9 @@ const collectItem = (scene: PascalScene, item: PascalItemNode, levelId: LevelId,
       // Món rời thành đồ thật giữ đúng mẫu và độ nâng lượt đi tự chọn (lan can, mặt bếp…), không đoán lại theo `kind`.
       ...(looseAdopted && MODEL_SRC.test(item.asset.src) ? { model: { id: item.asset.id.slice(0, 120), src: savedSrcOf(item.asset.src) } } : {}),
       ...(looseAdopted && item.position[1] > 0.001 ? { liftMm: millimetres(Math.round(millimetresOf(item.position[1]))) } : {}),
+      ...(realFit !== null && (realSeen !== null || fields[ADOPTED_FIT_FIELD] === true)
+        ? { model: { id: realFitModelIdOf(kind), src: serverModelPath(realFit.folder) } }
+        : {}),
     });
   }
 
