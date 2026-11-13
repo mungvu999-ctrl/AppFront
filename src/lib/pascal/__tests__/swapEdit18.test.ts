@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { denormalizeSpatial, normalizeSpatial } from '@/domain/spatial/normalize';
 import type { Furniture, Point, Room, SpatialGraph, Wall } from '@/domain/spatial/types';
 import { createDerivedHistory, recordDerived, restoreDerived } from '@/pascal-page/bridge/derivedHistory';
+import { resizedScale, sizeMmOf } from '@/pascal-page/itemSize';
 import { isCurrentModel, swapCandidates, swapUpdateOf } from '@/pascal-page/SwapModelCard';
 
 import { createPascalEditCommand } from '../fromPascal';
@@ -261,6 +262,27 @@ describe('LF2: đổi mẫu không ghi đè đầu vào bộ chọn (ca Codex M1
     const undoSwap = apply(saved, commit(saved, withNode(scene, scene.nodes[nodeId] as PascalNode), [nodeId])).furniture.find((f) => f.id === SOFA)!;
     expect(undoSwap.model).toBeUndefined();
     expect(undoSwap.boundingBox).toEqual(original.boundingBox);
+  });
+
+  it('LF4 ô "Dài (mm)" (HomeownerCard, giữ tỉ lệ): đổi mẫu → +300 mm → lưu ~fit~seen, hộp/cao = cỡ thấy ±2 → tải lại ±2 mm', () => {
+    const graph = codexGraph();
+    const scene = sceneOf(graph);
+    const swappedNode = swapTo(scene, PICK);
+    // Đúng phép ô số: `resizedScale(asset.dimensions, node.scale, trục 0, mm mới, giữ tỉ lệ)` → `updateNode({ scale })`.
+    const shownMm = sizeMmOf(swappedNode.asset.dimensions, swappedNode.scale);
+    const resized = resizedScale(swappedNode.asset.dimensions, swappedNode.scale, 0, Math.round(shownMm[0]) + 300, true, true);
+    if (!resized.ok) throw new Error(resized.reason);
+    const scaled = { ...swappedNode, scale: [...resized.scale] } as PascalItemNode;
+    const shown = { size: seenMm(scaled, PICK), centre: seenCentre(scaled) };
+    const saved = apply(graph, commit(graph, withNode(scene, scaled), [nodeId]));
+    const stored = saved.furniture.find((f) => f.id === SOFA)!;
+    expect(stored.model?.id).toBe(`${PICK}${USER_EXACT_SUFFIX}`);
+    near([stored.boundingBox.max.x - stored.boundingBox.min.x, stored.heightMm as number, stored.boundingBox.max.y - stored.boundingBox.min.y], shown.size, 2);
+    for (const back of [saved, serverEdited(saved, [SOFA])]) {
+      const again = sceneOf(back).nodes[nodeId] as PascalItemNode;
+      near(seenMm(again, PICK), shown.size, 2);
+      near(seenCentre(again), shown.centre, 2);
+    }
   });
 
   it('đổi hai lần trong phiên (A → B → C) = đổi thẳng A → C: thẻ khớp vào hộp ĐÃ LƯU, không vào cỡ mẫu B', () => {
