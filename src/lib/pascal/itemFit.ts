@@ -84,6 +84,16 @@ export const REAL_BACK_SHIFT_FIELD = 'realBackShiftM';
 export const REAL_FIT_FIELD = 'realFit';
 /** `model.id` của món AI cỡ thật người dùng đã sửa: dựng khớp đúng hộp, không chọn lại mẫu (tiền tố `appfront-` = không phải "Đổi mẫu"). */
 export const realFitModelIdOf = (kind: string): string => `appfront-fit-${kind}`;
+/**
+ * M18 LA — hậu tố `model.id` của mẫu NGƯỜI DÙNG chọn qua thẻ "Đổi mẫu", đã lưu CỠ ĐANG THẤY (toSpatial `USER_SEEN_FIELD`).
+ * Schema `model` chỉ có `{ id, src }` (như tiền tố provenance libroles2). Bản lưu cũ có `model` mà không có hậu tố: dựng như
+ * trước (khớp hộp thường) và roomSet coi như ghim cũ (vẫn dẫn bảng màu/nhóm).
+ */
+export const USER_SEEN_SUFFIX = '~seen';
+/** `model.id` mang hậu tố cỡ-đã-thấy (mẫu người dùng chọn qua "Đổi mẫu"). */
+export const isUserSeenModelId = (id: string): boolean => id.endsWith(USER_SEEN_SUFFIX);
+/** Id mẫu của `model.id` (bỏ hậu tố cỡ-đã-thấy). */
+export const userSeenBaseIdOf = (id: string): string => (isUserSeenModelId(id) ? id.slice(0, -USER_SEEN_SUFFIX.length) : id);
 
 export interface ItemFit {
   readonly folder: string;

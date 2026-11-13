@@ -20,7 +20,10 @@ import type { Furniture, FurnitureId } from '@/domain/spatial/types';
 
 /** Tăng khi luật sinh/sửa cảnh đổi kết quả cho cùng dữ liệu (ghi vào provenance để so cảnh cũ/mới). */
 // 2 (vòng 12): bộ nội thất theo phòng `roomset` bật mặc định — đổi mẫu thư viện của đồ sinh/AI cho cùng dữ liệu.
-export const SCENE_LAYER_VERSION = 2;
+// 3 (vòng 18): lớp bố trí lại `layout` — đồ AI chưa xác nhận / đồ sinh được dời chỗ theo cỡ thật cho cùng dữ liệu.
+export const SCENE_LAYER_VERSION = 3;
+/** Phiên bản luật dời chỗ (`layoutSearch.ts` qua `roomSet`) ghi trong `SceneProvenance.layout`. */
+export const LAYOUT_VERSION = 1;
 
 export type SceneObjectClass = 'human' | 'ai' | 'generated';
 
@@ -39,6 +42,8 @@ export interface SceneProvenance {
   readonly hostId?: string;
   /** Lớp dẫn xuất đổi mẫu thư viện của món (vòng 12 `roomset`): luật + phiên bản luật + mẫu luật cũ. */
   readonly model?: { readonly rule: 'roomset'; readonly version: number; readonly from: string | null };
+  /** Vòng 18: lớp dẫn xuất DỜI CHỖ/XOAY món (chỉ trong cảnh, không lưu); lý do nằm ở `SceneRepair` rule `layout`. */
+  readonly layout?: { readonly rule: 'layout'; readonly version: number };
 }
 
 /**
@@ -88,4 +93,16 @@ export interface SceneLayerSummary {
   readonly generatedByRule: Readonly<Record<string, number>>;
   /** Số node đồ mang `SceneRepair` (`metadata.appfront.fields.repair`). */
   readonly repairs: number;
+  /** Vòng 18: các lần dời chỗ rule `layout` của lượt dựng (chip lỗi đặt đồ liệt kê). */
+  readonly layout?: readonly SceneRepair[];
+  /** Vòng 18: món bộ chọn không tìm được chỗ — node ẩn, có khung hộp gốc `outlineId` (ẩn sẵn, bật được). */
+  readonly unplaced?: readonly UnplacedItem[];
+}
+
+/** Một món "chưa bố trí được" hiện trong chip: nhãn tiếng Việt + lý do của bộ chọn + node khung hộp gốc. */
+export interface UnplacedItem {
+  readonly furnitureId: string;
+  readonly label: string;
+  readonly reason: string;
+  readonly outlineId: string;
 }

@@ -4,8 +4,11 @@
  * phòng, trùng, bồn cầu đối diện lavabo. Lỗi tính trên đồ thị ĐÃ sửa cảnh (`repairScene`, đồ AI chưa xác nhận);
  * mục "Đã tự xử lý N" liệt kê từng lần sửa kèm lý do, nút "Hiện dữ liệu gốc" tắt sửa cảnh trong phiên
  * (`sceneRepairStore` → cầu nối dựng lại). Bấm một dòng thì chọn món đồ đó trong trình dựng. Không có gì thì ẩn.
+ * Vòng 18: lần dời chỗ của bộ chọn (rule `layout`, `layer.layout`) vào cùng mục "Đã tự xử lý"; món bộ chọn không tìm được
+ * chỗ (`layer.unplaced`) hiện "Chưa bố trí được: <món> — <lý do>" + nút "Xem hộp gốc" bật/tắt khung hộp gốc trong cảnh.
  */
 /* eslint-disable react-refresh/only-export-components -- hàm thuần đi kèm chip để test gọi thẳng. */
+import { useScene } from '@pascal-app/core';
 import { AlertTriangle } from 'lucide-react';
 import { useMemo } from 'react';
 
@@ -13,7 +16,7 @@ import { denormalizeSpatial } from '@/domain/spatial/normalize';
 import { toPascalId } from '@/lib/pascal/ids';
 import { scenePlacementIssues, type PlacementIssue } from '@/lib/pascal/placement';
 import { sanitaryPlacementIssues } from '@/lib/pascal/sanitaryRules';
-import type { SceneRepair, SceneRepairAction } from '@/lib/pascal/sceneLayer';
+import type { SceneRepair, SceneRepairAction, UnplacedItem } from '@/lib/pascal/sceneLayer';
 import { repairScene, sessionRepairs } from '@/lib/pascal/sceneRepair';
 import { selectViewerSpatial } from '@/screens/viewer/ViewerShell/viewerShellGateway';
 import { useStore } from '@/store';
@@ -43,7 +46,13 @@ export interface PlacementIssuesViewProps {
   readonly onToggleRepairs?: () => void;
   /** Chọn món đồ theo id AppFront; không có thì danh sách chỉ để đọc. */
   readonly onPick?: (furnitureId: string) => void;
+  /** Vòng 18: món bộ chọn không tìm được chỗ (node ẩn, có khung hộp gốc). */
+  readonly unplaced?: readonly UnplacedItem[];
+  /** Bật/tắt khung hộp gốc theo id node khung; không có thì không hiện nút. */
+  readonly onToggleOutline?: (outlineId: string) => void;
 }
+
+const capitalised = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
 const ACTION_LABELS: Record<SceneRepairAction, string> = { moved: 'Đã dời', rotated: 'Đã xoay', hidden: 'Đã ẩn', rescaled: 'Đã chỉnh cỡ' };
 const ROW_CLASS = 'flex min-h-8 w-full items-center rounded-lg px-2 text-left text-[var(--pa-text-2)]';
@@ -60,10 +69,15 @@ function Row({ text, id, onPick }: { readonly text: string; readonly id: string 
 }
 
 /** View thuần: test được chỉ từ props. */
-export function PlacementIssuesView({ issues, repairs = [], repairsEnabled = true, onToggleRepairs, onPick }: PlacementIssuesViewProps) {
+export function PlacementIssuesView({ issues, repairs = [], repairsEnabled = true, onToggleRepairs, onPick, unplaced = [], onToggleOutline }: PlacementIssuesViewProps) {
   useMenuGroup();
-  if (issues.length === 0 && repairs.length === 0 && repairsEnabled) return null;
-  const summary = issues.length > 0 || !repairsEnabled ? placementSummary(issues) : `Đã tự xử lý ${repairs.length} món`;
+  if (issues.length === 0 && repairs.length === 0 && unplaced.length === 0 && repairsEnabled) return null;
+  const summary =
+    issues.length > 0 || !repairsEnabled
+      ? placementSummary(issues)
+      : unplaced.length > 0
+        ? `${unplaced.length} món chưa bố trí được`
+        : `Đã tự xử lý ${repairs.length} món`;
   return (
     <details className="relative" data-appfront-menu="">
       <summary
@@ -85,6 +99,26 @@ export function PlacementIssuesView({ issues, repairs = [], repairsEnabled = tru
             {issues.length > ISSUE_LINES ? (
               <li className="px-2 py-1 text-[var(--pa-text-3)]">và {issues.length - ISSUE_LINES} lỗi khác</li>
             ) : null}
+          </ul>
+        ) : null}
+        {unplaced.length > 0 ? (
+          <ul aria-label="Chưa bố trí được" data-testid="unplaced-list">
+            {unplaced.map((u) => (
+              <li className="flex items-center gap-1" data-testid="unplaced-item" key={u.furnitureId}>
+                <span className={`${ROW_CLASS} flex-1`}>{`Chưa bố trí được: ${capitalised(u.label)} — ${u.reason}`}</span>
+                {onToggleOutline === undefined ? null : (
+                  <button
+                    className={`${BUTTON_CLASS} w-auto shrink-0`}
+                    data-testid="unplaced-outline-toggle"
+                    onClick={() => onToggleOutline(u.outlineId)}
+                    title={`Bật/tắt khung hộp gốc của ${u.label}`}
+                    type="button"
+                  >
+                    Xem hộp gốc
+                  </button>
+                )}
+              </li>
+            ))}
           </ul>
         ) : null}
         {repairs.length > 0 ? (
@@ -115,9 +149,14 @@ export function PlacementIssuesView({ issues, repairs = [], repairsEnabled = tru
   );
 }
 
-export function PlacementIssuesChip({ useViewer }: { readonly useViewer?: PlacementSelectStore }) {
+/** Kho cảnh Pascal tối thiểu để bật/tắt khung hộp gốc (`visible`, node dẫn xuất `DRESS-` — lượt về bỏ qua). */
+export interface PlacementSceneStore {
+  getState(): { nodes: Readonly<Record<string, { readonly visible?: boolean }>>; updateNode(id: string, data: object): void };
+}
+
+export function PlacementIssuesChip({ useViewer, scene = useScene as unknown as PlacementSceneStore }: { readonly useViewer?: PlacementSelectStore; readonly scene?: PlacementSceneStore }) {
   const spatial = useStore(selectViewerSpatial);
-  const { enabled, session } = useSceneRepairState();
+  const { enabled, session, layer } = useSceneRepairState();
   const { issues, repairs } = useMemo(() => {
     if (spatial === null) return { issues: [], repairs: [] };
     const stored = denormalizeSpatial(spatial);
@@ -134,12 +173,19 @@ export function PlacementIssuesChip({ useViewer }: { readonly useViewer?: Placem
     useViewer === undefined
       ? undefined
       : (furnitureId: string) => useViewer.getState().setSelection({ selectedIds: [toPascalId('item', furnitureId)] });
+  // ponytail: bật khung qua `updateNode` (một bước hoàn tác); node `DRESS-` + `unconfirmed` không lưu, không nhận nuôi.
+  const onToggleOutline = (outlineId: string): void => {
+    const node = scene.getState().nodes[outlineId];
+    if (node !== undefined) scene.getState().updateNode(outlineId, { visible: node.visible === false });
+  };
   return (
     <PlacementIssuesView
       issues={issues}
+      onToggleOutline={onToggleOutline}
       onToggleRepairs={() => sceneRepairStore.set({ enabled: !enabled })}
-      repairs={repairs}
+      repairs={[...repairs, ...(layer?.layout ?? [])]}
       repairsEnabled={enabled}
+      unplaced={layer?.unplaced ?? []}
       {...(onPick === undefined ? {} : { onPick })}
     />
   );

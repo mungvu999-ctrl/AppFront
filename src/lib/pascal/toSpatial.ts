@@ -71,7 +71,7 @@ import { isServerModel, modelSrcOf, namedFolderOf, serverKindOf, serverModelPath
 import { appFrontIdOf, bodyOfPascalId, BUILDING_NODE_ID, toPascalId } from './ids';
 import { LIBRARY_MATERIAL_IDS } from './libraryMaterialIds';
 import { libRoles2BaseIdOf } from './libraryRoles2';
-import { REAL_BACK_SHIFT_FIELD, REAL_FIT_FIELD, realFitModelIdOf } from './itemFit';
+import { REAL_BACK_SHIFT_FIELD, REAL_FIT_FIELD, realFitModelIdOf, USER_SEEN_SUFFIX } from './itemFit';
 import { worldBoxOf } from './orientDetected';
 import { roofOf } from './roofs';
 import { DRESSING_OFF_MAX } from './sceneLayer';
@@ -429,6 +429,17 @@ const MODEL_SRC = /^\/items\/[a-z0-9_-]+\/model\.glb$/;
 /** `src` mẫu đồ ghi được vào `Furniture.model` (cùng luật với `itemFieldsOf`). */
 export const saveableModelSrc = (src: unknown): src is string => typeof src === 'string' && MODEL_SRC.test(src);
 
+/**
+ * M18 LA (S2) — cờ node: món mang mẫu NGƯỜI DÙNG chọn đang dựng ĐÚNG CỠ HIỂN THỊ trong `asset.dimensions` (thẻ "Đổi mẫu"
+ * đặt; lượt dựng từ bản lưu có `USER_SEEN_SUFFIX` đặt lại). Lượt về lưu cỡ ấy (× co giãn) + tâm node, lượt dựng sau khớp đúng hộp.
+ */
+export const USER_SEEN_FIELD = 'userSeenFit';
+/** Node mang mẫu người dùng chọn (id không `appfront-`, mẫu thư viện / `/items/…`) dựng đúng cỡ hiển thị. */
+const isUserSeen = (item: PascalItemNode): boolean =>
+  fieldsOf(item)[USER_SEEN_FIELD] === true &&
+  !item.asset.id.startsWith('appfront-') &&
+  (isServerModel(item.asset.id) || MODEL_SRC.test(item.asset.src));
+
 /** Khe đã sơn khác khe phong cách cho (≤ 8, chỉ tham chiếu ghi được), hoặc `null`. */
 const itemSlotsFieldOf = (item: PascalItemNode): Readonly<Record<string, MaterialRef>> | null => {
   const styleSlots = fieldsOf(item)['styleSlots'];
@@ -487,7 +498,12 @@ const itemFieldsOf = (item: PascalItemNode, kind: FurnitureKind): Partial<Furnit
     ...(liftMm === null ? {} : { liftMm: millimetres(liftMm) }),
     ...(slots === null ? {} : { slots }),
     ...(swapped
-      ? { model: { id: item.asset.id.slice(0, 120), src: server ? serverModelPath(libId ?? item.asset.id) : savedSrcOf(item.asset.src) } }
+      ? {
+          model: {
+            id: isUserSeen(item) ? `${item.asset.id.slice(0, 120 - USER_SEEN_SUFFIX.length)}${USER_SEEN_SUFFIX}` : item.asset.id.slice(0, 120),
+            src: server ? serverModelPath(libId ?? item.asset.id) : savedSrcOf(item.asset.src),
+          },
+        }
       : ruleModel === undefined
         ? {}
         : { model: ruleModel }),
@@ -876,12 +892,15 @@ const collectItem = (scene: PascalScene, item: PascalItemNode, levelId: LevelId,
     // Món sinh vừa nhận / đồ thật của cặp nhận: lưu CỠ NHÌN THẤY (mẫu × khớp × co giãn của người dùng) cả ba trục.
     // Món AI CỠ THẬT (`REAL_FIT_FIELD`) người dùng vừa sửa: cũng lưu cỡ nhìn thấy + mẫu đang thấy (Codex M17-2 #3) — lượt
     // dựng sau khớp đúng hộp; chưa sửa thì không ghi gì (giữ hộp AI, lượt dựng sau roomSet chọn lại như cũ).
-    const realFit = realFitOf(item);
+    // M18 LA: mẫu người dùng chọn dựng đúng cỡ hiển thị (`USER_SEEN_FIELD`) → lưu cỡ ấy; trường cỡ thật / áp lưng của mẫu
+    // CŨ không còn áp (thẻ "Đổi mẫu" đã chuyển áp lưng của mẫu mới vào `position`).
+    const userSeen = isUserSeen(item);
+    const realFit = userSeen ? null : realFitOf(item);
     const realSeen = realFit?.shownM !== undefined && !roomAdopted && isEditedItem(item) ? realFit.shownM : null;
-    const seen = roomAdopted || fields[ADOPTED_FIT_FIELD] === true ? seenSizeM(item) : realSeen;
+    const seen = userSeen ? item.asset.dimensions : roomAdopted || fields[ADOPTED_FIT_FIELD] === true ? seenSizeM(item) : realSeen;
     // Món CỠ THẬT áp lưng tường bằng `asset.offset`: lưu cỡ nhìn thấy thì tâm lưu = tâm nhìn thấy (dời z cục bộ × co
     // giãn người dùng, xoay theo yaw) — lượt dựng lại khớp đúng hộp, không còn độ dời ấy (Codex M17-1 #5).
-    const back = seen === null ? 0 : (readNumber(fields, REAL_BACK_SHIFT_FIELD) ?? 0) * item.scale[2];
+    const back = seen === null || userSeen ? 0 : (readNumber(fields, REAL_BACK_SHIFT_FIELD) ?? 0) * item.scale[2];
     const centre: Point = {
       x: millimetresOf(item.position[0] + back * Math.sin(item.rotation[1])),
       y: millimetresOf(item.position[2] + back * Math.cos(item.rotation[1])),

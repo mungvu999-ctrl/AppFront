@@ -14,10 +14,12 @@ import { degrees, millimetres, millimetresToMetres } from '@/domain/units/types'
 import { CATALOG_MODELS, isServerModel, VARIANT_MODEL } from './furnitureCatalog';
 import LIBRARY_QC_JSON from './libraryQc.json' with { type: 'json' };
 import LIBRARY_ROLES_JSON from './libraryRoles.json' with { type: 'json' };
-import { itemFitOf } from './itemFit';
+import { isUserSeenModelId, itemFitOf } from './itemFit';
 import { qualityOf } from './libraryQuality';
 import { rectOfFurniture, rectsOverlap } from './placement';
-import { type Dims, fnv1a, paletteOf, planRectOf, ROOMSET_ON, roomSetOf, SET_ROLES, textureBroken, type SetDecision, type SetMember, type SetZone } from './roomSet';
+import type { LayoutMove, LayoutRoom, Tried } from './layoutSearch';
+import type { Rect } from './placement';
+import { type Dims, fnv1a, LAYOUT_BUDGET, paletteOf, planRectOf, ROOMSET_ON, roomSetOf, SET_ROLES, textureBroken, type SetDecision, type SetMember, type SetZone } from './roomSet';
 import { GENERATED_DRESS_PREFIX } from './sceneDressing';
 import { accentKeyOf, harmonyKeyOf, LAYOUT_FLAGS_ON, roomHarmonyPlanOf, type LayoutFlag, type RoomHarmonyPlan } from './sceneHarmony';
 import { SCENE_RULES_OFF } from './sceneLayer';
@@ -749,7 +751,10 @@ export const contextRolesOf = (
   SET_REVS.clear();
   for (const f of items) if (exactFitOf(f)) SET_EXACT.add(f.id);
   SET_LOG.clear();
-  SET_TIMING = { ms: 0, rooms: 0 };
+  SET_TIMING = { ms: 0, rooms: 0, layoutMs: 0 };
+  SET_LAYOUT_RUN = { left: LAYOUT_BUDGET, ms: 0 };
+  SET_MOVES.clear();
+  SET_UNPLACED.clear();
   SET_APPLIED.clear();
   setPlans = new WeakMap();
   const roles = new Map<string, FurnitureRole>();
@@ -878,11 +883,30 @@ export const setRoomSetKeys = (
   keys: ReadonlyMap<string, string>,
   ceilings: ReadonlyMap<string, number> = new Map(),
   zones: ReadonlyMap<string, readonly SetZone[]> = new Map(),
+  layoutRooms: ReadonlyMap<string, LayoutRoom> = new Map(),
 ): void => {
   SET_ROOM_KEYS = keys;
   SET_ROOM_CEILINGS = ceilings;
   SET_ROOM_ZONES = zones;
+  SET_ROOM_LAYOUTS = layoutRooms;
 };
+/** M18 L2: id phòng → hình học bố trí (`layoutRoomOf`); vắng = thang dời chỗ T1–T3 không chạy cho phòng (như vòng 17). */
+let SET_ROOM_LAYOUTS: ReadonlyMap<string, LayoutRoom> = new Map();
+/** Ngân sách dời-thử + thời gian tìm chỗ của cả căn trong lượt dựng (`contextRolesOf` làm mới). */
+let SET_LAYOUT_RUN = { left: LAYOUT_BUDGET, ms: 0 };
+/** Id món (neo hoặc thành viên cụm đi theo) → kết quả dời của lượt dựng. */
+const SET_MOVES = new Map<string, LayoutMove>();
+/** Món chưa bố trí được (T4) của lượt dựng. */
+export interface UnplacedEntry {
+  readonly id: string;
+  readonly roomId: string;
+  readonly role: string;
+  readonly reason: string;
+  /** Hộp đã lưu (m). */
+  readonly box: Rect;
+  readonly tried: Tried;
+}
+const SET_UNPLACED = new Map<string, UnplacedEntry>();
 /** Quyết định đã chốt trong lượt dựng theo đối tượng phong cách (mỗi lượt một đối tượng); `contextRolesOf` làm mới. */
 let setPlans = new WeakMap<SceneStyle, Map<string, SetDecision>>();
 /** Sổ báo cáo (đầu dò): id món → quyết định + phòng + băm danh sách mẫu thấy được của vai. */
@@ -890,7 +914,7 @@ const SET_LOG = new Map<string, SetDecision & { readonly roomId: string; readonl
 /** Món thật sự dựng bằng mẫu `roomset` khác mẫu luật cũ trong lượt. */
 const SET_APPLIED = new Set<string>();
 /** Thời gian chọn bộ (ms) của lượt dựng hiện tại: tổng `roomSetOf` + số phòng (đầu dò `roomSetTiming`). */
-let SET_TIMING = { ms: 0, rooms: 0 };
+let SET_TIMING = { ms: 0, rooms: 0, layoutMs: 0 };
 /** Vai → băm danh sách mẫu thư viện thấy được (nhớ trong lượt). */
 const SET_REVS = new Map<string, string>();
 /** Mẫu thư viện máy chủ THẤY ĐƯỢC của vai (trước lọc QC/hướng) — đầu dò `roomSetPools`, băm `rev`. */
@@ -967,6 +991,13 @@ const SMALLER_STORAGE: Partial<Record<FurnitureRole, readonly FurnitureRole[]>> 
   cabinet: ['nightstand'],
 };
 
+/**
+ * Mẫu thư viện máy chủ ĐỔI ĐƯỢC của vai (thẻ "Đổi mẫu", M18 LA): cùng tập bộ chọn thấy (`visibleOf` − QC loại), trừ mẫu
+ * vân vỡ; không lọc hướng/cỡ (người dùng chọn). Rỗng = thư viện chưa nạp mẫu nào của vai.
+ */
+export const swapPoolOf = (role: string, variant?: string): string[] =>
+  visibleOf(role as FurnitureRole, variant).filter((x) => !QC_EXCLUDED.has(x) && !textureBrokenOf(x));
+
 const setPoolOf = (f: SetInput, role: FurnitureRole, style: SceneStyle): readonly string[] => {
   const lib = visibleOf(role, f.variant).filter((x) => !QC_EXCLUDED.has(x));
   const orient = isGenerated(f) && !ROTATABLE_ROLES.has(role) && !rulesOffOf(style).has('orient');
@@ -1027,6 +1058,9 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
         ? {}
         : { smaller: SMALLER_STORAGE[role].map((r) => ({ role: r, pool: setPoolOf(f, r, style) })) }),
       fixed: pinned,
+      // M18 LA (S3): mẫu NGƯỜI DÙNG chọn qua "Đổi mẫu" (hậu tố cỡ-đã-thấy): vật cản + giữ mẫu, không dẫn bảng màu/nhóm.
+      // `model` lưu từ trước (không hậu tố: vòng cũ, cặp nhận, mẫu luật) giữ hành vi ghim cũ.
+      ...(pinned && f.model !== undefined && isUserSeenModelId(f.model.id) ? { userPin: true } : {}),
       ...(concept === undefined
         ? {}
         : {
@@ -1059,12 +1093,20 @@ const planRoom = (roomId: string, room: SetRoom, style: SceneStyle, decided: Rea
       palette: paletteOf(style, tone),
     },
     [...(SET_ROOM_ZONES.get(roomId) ?? []), ...obstacles],
+    ((layoutRoom) => (layoutRoom === undefined ? undefined : { room: layoutRoom, run: SET_LAYOUT_RUN }))(SET_ROOM_LAYOUTS.get(roomId)),
   );
-  SET_TIMING = { ms: SET_TIMING.ms + performance.now() - t0, rooms: SET_TIMING.rooms + 1 };
+  SET_TIMING = { ms: SET_TIMING.ms + performance.now() - t0, rooms: SET_TIMING.rooms + 1, layoutMs: SET_LAYOUT_RUN.ms };
   for (const [id, d] of plan) {
     const member = room.members.get(id);
     const doubt = member === undefined ? undefined : roleDoubtOf(member.f, room.usage);
     SET_LOG.set(id, { ...d, roomId, rev: revOf(d.role as FurnitureRole), ...(doubt === undefined ? {} : { doubt }) });
+    // Thành viên cụm tra ngược theo id; món tự dời riêng (move của chính nó) thắng move của neo.
+    if (d.move !== undefined) for (const mp of d.move.members) if (!d.move.broken.includes(mp.id) && plan.get(mp.id)?.move === undefined) SET_MOVES.set(mp.id, d.move);
+    if (d.move !== undefined) SET_MOVES.set(id, d.move);
+    const box = member === undefined ? undefined : setBoxOf(member.f);
+    if (d.unplaced !== undefined && box !== undefined) {
+      SET_UNPLACED.set(id, { id, roomId, role: d.role, reason: d.unplaced.reason, box: planRectOf(box.cx, box.cy, box.w, box.d, box.rot), tried: d.unplaced.tried });
+    }
   }
   return plan;
 };
@@ -1160,7 +1202,16 @@ export const roomSetPools = (): Record<string, readonly string[]> =>
   Object.fromEntries(SET_ROLES.map((role) => [role, visibleOf(role as FurnitureRole)]));
 
 /** Đầu dò `__pascalProbe.roomSetTiming()`: thời gian chọn bộ của lượt dựng gần nhất (ms, số phòng). */
-export const roomSetTiming = (): { readonly ms: number; readonly rooms: number } => ({ ...SET_TIMING });
+export const roomSetTiming = (): { readonly ms: number; readonly rooms: number; readonly layoutMs: number } => ({ ...SET_TIMING });
+
+/**
+ * M18 L2: kết quả dời chỗ của món trong lượt dựng (neo, hoặc thành viên cụm — tư thế ở `members`). `to` = tâm mặt bằng CỠ
+ * THẬT của mẫu `modelId` (thư mục mẫu, như `SetDecision.to`); toPascal áp vào BẢN SAO, không ghi kho.
+ */
+export const roomSetMoveOf = (id: string): LayoutMove | undefined => SET_MOVES.get(id);
+
+/** M18 L2: món chưa bố trí được (T4) của lượt dựng — node vẫn tạo, ẩn; chip "Chưa bố trí được". */
+export const roomSetUnplaced = (): readonly UnplacedEntry[] => [...SET_UNPLACED.values()];
 
 /** `doubt`: vai món chưa xác định (`roleDoubtOf`), món dựng bằng vai trung tính. */
 type RoomSetEntry = SetDecision & { readonly roomId: string; readonly rev?: string; readonly doubt?: string };

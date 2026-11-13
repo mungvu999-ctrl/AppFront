@@ -32,6 +32,18 @@ export interface RoomEdge {
 }
 
 const EPS = 1e-6;
+/**
+ * Số đo bố trí dùng chung cho lớp bày phòng (sceneFurnish) và lõi bố trí lại (layoutSearch) — TIÊU CHÍ BỐ TRÍ
+ * của phần mềm, không phải quy chuẩn xây dựng.
+ */
+/** Khoảng chừa hai bên mỗi khoảng cửa khi tính đoạn tường trống. */
+export const OPENING_MARGIN_MM = 100;
+/** Chỗ trống mỗi bên giường (đủ cho tủ đầu giường). */
+export const BED_SIDE_MM = 450;
+/** Chỗ kéo ghế quanh bàn ăn (mỗi phía). */
+export const CHAIR_CLEAR_MM = 600;
+/** Vùng đứng trước mỗi cửa đi phía trong phòng (sâu, mm): không món nào được chiếm (P4). */
+export const DOOR_APPROACH_MM = 900;
 /** Vùng mở của cửa trượt/cố định: sâu 600 mm mỗi bên tường. */
 const SLIDING_SWING_DEPTH_MM = 600;
 /** Tường được coi là nằm trên cạnh phòng khi tâm tường cách cạnh ≤ nửa dày + 50 mm. */
