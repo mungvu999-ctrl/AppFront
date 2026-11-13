@@ -14,7 +14,7 @@ import {
   wallStatusCode,
   WALL_UNAPPROVE_COMMAND_TYPE,
 } from './wallLayerReviewGateway';
-import { approveAllLabelOf, confidentWallsOf, sortByReviewQueue } from './wallReviewQueue';
+import { approveAllLabelOf, confidentWallsOf, rowExtraOf, sortByReviewQueue } from './wallReviewQueue';
 
 const first = (): Wall => {
   const wall = WALL_LAYER_FIXTURE_WALLS[0];
@@ -135,5 +135,31 @@ describe('U17: duyệt hết đoạn máy chắc chắn', () => {
 
     expect(ids).toEqual(['W-A']);
     expect(approveAllLabelOf(12)).toBe('Duyệt 12 đoạn máy chắc chắn');
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* R10 làn S: cột "Dài, mm" tự mang dấu, không ỷ vào dải cảnh báo trên đầu màn. */
+/* -------------------------------------------------------------------------- */
+
+describe('R10: cột "Dài, mm" của hàng đợi theo trạng thái tỷ lệ', () => {
+  const wall = first();
+  const level = WALL_LAYER_FIXTURE_LEVEL;
+
+  it('tầng đo được tỷ lệ thì số để trần', () => {
+    expect(rowExtraOf(wall, level, undefined, undefined, null, 'determined').lengthText).not.toContain('≈');
+  });
+
+  it('tầng tỷ lệ ước lượng thì mỗi hàng mang dấu ≈ và chữ ước lượng', () => {
+    const text = rowExtraOf(wall, level, 'unresolved', undefined, null, 'estimated').lengthText;
+
+    expect(text).toContain('≈');
+    expect(text).toContain('(ước lượng)');
+  });
+
+  it('R10: tầng đã chấp nhận số máy (hết scaleStatus) vẫn phải mang dấu', () => {
+    const text = rowExtraOf(wall, level, undefined, undefined, null, 'estimated').lengthText;
+
+    expect(text).toContain('(ước lượng)');
   });
 });

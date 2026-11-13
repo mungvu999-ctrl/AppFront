@@ -15,7 +15,8 @@ import type { DataSource, Level, LevelId, Wall, WallId } from '@/domain/spatial/
 import { WALL_THICKNESS_TOLERANCE_MM } from '@/domain/walls/thicknessTolerance';
 import { centrelineLength } from '@/domain/walls/types';
 import { formatNumber } from '@/lib/format/number';
-import type { ScaleSource, ScaleStatus } from '@/lib/viewmodel/provisionalScale';
+import type { ScaleSource, ScaleStatus, WireScaleState } from '@/lib/viewmodel/provisionalScale';
+import { measureTextOfState, scaleStateOf } from '@/lib/viewmodel/provisionalScale';
 import { CONCRETE_COLUMN_THRESHOLD_MM, standardizeThickness, standardTierRangeOf } from '@/lib/geometry/standardize';
 
 import { WALL_THICKNESS_CHOICES, type WallThicknessChoice } from './types';
@@ -196,19 +197,35 @@ function noteOf(wall: Wall, targetMm: WallThicknessChoice | null): string {
   return `Dày trên ${mm(CONCRETE_COLUMN_THRESHOLD_MM)} mm: dày bất thường, có thể là cột BTCT. Cần xem tay.`;
 }
 
+/** Số của cột "Dài, mm": cùng số với thanh tra, mang dấu ước lượng theo trạng thái tỷ lệ của tầng. */
+function queueLengthTextOf(
+  wall: Wall,
+  level: Level,
+  scaleStatus?: ScaleStatus,
+  scaleSource?: ScaleSource,
+  scaleState?: WireScaleState,
+): string | null {
+  const number = wallLengthNumberOf(centrelineLength(toGeometryWall(wall, level)), scaleStatus, scaleSource);
+  if (number === null) return null;
+  return measureTextOfState(number, scaleStateOf(scaleStatus, scaleSource, scaleState));
+}
+
 export function rowExtraOf(
   wall: Wall,
   level: Level | null,
   scaleStatus?: ScaleStatus,
   scaleSource?: ScaleSource,
   reason?: WallReviewReason | null,
+  scaleState?: WireScaleState,
 ): WallRowExtra {
   const group = queueGroupOf(wall);
   const band = wallThicknessBandOf(wall.thicknessMm);
   const targetMm = band === null ? thicknessTargetOf(wall.thicknessMm, wall.source) : null;
 
   return {
-    lengthText: level === null ? '–' : (wallLengthNumberOf(centrelineLength(toGeometryWall(wall, level)), scaleStatus, scaleSource) ?? '–'),
+    /* R10 làn S: từ R9 dải "tỷ lệ tạm" chỉ còn hiện ở tầng BỊ KHOÁ, nên tầng ước lượng không còn
+       cảnh báo nào gần cột này — từng hàng phải tự mang dấu, không ỷ vào dải trên đầu màn. */
+    lengthText: level === null ? '–' : (queueLengthTextOf(wall, level, scaleStatus, scaleSource, scaleState) ?? '–'),
     thicknessText: mm(wall.thicknessMm),
     nearText: band !== null && band !== wall.thicknessMm ? `≈${mm(band)}` : null,
     group,
