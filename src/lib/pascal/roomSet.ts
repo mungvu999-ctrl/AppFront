@@ -1124,11 +1124,19 @@ export const roomSetOf = (
     const r = LEAD_ROLES[usage]?.indexOf(role) ?? -1;
     return r < 0 ? Number.POSITIVE_INFINITY : r;
   };
+  // M18 LT6: ghế nhóm chỉ nhường ở LƯỢT THỬ LẠI (`seatsYield`) — món chính chưa chốt bị ẩn chỉ vì ghế nhóm chưa xác nhận. Ghế
+  // của bàn DẪN phòng (phòng ăn: bàn ăn) không nhường món không dẫn hơn bàn. Ghế đã nhường quyết định sau (`evicted`).
+  let seatsYield = false;
+  const seatYields = (m: SetMember, x: SetMember): boolean => {
+    const t = tableOf(x);
+    return seatsYield && (t === undefined || leadRank(t.role) === Number.POSITIVE_INFINITY || leadRank(m.role) < leadRank(t.role));
+  };
   const yieldsTo = (m: SetMember, x: SetMember): boolean =>
     LAYOUT_MAIN_ROLES.has(m.role) &&
     movableOf(x) &&
-    !SEAT_GROUP_ROLES.has(x.role) &&
-    (!LAYOUT_MAIN_ROLES.has(x.role) || leadRank(m.role) < leadRank(x.role));
+    (SEAT_GROUP_ROLES.has(x.role) ? seatYields(m, x) : !LAYOUT_MAIN_ROLES.has(x.role) || leadRank(m.role) < leadRank(x.role));
+  /** Ghế nhóm đã nhường món chính: id ghế → id món chính. */
+  const evicted = new Map<string, string>();
   // Món bộ CHƯA chốt (kể cả cùng vai) giữ chỗ bằng cả hộp của nó (mặt bằng ⊆ hộp: bảo thủ) — trừ đồ phụ nhường món chính.
   const pendingOf = (m: SetMember): SetZone[] =>
     inSet.flatMap((x) => {
@@ -1580,6 +1588,97 @@ export const roomSetOf = (
       shifted.set(mp.id, { box: { ...x.box, cx: mp.pose.cx, cy: mp.pose.cy, rot: mp.pose.rot }, pose: mp.pose, by: m.id });
     }
   };
+  /** Món bộ chưa chốt, tự dời được, có hộp trên sàn; `pendingSeat` = ghế nhóm như thế. */
+  const pendingMovable = (x: SetMember): boolean => !x.fixed && x.lifted !== true && boxOf(x) !== undefined && !decided.has(x.id) && !out.has(x.id) && movableOf(x);
+  const pendingSeat = (x: SetMember): boolean => SEAT_GROUP_ROLES.has(x.role) && pendingMovable(x);
+  /**
+   * M18 LT6 — món CHÍNH ra `to: null` khi ghế nhóm chưa xác nhận chặn: thử lại một lần với ghế nhóm nhường (`seatsYield`), chỉ
+   * nhận khi lượt thử lại đặt được món. Món chưa chốt đã nhường (ghế nhóm, và đồ phụ / món chính hạng thấp theo LT2/LT5) mà hộp
+   * chồng món vừa đặt ghi vào `evicted`, quyết định ở lượt vai của nó (dời theo cụm bàn / dời riêng / chưa bố trí được) — không
+   * bao giờ ở lại chồng món chính (f28: ghế bành nhường sofa, trước đây nhận va chạm nhỏ nhất ở hộp cũ).
+   */
+  const retried = new Set<string>();
+  const seatRetryOf = (m: SetMember, ev: Parameters<typeof fallbackOf>[1], costOf: (f: string) => number): FallbackPick => {
+    const r = fallbackOf(m, ev, costOf);
+    if (r.to !== null || layout === undefined || !LAYOUT_MAIN_ROLES.has(m.role) || !inSet.some(pendingSeat)) return r;
+    seatsYield = true;
+    try {
+      const r2 = fallbackOf(m, ev, costOf);
+      if (r2.to === null) return r;
+      retried.add(m.id);
+      return { ...r2, why: `${r2.why}; ghế nhóm chưa xác nhận nhường món chính` };
+    } finally {
+      seatsYield = false;
+    }
+  };
+  const evictFor = (m: SetMember): void => {
+    const r = finalRect.get(m.id);
+    if (r === undefined) return;
+    seatsYield = true;
+    for (const x of inSet) {
+      if (x.id !== m.id && pendingMovable(x) && yieldsTo(m, x) && overlapAreaM2(boxRectOf(boxOf(x) as SetBox), r) > ROOM_OVERLAP_TOL_M2) evicted.set(x.id, m.id);
+    }
+    seatsYield = false;
+  };
+  /** Món còn chồng món chính nó đã nhường (hộp hiện hành, sau khi cụm bàn có thể đã dời). */
+  const stillEvicted = (m: SetMember): boolean => {
+    const main = evicted.get(m.id);
+    const r = main === undefined ? undefined : finalRect.get(main);
+    const b = boxOf(m);
+    return r !== undefined && b !== undefined && overlapAreaM2(boxRectOf(b), r) > ROOM_OVERLAP_TOL_M2;
+  };
+  /** Bàn có ghế (vai `role`) đã nhường: dời cả cụm bàn + ghế (`searchPlacement` với members) né món chính đã đặt. */
+  const moveTablesFor = (role: string): void => {
+    const lay = layout;
+    if (lay === undefined) return;
+    const ts = new Set(inSet.filter((x) => x.role === role && stillEvicted(x)).flatMap((x) => tableOf(x) ?? []));
+    for (const t of ts) {
+      const d0 = out.get(t.id);
+      const f = d0?.to;
+      const dims = typeof f === 'string' ? ctx.dimsOf(f) : undefined;
+      if (d0 === undefined || typeof f !== 'string' || dims === undefined || d0.at !== undefined || t.box === undefined || t.lifted === true || !movableOf(t) || lay.run.left <= 0) continue;
+      lay.run.left -= 1;
+      const t0 = performance.now();
+      const pieces: Piece[] = clusterOf(t, t.box).map((x) => {
+        const xb = x.box as SetBox;
+        return { id: x.id, role: x.role, dims: [xb.w, x.heightM ?? 0.5, xb.d], box: boxRectOf(xb), wallBack: WALL_BACK_ROLES.has(x.role), movable: movableOf(x) };
+      });
+      const piece: Piece = { id: t.id, role: t.role, dims, box: boxRectOf(t.box), wallBack: WALL_BACK_ROLES.has(t.role), movable: true };
+      const res = searchPlacement(lay.room, piece, [{ modelId: f, dims }], blocksOf(t), { members: pieces });
+      lay.run.ms += performance.now() - t0;
+      if (!('pose' in res)) continue;
+      const i = placed.findIndex((z) => z.id === t.id);
+      if (i >= 0) placed.splice(i, 1);
+      out.set(t.id, { ...d0, uniform: 'real', at: res.pose, moved: movedOf(t.box, res.pose, res.move), move: res.move, why: `${d0.why}; dời cụm bàn: ghế nhường món chính — ${res.move.why}` });
+      applyMove(t, f, res.pose, res.move);
+    }
+  };
+  /** Món vẫn chồng món chính đã nhường: ghế lẻ / món khác → thử dời riêng (T1–T3); ghế của bàn (cụm không dời được) → chưa bố trí được. */
+  const seatOut = (m: SetMember, anchor: boolean, costOf: (f: string) => number): void => {
+    const main = out.get(evicted.get(m.id) ?? '');
+    const t = tableOf(m);
+    const r0: FallbackPick = { to: null, why: `nhường món chính ${main?.role ?? ''}` };
+    const reason = `nhường món chính ${main?.role ?? ''}: cụm bàn không dời được`;
+    const r = t === undefined && layout !== undefined ? relayoutOf(m, r0, {}, costOf, layout) : { ...r0, why: `${r0.why}; chưa bố trí được: ${reason}`, unplaced: { reason, tried: NO_TRY } };
+    out.set(m.id, {
+      id: m.id,
+      role: r.role ?? m.role,
+      from: m.current,
+      to: r.to,
+      rule: r.to === m.current ? 'keep' : 'roomset',
+      cause: 'fallback',
+      anchor,
+      ...(m.sizeFrom === undefined ? {} : { by: m.sizeFrom }),
+      ...(t === undefined ? {} : { group: t.id }),
+      pool: m.pool.length,
+      why: r.why,
+      ...(r.uniform === undefined ? {} : { uniform: r.uniform }),
+      ...(r.forced === undefined ? {} : { forced: r.forced }),
+      ...(r.at === undefined || r.move === undefined || m.box === undefined ? {} : { at: r.at, moved: movedOf(m.box, r.at, r.move), move: r.move }),
+      ...(r.unplaced === undefined ? {} : { unplaced: r.unplaced }),
+    });
+    if (r.to !== null && r.at !== undefined && r.move !== undefined) applyMove(m, r.to, r.at, r.move);
+  };
 
   // Bảng màu bộ (vòng 17, L1): mẫu đã có của từng món (ghim / đã chốt lượt trước / đã chốt trong lượt) — chưa chốt thì
   // mẫu concept nếu qua chất lượng/an toàn (bỏ qua lý do lệch hộp như CONCEPT_LENIENT; concept bị loại không góp màu) — cộng
@@ -1621,10 +1720,11 @@ export const roomSetOf = (
   };
 
   for (const role of roles) {
+    if (SEAT_GROUP_ROLES.has(role)) moveTablesFor(role);
     const group = inSet.filter((m) => m.role === role);
-    const todo = group.filter((m) => !m.fixed && !decided.has(m.id)).map(withShift);
+    const todoAll = group.filter((m) => !m.fixed && !decided.has(m.id)).map(withShift);
     const setRef = hasSofa && SET_FIT_ROLES.has(role) ? setRefNow() : undefined;
-    if (todo.length === 0) continue;
+    if (todoAll.length === 0) continue;
     const anchor = role === anchorRole;
     const keyOf = new Map(group.map((m) => [m.id, tableOf(m)?.id ?? ''] as const));
     /** Ngữ cảnh chấm theo nhóm (bàn của nhóm ghế): gỗ tham chiếu + gỗ bàn cho `pair`. */
@@ -1650,6 +1750,10 @@ export const roomSetOf = (
         ...(setNow === undefined ? {} : { set: setNow }),
       };
     };
+    // M18 LT6: món đã nhường món chính (ghế: cụm bàn không đưa ra khỏi chỗ) — quyết định riêng, không vào lượt chọn thường.
+    for (const m of todoAll) if (stillEvicted(m)) seatOut(m, anchor, (f) => itemCostOf(f, role, refsOf(keyOf.get(m.id) ?? ''), ctx, memo).total);
+    const todo = todoAll.filter((m) => !out.has(m.id));
+    if (todo.length === 0) continue;
     const evals = new Map(
       todo.map((m) => {
         const refs = refsOf(keyOf.get(m.id) ?? '');
@@ -1827,7 +1931,7 @@ export const roomSetOf = (
           leadFb !== undefined && byLead
             ? { ...leadFb, why: `${leadFb.why}; mẫu dẫn của nhóm ghế (một bàn một bộ)` }
             : pick === undefined
-              ? fallbackOf(m, ev, (f) => itemCostOf(f, role, refsOf(keyOf.get(m.id) ?? ''), ctx, memo).total)
+              ? seatRetryOf(m, ev, (f) => itemCostOf(f, role, refsOf(keyOf.get(m.id) ?? ''), ctx, memo).total)
               : undefined;
         const to = fb !== undefined ? fb.to : failKeep ? m.current : (pick as { f: string }).f;
         const miss = conceptMiss.get(m.id);
@@ -1870,6 +1974,7 @@ export const roomSetOf = (
         else if (to !== null) placeOf(memberAs(m, fb?.uniform), to, fb?.uniform === 'real');
         // Mẫu mặc định của loại (phương án cuối `null`) dựng trong hộp: chiếm chỗ bằng cả hộp.
         else if (m.box !== undefined && m.lifted !== true) placed.push({ ...boxRectOf(m.box), id: m.id, ...(m.kind === undefined ? {} : { kind: m.kind }) });
+        if (to !== null && retried.has(m.id)) evictFor(m);
       }
     }
     for (const m of todo) {

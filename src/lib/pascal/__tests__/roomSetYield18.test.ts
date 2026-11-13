@@ -49,8 +49,20 @@ const DIMS: Record<string, Dims> = {
   cab1: [0.85, 0.8, 0.45],
   bn1: [1.2, 0.45, 0.4],
   ac1: [0.8, 0.8, 0.8],
+  tb1: [0.8, 0.75, 0.8],
+  ch1: [0.45, 0.85, 0.5],
 };
-const QUAL: Record<string, ModelQuality> = { sb1: q('singleBed', false), sb2: q('singleBed', false), sb3: q('singleBed', false), ns1: q('nightstand'), cab1: q('cabinet'), bn1: q('bench'), ac1: q('armchair') };
+const QUAL: Record<string, ModelQuality> = {
+  sb1: q('singleBed', false),
+  sb2: q('singleBed', false),
+  sb3: q('singleBed', false),
+  ns1: q('nightstand'),
+  cab1: q('cabinet'),
+  bn1: q('bench'),
+  ac1: q('armchair'),
+  tb1: q('diningTable'),
+  ch1: q('diningChair'),
+};
 const ctx: SetContext = { tierOf: () => 0, tiers: 1, dimsOf: (id) => DIMS[id], palette: {}, qualityOf: (id) => QUAL[id] };
 
 interface Box {
@@ -88,8 +100,9 @@ const ruleOverlaps = (out: ReturnType<typeof run>): string[] =>
 
 // M18 LT5 — ai nhường ai khi đặt món chính; khoá phòng `usage|…` (roomSetKeysOf) mang công năng.
 describe('roomSetOf — nhường chỗ giữa món chưa chốt (LT5)', () => {
-  it('ghế dài (nhóm ghế, không tự dời) KHÔNG nhường món chính: không sinh chồng giường + ghế dài', () => {
-    const bench = member('F-bn', 'bench', MID, { kind: 'bench', pool: ['bn1'], current: 'bn1' });
+  // LT6 thay LT5: ghế dài chưa xác nhận nay nhường (lượt thử lại) rồi tự dời / chưa bố trí được — xem describe LT6 bên dưới.
+  it('ghế dài đã xác nhận (cỡ người dùng) vẫn chặn món chính: không chồng, giường "chạm đồ đã đặt"', () => {
+    const bench = member('F-bn', 'bench', MID, { kind: 'bench', pool: ['bn1'], current: 'bn1', sizeFrom: 'user' });
     const out = run('bedroom|x|y#0,0', [bed(), bench]);
     expect(ruleOverlaps(out)).toEqual([]);
     expect(out.get('F-bed')?.unplaced?.reason).toContain('chạm đồ đã đặt');
@@ -112,5 +125,42 @@ describe('roomSetOf — nhường chỗ giữa món chưa chốt (LT5)', () => {
       expect(b?.to, key).toBeNull();
       expect(b?.unplaced?.reason).toContain('chạm đồ đã đặt');
     }
+  });
+});
+
+// M18 LT6 — món chính chưa chốt không bị ẩn chỉ vì ghế nhóm chưa xác nhận: ghế nhường, rồi dời (cụm bàn / riêng) hoặc chưa bố trí được.
+describe('roomSetOf — ghế nhóm nhường món chính (LT6)', () => {
+  /** Ghế đã có kết quả hợp lệ: dời (có `at`) hoặc chưa bố trí được có lý do — không ở lại hộp cũ. */
+  const resolved = (d: ReturnType<ReturnType<typeof run>['get']>): boolean => (d?.to !== null && d?.at !== undefined) || (d?.to === null && (d.unplaced?.reason ?? '') !== '');
+
+  it('ghế dài lẻ chưa xác nhận: giường đặt được, ghế dài dời/chưa bố trí được, không chồng', () => {
+    const bench = member('F-bn', 'bench', MID, { kind: 'bench', pool: ['bn1'], current: 'bn1' });
+    const out = run('bedroom|x|y#0,0', [bed(), bench]);
+    expect(out.get('F-bed')?.to).not.toBeNull();
+    expect(out.get('F-bed')?.why).toContain('ghế nhóm chưa xác nhận nhường món chính');
+    expect(resolved(out.get('F-bn'))).toBe(true);
+    expect(ruleOverlaps(out)).toEqual([]);
+  });
+
+  /** Bàn ăn góc dưới phải + ghế của bàn (hộp lớn giữa phòng, trong tầm CHAIR_REACH_M của bàn). */
+  const dining = (): SetMember[] => [
+    member('F-tb', 'diningTable', { cx: 2.3, cy: 0.55, w: 0.8, d: 0.8 }, { kind: 'diningTable', pool: ['tb1'], current: 'tb1' }),
+    member('F-ch', 'diningChair', MID, { kind: 'diningChair', pool: ['ch1'], current: 'ch1' }),
+  ];
+
+  it('phòng khách: ghế của bàn nhường giường; cụm bàn dời hoặc ghế chưa bố trí được, không chồng', () => {
+    const out = run('livingRoom|x|y#0,0', [bed(), ...dining()]);
+    expect(out.get('F-bed')?.to).not.toBeNull();
+    expect(resolved(out.get('F-ch'))).toBe(true);
+    expect(out.get('F-tb')?.to).not.toBeNull();
+    expect(ruleOverlaps(out)).toEqual([]);
+  });
+
+  it('phòng ăn: ghế của bàn ăn (món dẫn) không nhường giường — giường "chạm đồ đã đặt", bàn ăn giữ', () => {
+    const out = run('diningRoom|x|y#0,0', [bed(), ...dining()]);
+    expect(out.get('F-bed')?.to).toBeNull();
+    expect(out.get('F-bed')?.unplaced?.reason).toContain('chạm đồ đã đặt');
+    expect(out.get('F-tb')?.to).not.toBeNull();
+    expect(ruleOverlaps(out)).toEqual([]);
   });
 });
