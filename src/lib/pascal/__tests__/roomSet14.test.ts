@@ -14,7 +14,7 @@ import { clearServerLibrary, registerServerLibrary } from '../furnitureCatalog';
 import { itemFitOf } from '../itemFit';
 import { LIBRARY_QUALITY, type ModelQuality } from '../libraryQuality';
 import LIBRARY from '../libraryRoles.json' with { type: 'json' };
-import { ANCHOR_BAND, CONCEPT_LENIENT, FAIL_COST, functionalMissOf, hardRejectOf, paletteOf, planRectOf, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetDecision, type SetMember } from '../roomSet';
+import { ANCHOR_BAND, CONCEPT_LENIENT, FAIL_COST, functionalMissOf, hardRejectOf, LICENCE_UNCLEAR, licenceUnversioned, paletteOf, planRectOf, roomSetOf, SHARE_BAND, type Dims, type SetContext, type SetDecision, type SetMember } from '../roomSet';
 import { sceneStyleOf } from '../sceneStyles';
 import { addRoomSetMembers, contextRolesOf, finishRoomSet, modelFolderOf, roomSetPools, roomSetReport, roomSetSwapOf, roomSetUniformOf, setRoomSetKeys, type LayerStyle } from '../sceneVariety';
 
@@ -794,5 +794,71 @@ describe('vòng 16 — mẫu concept là ứng viên ưu tiên, không phải gh
       expect(entry('F-C')).toMatchObject({ cause: 'concept', rule: 'roomset', from: legacy, to: concept });
       expect(roomSetSwapOf('F-C')).toMatchObject({ from: legacy, to: concept });
     });
+  });
+});
+
+describe('NO-438 — giấy phép chưa rõ phiên bản loại khỏi mọi đường tự chọn, mẫu người dùng chọn giữ nguyên', () => {
+  const UNV = 'table-dining-white-flat';
+  const tbl = { id: 'F-DT', levelId: 'L-1', roomId: 'R-L', kind: 'table', centre: { x: 0, y: 0 }, boundingBox: { min: { x: -800, y: -450 }, max: { x: 800, y: 450 } }, rotationDeg: 0, source: 'ai', reviewed: true, confidence: 1 } as unknown as Furniture;
+  const style0: LayerStyle = { ...am, roomSet: false, layout: new Set(), rulesOff: new Set() };
+  const reg = (ids: string[]): void => {
+    clearServerLibrary();
+    registerServerLibrary(ids.map((id) => ({ id, widthMm: 1600, heightMm: 750, depthMm: 900, modelUrl: `https://x.test/${id}.glb` })));
+  };
+  afterAll(() => {
+    clearServerLibrary();
+    registerServerLibrary(ROLES.flatMap((role) => pool(role)).map((id) => {
+      const u = real(id)?.useMm ?? [1000, 1000, 1000];
+      return { id, widthMm: u[0], heightMm: u[1], depthMm: u[2], modelUrl: `https://x.test/${id}.glb` };
+    }));
+  });
+
+  it('hàm thuần: chỉ CC-BY không số bản (kể biến thể SA/NC) là chưa rõ', () => {
+    for (const l of ['CC-BY', 'cc-by', ' CC BY ', 'CC-BY-SA']) expect(licenceUnversioned(l)).toBe(true);
+    for (const l of ['CC-BY 4.0', 'CC-BY 3.0', 'CC0', 'CC-BY-SA 4.0', '']) expect(licenceUnversioned(l)).toBe(false);
+  });
+
+  it('hardRejectOf + sổ roomSetOf: licence "CC-BY" bị loại, "CC-BY 4.0" đạt, cùng dữ liệu khác nhau đúng trường licence', () => {
+    const base = ((): ModelQuality => ({ ...(real('bed-double-oak-pro') as ModelQuality), role: 'sofa', licence: 'CC0' }))();
+    const table: Record<string, ModelQuality> = { unv: { ...base, licence: 'CC-BY' }, v4: { ...base, licence: 'CC-BY 4.0' } };
+    const c: SetContext = { tierOf: () => 0, tiers: 3, dimsOf: () => [2, 0.8, 0.9], palette: { light: true, tone: 'l' }, qualityOf: (x) => table[x] };
+    const m: SetMember = { id: 's', role: 'sofa', short: 0.9, long: 2, current: null, pool: ['unv', 'v4'], fixed: false };
+    expect(hardRejectOf(m, 'unv', c)).toBe(LICENCE_UNCLEAR);
+    expect(hardRejectOf(m, 'v4', c)).toBeUndefined();
+    const d = roomSetOf('R', [m], new Map(), c).get('s');
+    expect(d?.rejects?.[LICENCE_UNCLEAR]).toBe(1);
+    expect((d?.top ?? []).map(([f]) => f)).toEqual(['v4']);
+  });
+
+  it('món ghim/đã chọn mẫu chưa rõ phiên bản: dựng đúng mẫu đó', () => {
+    const q: ModelQuality = { ...(real('bed-double-oak-pro') as ModelQuality), role: 'sofa', licence: 'CC-BY' };
+    const c: SetContext = { tierOf: () => 0, tiers: 3, dimsOf: () => [2, 0.8, 0.9], palette: { light: true, tone: 'l' }, qualityOf: () => q };
+    const m: SetMember = { id: 's', role: 'sofa', short: 0.9, long: 2, current: 'unv', pool: [], fixed: true };
+    expect(roomSetOf('R', [m], new Map(), c).get('s')?.to).toBe('unv');
+  });
+
+  it('tiền đề + luật cũ: mẫu thật licence "CC-BY" là mẫu duy nhất của vai → không trả nó (mẫu dựng sẵn)', () => {
+    expect(real(UNV)?.licence).toBe('CC-BY');
+    reg([UNV]);
+    expect(modelFolderOf(tbl, style0, 'livingRoom')).not.toBe(UNV);
+  });
+
+  it('concept (style.prefer) là mẫu chưa rõ phiên bản → bị từ chối như chất lượng', () => {
+    reg([UNV]);
+    const pref: LayerStyle = { ...style0, prefer: { ...style0.prefer, diningTable: [UNV] } };
+    expect(modelFolderOf(tbl, pref, 'livingRoom')).not.toBe(UNV);
+  });
+  it('mẫu máy chủ không có dữ liệu chất lượng: giấy phép đọc từ dòng ghi công (4/7 mẫu NO-438)', () => {
+    const NOQ = 'zz-no-quality-table';
+    expect(real(NOQ)).toBeUndefined();
+    const withCredit = (licence: string): void => {
+      clearServerLibrary();
+      registerServerLibrary([{ id: NOQ, widthMm: 1600, heightMm: 750, depthMm: 900, modelUrl: `https://x.test/${NOQ}.glb`, attribution: `Tác giả · ${licence} · https://creativecommons.org/licenses/` }]);
+    };
+    const pref: LayerStyle = { ...style0, prefer: { ...style0.prefer, diningTable: [NOQ] } };
+    withCredit('CC-BY 4.0');
+    expect(modelFolderOf(tbl, pref, 'livingRoom')).toBe(NOQ);
+    withCredit('CC-BY');
+    expect(modelFolderOf(tbl, pref, 'livingRoom')).not.toBe(NOQ);
   });
 });

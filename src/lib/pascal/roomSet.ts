@@ -522,6 +522,15 @@ const isHard = (p: QualityPart): boolean =>
  * là ứng viên, mọi vai. 'unsure' không ảnh hưởng (không hạ ưu tiên). Đọc cấu trúc để không buộc vào phiên bản kiểu.
  */
 export const textureBroken = (q: ModelQuality): boolean => (q as ModelQuality & { readonly texture?: { readonly v?: string } }).texture?.v === 'broken';
+/** Lý do sổ: giấy phép chưa rõ phiên bản (NO-438). */
+export const LICENCE_UNCLEAR = 'giấy phép chưa rõ phiên bản';
+/**
+ * Giấy phép chưa rõ phiên bản (NO-438): đúng 'CC-BY' hoặc dạng CC-BY không có số bản (vd 'CC BY', 'cc-by-sa') → không bao giờ là
+ * ứng viên TỰ ĐỘNG (mọi đường chọn); mẫu người dùng đã chọn vẫn dựng. Chỉ theo trường `licence`, không theo id mẫu.
+ */
+export const licenceUnversioned = (licence: string | undefined): boolean => /^cc[-\s]by(?:[-\s](?:sa|nc|nd|nc-sa|nc-nd))?$/i.test((licence ?? '').trim());
+/** Mẫu bị loại khỏi MỌI đường chọn tự động vì vân vỡ hoặc giấy phép chưa rõ phiên bản. */
+export const autoBarred = (q: ModelQuality): boolean => textureBroken(q) || licenceUnversioned(q.licence);
 /** Trung vị (trên) cao mẫu (m) của pool vai — chuẩn cao khi món không cho `heightMm` (nhớ theo mảng pool). */
 const MEDIAN_H = new WeakMap<readonly string[], number | undefined>();
 const poolMedianHOf = (m: SetMember, ctx: SetContext): number | undefined => {
@@ -555,6 +564,7 @@ export const hardRejectOf = (m: SetMember, folder: string, ctx: SetContext, skip
   if (q.role !== m.role) return 'sai vai';
   if ((q.issues ?? []).length > 0) return 'có lỗi QC';
   if (textureBroken(q)) return 'vân vỡ';
+  if (licenceUnversioned(q.licence)) return LICENCE_UNCLEAR;
   if (q.front.check !== 'ok') return 'mặt trước chưa tin';
   if (q.parts === undefined || q.parts.length === 0) return 'thiếu dữ liệu phần';
   if (BED_ROLES.has(m.role) && q.completeness?.v !== 'full' && no(INCOMPLETE_BED)) return INCOMPLETE_BED;
@@ -1221,7 +1231,7 @@ export const roomSetOf = (
    * Lý do loại vì CHẤT LƯỢNG/AN TOÀN (L5, vòng 17): mẫu trượt các lý do này (ở pool, concept hay luật cũ) không quay lại qua
    * nhánh nào — kể cả phương án cuối.
    */
-  const BANNED: ReadonlySet<string> = new Set(['thiếu dữ liệu chất lượng', 'có lỗi QC', 'vân vỡ', 'giường chưa hoàn chỉnh', 'chạm gần trần', 'va chạm']);
+  const BANNED: ReadonlySet<string> = new Set(['thiếu dữ liệu chất lượng', 'có lỗi QC', 'vân vỡ', LICENCE_UNCLEAR, 'giường chưa hoàn chỉnh', 'chạm gần trần', 'va chạm']);
   /**
    * Mẫu bị CẤM làm kết quả cuối (Codex M17-1 #2): lỗi QC, vân vỡ, giường chưa hoàn chỉnh, chạm gần trần (kể độ nâng), concept
    * của chính mẫu trượt vì lý do trong BANNED, và ngoài công năng ở cỡ hiển thị. Kiểm từng lý do riêng — lý do đầu của
@@ -1240,6 +1250,7 @@ export const roomSetOf = (
     return (
       (q !== undefined && (q.issues ?? []).length > 0 ? 'có lỗi QC' : undefined) ??
       (q !== undefined && textureBroken(q) ? 'vân vỡ' : undefined) ??
+      (q !== undefined && licenceUnversioned(q.licence) ? LICENCE_UNCLEAR : undefined) ??
       (q !== undefined && BED_ROLES.has(m.role) && q.completeness?.v !== 'full' ? 'giường chưa hoàn chỉnh' : undefined) ??
       (byModel && m.ceilingM !== undefined && (m.liftM ?? 0) + (h as number) > m.ceilingM - CEILING_GAP_M ? 'chạm gần trần' : undefined) ??
       (conceptMiss !== undefined && BANNED.has(conceptMiss) ? conceptMiss : undefined) ??
