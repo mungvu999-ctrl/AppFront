@@ -242,6 +242,63 @@ export function proposedScaleNoteOf(
     : 'Máy ước lượng tỷ lệ, cần kiểm ở bước Tỷ lệ';
 }
 
+/** Một tầng xong, cho dòng tỷ lệ của thẻ tổng kết: tên tầng + tóm tắt của nó. */
+export interface SummaryScaleFloor {
+  readonly floorName: string;
+  readonly extraction: ProcessingExtractionSummary | undefined;
+}
+
+/** Tầng khác cần chú ý kể tên tối đa chừng này, còn lại gộp "+N tầng". */
+const OTHER_SCALE_FLOORS_NAMED = 3;
+
+/** "Tầng 2: Tỷ lệ ước lượng — Ước từ … ." — câu của tầng đã mở đầu bằng tên trạng thái thì không lặp lại. */
+function floorScaleLine({ floorName, extraction }: SummaryScaleFloor): string {
+  const label = extraction?.scaleStateLabel ?? '';
+  const note = extraction?.scaleStateNote ?? '';
+  const rest = note.startsWith(label) ? note.slice(label.length).replace(/^[:.]\s*/u, '') : note;
+
+  return `${floorName}: ${label}${rest === '' ? '.' : ` — ${rest}`}`;
+}
+
+/**
+ * L-K3-1: nhãn + câu tỷ lệ của thẻ tổng kết phải CÙNG TẦNG với số đếm. `shown` = tầng mà thẻ đang hiện số
+ * (UX-28): nhãn là của chính tầng ấy, kể cả khi nó đọc từ bản vẽ; tầng xong khác cần chú ý (ước lượng / chưa
+ * xác định) kể riêng, kèm tên tầng. `shown` null = thẻ hiện tổng mọi tầng: luật R9 cũ (tầng cần chú ý trước,
+ * rồi tầng xong đầu tiên có trạng thái).
+ */
+export function summaryScaleStateOf(
+  shown: SummaryScaleFloor | null,
+  others: readonly SummaryScaleFloor[],
+): { readonly scaleStateLabel?: string; readonly scaleStateNote?: string } {
+  if (shown === null) {
+    const owner = (
+      others.find((floor) => floor.extraction?.scaleStateNeedsAttention === true) ??
+      others.find((floor) => floor.extraction?.scaleStateLabel !== undefined)
+    )?.extraction;
+
+    return {
+      ...(owner?.scaleStateLabel === undefined ? {} : { scaleStateLabel: owner.scaleStateLabel }),
+      ...(owner?.scaleStateNote === undefined ? {} : { scaleStateNote: owner.scaleStateNote }),
+    };
+  }
+
+  const attention = others.filter((floor) => floor.extraction?.scaleStateNeedsAttention === true);
+  const named = attention.slice(0, OTHER_SCALE_FLOORS_NAMED).map(floorScaleLine);
+  const hidden = attention.length - named.length;
+  const note = [
+    shown.extraction?.scaleStateNote,
+    ...named,
+    hidden > 0 ? `+${formatNumber(hidden, { fractionDigits: 0 })} tầng khác cũng cần hiệu chỉnh tỷ lệ.` : undefined,
+  ]
+    .filter((part): part is string => part !== undefined && part !== '')
+    .join(' ');
+
+  return {
+    ...(shown.extraction?.scaleStateLabel === undefined ? {} : { scaleStateLabel: shown.extraction.scaleStateLabel }),
+    ...(note === '' ? {} : { scaleStateNote: note }),
+  };
+}
+
 const lowConfidenceSentence = (count: string): string =>
   `${count} chỗ máy chưa chắc, nên xem lại.`;
 
@@ -1454,14 +1511,18 @@ export function useProcessingScreen(options: UseProcessingScreenOptions): Proces
     const scaleEstimated = floorStatuses.some(
       (status, index) => status === 'done' && extractions[index]?.scaleEstimated === true,
     );
-    // R9: tầng xong có tỷ lệ cần chú ý (ước lượng / chưa xác định) nói trước; không thì trạng thái của chính
-    // tầng đang xem (không mượn nguồn "chuỗi kích thước" của tầng khác — e2e R9 mục 8), rồi tầng xong đầu.
-    const doneExtractions = extractions.filter((_, index) => floorStatuses[index] === 'done');
-    const focusedDone = floorStatuses[focusIndex] === 'done' ? extractions[focusIndex] : undefined;
-    const scaleStateOwner =
-      doneExtractions.find((extraction) => extraction?.scaleStateNeedsAttention === true) ??
-      (focusedDone?.scaleStateLabel !== undefined ? focusedDone : undefined) ??
-      doneExtractions.find((extraction) => extraction?.scaleStateLabel !== undefined);
+    // UX-28: số đếm theo tầng đang xem (tiêu đề ghi tên tầng); chưa có số của tầng đó thì tổng mọi tầng.
+    const focused = extractions[focusIndex];
+    const isFocusedOnly = parts.length > 1 && focused !== undefined;
+    // L-K3-1: nhãn tỷ lệ cùng tầng với số đếm; tầng xong khác cần chú ý kể riêng, có tên tầng.
+    const floorAt = (index: number): SummaryScaleFloor => ({
+      floorName: floorUploads[index]?.floorName ?? '',
+      extraction: extractions[index],
+    });
+    const otherDone = floorStatuses.flatMap((status, index) =>
+      status === 'done' && !(isFocusedOnly && index === focusIndex) ? [floorAt(index)] : [],
+    );
+    const scaleState = summaryScaleStateOf(isFocusedOnly ? floorAt(focusIndex) : null, otherDone);
     const goTo = (route: (projectId: string, floorId: string) => string, index = doneIndex) => () => {
       const upload = uploadsRef.current[index];
 
@@ -1476,8 +1537,7 @@ export function useProcessingScreen(options: UseProcessingScreenOptions): Proces
       ...(reviewReasons.length > 0 ? { reviewReasons } : {}),
       ...(reviewChecks.length > 0 ? { reviewChecks } : {}),
       ...(scaleEstimated ? { scaleEstimated: true as const } : {}),
-      ...(scaleStateOwner?.scaleStateLabel === undefined ? {} : { scaleStateLabel: scaleStateOwner.scaleStateLabel }),
-      ...(scaleStateOwner?.scaleStateNote === undefined ? {} : { scaleStateNote: scaleStateOwner.scaleStateNote }),
+      ...scaleState,
     };
 
     if (parts.length === 0) {
@@ -1509,11 +1569,8 @@ export function useProcessingScreen(options: UseProcessingScreenOptions): Proces
       },
     );
 
-    // UX-28: số đếm theo tầng đang xem (tiêu đề ghi tên tầng); chưa có số của tầng đó thì tổng mọi tầng.
-    const focused = extractions[focusIndex];
-    const isFocusedOnly = parts.length > 1 && focused !== undefined;
-    const shown = isFocusedOnly ? focused : total;
-    const shownParts = isFocusedOnly ? [focused] : parts;
+    const shown = isFocusedOnly && focused !== undefined ? focused : total;
+    const shownParts = isFocusedOnly && focused !== undefined ? [focused] : parts;
     const proposedScaleNote = proposedScaleNoteOf(parts);
 
     const threshold =
@@ -1550,7 +1607,7 @@ export function useProcessingScreen(options: UseProcessingScreenOptions): Proces
           }),
       ...actions,
     };
-  }, [extractions, floorStatuses, focusIndex, navigate, projectId]);
+  }, [extractions, floorStatuses, floorUploads, focusIndex, navigate, projectId]);
 
   const overallSummaryLine = useMemo(() => {
     if (records.length === 0) return uploadsPending ? LOADING_RUNS_SENTENCE : NO_RUN_SENTENCE;
