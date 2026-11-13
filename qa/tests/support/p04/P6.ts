@@ -79,7 +79,7 @@ export const SCALE = {
   failed: 'Chưa lưu được tỷ lệ lên máy chủ, tầng giữ tỷ lệ cũ.', // USC COPY.applyFailed
   noSpatial: 'Chưa nạp dữ liệu không gian của tầng này, nên chưa áp được tỷ lệ.', // USC COPY.applyNoSpatial
   listFailed: 'Không tải được danh sách tầng để áp tỷ lệ.', // USC COPY.allFloorsReadFailed
-  undoProvisional: 'Đã đặt lại tỷ lệ cũ; tỷ lệ này nay được coi là tỷ lệ bạn chọn.', // USC COPY.undoProvisional
+  undoProvisional: 'Đã đặt lại tỷ lệ máy; tầng ghi là bạn chấp nhận số máy, độ tin giữ như máy báo.', // USC COPY.undoProvisional
   undo: 'Hoàn tác', // undo toast action
   statusBar: 'Thanh trạng thái', // StatusBar
 } as const;

@@ -81,7 +81,7 @@ describe('useFloorLayerAutosave — saveScale (F-04x-2 bước 5)', () => {
 
     await tick();
     await act(async () => {
-      await hook.result.current.saveScale(FLOOR, 12, 4);
+      await hook.result.current.saveScale(FLOOR, 12, 'measured', 4);
     });
 
     expect(writeLayer).toHaveBeenCalledTimes(1);
@@ -97,7 +97,7 @@ describe('useFloorLayerAutosave — saveScale (F-04x-2 bước 5)', () => {
     await tick();
     editFloor();
     await act(async () => {
-      await hook.result.current.saveScale(FLOOR, 12, 9);
+      await hook.result.current.saveScale(FLOOR, 12, 'measured', 9);
     });
     await act(async () => {
       await flushAutosaves();
@@ -122,7 +122,7 @@ describe('useFloorLayerAutosave — saveScale (F-04x-2 bước 5)', () => {
     );
     await tick();
     editFloor();
-    const scaling = hook.result.current.saveScale(FLOOR, 12).catch(() => undefined);
+    const scaling = hook.result.current.saveScale(FLOOR, 12, 'measured').catch(() => undefined);
 
     // Engine xả lượt 800 ms của nó trong lúc PUT lớp + tỉ lệ đang bay: không còn gì để gửi → `saved`.
     await tick(800);
@@ -156,7 +156,7 @@ describe('useFloorLayerAutosave — saveScale (F-04x-2 bước 5)', () => {
     });
 
     expect(hook.result.current.isFloorBlocked(FLOOR)).toBe(true);
-    await expect(hook.result.current.saveScale(FLOOR, 12)).rejects.toBe(forbidden);
+    await expect(hook.result.current.saveScale(FLOOR, 12, 'measured')).rejects.toBe(forbidden);
     expect(writeLayer).toHaveBeenCalledTimes(1);
   });
 

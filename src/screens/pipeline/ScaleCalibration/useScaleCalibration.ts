@@ -103,7 +103,7 @@ import {
 import { useAutosave, useFloorLayerAutosave } from '@/hooks/useAutosave';
 import { appNotificationBus } from '@/hooks/useNotifications';
 import { createUndoTicket } from '@/lib/mutations/undoTicket';
-import type { FloorLayerSaveBlock } from '@/hooks/useAutosave';
+import type { FloorLayerSaveBlock, ScaleEvidence } from '@/hooks/useAutosave';
 import { useFloorLayer } from '@/hooks/useFloorLayer';
 import { useFloorLayerReadFailure } from '../../qc/shared/floorLayerReadFailure';
 import { useProjectConfidenceThreshold } from '@/hooks/useProjectConfidenceThreshold';
@@ -306,12 +306,19 @@ const COPY = {
     'Tầng chưa có bản vẽ sẽ không được áp. Sau khi áp, bước nắn và cắt bản vẽ của các tầng này sẽ khoá lại; muốn nắn lại thì tải bản vẽ mới.',
   allFloorsConfirm: 'Áp cho mọi tầng',
   allFloorsCancel: 'Huỷ',
-  undoProvisional: 'Đã đặt lại tỷ lệ cũ; tỷ lệ này nay được coi là tỷ lệ bạn chọn.',
+  undoProvisional: 'Đã đặt lại tỷ lệ máy; tầng ghi là bạn chấp nhận số máy, độ tin giữ như máy báo.',
 } as const;
 
 /** G4b-14: toast nói tỷ lệ vừa lưu, không lặp tên nút. Ví dụ `"Đã áp tỷ lệ 12 mm/px cho 2 tầng"`. */
 const appliedToastTitle = (ratioLabel: string, floorCount: number): string =>
   floorCount > 1 ? `Đã áp tỷ lệ ${ratioLabel} cho ${floorCount} tầng` : `Đã áp tỷ lệ ${ratioLabel} cho tầng này`;
+
+/**
+ * K4: "Áp cho mọi tầng" chép tỷ lệ của tầng ĐANG ĐO sang các tầng khác. Trên chính những tầng kia
+ * chưa ai đo kích thước thật nào, nên chúng chỉ là "đã chấp nhận số máy" — gọi chúng là
+ * "người dùng hiệu chỉnh" là nâng độ tin mà không có căn cứ mới.
+ */
+const ALL_FLOORS_EVIDENCE: ScaleEvidence = 'machineAccepted';
 
 /** Ví dụ `"Áp tỷ lệ này cho 3 tầng có bản vẽ?"`. */
 const allFloorsTitle = (count: string): string => `Áp tỷ lệ này cho ${count} tầng có bản vẽ?`;
@@ -344,19 +351,38 @@ function levelIn(spatial: NormalizedSpatial | null, levelId: string): Level | nu
   return entity !== undefined && isEntityOfKind('level', entity) ? entity : null;
 }
 
+/** Mã lý do N16 (K4): tỷ lệ người là số máy được chấp nhận, chưa ai đưa kích thước thật. */
+const USER_ACCEPTED = 'userAccepted';
+
 /**
  * UX41 U38: N16 trong cache sau khi máy chủ nhận tỷ lệ của một tầng ĐANG Ở KHO — bỏ hai khoá tạm,
  * revision theo kho. `level`/`layer`/`dimensions` giữ nguyên: kho là nguồn hình của tầng ấy, còn
  * `dimensions` của tài liệu đổi ra pixel theo tỷ lệ cũ của chính tài liệu. Lượt đọc lại sau thay hẳn.
  */
-function confirmedLayerDocument(document: FloorLayerDocument, revision: number): FloorLayerDocument {
+function confirmedLayerDocument(document: FloorLayerDocument, revision: number, evidence: ScaleEvidence): FloorLayerDocument {
   const confirmed = { ...document, revision: Math.max(document.revision, revision) };
   delete confirmed.scaleStatus;
   delete confirmed.scaleSource;
   delete confirmed.scaleState;
   delete confirmed.scaleReasons;
 
-  return confirmed;
+  if (evidence === 'measured') {
+    return confirmed;
+  }
+
+  /*
+   * K4: chấp nhận số máy không nâng độ tin — giữ trạng thái của máy tới lượt đọc lại. Không biết trạng thái
+   * máy (tầng đang là số người đo) thì ghi "chưa xác định": chỉ hạ, không bao giờ thành "đã xác nhận".
+   */
+  const machineState =
+    document.scaleState === undefined || document.scaleState === 'userCalibrated' ? 'unresolved' : document.scaleState;
+  const reasons = document.scaleReasons ?? [];
+
+  return {
+    ...confirmed,
+    scaleState: machineState,
+    scaleReasons: reasons.includes(USER_ACCEPTED) ? reasons : [...reasons, USER_ACCEPTED],
+  };
 }
 
 /** Câu người đọc của một lượt PUT hỏng. */
@@ -890,9 +916,13 @@ interface RatioMarks {
   readonly saved: Map<string, number>;
   /** Tầng từng ở tỷ lệ tạm, kèm tỷ lệ tạm ấy — hoàn tác về nó thì phải nói ra (bước 5). */
   readonly provisionalBefore: Map<string, number>;
+  /** K4: `scaleEvidence` của từng (tầng, tỷ lệ) đã gặp — hoàn tác / làm lại gửi lại đúng nguồn ấy. */
+  readonly evidence: Map<string, ScaleEvidence>;
 }
 
-const ratioMarks: RatioMarks = { scope: '', saved: new Map(), provisionalBefore: new Map() };
+const ratioMarks: RatioMarks = { scope: '', saved: new Map(), provisionalBefore: new Map(), evidence: new Map() };
+
+const evidenceKey = (levelId: string, ratio: number): string => `${levelId}@${String(ratio)}`;
 
 function ratioMarksFor(projectId: string): RatioMarks {
   const scope = `${projectId}#${useStore.getState().serverReplaceSeq}`;
@@ -901,6 +931,7 @@ function ratioMarksFor(projectId: string): RatioMarks {
     ratioMarks.scope = scope;
     ratioMarks.saved.clear();
     ratioMarks.provisionalBefore.clear();
+    ratioMarks.evidence.clear();
   }
 
   return ratioMarks;
@@ -911,6 +942,7 @@ export function __resetScaleRatioMarks(): void {
   ratioMarks.scope = '';
   ratioMarks.saved.clear();
   ratioMarks.provisionalBefore.clear();
+  ratioMarks.evidence.clear();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -988,7 +1020,14 @@ export function useScaleCalibration(
   const separateUnits = useSeparateUnitsFlag(projectId);
   const levelId: string = floorLayer.data?.level.id ?? floorId;
   /** `'unresolved'`: tỷ lệ trong `Level` là tỷ lệ tạm của pipeline, chưa ai chốt. */
-  const isProvisional = floorLayer.scaleStatus === 'unresolved';
+  /** K4: tỷ lệ người là số máy được chấp nhận (`userAccepted`) — độ tin vẫn là của máy. */
+  const isAcceptedMachine = floorLayer.scaleReasons?.includes(USER_ACCEPTED) === true;
+  const isProvisional =
+    floorLayer.scaleStatus === 'unresolved' ||
+    // Chấp nhận số ước lượng / chưa xác định không biến nó thành "đã xác nhận": màn vẫn coi là tỷ lệ tạm.
+    (isAcceptedMachine && (floorLayer.scaleState === 'estimated' || floorLayer.scaleState === 'unresolved'));
+  /** Tỷ lệ trong `Level` là số máy (pipeline, hoặc số máy người đã chấp nhận). */
+  const isMachineRatio = floorLayer.scaleSource === 'pipeline' || isAcceptedMachine;
   const { isFloorBlocked, reloadFloor, saveBlock: layerSaveBlock, saveScale } = useFloorLayerAutosave({
     projectId,
     floorId: levelId,
@@ -1031,6 +1070,12 @@ export function useScaleCalibration(
   dragRef.current = drag;
   const [nudgeTarget, setNudgeTarget] = useState<NudgeTarget>('end');
   const [realLengthText, setRealLengthText] = useState('');
+  /**
+   * K4: số mm trong ô là số MÁY đọc (đặt sẵn khi bấm một chip kích thước OCR), người dùng chưa sửa.
+   * Kéo một đoạn với số đặt sẵn này thì người dùng không hề đưa vào kích thước thật nào — đó vẫn là
+   * chấp nhận số máy, không phải hiệu chỉnh.
+   */
+  const [isRealLengthFromChip, setIsRealLengthFromChip] = useState(false);
   /** UX41 U01: chữ "1:100" người dùng gõ, gắn theo tầng để đổi tầng không mang sang. */
   const [ratioEntry, setRatioEntry] = useState<{ readonly floorId: string; readonly text: string } | null>(null);
   /** UX-R4 U11: diện tích căn (m²) người dùng gõ, gắn theo tầng như `ratioEntry`. */
@@ -1185,7 +1230,7 @@ export function useScaleCalibration(
    * Tỷ lệ mặc định của dự án (`project_default`) là số sai, không chọn sẵn.
    */
   const pipelineRatio =
-    suggestedRatio ?? (provisionalRatio !== null && floorLayer.scaleSource === 'pipeline' ? provisionalRatio : null);
+    suggestedRatio ?? (provisionalRatio !== null && isMachineRatio ? provisionalRatio : null);
   const sourceDpi = layerDocument?.sourceDpi ?? null;
   const ratioText = ratioEntry?.floorId === floorId ? ratioEntry.text : '';
   /** "1:100", "1/100" hoặc "100" → 100; chữ khác → `null`. */
@@ -1251,7 +1296,7 @@ export function useScaleCalibration(
   /** Tỷ lệ người dùng gõ thẳng (1:N, diện tích hoặc rộng × dài căn); các ô loại trừ nhau. */
   const typedRatio = ratioEntryRatio ?? areaEntryRatio ?? sizeEntryRatio;
   const isAutoSuggestion =
-    floorLayer.scaleSource === 'pipeline' &&
+    isMachineRatio &&
     pipelineRatio !== null &&
     !isSuggestionChosen &&
     // UX-02: có số đọc được nhưng không số nào đủ chắc để chọn sẵn thì vẫn đề xuất tỷ lệ máy, không khoá nút.
@@ -1262,6 +1307,22 @@ export function useScaleCalibration(
   const isSuggestionActive = pipelineRatio !== null && (isSuggestionChosen || isAutoSuggestion);
   const proposedRatio =
     typedRatio ?? (isSuggestionActive ? pipelineRatio : (proposedScale?.millimetresPerPixel ?? null));
+  /**
+   * K4: `measured` chỉ khi người dùng đưa một kích thước thật — gõ 1:N / diện tích / rộng × dài, hoặc kéo
+   * đoạn + gõ mm. Chọn một hàng kích thước máy đọc, thẻ gợi ý, số máy đặt sẵn = `machineAccepted`.
+   */
+  const proposalEvidence: ScaleEvidence =
+    typedRatio !== null ||
+    (computedMethod === 'referenceLine' &&
+      proposedScale !== null &&
+      !isSuggestionActive &&
+      /* Số mm là số máy đọc đặt sẵn từ chip kích thước: kéo đoạn trùng chính chữ số đó không phải
+         là đưa vào một kích thước thật, nên không được nâng lên "người dùng hiệu chỉnh". */
+      !isRealLengthFromChip)
+      ? 'measured'
+      : 'machineAccepted';
+  /** Đang đề nghị một số máy — chỉ áp cho tầng này (K4). Chưa có đề nghị thì chưa ẩn gì. */
+  const isMachineNumber = proposedRatio !== null && proposalEvidence === 'machineAccepted';
 
   /** Tỷ lệ dùng để bắt điểm và để suy ra ba dòng kiểm chứng, theo thứ tự tin cậy. */
   const workingRatio: MillimetresPerPixel | null = proposedRatio ?? storedRatio ?? provisionalRatio ?? aiSuggestion;
@@ -1293,7 +1354,8 @@ export function useScaleCalibration(
       }
 
       setApplyOutcome(null);
-      await saveScaleRef.current(id, ratio);
+      // Không biết nguồn của tỷ lệ này thì coi là số máy: chỉ hạ độ tin, không bao giờ nâng (K4).
+      await saveScaleRef.current(id, ratio, marks.evidence.get(evidenceKey(id, ratio)) ?? 'machineAccepted');
       marks.saved.set(id, ratio);
 
       if (marks.provisionalBefore.get(id) === ratio) {
@@ -1730,6 +1792,7 @@ export function useScaleCalibration(
       setPickedChip({ floorId, id: chipId });
       setMethod('referenceLine');
       setRealLengthText(String(target.valueMm));
+      setIsRealLengthFromChip(true);
 
       if (currentFrame !== null && size.width > 0 && size.height > 0) {
         const min = toPixelPoint(currentFrame, target.box.min);
@@ -1743,6 +1806,8 @@ export function useScaleCalibration(
 
   const onChangeRealLength = useCallback((text: string) => {
     setRealLengthText(text);
+    // Người dùng tự gõ thì số không còn là số máy đặt sẵn nữa.
+    setIsRealLengthFromChip(false);
   }, []);
 
   const onConfirmRealLength = useCallback(() => {
@@ -1752,6 +1817,7 @@ export function useScaleCalibration(
   const onRemeasure = useCallback(() => {
     setDrag(null);
     setRealLengthText('');
+    setIsRealLengthFromChip(false);
     setNudgeTarget('end');
   }, []);
 
@@ -1937,6 +2003,8 @@ export function useScaleCalibration(
    */
   const proposedRatioRef = useRef(proposedRatio);
   proposedRatioRef.current = proposedRatio;
+  const proposalEvidenceRef = useRef(proposalEvidence);
+  proposalEvidenceRef.current = proposalEvidence;
 
   /** UX41 U34: cỡ căn vô lý thì lần bấm đầu chỉ hỏi lại; bấm lần nữa với cùng tỷ lệ mới lưu. */
   const hasPlanSizeWarningRef = useRef(false);
@@ -1951,7 +2019,7 @@ export function useScaleCalibration(
    * `handleSave` mà chính `commit` này hẹn không gửi lại tỷ lệ vừa lưu.
    */
   const queryClient = useQueryClient();
-  const commitSaved = useCallback((levelIds: readonly string[], ratio: MillimetresPerPixel) => {
+  const commitSaved = useCallback((levelIds: readonly string[], ratio: MillimetresPerPixel, evidence: ScaleEvidence) => {
     // N2-03/N2-09: QC screens read `scaleStatus` from the layer query; refresh it so the provisional
     // banner and room areas update right after the save.
     // refetchType 'none': mark stale only, so this screen's own layer query does not refetch mid-undo.
@@ -1972,7 +2040,7 @@ export function useScaleCalibration(
       }
 
       queryClient.setQueryData<FloorLayerDocument>(queryKeys.layer.byFloor(projectIdRef.current, id), (document) =>
-        document === undefined ? document : confirmedLayerDocument(document, revision),
+        document === undefined ? document : confirmedLayerDocument(document, revision, evidence),
       );
     }
     const spatial = useStore.getState().spatial;
@@ -1984,6 +2052,7 @@ export function useScaleCalibration(
 
       if (level !== null) {
         marks.saved.set(id, ratio);
+        marks.evidence.set(evidenceKey(id, ratio), evidence);
         patches.push({ op: 'update', kind: 'level', id: level.id, changes: { scaleMillimetresPerPixel: ratio } });
       }
     }
@@ -2016,12 +2085,37 @@ export function useScaleCalibration(
   const rememberProvisional = useCallback((id: string) => {
     const ratio = levelIn(useStore.getState().spatial, id)?.scaleMillimetresPerPixel;
 
-    if (useStore.getState().floorMeta[id]?.scaleStatus === 'unresolved' && ratio !== undefined) {
-      ratioMarksFor(projectIdRef.current).provisionalBefore.set(id, ratio);
+    if (ratio === undefined) {
+      return;
     }
-  }, []);
 
-  const effectiveApplyScope: ScaleApplyScope = separateUnits ? 'thisFloor' : applyScope;
+    const marks = ratioMarksFor(projectIdRef.current);
+
+    if (useStore.getState().floorMeta[id]?.scaleStatus === 'unresolved') {
+      marks.provisionalBefore.set(id, ratio);
+    }
+
+    /*
+     * K4: nguồn của tỷ lệ TRƯỚC lượt áp, để hoàn tác gửi lại đúng nó. `measured` chỉ khi N16 nói chắc tầng đang
+     * ở số người đo (không `scaleStatus`, không `userAccepted`, cùng tỷ lệ); còn lại là số máy.
+     */
+    const key = evidenceKey(id, ratio);
+
+    if (!marks.evidence.has(key)) {
+      const document = queryClient.getQueryData<FloorLayerDocument>(queryKeys.layer.byFloor(projectIdRef.current, id));
+      const isMeasured =
+        document !== undefined &&
+        document.scaleStatus === undefined &&
+        document.scaleReasons?.includes(USER_ACCEPTED) !== true &&
+        document.level.scaleMillimetresPerPixel === ratio;
+
+      marks.evidence.set(key, isMeasured ? 'measured' : 'machineAccepted');
+    }
+  }, [queryClient]);
+
+  // K4: số máy chỉ áp cho tầng này — số ước của tầng A không được thành tỷ lệ của mọi tầng.
+  const effectiveApplyScope: ScaleApplyScope =
+    separateUnits || isMachineNumber ? 'thisFloor' : applyScope;
   const applyScopeRef = useRef(effectiveApplyScope);
   applyScopeRef.current = effectiveApplyScope;
 
@@ -2033,6 +2127,7 @@ export function useScaleCalibration(
 
   const onApply = useCallback(() => {
     const ratio = proposedRatioRef.current;
+    const evidence = proposalEvidenceRef.current;
 
     if (ratio === null) {
       return;
@@ -2055,7 +2150,8 @@ export function useScaleCalibration(
     undoWhileApplyingRef.current = false;
     setApplying(true);
 
-    if (applyScopeRef.current === 'allFloors') {
+    // `sendAllFloors` gửi `measured`: chỉ tới được đây khi tỷ lệ là số người đo (K4).
+    if (applyScopeRef.current === 'allFloors' && evidence === 'measured') {
       void gateway.readAllFloors({ projectId }).then(
         (targets) => {
           setAllFloors({ ratio, targets, changes: allFloorsChanges(targets, ratio) });
@@ -2070,11 +2166,11 @@ export function useScaleCalibration(
     }
 
     rememberProvisional(levelId);
-    void saveScale(levelId, ratio).then(
+    void saveScale(levelId, ratio, evidence).then(
       () => {
         setScaleConflict(false);
         setOfflinePending(false);
-        commitSaved([levelId], ratio);
+        commitSaved([levelId], ratio, evidence);
         const session = dragRef.current;
         const savedFrame = frameRef.current;
         if (session !== null && savedFrame !== null) {
@@ -2149,7 +2245,7 @@ export function useScaleCalibration(
           rememberProvisional(target.floorId);
 
           try {
-            await saveScale(target.floorId, ratio, target.revision);
+            await saveScale(target.floorId, ratio, ALL_FLOORS_EVIDENCE, target.revision);
             saved.push(target);
           } catch (error: unknown) {
             failed.push(target.name);
@@ -2163,6 +2259,7 @@ export function useScaleCalibration(
         commitSaved(
           saved.map((target) => target.floorId),
           ratio,
+          ALL_FLOORS_EVIDENCE,
         );
         setOfflineFloors(offline.length > 0 ? { ratio, targets: offline } : null);
         setApplyOutcome(saved.length > 0 && failed.length === 0 && blocked.length === 0 ? 'success' : 'failed');
@@ -2691,10 +2788,12 @@ export function useScaleCalibration(
 
   const applyScopeOptions = useMemo<readonly ScaleApplyScopeOption[]>(
     () => [
-      ...(separateUnits ? [] : [{ value: 'allFloors', label: COPY.scopeAllFloors } as const]),
+      ...(separateUnits || isMachineNumber
+        ? []
+        : [{ value: 'allFloors', label: COPY.scopeAllFloors } as const]),
       { value: 'thisFloor', label: COPY.scopeThisFloor },
     ],
-    [separateUnits],
+    [isMachineNumber, separateUnits],
   );
 
   const shortcutHints = useMemo<readonly ScaleShortcutHint[]>(() => {

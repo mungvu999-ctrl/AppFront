@@ -61,6 +61,13 @@ describe('lý do tỷ lệ (R9)', () => {
     expect(scaleReasonTextOf('toString')).toBe(SCALE_REASON_UNKNOWN);
   });
 
+  it('lý do userAccepted (K4) có câu tiếng Việt, đứng sau căn cứ của máy', () => {
+    expect(scaleReasonTextOf('userAccepted')).toBe('Bạn đã chấp nhận số của máy, chưa nhập kích thước thật');
+    expect(scaleReasonsSentenceOf(['door', 'userAccepted'])).toBe(
+      'Ước từ bề rộng cửa đi (giả định 745 mm); Bạn đã chấp nhận số của máy, chưa nhập kích thước thật.',
+    );
+  });
+
   it('gộp thành một câu, bỏ câu trùng; rỗng thì null', () => {
     expect(scaleReasonsSentenceOf(['door', 'estimateSpread'])).toBe(
       'Ước từ bề rộng cửa đi (giả định 745 mm); Ước từ cửa và từ tường lệch nhau.',

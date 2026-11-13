@@ -192,8 +192,17 @@ export const FloorLayerWriteBodySchema = z
     origin: FloorOriginSchema.optional(),
     layer: SpatialLayerSchema.optional(),
     scaleMillimetresPerPixel: scaleMillimetresPerPixelSchema.optional(),
+    /**
+     * Tỉ lệ đến từ đâu (K4): `measured` = người dùng đưa một kích thước thật (kéo đoạn + gõ mm,
+     * rộng × dài, diện tích, 1:N); `machineAccepted` = chỉ chấp nhận số máy đọc — máy chủ giữ
+     * `scaleState` của máy. Chỉ đi kèm `scaleMillimetresPerPixel`; vắng = `measured` (BE cũ).
+     */
+    scaleEvidence: z.enum(['measured', 'machineAccepted']).optional(),
   })
   .strict()
+  .refine((body) => body.scaleEvidence === undefined || body.scaleMillimetresPerPixel !== undefined, {
+    path: ['scaleEvidence'],
+  })
   .refine(
     /*
      * Đếm **giá trị**, không đếm khoá.
@@ -215,6 +224,9 @@ export const FloorLayerWriteBodySchema = z
   );
 
 export type FloorLayerWriteBody = z.infer<typeof FloorLayerWriteBodySchema>;
+
+/** Nguồn của một lần áp tỉ lệ (K4) — xem `FloorLayerWriteBodySchema.scaleEvidence`. */
+export type ScaleEvidence = NonNullable<FloorLayerWriteBody['scaleEvidence']>;
 
 /** Thân `PUT` đầy đủ: `{baseVersion, body}`. */
 export const FloorLayerWriteSchema = VersionedWriteSchema(FloorLayerWriteBodySchema);

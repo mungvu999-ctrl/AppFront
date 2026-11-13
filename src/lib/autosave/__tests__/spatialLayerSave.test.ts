@@ -636,14 +636,20 @@ describe('saveScale — F-04x-2 bước 5', () => {
     vi.useRealTimers();
   });
 
-  it('tầng sạch: thân chỉ tỉ lệ, base = max(readRevision, hint); onSaved có scaleSent', async () => {
+  it('saveScale gửi scaleEvidence — tầng sạch: thân chỉ tỉ lệ, base = max(readRevision, hint); onSaved có scaleSent', async () => {
     const { onSaved, saver, writeLayer } = harness();
 
-    await saver.saveScale(FLOOR_A, RATIO, 5);
-    await saver.saveScale(FLOOR_B, RATIO, 2);
+    await saver.saveScale(FLOOR_A, RATIO, 'machineAccepted', 5);
+    await saver.saveScale(FLOOR_B, RATIO, 'measured', 2);
 
-    expect(sentWrite(writeLayer, 0)).toStrictEqual({ baseVersion: 5, body: { scaleMillimetresPerPixel: RATIO } });
-    expect(sentWrite(writeLayer, 1)).toStrictEqual({ baseVersion: 7, body: { scaleMillimetresPerPixel: RATIO } });
+    expect(sentWrite(writeLayer, 0)).toStrictEqual({
+      baseVersion: 5,
+      body: { scaleEvidence: 'machineAccepted', scaleMillimetresPerPixel: RATIO },
+    });
+    expect(sentWrite(writeLayer, 1)).toStrictEqual({
+      baseVersion: 7,
+      body: { scaleEvidence: 'measured', scaleMillimetresPerPixel: RATIO },
+    });
     expect(onSaved).toHaveBeenCalledWith(FLOOR_A, expect.objectContaining({ revision: 4 }), {
       redirtied: false,
       scaleSent: true,
@@ -653,21 +659,21 @@ describe('saveScale — F-04x-2 bước 5', () => {
   it('tầng sạch không hint: base = readRevision', async () => {
     const { saver, writeLayer } = harness();
 
-    await saver.saveScale(FLOOR_A, RATIO);
+    await saver.saveScale(FLOOR_A, RATIO, 'measured');
 
     expect(sentWrite(writeLayer, 0).baseVersion).toBe(3);
   });
 
-  it('tầng bẩn: MỘT PUT lớp + tỉ lệ; hint lớn hơn vẫn giữ base của lớp; flush sau không gửi lại', async () => {
+  it('PUT lớp + tỉ lệ mang scaleEvidence — tầng bẩn: MỘT PUT; hint lớn hơn vẫn giữ base của lớp; flush sau không gửi lại', async () => {
     const { saver, writeLayer } = harness();
 
     saver.markDirty([FLOOR_A]);
-    await saver.saveScale(FLOOR_A, RATIO, 9);
+    await saver.saveScale(FLOOR_A, RATIO, 'machineAccepted', 9);
 
     expect(writeLayer).toHaveBeenCalledTimes(1);
     expect(sentWrite(writeLayer, 0)).toStrictEqual({
       baseVersion: 3,
-      body: { layer: wireLayer(4800), scaleMillimetresPerPixel: RATIO },
+      body: { layer: wireLayer(4800), scaleEvidence: 'machineAccepted', scaleMillimetresPerPixel: RATIO },
     });
 
     await saver.flush();
@@ -683,7 +689,7 @@ describe('saveScale — F-04x-2 bước 5', () => {
     saver.markDirty([FLOOR_A]);
     await expect(saver.flush()).rejects.toBe(error);
 
-    await expect(saver.saveScale(FLOOR_A, RATIO, 9)).rejects.toBe(error);
+    await expect(saver.saveScale(FLOOR_A, RATIO, 'measured', 9)).rejects.toBe(error);
     expect(writeLayer).toHaveBeenCalledTimes(1);
   });
 
@@ -694,7 +700,7 @@ describe('saveScale — F-04x-2 bước 5', () => {
 
     saver.subscribe(listener);
     writeLayer.mockReturnValueOnce(pending.promise);
-    const saving = saver.saveScale(FLOOR_A, RATIO);
+    const saving = saver.saveScale(FLOOR_A, RATIO, 'measured');
 
     await vi.advanceTimersByTimeAsync(0);
     saver.markDirty([FLOOR_A]);
@@ -714,11 +720,11 @@ describe('saveScale — F-04x-2 bước 5', () => {
     expect(writeLayer).toHaveBeenCalledTimes(1);
     expect(listener).toHaveBeenLastCalledWith([FLOOR_A]);
 
-    await expect(saver.saveScale(FLOOR_A, RATIO)).rejects.toThrow(LAYER_SAVE_MESSAGES.scaleRedirtied);
+    await expect(saver.saveScale(FLOOR_A, RATIO, 'measured')).rejects.toThrow(LAYER_SAVE_MESSAGES.scaleRedirtied);
     expect(writeLayer).toHaveBeenCalledTimes(1);
 
     saver.discardFloor(FLOOR_A);
-    await saver.saveScale(FLOOR_A, RATIO);
+    await saver.saveScale(FLOOR_A, RATIO, 'measured');
     expect(writeLayer).toHaveBeenCalledTimes(2);
   });
 
@@ -729,7 +735,7 @@ describe('saveScale — F-04x-2 bước 5', () => {
     writeLayer.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(savedAt(5));
     saver.markDirty([FLOOR_A]);
     const flushed = saver.flush();
-    const saving = saver.saveScale(FLOOR_A, RATIO);
+    const saving = saver.saveScale(FLOOR_A, RATIO, 'measured');
 
     await vi.advanceTimersByTimeAsync(0);
     expect(writeLayer).toHaveBeenCalledTimes(1);
@@ -737,7 +743,7 @@ describe('saveScale — F-04x-2 bước 5', () => {
     pending.resolve(savedAt(4));
     await Promise.all([flushed, saving]);
 
-    expect(sentWrite(writeLayer, 1)).toStrictEqual({ baseVersion: 4, body: { scaleMillimetresPerPixel: RATIO } });
+    expect(sentWrite(writeLayer, 1)).toStrictEqual({ baseVersion: 4, body: { scaleEvidence: 'measured', scaleMillimetresPerPixel: RATIO } });
   });
 
   it('thân chỉ tỉ lệ hỏng 422: ném lỗi gốc, không khối, không tự gửi lại', async () => {
@@ -745,7 +751,7 @@ describe('saveScale — F-04x-2 bước 5', () => {
     const error = httpError(422, { code: 'VALIDATION', field: 'scaleMillimetresPerPixel', requestId: 'req-1' });
 
     writeLayer.mockResolvedValueOnce(failed(error));
-    await expect(saver.saveScale(FLOOR_A, RATIO)).rejects.toBe(error);
+    await expect(saver.saveScale(FLOOR_A, RATIO, 'measured')).rejects.toBe(error);
 
     expect(saver.getBlock(FLOOR_A)).toBeNull();
     await saver.flush();
@@ -756,7 +762,7 @@ describe('saveScale — F-04x-2 bước 5', () => {
     const { saver, writeLayer } = harness();
 
     writeLayer.mockResolvedValueOnce(failed(TIMEOUT));
-    await expect(saver.saveScale(FLOOR_A, RATIO)).rejects.toBe(TIMEOUT);
+    await expect(saver.saveScale(FLOOR_A, RATIO, 'measured')).rejects.toBe(TIMEOUT);
 
     expect(saver.hasDirty()).toBe(false);
     await saver.flush();
@@ -768,7 +774,7 @@ describe('saveScale — F-04x-2 bước 5', () => {
 
     writeLayer.mockResolvedValueOnce(failed(TIMEOUT));
     saver.markDirty([FLOOR_A]);
-    await expect(saver.saveScale(FLOOR_A, RATIO)).rejects.toBe(TIMEOUT);
+    await expect(saver.saveScale(FLOOR_A, RATIO, 'measured')).rejects.toBe(TIMEOUT);
 
     expect(saver.hasDirty()).toBe(true);
     await saver.flush();
@@ -781,7 +787,7 @@ describe('saveScale — F-04x-2 bước 5', () => {
 
     writeLayer.mockReturnValueOnce(pending.promise);
     saver.markDirty([FLOOR_A]);
-    const scaling = saver.saveScale(FLOOR_A, RATIO).catch(() => undefined);
+    const scaling = saver.saveScale(FLOOR_A, RATIO, 'measured').catch(() => undefined);
 
     await vi.waitFor(() => expect(writeLayer).toHaveBeenCalledTimes(1));
     const flushing = saver.flush();
@@ -799,7 +805,7 @@ describe('saveScale — F-04x-2 bước 5', () => {
     const pending = deferred();
 
     writeLayer.mockReturnValueOnce(pending.promise);
-    const scaling = saver.saveScale(FLOOR_A, RATIO).catch(() => undefined);
+    const scaling = saver.saveScale(FLOOR_A, RATIO, 'measured').catch(() => undefined);
 
     await vi.waitFor(() => expect(writeLayer).toHaveBeenCalledTimes(1));
     const flushing = saver.flush();
@@ -817,7 +823,7 @@ describe('saveScale — F-04x-2 bước 5', () => {
 
     writeLayer.mockResolvedValueOnce(failed(error));
     saver.markDirty([FLOOR_A]);
-    await expect(saver.saveScale(FLOOR_A, RATIO)).rejects.toBe(error);
+    await expect(saver.saveScale(FLOOR_A, RATIO, 'measured')).rejects.toBe(error);
 
     expect(saver.getBlock(FLOOR_A)).toStrictEqual({ kind: 'reload', message: LAYER_SAVE_MESSAGES.reload });
   });
@@ -830,19 +836,19 @@ describe('saveScale — F-04x-2 bước 5', () => {
     await expect(saver.flush()).rejects.toBe(TIMEOUT);
 
     revisions.set(FLOOR_A, 6);
-    await saver.saveScale(FLOOR_A, RATIO, 9);
+    await saver.saveScale(FLOOR_A, RATIO, 'measured', 9);
 
     expect(writeLayer).toHaveBeenCalledTimes(2);
     expect(sentWrite(writeLayer, 1)).toStrictEqual({
       baseVersion: 3,
-      body: { layer: wireLayer(4800), scaleMillimetresPerPixel: RATIO },
+      body: { layer: wireLayer(4800), scaleEvidence: 'measured', scaleMillimetresPerPixel: RATIO },
     });
     expect(saver.hasDirty()).toBe(false);
   });
 
   it('tỉ lệ không hợp lệ: không gửi, ném 422 không tạm thời, không khối', async () => {
     const { saver, writeLayer } = harness();
-    const error: unknown = await saver.saveScale(FLOOR_A, 0).catch((thrown: unknown) => thrown);
+    const error: unknown = await saver.saveScale(FLOOR_A, 0, 'measured').catch((thrown: unknown) => thrown);
 
     expect(error).toMatchObject({ kind: 'http', retryable: false, status: 422 });
     expect(writeLayer).toHaveBeenCalledTimes(0);

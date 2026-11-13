@@ -3,6 +3,7 @@ import {
   FloorLayerWriteSchema,
   type FloorLayerWriteBody,
   type FloorLayerWriteResult,
+  type ScaleEvidence,
 } from '@/api/schemas/spatialLayer';
 import { isIdOfKind, type EntityKind } from '@/domain/spatial/ids';
 import { idsOnLevel, isEntityOfKind, type NormalizedSpatial } from '@/domain/spatial/normalize';
@@ -263,8 +264,9 @@ export interface FloorLayerSaver {
    * không gửi, ném lại lỗi đang giữ. Tầng bẩn → một PUT lớp + tỉ lệ, base của lớp (`hint` bị bỏ:
    * thân có `layer` mà base lấy từ N15 là đè im lặng). Tầng sạch → thân chỉ tỉ lệ, base nâng
    * theo `hint`. Hỏng → ném lỗi gốc; thân tỉ lệ không bao giờ bị giữ để tự gửi lại.
+   * `evidence` đi kèm tỉ lệ (`scaleEvidence`, K4): số máy đã chấp nhận hay kích thước người đo.
    */
-  saveScale(floorId: string, ratio: number, hint?: number): Promise<void>;
+  saveScale(floorId: string, ratio: number, evidence: ScaleEvidence, hint?: number): Promise<void>;
   discardFloor(floorId: string): void;
   getBlock(floorId: string): LayerSaveBlock | null;
   blockedFloorIds(): string[];
@@ -452,7 +454,12 @@ export function createFloorLayerSaver(projectId: string, ports: FloorLayerSaverP
   };
 
   /** Thân của `saveScale`, chụp TRONG khoá tầng — sau mọi PUT lớp đang bay của tầng ấy. */
-  const scaleWrite = (floorId: string, ratio: number, hint: number | undefined): Promise<FloorFailure | undefined> => {
+  const scaleWrite = (
+    floorId: string,
+    ratio: number,
+    evidence: ScaleEvidence,
+    hint: number | undefined,
+  ): Promise<FloorFailure | undefined> => {
     const block = blocks.get(floorId);
 
     if (block) {
@@ -474,14 +481,14 @@ export function createFloorLayerSaver(projectId: string, ports: FloorLayerSaverP
       // Bản giữ mang base của lần chụp; lượt hỏng tạm không đổi revision nên hai số bằng nhau.
       return send(
         floorId,
-        { baseVersion: pending?.baseVersion ?? layerBase(floorId), body: { ...(dimensions ? { dimensions: [...dimensions] } : {}), layer, scaleMillimetresPerPixel: ratio } },
+        { baseVersion: pending?.baseVersion ?? layerBase(floorId), body: { ...(dimensions ? { dimensions: [...dimensions] } : {}), layer, scaleMillimetresPerPixel: ratio, scaleEvidence: evidence } },
         false,
       );
     }
 
     return send(
       floorId,
-      { baseVersion: Math.max(layerBase(floorId), hint ?? 0), body: { scaleMillimetresPerPixel: ratio } },
+      { baseVersion: Math.max(layerBase(floorId), hint ?? 0), body: { scaleMillimetresPerPixel: ratio, scaleEvidence: evidence } },
       false,
     );
   };
@@ -530,8 +537,8 @@ export function createFloorLayerSaver(projectId: string, ports: FloorLayerSaverP
       }
     },
     getBlock: (floorId) => blocks.get(floorId) ?? null,
-    async saveScale(floorId, ratio, hint) {
-      const settled = track(floorId, () => scaleWrite(floorId, ratio, hint));
+    async saveScale(floorId, ratio, evidence, hint) {
+      const settled = track(floorId, () => scaleWrite(floorId, ratio, evidence, hint));
 
       scaleTasks.add(settled);
       const failure = await settled.finally(() => scaleTasks.delete(settled));

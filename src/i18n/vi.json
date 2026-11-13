@@ -1173,7 +1173,7 @@
       "allFloorsReportSkipped": "Bỏ qua vì chưa có bản vẽ: {{floors}}.",
       "allFloorsTitle": "Áp tỷ lệ này cho {{count}} tầng có bản vẽ?",
       "applyFailed": "Chưa lưu được tỷ lệ lên máy chủ, tầng giữ tỷ lệ cũ.",
-      "undoProvisional": "Đã đặt lại tỷ lệ cũ; tỷ lệ này nay được coi là tỷ lệ bạn chọn."
+      "undoProvisional": "Đã đặt lại tỷ lệ máy; tầng ghi là bạn chấp nhận số máy, độ tin giữ như máy báo."
     },
     "statusBar": {
       "ariaLabel": "Thanh trạng thái hiệu chỉnh tỷ lệ",

@@ -20,7 +20,13 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import { __resetMockLayerState, createMockApiClient, simulateProvisionalScale } from '@/api/__mocks__/client';
+import {
+  __resetMockLayerState,
+  createMockApiClient,
+  simulateAcceptedScale,
+  simulateCalibratedScale,
+  simulateProvisionalScale,
+} from '@/api/__mocks__/client';
 import type { ApiClient, SpatialApi } from '@/api/client';
 import { createSampleBuilding, sampleLevelId } from '@/domain/spatial/__fixtures__/sampleBuilding';
 import { normalizeSpatial } from '@/domain/spatial/normalize';
@@ -620,6 +626,7 @@ describe('useScaleCalibration — áp dụng: PUT trước, commit sau (F-04x-2 
 
     expect(harness.writeLayer).toHaveBeenCalledTimes(1);
     expect(harness.writeLayer.mock.calls[0]?.[0].body).toEqual({
+      scaleEvidence: 'measured',
       scaleMillimetresPerPixel: REFERENCE_SCALE.millimetresPerPixel,
     });
     expect(storedRatio()).toBeUndefined();
@@ -996,6 +1003,7 @@ describe('useScaleCalibration — tầng tỷ lệ tạm (scaleStatus unresolved
 
     expect(harness.writeLayer).toHaveBeenCalledTimes(1);
     expect(harness.writeLayer.mock.calls[0]?.[0].body.scaleMillimetresPerPixel).toBeCloseTo(built / 2, 6);
+    expect(harness.writeLayer.mock.calls[0]?.[0].body.scaleEvidence).toBe('measured'); // K4: kích thước căn = đo thật
   });
 
   it('[D1] rộng × dài căn theo tim tường: tỷ lệ suy từ hộp bao tường → đi đường xác nhận như cũ', async () => {
@@ -1037,6 +1045,7 @@ describe('useScaleCalibration — tầng tỷ lệ tạm (scaleStatus unresolved
 
     expect(harness.writeLayer).toHaveBeenCalledTimes(1);
     expect(harness.writeLayer.mock.calls[0]?.[0].body.scaleMillimetresPerPixel).toBeCloseTo(built / 2, 6);
+    expect(harness.writeLayer.mock.calls[0]?.[0].body.scaleEvidence).toBe('measured'); // K4: kích thước căn = đo thật
   });
 
   it('storedRatio null: nhãn "Chưa có", dải tỷ lệ tạm; áp đúng tỷ lệ tạm → một PUT, dải mất', async () => {
@@ -1099,9 +1108,12 @@ describe('useScaleCalibration — tầng tỷ lệ tạm (scaleStatus unresolved
     await settleAsync();
 
     expect(harness.writeLayer).toHaveBeenCalledTimes(2);
-    expect(harness.writeLayer.mock.calls[1]?.[0].body).toEqual({ scaleMillimetresPerPixel: PROVISIONAL_RATIO });
+    expect(harness.writeLayer.mock.calls[1]?.[0].body).toEqual({
+      scaleEvidence: 'machineAccepted',
+      scaleMillimetresPerPixel: PROVISIONAL_RATIO,
+    });
     expect(mounted.result.current.model.panel.applyBlockedNotice).toBe(
-      'Đã đặt lại tỷ lệ cũ; tỷ lệ này nay được coi là tỷ lệ bạn chọn.',
+      'Đã đặt lại tỷ lệ máy; tầng ghi là bạn chấp nhận số máy, độ tin giữ như máy báo.',
     );
   });
 });
@@ -1250,8 +1262,9 @@ describe('useScaleCalibration — áp mọi tầng (A9)', () => {
     await settleAsync();
 
     expect(harness.writeLayer.mock.calls.map(([input]) => [input.floorId, input.baseVersion, input.body])).toEqual([
-      [FLOORS[0].floorId, 4, { scaleMillimetresPerPixel: REFERENCE_SCALE.millimetresPerPixel }],
-      [FLOORS[1].floorId, 5, { scaleMillimetresPerPixel: REFERENCE_SCALE.millimetresPerPixel }],
+      // K4: tầng ĐÍCH chưa ai đo kích thước thật nào trên chính nó — chép tỷ lệ sang là chấp nhận số máy.
+      [FLOORS[0].floorId, 4, { scaleEvidence: 'machineAccepted', scaleMillimetresPerPixel: REFERENCE_SCALE.millimetresPerPixel }],
+      [FLOORS[1].floorId, 5, { scaleEvidence: 'machineAccepted', scaleMillimetresPerPixel: REFERENCE_SCALE.millimetresPerPixel }],
     ]);
     expect(maxInFlight).toBe(1);
 
@@ -1711,7 +1724,7 @@ describe('useScaleCalibration — review-1 F3 (P2-4, P2-5, Nit-3)', () => {
 
     expect(storedRatio()).toBe(before);
     expect(harness.writeLayer).toHaveBeenCalledTimes(2);
-    expect(harness.writeLayer.mock.calls[1]?.[0].body).toEqual({ scaleMillimetresPerPixel: before });
+    expect(harness.writeLayer.mock.calls[1]?.[0].body).toEqual({ scaleEvidence: 'machineAccepted', scaleMillimetresPerPixel: before });
   });
 
   it('áp, hoàn tác, áp lại, Ctrl+Z → PUT thứ tư mang tỷ lệ cũ (14-A-028)', async () => {
@@ -1735,7 +1748,7 @@ describe('useScaleCalibration — review-1 F3 (P2-4, P2-5, Nit-3)', () => {
     await undoAndSend();
 
     expect(harness.writeLayer).toHaveBeenCalledTimes(4);
-    expect(harness.writeLayer.mock.calls[3]?.[0].body).toEqual({ scaleMillimetresPerPixel: before });
+    expect(harness.writeLayer.mock.calls[3]?.[0].body).toEqual({ scaleEvidence: 'machineAccepted', scaleMillimetresPerPixel: before });
   });
 
   it('như người dùng thật: hoàn tác lần đầu bằng toast, áp lại, Ctrl+Z → vẫn PUT tỷ lệ cũ (14-A-028, BUG-724)', async () => {
@@ -1771,7 +1784,7 @@ describe('useScaleCalibration — review-1 F3 (P2-4, P2-5, Nit-3)', () => {
     await undoAndSend();
 
     expect(harness.writeLayer).toHaveBeenCalledTimes(4);
-    expect(harness.writeLayer.mock.calls[3]?.[0].body).toEqual({ scaleMillimetresPerPixel: before });
+    expect(harness.writeLayer.mock.calls[3]?.[0].body).toEqual({ scaleEvidence: 'machineAccepted', scaleMillimetresPerPixel: before });
   });
 
   it('ảnh 1600×1200: đầu đoạn bắt lưới 50 mm theo pixel ẢNH — khung vuông, dải trống 200 px trên/dưới (14-C-025, BUG-723)', async () => {
@@ -2236,5 +2249,342 @@ describe('D1 — chip số máy đọc được', () => {
     await settleAsync();
 
     expect(mounted.result.current.model.panel.reference.chipNotice).toMatch(/^Máy không đọc được số kích thước trên bản vẽ này\./u);
+  });
+});
+
+describe('useScaleCalibration — K4: chấp nhận số máy khác hiệu chuẩn bằng kích thước thật', () => {
+  const bodyAt = (harness: Harness, index: number): Record<string, unknown> | undefined =>
+    harness.writeLayer.mock.calls[index]?.[0].body;
+
+  async function mountFloor(
+    harness: Harness,
+    gateway: ScaleCalibrationGateway = harness.gateway,
+    options: MountOptions = {},
+  ): Promise<Mounted> {
+    const mounted = mountHook(gateway, options);
+
+    await settle(mounted);
+    await settleAsync();
+
+    return mounted;
+  }
+
+  /** Hộp "Dùng tạm tỷ lệ máy ước lượng" → "Vẫn dùng số máy"; cỡ căn vô lý thì bấm lần hai như `applyNow`. */
+  async function acceptMachine(mounted: Mounted): Promise<void> {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await act(async () => {
+        mounted.result.current.actions.onRequestAcceptMachine?.();
+      });
+      await act(async () => {
+        mounted.result.current.actions.onConfirmAcceptMachine?.();
+      });
+      await settleAsync();
+
+      if (mounted.result.current.model.panel.applyBlockedNotice?.startsWith('Cỡ căn trông vô lý') !== true) {
+        return;
+      }
+    }
+  }
+
+  /** Các PUT mang tỷ lệ (bỏ PUT chỉ lớp mà lượt làm lại sinh ra): `[tỷ lệ, scaleEvidence]`. */
+  const scaleCalls = (harness: Harness): unknown[][] =>
+    harness.writeLayer.mock.calls
+      .map(([input]) => input.body)
+      .filter((body) => body.scaleMillimetresPerPixel !== undefined)
+      .map((body) => [body.scaleMillimetresPerPixel, body.scaleEvidence]);
+
+  async function step(move: 'undo' | 'redo'): Promise<void> {
+    await act(async () => {
+      useStore.temporal.getState()[move]();
+    });
+    await act(async () => {
+      await clock.advance(RETRY_SCHEDULE_MS[0]);
+    });
+    await settleAsync();
+  }
+
+  beforeEach(() => {
+    useStore.getState().setSpatial(null, null);
+  });
+
+  it('xác nhận mốc máy chọn sẵn (tầng determined) gửi machineAccepted, chỉ cho tầng này', async () => {
+    simulateProvisionalScale(FLOOR_ID, PROVISIONAL_RATIO, 'pipeline', {
+      scaleState: 'determined',
+      scaleReasons: ['chain'],
+      scaleBasis: 'chain',
+    });
+    const harness = await makeHarness({ rows: sampleDimensionRows() });
+    const mounted = await mountFloor(harness);
+
+    expect(mounted.result.current.model.panel.applyLabel).toBe('Xác nhận tỷ lệ máy đề xuất');
+    expect(mounted.result.current.model.panel.applyScopeOptions.map((option) => option.value)).toEqual(['thisFloor']);
+
+    await applyNow(mounted);
+
+    expect(harness.writeLayer).toHaveBeenCalledTimes(1);
+    expect(bodyAt(harness, 0)).toEqual({
+      scaleEvidence: 'machineAccepted',
+      scaleMillimetresPerPixel: expect.any(Number) as number,
+    });
+  });
+
+  it('bấm chip kích thước OCR rồi kéo đoạn: KHÔNG gõ mm nào nên vẫn là machineAccepted', async () => {
+    /* Bấm chip điền sẵn vào ô số mm chính con số MÁY đọc. Kéo một đoạn trùng đường kích thước đó
+       không đưa thêm một kích thước thật nào — nâng lên "người dùng hiệu chỉnh" là nâng độ tin
+       mà không có căn cứ mới (R10 K4). */
+    simulateProvisionalScale(FLOOR_ID, PROVISIONAL_RATIO, 'pipeline', {
+      scaleState: 'estimated',
+      scaleReasons: ['door'],
+      scaleBasis: 'door',
+    });
+    const base = await makeHarness();
+    const gateway = withScaleCapabilities(base.gateway, {
+      readDimensionChips: async () => [
+        { id: 'n1', text: '10275', valueMm: millimetres(10275), box: { min: { x: 0.1, y: 0.1 }, max: { x: 0.2, y: 0.12 } } },
+      ],
+    });
+    const mounted = await mountFloor(base, gateway);
+
+    await act(async () => {
+      mounted.result.current.actions.onPickDimensionChip?.('n1');
+    });
+    await dragReferenceLine(mounted);
+    await applyNow(mounted);
+
+    expect(scaleCalls(base).map(([, evidence]) => evidence)).toEqual(['machineAccepted']);
+  });
+
+  it('bấm chip rồi TỰ SỬA số mm thành kích thước thật: đó mới là measured', async () => {
+    simulateProvisionalScale(FLOOR_ID, PROVISIONAL_RATIO, 'pipeline', {
+      scaleState: 'estimated',
+      scaleReasons: ['door'],
+      scaleBasis: 'door',
+    });
+    const base = await makeHarness();
+    const gateway = withScaleCapabilities(base.gateway, {
+      readDimensionChips: async () => [
+        { id: 'n1', text: '10275', valueMm: millimetres(10275), box: { min: { x: 0.1, y: 0.1 }, max: { x: 0.2, y: 0.12 } } },
+      ],
+    });
+    const mounted = await mountFloor(base, gateway);
+
+    await act(async () => {
+      mounted.result.current.actions.onPickDimensionChip?.('n1');
+    });
+    await dragReferenceLine(mounted);
+    await act(async () => {
+      mounted.result.current.actions.onChangeRealLength(typedNumber(REFERENCE_REAL_LENGTH));
+    });
+    await applyNow(mounted);
+
+    expect(scaleCalls(base).map(([, evidence]) => evidence)).toEqual(['measured']);
+  });
+
+  it('dùng tạm tỷ lệ máy ước lượng gửi machineAccepted; cache N16 vẫn "ước lượng" + userAccepted', async () => {
+    simulateProvisionalScale(FLOOR_ID, PROVISIONAL_RATIO, 'pipeline', {
+      scaleState: 'estimated',
+      scaleReasons: ['door'],
+      scaleBasis: 'door',
+    });
+    const harness = await makeHarness();
+    const queryClient = createTestQueryClient();
+    const mounted = await mountFloor(harness, harness.gateway, { queryClient });
+
+    expect(mounted.result.current.model.panel.canApply).toBe(false);
+    expect(mounted.result.current.model.panel.measureFirst?.acceptLabel).toBe('Dùng tạm tỷ lệ máy ước lượng');
+
+    await acceptMachine(mounted);
+
+    expect(harness.writeLayer).toHaveBeenCalledTimes(1);
+    expect(bodyAt(harness, 0)).toEqual({ scaleEvidence: 'machineAccepted', scaleMillimetresPerPixel: PROVISIONAL_RATIO });
+
+    const cached = queryClient.getQueryData<Awaited<ReturnType<ScaleCalibrationGateway['readLayer']>>>(
+      queryKeys.layer.byFloor(PROJECT_ID, FLOOR_ID),
+    );
+    expect(cached?.scaleStatus).toBeUndefined();
+    expect(cached?.scaleState).toBe('estimated');
+    expect(cached?.scaleReasons).toEqual(['door', 'userAccepted']);
+  });
+
+  it('chấp nhận số máy ở tầng chưa xác định (chain + anisotropic) gửi machineAccepted', async () => {
+    simulateProvisionalScale(FLOOR_ID, PROVISIONAL_RATIO, 'pipeline', {
+      scaleState: 'unresolved',
+      scaleReasons: ['chain', 'anisotropic'],
+      scaleBasis: 'chain',
+    });
+    const harness = await makeHarness({ rows: sampleDimensionRows() });
+    const mounted = await mountFloor(harness);
+
+    await acceptMachine(mounted);
+
+    expect(harness.writeLayer).toHaveBeenCalledTimes(1);
+    expect(bodyAt(harness, 0)?.scaleEvidence).toBe('machineAccepted');
+  });
+
+  it('thẻ gợi ý project_default ("Dùng tỷ lệ này" + Xác nhận) gửi machineAccepted', async () => {
+    simulateProvisionalScale(FLOOR_ID, PROVISIONAL_RATIO, 'project_default');
+    const harness = await makeHarness();
+    const gateway = withScaleCapabilities(harness.gateway, {
+      readLayer: async (input) => ({ ...(await harness.gateway.readLayer(input)), suggestedScaleMmPerPx: 13.9 }),
+    });
+    const mounted = await mountFloor(harness, gateway);
+
+    await act(async () => {
+      mounted.result.current.actions.onUseSuggestedScale();
+    });
+    await applyNow(mounted);
+
+    expect(harness.writeLayer).toHaveBeenCalledTimes(1);
+    expect(bodyAt(harness, 0)).toEqual({ scaleEvidence: 'machineAccepted', scaleMillimetresPerPixel: 13.9 });
+  });
+
+  it('chọn hàng OCR (người tự bấm) gửi machineAccepted — kể cả ở tầng đã hiệu chỉnh', async () => {
+    simulateCalibratedScale(FLOOR_ID, PROVISIONAL_RATIO);
+    const rows = sampleDimensionRows();
+    const harness = await makeHarness({ rows });
+    const mounted = await mountFloor(harness);
+    const picked = rows[1]?.id ?? '';
+
+    await act(async () => {
+      mounted.result.current.actions.onSelectDimensionRow(picked);
+    });
+    await applyNow(mounted);
+
+    expect(harness.writeLayer).toHaveBeenCalledTimes(1);
+    expect(bodyAt(harness, 0)?.scaleEvidence).toBe('machineAccepted');
+  });
+
+  it('kéo đoạn + nhập mm gửi measured; hoàn tác về số máy gửi machineAccepted; làm lại gửi lại measured', async () => {
+    simulateProvisionalScale(FLOOR_ID, PROVISIONAL_RATIO, 'pipeline', {
+      scaleState: 'estimated',
+      scaleReasons: ['door'],
+      scaleBasis: 'door',
+    });
+    const harness = await makeHarness();
+    const mounted = await mountFloor(harness);
+
+    await typeReference(mounted);
+    await applyNow(mounted);
+    expect(harness.writeLayer).toHaveBeenCalledTimes(1);
+    expect(bodyAt(harness, 0)).toEqual({
+      scaleEvidence: 'measured',
+      scaleMillimetresPerPixel: REFERENCE_SCALE.millimetresPerPixel,
+    });
+
+    await step('undo');
+    expect(harness.writeLayer).toHaveBeenCalledTimes(2);
+    expect(bodyAt(harness, 1)).toEqual({ scaleEvidence: 'machineAccepted', scaleMillimetresPerPixel: PROVISIONAL_RATIO });
+    expect(mounted.result.current.model.panel.applyBlockedNotice).toBe(
+      'Đã đặt lại tỷ lệ máy; tầng ghi là bạn chấp nhận số máy, độ tin giữ như máy báo.',
+    );
+
+    await step('redo');
+    expect(scaleCalls(harness)).toEqual([
+      [REFERENCE_SCALE.millimetresPerPixel, 'measured'],
+      [PROVISIONAL_RATIO, 'machineAccepted'],
+      [REFERENCE_SCALE.millimetresPerPixel, 'measured'],
+    ]);
+  });
+
+  it('làm lại một lần áp số máy gửi lại machineAccepted (evidence của lần áp gốc)', async () => {
+    simulateProvisionalScale(FLOOR_ID, PROVISIONAL_RATIO, 'pipeline', {
+      scaleState: 'determined',
+      scaleReasons: ['chain'],
+      scaleBasis: 'chain',
+    });
+    const harness = await makeHarness({ rows: sampleDimensionRows() });
+    const mounted = await mountFloor(harness);
+
+    await applyNow(mounted);
+    await step('undo');
+    await step('redo');
+
+    expect(scaleCalls(harness).map(([, evidence]) => evidence)).toEqual([
+      'machineAccepted',
+      'machineAccepted',
+      'machineAccepted',
+    ]);
+  });
+
+  it('hoàn tác về một số đo trước đó (tầng đã hiệu chỉnh) gửi measured', async () => {
+    simulateCalibratedScale(FLOOR_ID, PROVISIONAL_RATIO);
+    const harness = await makeHarness();
+    const mounted = await mountFloor(harness);
+
+    await typeReference(mounted);
+    await applyNow(mounted);
+    await step('undo');
+
+    expect(harness.writeLayer).toHaveBeenCalledTimes(2);
+    expect(bodyAt(harness, 0)?.scaleEvidence).toBe('measured');
+    expect(bodyAt(harness, 1)).toEqual({ scaleEvidence: 'measured', scaleMillimetresPerPixel: PROVISIONAL_RATIO });
+  });
+
+  it('nhập 1:N gửi measured', async () => {
+    simulateProvisionalScale(FLOOR_ID, PROVISIONAL_RATIO, 'pipeline');
+    const harness = await makeHarness();
+    const gateway = withScaleCapabilities(harness.gateway, {
+      readLayer: async (input) => ({ ...(await harness.gateway.readLayer(input)), dimensions: [], sourceDpi: 150 }),
+    });
+    const mounted = await mountFloor(harness, gateway);
+
+    await act(async () => {
+      mounted.result.current.actions.onChangeDrawingRatio?.('1:100');
+    });
+    await applyNow(mounted);
+
+    expect(harness.writeLayer).toHaveBeenCalledTimes(1);
+    expect(bodyAt(harness, 0)?.scaleEvidence).toBe('measured');
+  });
+
+  it('số máy không áp cho mọi tầng: chọn "Mọi tầng" vẫn chỉ PUT tầng này, không đọc mọi tầng', async () => {
+    simulateProvisionalScale(FLOOR_ID, PROVISIONAL_RATIO, 'pipeline', {
+      scaleState: 'determined',
+      scaleReasons: ['chain'],
+      scaleBasis: 'chain',
+    });
+    const harness = await makeHarness({ rows: sampleDimensionRows() });
+    const readAllFloors = vi.fn(async () => [
+      { floorId: sampleLevelId(0), name: 'Tầng 1', hasDrawing: true, revision: 4 },
+      { floorId: sampleLevelId(1), name: 'Tầng 2', hasDrawing: true, revision: 5 },
+    ]);
+    const mounted = await mountFloor(harness, withScaleCapabilities(harness.gateway, { readAllFloors }));
+
+    await act(async () => {
+      mounted.result.current.actions.onChangeApplyScope('allFloors');
+    });
+    expect(mounted.result.current.model.panel.applyScope).toBe('thisFloor');
+    await applyNow(mounted);
+
+    expect(readAllFloors).not.toHaveBeenCalled();
+    expect(mounted.result.current.model.allFloorsConfirm).toBeUndefined();
+    expect(harness.writeLayer).toHaveBeenCalledTimes(1);
+    expect(bodyAt(harness, 0)?.scaleEvidence).toBe('machineAccepted');
+  });
+
+  it('tầng estimated đã chấp nhận vẫn hiện "Tỷ lệ ước lượng" + "Đo một đoạn đã biết"; đo thật sau đó gửi measured', async () => {
+    simulateAcceptedScale(FLOOR_ID, PROVISIONAL_RATIO, {
+      scaleState: 'estimated',
+      scaleReasons: ['door'],
+      scaleBasis: 'door',
+    });
+    const harness = await makeHarness();
+    const mounted = await mountFloor(harness);
+    const { panel } = mounted.result.current.model;
+
+    expect(panel.currentScaleLabel).toBe('Chưa có');
+    expect(panel.scaleCheck?.status.label).toBe('Tỷ lệ ước lượng');
+    expect(panel.scaleCheck?.status.sentence).toContain('Bạn đã chấp nhận số của máy, chưa nhập kích thước thật');
+    expect(panel.canApply).toBe(false);
+    expect(panel.measureFirst?.label).toBe('Đo một đoạn đã biết');
+
+    await typeReference(mounted);
+    await applyNow(mounted);
+
+    expect(harness.writeLayer).toHaveBeenCalledTimes(1);
+    expect(bodyAt(harness, 0)).toEqual({
+      scaleEvidence: 'measured',
+      scaleMillimetresPerPixel: REFERENCE_SCALE.millimetresPerPixel,
+    });
   });
 });

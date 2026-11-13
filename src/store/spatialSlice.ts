@@ -20,9 +20,9 @@ export interface FloorMetaEntry {
   scaleStatus?: 'unresolved';
   /** Only with `scaleStatus`: `'project_default'` = the server could not measure the floor at all (UX-R1 K12). */
   scaleSource?: ScaleSource;
-  /** Only with `scaleStatus`: N16 `scaleState` (R9) — determined / estimated / unresolved. Absent from an old server. */
+  /** With `scaleStatus`, or with a `userAccepted` reason (K4): N16 `scaleState` (R9). Absent from an old server. */
   scaleState?: WireScaleState;
-  /** Only with `scaleStatus`: N16 `scaleReasons` (R9), codes shown as Vietnamese sentences. */
+  /** With `scaleStatus`, or when it carries `userAccepted` (K4): N16 `scaleReasons` (R9), shown as Vietnamese sentences. */
   scaleReasons?: readonly string[];
 }
 
@@ -39,7 +39,10 @@ export function floorMetaEntryOf(revision: number, scale?: FloorScaleKeys): Floo
   const { scaleReasons, scaleSource, scaleState, scaleStatus } = scale ?? {};
 
   if (scaleStatus === undefined) {
-    return { revision };
+    // K4: tỉ lệ người là số máy được chấp nhận (`userAccepted`) — giữ trạng thái của máy để mọi màn không gọi nó "đã xác nhận".
+    return scaleReasons?.includes('userAccepted') === true
+      ? { revision, ...(scaleState === undefined ? {} : { scaleState }), scaleReasons }
+      : { revision };
   }
 
   return {
