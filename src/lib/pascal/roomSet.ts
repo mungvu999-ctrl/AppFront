@@ -299,6 +299,12 @@ export const W_FABRIC = 1;
 const SEAT_ROLES: ReadonlySet<string> = new Set(['sofa', 'armchair', 'diningChair', 'bench']);
 /** Món ngồi gom theo bàn (ghế ăn, ghế băng) và vai bàn của nhóm. */
 const SEAT_GROUP_ROLES: ReadonlySet<string> = new Set(['diningChair', 'bench']);
+/** M18 LT5 — món chính DẪN theo công năng phòng (thứ tự = ưu tiên): món chính khác chưa chốt không chặn chúng. */
+const LEAD_ROLES: Readonly<Record<string, readonly string[]>> = {
+  bedroom: ['doubleBed', 'singleBed'],
+  livingRoom: ['sofa'],
+  diningRoom: ['diningTable'],
+};
 const TABLE_ROLES: ReadonlySet<string> = new Set(['diningTable', 'desk']);
 /**
  * Hợp bộ khách (vòng 17): sofa / ghế bành / bàn trà chấm thêm độ lệch với BẢNG MÀU BỘ (`SetRef`: món ghim + đã chốt +
@@ -886,8 +892,22 @@ export type PlanRect = Rect;
 export const planRectOf = (cx: number, cy: number, w: number, d: number, rot: number): PlanRect => ({ cx, cy, w, d, rotationDeg: rot });
 /** Diện tích chung (m²) của hai hình xoay: cắt đa giác thật (`overlapAreaMm2`), không dùng hộp thẳng trục bao ngoài. */
 const MM = 1000;
-export const overlapAreaM2 = (a: PlanRect, b: PlanRect): number =>
-  overlapAreaMm2({ ...a, cx: a.cx * MM, cy: a.cy * MM, w: a.w * MM, d: a.d * MM }, { ...b, cx: b.cx * MM, cy: b.cy * MM, w: b.w * MM, d: b.d * MM }) / (MM * MM);
+/** Nửa cạnh hộp thẳng trục bao ngoài của hình xoay (m). */
+const halfAabbOf = (r: PlanRect): readonly [number, number] => {
+  const t = (r.rotationDeg * Math.PI) / 180;
+  const c = Math.abs(Math.cos(t));
+  const s = Math.abs(Math.sin(t));
+  return [(c * r.w + s * r.d) / 2, (s * r.w + c * r.d) / 2];
+};
+/** Hộp bao ngoài cách nhau quá mức này (m) thì phép cắt chắc chắn rỗng (sai số dấu phẩy động ≪ 1 mm) → 0 đúng như cắt thật. */
+const AABB_GAP_M = 1e-3;
+export const overlapAreaM2 = (a: PlanRect, b: PlanRect): number => {
+  // LP (vòng 18): lọc nhanh trước phép cắt đa giác — chiếm phần lớn thời gian chọn bộ (f28: ~70 ms/120 ms); kết quả không đổi.
+  const [ax, ay] = halfAabbOf(a);
+  const [bx, by] = halfAabbOf(b);
+  if (Math.abs(a.cx - b.cx) - ax - bx > AABB_GAP_M || Math.abs(a.cy - b.cy) - ay - by > AABB_GAP_M) return 0;
+  return overlapAreaMm2({ ...a, cx: a.cx * MM, cy: a.cy * MM, w: a.w * MM, d: a.d * MM }, { ...b, cx: b.cx * MM, cy: b.cy * MM, w: b.w * MM, d: b.d * MM }) / (MM * MM);
+};
 /** Mặt bằng HIỂN THỊ của mẫu `folder` trong hộp của món (canh giữa hộp, xoay theo hộp); vắng = không có hộp. */
 const shownRectOf = (m: SetMember, folder: string | null): PlanRect | undefined => {
   const b = m.box;
@@ -1047,7 +1067,28 @@ export const roomSetOf = (
    * hardRejectOf loại "sai vai"), yaw = −rot → tâm (cx − sin·k, cy + cos·k). Co trần (s < 1) không xảy ra: cao thật vượt trần
    * đã bị "chạm gần trần" loại.
    */
-  const realMemberOf = (m: SetMember): SetMember => ({ ...m, shownOf: (f) => ctx.dimsOf(f) });
+  const realMemo = new WeakMap<SetMember, SetMember>();
+  const realMemberOf = (m: SetMember): SetMember => {
+    let r = realMemo.get(m);
+    if (r === undefined) realMemo.set(m, (r = { ...m, shownOf: (f) => ctx.dimsOf(f) }));
+    return r;
+  };
+  /**
+   * LP (vòng 18): `hardRejectOf` nhớ theo (đối tượng món, bộ lý do bỏ qua, mẫu) trong MỘT lượt `roomSetOf` — món, ngữ cảnh và
+   * cỡ hiển thị không đổi trong lượt; lượt sau tạo bộ nhớ mới (không giữ gì xuyên lượt dựng).
+   */
+  const NO_SKIP: ReadonlySet<string> = new Set();
+  const rejectMemo = new WeakMap<SetMember, Map<ReadonlySet<string>, Map<string, string | undefined>>>();
+  const rejectOf = (m: SetMember, f: string, skip: ReadonlySet<string> = NO_SKIP): string | undefined => {
+    let bySkip = rejectMemo.get(m);
+    if (bySkip === undefined) rejectMemo.set(m, (bySkip = new Map()));
+    let byFolder = bySkip.get(skip);
+    if (byFolder === undefined) bySkip.set(skip, (byFolder = new Map()));
+    if (byFolder.has(f)) return byFolder.get(f);
+    const r = hardRejectOf(m, f, ctx, skip);
+    byFolder.set(f, r);
+    return r;
+  };
   const memberAs = (m: SetMember, u: SetDecision['uniform']): SetMember => (u === 'real' ? realMemberOf(m) : u === true ? conceptMemberOf(m) : m);
   for (const m of inSet) {
     const f = folderOfFixed(m);
@@ -1075,7 +1116,19 @@ export const roomSetOf = (
    * đồ phụ quyết định SAU với món chính đã ở `placed` → tự tại chỗ / dời / vai nhỏ / chưa bố trí. Đồ phụ đã xác nhận (ghim,
    * cỡ người dùng, mẫu người dùng, cố định) vẫn chặn.
    */
-  const yieldsTo = (m: SetMember, x: SetMember): boolean => LAYOUT_MAIN_ROLES.has(m.role) && !LAYOUT_MAIN_ROLES.has(x.role) && movableOf(x);
+  // M18 LT5: ghế/ghế dài (SEAT_GROUP_ROLES) KHÔNG nhường — nhóm ghế chốt theo mẫu chung/mẫu dẫn, không tự dời (fallbackOf `lead`
+  // không relayout) nên nhường là chồng (cn16 tủ áo + 3 ghế ăn, m17sc tủ áo + đôn). Món CHÍNH ↔ món CHÍNH: món ưu tiên thấp
+  // hơn theo công năng phòng (`LEAD_ROLES`) nhường món ưu tiên cao hơn (cn13: giường đôi không bị giường đơn/ghế bành chặn).
+  const usage = roomKey.split('|')[0] ?? ''; // ponytail: công năng đọc từ khoá phòng `usage|…` (roomSetKeysOf); khoá thô = roomId → không ưu tiên
+  const leadRank = (role: string): number => {
+    const r = LEAD_ROLES[usage]?.indexOf(role) ?? -1;
+    return r < 0 ? Number.POSITIVE_INFINITY : r;
+  };
+  const yieldsTo = (m: SetMember, x: SetMember): boolean =>
+    LAYOUT_MAIN_ROLES.has(m.role) &&
+    movableOf(x) &&
+    !SEAT_GROUP_ROLES.has(x.role) &&
+    (!LAYOUT_MAIN_ROLES.has(x.role) || leadRank(m.role) < leadRank(x.role));
   // Món bộ CHƯA chốt (kể cả cùng vai) giữ chỗ bằng cả hộp của nó (mặt bằng ⊆ hộp: bảo thủ) — trừ đồ phụ nhường món chính.
   const pendingOf = (m: SetMember): SetZone[] =>
     inSet.flatMap((x) => {
@@ -1090,7 +1143,7 @@ export const roomSetOf = (
     const near = box === undefined || m.lifted === true ? [] : [...placed, ...pendingOf(m)].filter((z) => !tucked(m.kind, z.kind) && rectsOverlap(boxRectOf(box), z));
     const ok: { f: string; cost: number; hit: number }[] = [];
     for (const f of m.pool) {
-      const r = hardRejectOf(m, f, ctx);
+      const r = rejectOf(m, f);
       if (r !== undefined) {
         rejects[r] = (rejects[r] ?? 0) + 1;
         continue;
@@ -1109,7 +1162,7 @@ export const roomSetOf = (
     const cur = m.current;
     let legacyShape: string | undefined;
     if (cur !== null && !pass.has(cur)) {
-      const r = hardRejectOf(m, cur, ctx);
+      const r = rejectOf(m, cur);
       // Điều phối M17-4 (cn02: bàn sồi luật cũ méo nhẹ bị thay bằng ứng viên chi phí 1,85): hiện trạng chỉ trượt lý do MỀM
       // (hình dáng, méo dáng, thiếu dữ liệu — cùng "ngoại lệ được phép" của fallbackOf) thì được giữ; chỉ lý do CẤM
       // (`forbiddenOf`: QC, vân vỡ, giường chưa hoàn chỉnh, trần, ngoài công năng) hoặc chồng vùng chặn THÊM quá phần chính
@@ -1128,7 +1181,7 @@ export const roomSetOf = (
     let concept: { readonly f: string; readonly cost?: number; readonly miss?: string; readonly uniform?: string } | undefined;
     if (m.concept !== undefined) {
       const f = m.concept.folder;
-      const strict = m.concept.reject ?? hardRejectOf(m, f, ctx);
+      const strict = m.concept.reject ?? rejectOf(m, f);
       // I2: phép khớp thường "ngoài công năng" (vd cao theo heightMm) cũng xét lại ở cỡ co đều — hardRejectOf(cm) bên dưới vẫn
       // kiểm công năng trên cỡ co đều, nên concept chỉ qua khi co đều trong phạm vi.
       const lenient = strict !== undefined && m.concept.reject === undefined && (CONCEPT_LENIENT.has(strict) || strict === FUNC_REJECT);
@@ -1138,7 +1191,7 @@ export const roomSetOf = (
       const r = !lenient
         ? strict
         : (tooSmallOf(dims, cm.shownOf?.(f), m.box) ??
-          hardRejectOf(cm, f, ctx, CONCEPT_LENIENT) ??
+          rejectOf(cm, f, CONCEPT_LENIENT) ??
           (dims !== undefined && shown !== undefined && distorted(dims, shown) ? 'méo dáng' : undefined));
       const rect = r !== undefined || near.length === 0 ? undefined : shownRectOf(cm, f);
       const hit = rect === undefined ? 0 : near.reduce((s, z) => s + overlapAreaM2(rect, z), 0);
@@ -1232,7 +1285,7 @@ export const roomSetOf = (
       const real = realMemberOf(m);
       const fits = pool.flatMap((f) => {
         const d = ctx.dimsOf(f);
-        if (d === undefined || !grows(b, d) || hardRejectOf(real, f, ctx, CONCEPT_LENIENT) !== undefined || !clear(realRectOf(m, b, d))) return [];
+        if (d === undefined || !grows(b, d) || rejectOf(real, f, CONCEPT_LENIENT) !== undefined || !clear(realRectOf(m, b, d))) return [];
         const c = r9(costOf(f));
         return c <= FAIL_COST ? [{ f, c, a: gapOf(b, d) }] : [];
       });
@@ -1252,7 +1305,7 @@ export const roomSetOf = (
     const forbid = cur === null ? undefined : (forbiddenOf(m, cur, conceptMissOf(cur)) ?? (clear(shownRectOf(m, cur), boxHit) ? undefined : 'va chạm'));
     const dims = cur === null ? undefined : ctx.dimsOf(cur);
     const shown = cur === null ? undefined : (m.shownOf?.(cur) ?? dims);
-    const r = cur === null ? undefined : hardRejectOf(m, cur, ctx);
+    const r = cur === null ? undefined : rejectOf(m, cur);
     // Ngoại lệ được phép của luật cũ: vẫn thử mẫu dựng sẵn trước, không được thì giữ luật cũ + ghi sổ.
     const soft =
       (r !== undefined && BANNED.has(r) ? r : undefined) ??
@@ -1285,10 +1338,14 @@ export const roomSetOf = (
       // thân tường / vùng mở cửa quá phần hộp đã chồng (F5-2); vẫn ≤ REAL_GROW_M mỗi trục. Món chưa xác định không đặt được thì ẨN.
       const real = realMemberOf(m);
       const wallHit = (rect: PlanRect): number => structural.reduce((s, z) => s + overlapAreaM2(rect, z), 0);
-      const wallOk = (d: Dims): boolean => m.lifted === true || wallHit(realRectOf(m, b, d)) <= wallHit(boxRectOf(b)) + ROOM_OVERLAP_TOL_M2;
+      // LP: chồng của chính hộp không đổi trong lượt gọi — tính một lần, không lặp cho từng ứng viên.
+      const boxRect = boxRectOf(b);
+      const boxWall = wallHit(boxRect);
+      const wallOk = (d: Dims): boolean => m.lifted === true || wallHit(realRectOf(m, b, d)) <= boxWall + ROOM_OVERLAP_TOL_M2;
       // Codex M17-9 P2: ngân sách đồ đạc TÁCH khỏi tường — bớt chồng tường không được đổi lấy chồng đồ đạc.
       const furnHit = (rect: PlanRect): number => hitOf(rect) - wallHit(rect);
-      const furnOk = (rect: PlanRect): boolean => m.lifted === true || furnHit(rect) <= furnHit(boxRectOf(b)) + ROOM_OVERLAP_TOL_M2;
+      const boxFurn = hitOf(boxRect) - boxWall;
+      const furnOk = (rect: PlanRect): boolean => m.lifted === true || furnHit(rect) <= boxFurn + ROOM_OVERLAP_TOL_M2;
       const stockOk = (f: string): boolean => {
         const cm = conceptMissOf(f);
         return forbiddenOf(real, f, cm === 'va chạm' ? undefined : cm) === undefined;
@@ -1298,7 +1355,7 @@ export const roomSetOf = (
         // F7 (R3 ch07: tủ cỡ thật đè giường + bàn ăn): không chồng đồ đạc quá phần hộp AI đã chồng — món chưa xác nhận thà ẩn
         // còn hơn đè đồ khác (giám khảo mù R2/R3). Tầng này chỉ còn cưỡng bức lý do công năng / luật cũ, không cưỡng bức va chạm.
         if (d === undefined || !grows(b, d) || !wallOk(d) || !furnOk(realRectOf(m, b, d))) return [];
-        if (f === st ? !stockOk(f) : hardRejectOf(real, f, ctx, CONCEPT_LENIENT) !== undefined) return [];
+        if (f === st ? !stockOk(f) : rejectOf(real, f, CONCEPT_LENIENT) !== undefined) return [];
         const c = f === st ? FAIL_COST : r9(costOf(f));
         return c <= FAIL_COST ? [{ f, d, c, a: gapOf(b, d) }] : [];
       });
@@ -1319,7 +1376,7 @@ export const roomSetOf = (
         const fit = sib.pool.flatMap((f) => {
           const d = ctx.dimsOf(f);
           if (d === undefined || !grows(b, d) || !wallOk(d) || !furnOk(realRectOf(sm, b, d))) return [];
-          if (hardRejectOf(sm, f, ctx, CONCEPT_LENIENT) !== undefined) return [];
+          if (rejectOf(sm, f, CONCEPT_LENIENT) !== undefined) return [];
           // R5: cùng trần hợp bộ FAIL_COST như mọi tầng — kệ gỗ sẫm lạc bộ thà ẩn (giám khảo mù chê ch07/hin2).
           const c = r9(costOf(f));
           return c <= FAIL_COST ? [{ f, c, a: gapOf(b, d) }] : [];
