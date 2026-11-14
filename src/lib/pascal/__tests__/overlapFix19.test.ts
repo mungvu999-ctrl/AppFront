@@ -45,12 +45,13 @@ const q = (role: string, useMm: readonly [number, number, number]): ModelQuality
     source: 'test',
   }) as ModelQuality;
 
-const DIMS: Record<string, Dims> = { sofa1: [2.0, 0.85, 0.9], coffee1: [1.0, 0.4, 0.6], table1: [1.4, 0.75, 0.8], chair1: [0.45, 0.9, 0.45] };
+const DIMS: Record<string, Dims> = { sofa1: [2.0, 0.85, 0.9], coffee1: [1.0, 0.4, 0.6], table1: [1.4, 0.75, 0.8], chair1: [0.45, 0.9, 0.45], bench1: [1.4, 0.46, 0.6] };
 const QUAL: Record<string, ModelQuality> = {
   sofa1: q('sofa', [2000, 850, 900]),
   coffee1: q('coffeeTable', [1000, 400, 600]),
   table1: q('diningTable', [1400, 750, 800]),
   chair1: q('diningChair', [450, 900, 450]),
+  bench1: q('bench', [1400, 460, 600]),
 };
 const ctx: SetContext = { tierOf: () => 0, tiers: 1, dimsOf: (id) => DIMS[id], palette: {}, qualityOf: (id) => QUAL[id] };
 
@@ -107,6 +108,32 @@ describe('M19 — sofa không "kê dưới" bàn trà', () => {
     const d = run([member('F-sofa', 'sofa', 'chair', 'sofa1', SOFA_BOX), member('F-coffee', 'coffeeTable', 'table', 'coffee1', COFFEE_BOX)], roomOf(2400, 1800)).get('F-coffee');
     expect(d?.to, JSON.stringify(d?.why)).not.toBeNull();
     expect(d?.unplaced).toBeUndefined();
+  });
+});
+
+describe('M19 — lượt gỡ chồng không cướp ngân sách của món sắp bị ẩn (Codex M19-1)', () => {
+  it('bàn trà chồng sofa tiêu ngân sách `fix`, `left` còn nguyên cho lượt dời bắt buộc', () => {
+    const run2: SetLayout['run'] = { left: LAYOUT_BUDGET, ms: 0 };
+    roomSetOf(
+      'room',
+      [member('F-sofa', 'sofa', 'chair', 'sofa1', SOFA_BOX), member('F-coffee', 'coffeeTable', 'table', 'coffee1', COFFEE_BOX)],
+      new Map(),
+      ctx,
+      [],
+      { room: roomOf(5000, 4000), run: run2 } satisfies SetLayout,
+    );
+    expect(run2.left).toBe(LAYOUT_BUDGET);
+    expect(run2.fix).toBeLessThan(LAYOUT_BUDGET);
+  });
+});
+
+describe('M19 — ghế băng nằm dưới mặt bàn ăn là va chạm, không phải "kê dưới bàn"', () => {
+  it('ghế băng chồng 64 % hộp bàn ăn → được dời ra (m17sb)', () => {
+    const table: Box = { cx: 1.5, cy: 1.5, w: 1.76, d: 1.24, rot: 0 };
+    const bench: Box = { cx: 0.85, cy: 1.5, w: 1.4, d: 0.61, rot: 90 };
+    const d = run([member('F-table', 'diningTable', 'table', 'table1', table), member('F-bench', 'bench', 'chair', 'bench1', bench)], roomOf(5000, 4000)).get('F-bench');
+    expect(d?.to, JSON.stringify(d?.why)).not.toBeNull();
+    expect(d?.at, JSON.stringify(d?.why)).toBeDefined();
   });
 });
 

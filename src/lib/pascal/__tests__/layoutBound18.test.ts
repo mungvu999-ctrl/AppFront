@@ -132,7 +132,4 @@ describe('LF1: phòng thường giữ y hệt bản trước khi sửa', () => {
   });
 });
 // F8: 2100185880 → 1409893946 — chỉ 5 dòng 'unplaced' đổi (lý do nêu lối khi có tư thế hợp lệ mà không lối; bfs ≤ 2 × MAX_BFS); không tư thế/mẫu được chọn nào đổi (F:/runs/m18/F8/normal-before.txt ↔ normal-after.txt).
-// M19: 1409893946 → 1062697161 — 9/63 dòng đổi, tất cả do bước lưới tư thế của món KHÔNG tựa tường 0,10 → 0,20 m
-// (`posesOf`): 8 dòng là chính danh sách tư thế, 1 dòng là món trước đây 'unplaced' (không lối từ cửa) nay đặt được
-// ("Dời 0,20 m, xoay 90°"). Không dòng nào của món tựa tường đổi. Bằng chứng: F:/runs/m19/lf1-before.txt ↔ lf1-after.txt.
-const EXPECTED = 1062697161;
+const EXPECTED = 1409893946;

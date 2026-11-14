@@ -25,6 +25,7 @@ import {
   diffIssues,
   footprintOf,
   K_MODELS,
+  K_POSES_FREE,
   layoutIssuesOf,
   MAX_SHIFT_M,
   searchPlacement,
@@ -518,7 +519,12 @@ export interface SetDecision {
 /** M18 L2: hình học phòng cho thang bố trí lại + sổ chung cả căn (ngân sách món còn lại, thời gian ms). */
 export interface SetLayout {
   readonly room: LayoutRoom;
-  readonly run: { left: number; ms: number };
+  /**
+   * `left` = ngân sách lượt dời BẮT BUỘC (món sẽ bị ẩn nếu không dời); `fix` = ngân sách RIÊNG của lượt dời TUỲ CHỌN
+   * (chỉ để gỡ chồng; không dời được thì món vẫn hiện). Codex M19-1: chung một ngân sách thì mấy ca gỡ chồng không
+   * thành ở phòng khách tiêu hết lượt, giường phòng ngủ sau đó hết lượt và bị ẩn. Vắng `fix` = `LAYOUT_BUDGET`.
+   */
+  readonly run: { left: number; ms: number; fix?: number };
 }
 
 const chromaOf = (lab: Lab): number => Math.hypot(lab[1], lab[2]);
@@ -1003,8 +1009,12 @@ export type SetZone = PlanRect & {
   /** Món của bộ chiếm chỗ (M18 L2: khối có id để `searchPlacement` bỏ chính món / thành viên cụm). */
   readonly id?: string;
 };
-/** Vai ghế KÊ ĐƯỢC dưới bàn, và vai bàn CÓ ghế kê dưới (như SEAT_ROLES/TABLE_ROLES của layoutSearch; ghế băng ăn cũng kê). */
-const TUCK_SEAT_ROLES: ReadonlySet<string> = new Set(['diningChair', 'deskChair', 'bench']);
+/**
+ * Vai ghế KÊ ĐƯỢC dưới bàn, và vai bàn CÓ ghế kê dưới — ĐÚNG BẰNG `SEAT_ROLES`/`TABLE_ROLES` của layoutSearch, để
+ * `layoutIssuesOf` và bộ chọn cùng một luật. Ghế BĂNG KHÔNG nằm trong đây (Codex M19-1): miễn trừ cả vai ghế băng thì
+ * ghế băng nằm TRỌN dưới mặt bàn cũng không phép kiểm nào thấy (m17sb: 64 % ghế băng chui dưới bàn, chỗ ngồi còn 0,22 m).
+ */
+const TUCK_SEAT_ROLES: ReadonlySet<string> = new Set(['diningChair']);
 const TUCK_TABLE_ROLES: ReadonlySet<string> = new Set(['diningTable', 'desk']);
 /**
  * Ghế kê dưới bàn/quầy chồng hình hợp lệ — không tính va chạm.
@@ -1569,14 +1579,18 @@ export const roomSetOf = (
     ev: { readonly concept?: { readonly f: string; readonly miss?: string } },
     costOf: (f: string) => number,
     lay: SetLayout,
+    /** Lượt TUỲ CHỌN (chỉ gỡ chồng): tiêu ngân sách `fix` riêng, không cướp lượt của món sắp bị ẩn. */
+    onlyFix?: boolean,
   ): FallbackPick => {
     const b = m.box;
     const unplaced = (reason: string, tried: Tried = NO_TRY): FallbackPick => ({ ...r0, why: `${r0.why}; chưa bố trí được: ${reason}`, unplaced: { reason, tried } });
     if (b === undefined) return r0;
     if (m.lifted === true) return unplaced('món nâng khỏi sàn — không tự dời');
     if (!movableOf(m)) return unplaced('món đã xác nhận, không tự dời');
-    if (lay.run.left <= 0) return unplaced(`vượt ngân sách dời-thử (${LAYOUT_BUDGET} món mỗi căn)`);
-    lay.run.left -= 1;
+    const pot = onlyFix === true ? 'fix' : 'left';
+    if (pot === 'fix' && lay.run.fix === undefined) lay.run.fix = LAYOUT_BUDGET;
+    if ((lay.run[pot] ?? 0) <= 0) return unplaced(`vượt ngân sách dời-thử (${LAYOUT_BUDGET} món mỗi căn)`);
+    lay.run[pot] = (lay.run[pot] ?? 0) - 1;
     const t0 = performance.now();
     try {
       const real = realMemberOf(m);
@@ -1615,7 +1629,7 @@ export const roomSetOf = (
         const piece: Piece = { id: m.id, role, dims: first.dims, box: boxRectOf(b), wallBack: WALL_BACK_ROLES.has(role), movable: true };
         const res = searchPlacement(lay.room, piece, cands.map(({ modelId, dims, cost }) => ({ modelId, dims, ...(cost === undefined ? {} : { cost }) })), blocks, {
           members: pieces,
-          budget: { models: cands.length },
+          budget: { models: cands.length, ...(piece.wallBack ? {} : { poses: K_POSES_FREE }) },
           far,
           relax,
         });
@@ -2085,7 +2099,7 @@ export const roomSetOf = (
         const re =
           layout === undefined || to0 === null || !stillHitsOf(m, { ...fb0, to: to0, why: '' })
             ? undefined
-            : relayoutOf(m, { to: to0, why: 'chồng món đã chốt' }, ev, (f) => itemCostOf(f, role, refsOf(keyOf.get(m.id) ?? ''), ctx, memo).total, layout);
+            : relayoutOf(m, { to: to0, why: 'chồng món đã chốt' }, ev, (f) => itemCostOf(f, role, refsOf(keyOf.get(m.id) ?? ''), ctx, memo).total, layout, true);
         // Chỉ nhận lượt dời GẦN (≤ MAX_SHIFT_M): thang dời vốn được phép dời xa để món khỏi bị ẨN, còn ở đây món đang
         // hiện sẵn — dời tủ áo 8 m hay sofa 4 m chỉ để gỡ một chỗ chồng là đánh đổi tệ hơn chính chỗ chồng.
         const reOk = re?.at !== undefined && re.at.shiftM <= MAX_SHIFT_M + 1e-9;
