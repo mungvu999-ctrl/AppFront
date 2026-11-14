@@ -25,7 +25,9 @@ import {
   diffIssues,
   footprintOf,
   K_MODELS,
+  K_POSES_FREE,
   layoutIssuesOf,
+  MAX_SHIFT_M,
   searchPlacement,
   type Block,
   type Candidate,
@@ -100,6 +102,8 @@ export const fitsSpot = (dims: readonly [number, number, number], short: number,
 
 /** Va chạm cả phòng (m²): chồng của ứng viên được vượt mức nhỏ nhất đạt được trong các ứng viên của món chừng này. */
 export const ROOM_OVERLAP_TOL_M2 = 0.002;
+/** M19 — phần mặt bằng của món nằm trong món khác thì mới đáng dời (xem `stillHitsOf`). */
+const OVERLAP_MOVE_SHARE = 0.1;
 /**
  * Độ sáng/tương phản theo đồ ĐÃ CÓ trong phòng (vòng 13, ca xấu vòng 12): bề mặt cứng (khung, mặt — mọi chất liệu, kể cả
  * sơn trắng mà trước đây bị coi "trung tính, không ảnh hưởng") của đồ cố định + đồ đã chốt cho L* tham chiếu theo tỉ phần;
@@ -515,7 +519,12 @@ export interface SetDecision {
 /** M18 L2: hình học phòng cho thang bố trí lại + sổ chung cả căn (ngân sách món còn lại, thời gian ms). */
 export interface SetLayout {
   readonly room: LayoutRoom;
-  readonly run: { left: number; ms: number };
+  /**
+   * `left` = ngân sách lượt dời BẮT BUỘC (món sẽ bị ẩn nếu không dời); `fix` = ngân sách RIÊNG của lượt dời TUỲ CHỌN
+   * (chỉ để gỡ chồng; không dời được thì món vẫn hiện). Codex M19-1: chung một ngân sách thì mấy ca gỡ chồng không
+   * thành ở phòng khách tiêu hết lượt, giường phòng ngủ sau đó hết lượt và bị ẩn. Vắng `fix` = `LAYOUT_BUDGET`.
+   */
+  readonly run: { left: number; ms: number; fix?: number };
 }
 
 const chromaOf = (lab: Lab): number => Math.hypot(lab[1], lab[2]);
@@ -993,14 +1002,33 @@ const shownRectOf = (m: SetMember, folder: string | null): PlanRect | undefined 
 /** Vùng chặn trên mặt bằng (m): đồ đứng sàn ngoài bộ, vùng mở cửa đi, thân tường; `kind` = loại đồ (`tuckedSeat`). */
 export type SetZone = PlanRect & {
   readonly kind?: string;
+  /** Vai của món chiếm chỗ (M19): `tucked` theo VAI khi biết — `kind` quá thô (xem `tucked`). */
+  readonly role?: string;
   /** Mẫu thư viện của đồ ngoài bộ (đã lưu / luật): góp vào bảng màu bộ (vòng 17); vắng = chỉ chặn chỗ. */
   readonly folder?: string;
   /** Món của bộ chiếm chỗ (M18 L2: khối có id để `searchPlacement` bỏ chính món / thành viên cụm). */
   readonly id?: string;
 };
-/** Ghế kê dưới bàn/quầy chồng hình hợp lệ — không tính va chạm. */
-const tucked = (a: string | undefined, b: string | undefined): boolean =>
+/**
+ * Vai ghế KÊ ĐƯỢC dưới bàn, và vai bàn CÓ ghế kê dưới — ĐÚNG BẰNG `SEAT_ROLES`/`TABLE_ROLES` của layoutSearch, để
+ * `layoutIssuesOf` và bộ chọn cùng một luật. Ghế BĂNG KHÔNG nằm trong đây (Codex M19-1): miễn trừ cả vai ghế băng thì
+ * ghế băng nằm TRỌN dưới mặt bàn cũng không phép kiểm nào thấy (m17sb: 64 % ghế băng chui dưới bàn, chỗ ngồi còn 0,22 m).
+ */
+const TUCK_SEAT_ROLES: ReadonlySet<string> = new Set(['diningChair']);
+const TUCK_TABLE_ROLES: ReadonlySet<string> = new Set(['diningTable', 'desk']);
+/**
+ * Ghế kê dưới bàn/quầy chồng hình hợp lệ — không tính va chạm.
+ * M19: theo VAI khi biết cả hai. `Furniture.kind` quá thô — 'chair' gom cả SOFA và ghế bành, 'table' gom cả BÀN TRÀ và
+ * tủ đầu giường, nên theo `kind` thì sofa "kê dưới" bàn trà: hai món không bao giờ chặn nhau, bộ chọn và thang dời đều
+ * không thấy, và cặp sofa + bàn trà chồng nhau nằm nguyên trong cảnh (cn17, cn18 vòng 18). Thiếu vai (đồ ngoài bộ,
+ * `zones` đầu vào) thì giữ luật `kind` cũ.
+ */
+const tuckedRole = (a: string | undefined, b: string | undefined): boolean =>
+  a !== undefined && b !== undefined && ((TUCK_SEAT_ROLES.has(a) && TUCK_TABLE_ROLES.has(b)) || (TUCK_SEAT_ROLES.has(b) && TUCK_TABLE_ROLES.has(a)));
+const tuckedKind = (a: string | undefined, b: string | undefined): boolean =>
   a !== undefined && b !== undefined && tuckedSeat({ kind: a } as Pick<Furniture, 'kind'>, { kind: b } as Pick<Furniture, 'kind'>);
+const tuckedZone = (m: { readonly kind?: string; readonly role?: string }, z: SetZone): boolean =>
+  m.role !== undefined && z.role !== undefined ? tuckedRole(m.role, z.role) : tuckedKind(m.kind, z.kind);
 const boxRectOf = (b: SetBox): PlanRect => planRectOf(b.cx, b.cy, b.w, b.d, b.rot);
 /**
  * Co đều quá nhỏ: hệ số (cỡ hiển thị / cỡ thật) không hữu hạn, ≤ 0 hoặc < UNIFORM_MIN; hoặc đã co mà mặt bằng còn dưới
@@ -1128,7 +1156,7 @@ export const roomSetOf = (
   };
   /** Món chiếm chỗ bằng `r` (vùng chặn của các món sau + mặt bằng cuối cho lỗi bố trí). */
   const holdRect = (m: SetMember, r: PlanRect): void => {
-    placed.push({ ...r, id: m.id, ...(m.kind === undefined ? {} : { kind: m.kind }) });
+    placed.push({ ...r, id: m.id, role: m.role, ...(m.kind === undefined ? {} : { kind: m.kind }) });
     finalRect.set(m.id, r);
   };
   /** Mặt bằng CỠ THẬT `d` trong hộp `b`: vai tựa tường áp lưng (−z cục bộ) vào mép sau hộp như itemFitOf, còn lại canh tâm. */
@@ -1220,12 +1248,12 @@ export const roomSetOf = (
       const xb = boxOf(x);
       return x.id === m.id || x.fixed || x.lifted === true || xb === undefined || decided.has(x.id) || out.has(x.id) || yieldsTo(m, x)
         ? []
-        : [{ ...boxRectOf(xb), id: x.id, ...(x.kind === undefined ? {} : { kind: x.kind }) }];
+        : [{ ...boxRectOf(xb), id: x.id, role: x.role, ...(x.kind === undefined ? {} : { kind: x.kind }) }];
     });
   const evalOf = (m: SetMember, costFor: (m: SetMember, f: string) => number) => {
     const rejects: Record<string, number> = {};
     const box = m.box;
-    const near = box === undefined || m.lifted === true ? [] : [...placed, ...pendingOf(m)].filter((z) => !tucked(m.kind, z.kind) && rectsOverlap(boxRectOf(box), z));
+    const near = box === undefined || m.lifted === true ? [] : [...placed, ...pendingOf(m)].filter((z) => !tuckedZone(m, z) && rectsOverlap(boxRectOf(box), z));
     const ok: { f: string; cost: number; hit: number }[] = [];
     for (const f of m.pool) {
       const r = rejectOf(m, f);
@@ -1357,7 +1385,7 @@ export const roomSetOf = (
     // F5 (vòng 17): `lead` = mẫu ghế của nhóm (một bàn một bộ) — chỉ thử đúng mẫu ấy (cỡ thật / hiển thị / cỡ thật cưỡng bức).
     const pool = lead === undefined ? m.pool : [lead];
     const b = m.box;
-    const zones = m.lifted === true || b === undefined ? [] : [...placed, ...pendingOf(m)].filter((z) => !tucked(m.kind, z.kind));
+    const zones = m.lifted === true || b === undefined ? [] : [...placed, ...pendingOf(m)].filter((z) => !tuckedZone(m, z));
     const hitOf = (rect: PlanRect | undefined): number => (rect === undefined ? 0 : zones.reduce((s, z) => s + overlapAreaM2(rect, z), 0));
     const clear = (rect: PlanRect | undefined, budget = 0): boolean => hitOf(rect) <= budget + ROOM_OVERLAP_TOL_M2;
     /** Cỡ thật `d` vượt hộp không quá REAL_GROW_M mỗi trục mặt bằng. */
@@ -1512,7 +1540,7 @@ export const roomSetOf = (
     const b = m.box;
     const rect = shownRectOf(m, cur);
     if (b !== undefined && rect !== undefined && m.lifted !== true) {
-      const zones = [...placed, ...pendingOf(m)].filter((z) => !tucked(m.kind, z.kind));
+      const zones = [...placed, ...pendingOf(m)].filter((z) => !tuckedZone(m, z));
       const all = (x: PlanRect): number => zones.reduce((t, z) => t + overlapAreaM2(x, z), 0);
       const wall = (x: PlanRect): number => structural.reduce((t, z) => t + overlapAreaM2(x, z), 0);
       const box = boxRectOf(b);
@@ -1534,7 +1562,7 @@ export const roomSetOf = (
   /** Vật chặn cho `searchPlacement`: đồ đứng sàn ngoài bộ ('fixed') + món bộ đã chốt / chưa chốt ('set', có id). Tường + vùng mở đã ở `room.blocks`. */
   const blocksOf = (m: SetMember): Block[] =>
     [...placed, ...pendingOf(m)].flatMap((z): Block[] =>
-      tucked(m.kind, z.kind) || (z.id === undefined && z.kind === undefined)
+      tuckedZone(m, z) || (z.id === undefined && z.kind === undefined)
         ? []
         : [{ cx: z.cx, cy: z.cy, w: z.w, d: z.d, rotationDeg: z.rotationDeg, origin: z.id === undefined ? 'fixed' : 'set', ...(z.id === undefined ? {} : { id: z.id }) }],
     );
@@ -1551,14 +1579,18 @@ export const roomSetOf = (
     ev: { readonly concept?: { readonly f: string; readonly miss?: string } },
     costOf: (f: string) => number,
     lay: SetLayout,
+    /** Lượt TUỲ CHỌN (chỉ gỡ chồng): tiêu ngân sách `fix` riêng, không cướp lượt của món sắp bị ẩn. */
+    onlyFix?: boolean,
   ): FallbackPick => {
     const b = m.box;
     const unplaced = (reason: string, tried: Tried = NO_TRY): FallbackPick => ({ ...r0, why: `${r0.why}; chưa bố trí được: ${reason}`, unplaced: { reason, tried } });
     if (b === undefined) return r0;
     if (m.lifted === true) return unplaced('món nâng khỏi sàn — không tự dời');
     if (!movableOf(m)) return unplaced('món đã xác nhận, không tự dời');
-    if (lay.run.left <= 0) return unplaced(`vượt ngân sách dời-thử (${LAYOUT_BUDGET} món mỗi căn)`);
-    lay.run.left -= 1;
+    const pot = onlyFix === true ? 'fix' : 'left';
+    if (pot === 'fix' && lay.run.fix === undefined) lay.run.fix = LAYOUT_BUDGET;
+    if ((lay.run[pot] ?? 0) <= 0) return unplaced(`vượt ngân sách dời-thử (${LAYOUT_BUDGET} món mỗi căn)`);
+    lay.run[pot] = (lay.run[pot] ?? 0) - 1;
     const t0 = performance.now();
     try {
       const real = realMemberOf(m);
@@ -1597,7 +1629,7 @@ export const roomSetOf = (
         const piece: Piece = { id: m.id, role, dims: first.dims, box: boxRectOf(b), wallBack: WALL_BACK_ROLES.has(role), movable: true };
         const res = searchPlacement(lay.room, piece, cands.map(({ modelId, dims, cost }) => ({ modelId, dims, ...(cost === undefined ? {} : { cost }) })), blocks, {
           members: pieces,
-          budget: { models: cands.length },
+          budget: { models: cands.length, ...(piece.wallBack ? {} : { poses: K_POSES_FREE }) },
           far,
           relax,
         });
@@ -1659,6 +1691,25 @@ export const roomSetOf = (
     } finally {
       lay.run.ms += performance.now() - t0;
     }
+  };
+  /**
+   * M19 — mặt bằng của mẫu vừa chốt còn CHỒNG món ĐÃ CHỐT (`placed`) quá dung sai?
+   * `evalOf` chỉ so TƯƠNG ĐỐI (mọi ứng viên đều chồng thì cái ít chồng nhất vẫn "đạt") và đường bộ chọn không đi qua
+   * `fallbackOf`, nên món vẫn được dựng đè lên món khác mà thang dời KHÔNG BAO GIỜ chạy — gốc của các va chạm còn lại
+   * ở vòng 18 (hộp AI đã chồng nhau sẵn trong dữ liệu: cn17/cn18 bàn trà + sofa, m17sb ghế băng + bàn ăn).
+   * Chỉ tính món ĐÃ CHỐT: món chưa chốt còn lượt của nó để tự dời.
+   */
+  const stillHitsOf = (m: SetMember, pick: FallbackPick): boolean => {
+    const b = m.box;
+    if (pick.to === null || pick.at !== undefined || m.lifted === true || b === undefined) return false;
+    const d = pick.uniform === 'real' ? ctx.dimsOf(pick.to) : undefined;
+    const rect = d !== undefined ? realRectOf(m, b, d) : shownRectOf(m, pick.to);
+    if (rect === undefined) return false;
+    const zones = placed.filter((z) => !tuckedZone(m, z));
+    const hit = zones.reduce((s, z) => s + overlapAreaM2(rect, z), 0);
+    // Chồng ĐÁNG KỂ, không phải chạm mép: ≥ OVERLAP_MOVE_SHARE mặt bằng của chính món. Tủ đầu giường sát giường, tủ kề
+    // tủ chờm vài chục cm² là sai số hộp dò — dời chúng chỉ làm xáo bố cục mà không gỡ được gì nhìn thấy.
+    return hit > Math.max(ROOM_OVERLAP_TOL_M2, OVERLAP_MOVE_SHARE * rect.w * rect.d);
   };
   const fallbackOf = (
     m: SetMember,
@@ -2036,13 +2087,24 @@ export const roomSetOf = (
         const legacyOk = m.current !== null && ev.pass.has(m.current);
         const legacyShape = (ev as { legacyShape?: string }).legacyShape;
         const failKeep = over !== undefined && (legacyOk || legacyShape !== undefined);
-        const fb =
+        const fb0 =
           leadFb !== undefined && byLead
             ? { ...leadFb, why: `${leadFb.why}; mẫu dẫn của nhóm ghế (một bàn một bộ)` }
             : pick === undefined
               ? seatRetryOf(m, ev, (f) => itemCostOf(f, role, refsOf(keyOf.get(m.id) ?? ''), ctx, memo).total)
               : undefined;
-        const to = fb !== undefined ? fb.to : failKeep ? m.current : (pick as { f: string }).f;
+        const to0 = fb0 !== undefined ? fb0.to : failKeep ? m.current : (pick as { f: string }).f;
+        // M19 — mẫu vừa chốt vẫn chồng món đã chốt: cho vào thang dời (T1–T3). Thang chỉ để GỠ CHỒNG, nên không dời được
+        // thì GIỮ NGUYÊN quyết định: va chạm sẵn có trong dữ liệu không được biến thành món bị ẩn.
+        const re =
+          layout === undefined || to0 === null || !stillHitsOf(m, { ...fb0, to: to0, why: '' })
+            ? undefined
+            : relayoutOf(m, { to: to0, why: 'chồng món đã chốt' }, ev, (f) => itemCostOf(f, role, refsOf(keyOf.get(m.id) ?? ''), ctx, memo).total, layout, true);
+        // Chỉ nhận lượt dời GẦN (≤ MAX_SHIFT_M): thang dời vốn được phép dời xa để món khỏi bị ẨN, còn ở đây món đang
+        // hiện sẵn — dời tủ áo 8 m hay sofa 4 m chỉ để gỡ một chỗ chồng là đánh đổi tệ hơn chính chỗ chồng.
+        const reOk = re?.at !== undefined && re.at.shiftM <= MAX_SHIFT_M + 1e-9;
+        const fb = reOk ? re : fb0;
+        const to = reOk ? (re as FallbackPick).to : to0;
         const miss = conceptMiss.get(m.id);
         out.set(m.id, {
           id: m.id,
@@ -2083,7 +2145,7 @@ export const roomSetOf = (
         else if (to !== null) placeOf(memberAs(m, fb?.uniform), to, fb?.uniform === 'real');
         // Mẫu mặc định của loại (phương án cuối `null`) dựng trong hộp: chiếm chỗ bằng cả hộp. LF6: món "chưa bố trí được"
         // (`unplaced`, node ẩn) không chiếm chỗ — hộp của nó không được chặn món sau (cn13: giường đôi ẩn chặn giường đơn).
-        else if (m.box !== undefined && m.lifted !== true && fb?.unplaced === undefined) placed.push({ ...boxRectOf(m.box), id: m.id, ...(m.kind === undefined ? {} : { kind: m.kind }) });
+        else if (m.box !== undefined && m.lifted !== true && fb?.unplaced === undefined) placed.push({ ...boxRectOf(m.box), id: m.id, role: m.role, ...(m.kind === undefined ? {} : { kind: m.kind }) });
       }
     }
     for (const m of todo) {

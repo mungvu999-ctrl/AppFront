@@ -31,6 +31,13 @@ const MM_PER_M = 1000;
 /** Số mẫu và số tư thế mỗi mẫu tối đa được thử cho một món. */
 export const K_MODELS = 6;
 export const K_POSES = 48;
+/**
+ * Trần tư thế của món KHÔNG tựa tường ở thang dời. Lưới lệch 0,10 m trong bán kính 0,6 m sinh ~226 tư thế; trần 48
+ * sắp theo đoạn dời chỉ phủ ~0,25 m, nên món không bao giờ bước ra khỏi món đang đè lên nó (bàn trà dưới sofa,
+ * cn17/cn18). Nới trần ở ĐÂY chứ không làm thưa lưới: bước 0,20 m mất chính những chỗ đặt gần mà phòng chật cần
+ * (Codex M19-1 P2 — bàn ăn chỉ cần dịch 0,10 m thì bị ẩn).
+ */
+export const K_POSES_FREE = 240;
 /** Số lần BFS tiếp cận tối đa cho một món. */
 export const MAX_BFS = 8;
 /**

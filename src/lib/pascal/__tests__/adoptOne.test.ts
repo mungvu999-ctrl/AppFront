@@ -169,7 +169,13 @@ describe('một món sinh với thư viện máy chủ (roomset bật/tắt)', (
       expect(spot(realBedOf(reloaded))).toBe(spot(moved));
       expect(reloaded.nodes[bed.id]).toBeUndefined();
       const onBed = (n: PascalNode) => n.id.includes(`-${dressIdOf(bed)}`);
-      for (const n of before.filter((x) => x.id !== bed.id && !onBed(x))) expect(spot(reloaded.nodes[n.id])).toBe(spot(n));
+      // M19: giường dời 0,3 m ĐÈ lên tủ đầu giường tự sinh → món bị đè được bố trí lại (trước đây luật `tucked` theo
+      // `kind` cho bàn nằm dưới ghế/giường nên không ai thấy). Luật giữ: giường dời KHÔNG xáo lại phòng — nhiều nhất
+      // hai món tự sinh đổi chỗ, phần còn lại y nguyên.
+      const kids = before.filter((x) => x.id !== bed.id && !onBed(x));
+      const shuffled = kids.filter((n) => spot(reloaded.nodes[n.id]) !== spot(n));
+      expect(shuffled.length, shuffled.map((n) => n.id).join(',')).toBeLessThanOrEqual(2);
+      for (const n of kids.filter((x) => !shuffled.includes(x))) expect(spot(reloaded.nodes[n.id])).toBe(spot(n));
       // Đồ đặt trên/dưới giường: không còn ở chỗ cũ; thảm đi theo đúng một đoạn dời.
       const hosted = before.filter(onBed);
       expect(hosted.length).toBeGreaterThan(0);

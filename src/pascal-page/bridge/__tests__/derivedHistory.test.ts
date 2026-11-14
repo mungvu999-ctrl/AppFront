@@ -99,7 +99,7 @@ class Page {
 
   /** onSave: gỡ node dẫn xuất cũ, dựng lệnh so với mốc, áp vào kho; dựng lại khi cần. Trả các thay đổi. */
   save(raw: PascalScene): { changes: { id: string; after?: Furniture; before?: Furniture }[]; restored: boolean; rebuilt: boolean } {
-    const target = touchedTargetFor(this.session, () => this.stored, (g) => standardSceneOf(g, { repairs: new Map() }).scene);
+    const target = touchedTargetFor(this.session, () => this.stored, (g) => standardSceneOf(g, { repairs: new Map(), relayout: false }).scene);
     const { scene, restored } = restoreDerived(this.history, raw, target);
     const commit = commitOfScenes(this.base, scene) ?? { origin: 'local' as const, changedNodeIds: [] };
     const graph = normalizeSpatial(this.stored);
