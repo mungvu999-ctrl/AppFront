@@ -1161,8 +1161,10 @@ describe('roomset — concept co đều qua vai ngữ cảnh (tủ đầu giư�
   });
 
   it('asset.scale của món dựng bằng concept co đều có ba trục bằng nhau, mặt bằng trong hộp', () => {
+    // M19: hộp cũ (4300; 3500) chồng GHẾ 0,029 m² — luật `tucked` theo `kind` cũ bỏ qua (bàn ↔ ghế), luật theo VAI thì
+    // bàn trà ↔ ghế ăn là va chạm thật nên concept bị loại vì 'va chạm'. Dời hộp ra khỏi ghế: phép thử này về CO ĐỀU.
     const g = graphWith();
-    const graph = { ...g, furniture: g.furniture.map((f) => (f.id === NS2 ? piece(NS2, 'table', 530, 450, 4300, 3500, { heightMm: 550 } as Partial<Furniture>) : f)) } as SpatialGraph;
+    const graph = { ...g, furniture: g.furniture.map((f) => (f.id === NS2 ? piece(NS2, 'table', 530, 450, 4550, 3500, { heightMm: 550 } as Partial<Furniture>) : f)) } as SpatialGraph;
     const style: LayerStyle = { ...ON, prefer: { ...ON.prefer, coffeeTable: [concept] } };
     const scene = sceneOf(graph, style);
     expect(assetOf(scene, NS2)).toBe(concept);

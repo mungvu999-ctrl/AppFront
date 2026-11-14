@@ -44,6 +44,8 @@ export const MAX_SHIFT_M = 1.5;
 const STEP_M = 0.1;
 /** Bán kính lưới lệch cho món không tựa tường. */
 const OFFSET_RADIUS_M = 0.6;
+/** Bước lưới lệch của món KHÔNG tựa tường (M19): 0,20 m — xem `posesOf`. */
+const FREE_STEP_M = 0.2;
 /** Footprint lùi khỏi outline. */
 const INSET_M = 0.05;
 /** Khe giữa lưng món và mặt tường. */
@@ -456,12 +458,15 @@ export const posesOf = (piece: Piece, room: LayoutRoom, limit = K_POSES, far = f
       }
     });
   } else {
-    const n = Math.round(OFFSET_RADIUS_M / STEP_M);
+    // M19 — bước lưới thưa hơn (0,20 m) để 48 tư thế của `limit` PHỦ HẾT bán kính 0,6 m. Với bước 0,10 m lưới sinh ~226
+    // tư thế, sắp theo đoạn dời rồi cắt còn 48 → món không tựa tường thực tế chỉ dời được ~0,25 m, không bao giờ bước ra
+    // khỏi món đang đè lên nó (bàn trà dưới sofa, cn17/cn18). Số tư thế được KIỂM không đổi, chỉ trải rộng hơn.
+    const n = Math.round(OFFSET_RADIUS_M / FREE_STEP_M);
     for (const rot of [box.rotationDeg, box.rotationDeg + 90]) {
       for (let i = -n; i <= n; i += 1) {
         for (let j = -n; j <= n; j += 1) {
           if (i * i + j * j > n * n) continue;
-          add(box.cx + i * STEP_M, box.cy + j * STEP_M, rot);
+          add(box.cx + i * FREE_STEP_M, box.cy + j * FREE_STEP_M, rot);
         }
       }
     }
