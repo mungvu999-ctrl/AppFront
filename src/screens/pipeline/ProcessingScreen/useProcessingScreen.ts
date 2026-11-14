@@ -81,7 +81,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { Progress } from '@/api/schemas';
 import type { PipelineRun } from '@/api/schemas/pipelineRuns';
@@ -319,6 +319,9 @@ const DEFAULT_ROLES: readonly ProjectRole[] = ['engineer'];
 
 /** Nhịp cập nhật câu ước lượng U09: mốc tính bằng phút, không cần mỗi giây. */
 const ESTIMATE_TICK_MS = 10 * MILLISECONDS_PER_SECOND;
+/** Nhịp hỏi kết quả mô hình khi lượt đang chạy (N49). */
+const SCAN_RESULTS_POLL_INTERVAL = 1500;
+const SOURCE_IMAGE_MAX_READS = 40;
 const MILLISECONDS_PER_MINUTE = 60 * MILLISECONDS_PER_SECOND;
 /** UX-29: chưa có lượt nào xong thì chỉ nói mốc ngắn này, khi cỡ ảnh cũng đoán vậy. */
 const SHORT_GUESS_MINUTES = 2;
@@ -784,6 +787,12 @@ export function useProcessingScreen(options: UseProcessingScreenOptions): Proces
       return result.data;
     },
     enabled: readsLatestUploads,
+    // Trang đã nắn chỉ có sau bước đầu của lượt chạy: hỏi lại đến khi có ảnh, có trần để không hỏi mãi.
+    refetchInterval: (query) =>
+      query.state.dataUpdateCount < SOURCE_IMAGE_MAX_READS &&
+      query.state.data?.some((upload) => upload.sourceImageUrl === undefined) === true
+        ? SCAN_RESULTS_POLL_INTERVAL
+        : false,
   });
   const floorUploads = options.floorUploads ?? latestUploadsQuery.data ?? EMPTY_UPLOADS;
   const uploadsPending = readsLatestUploads && latestUploadsQuery.isPending;
@@ -1443,6 +1452,25 @@ export function useProcessingScreen(options: UseProcessingScreenOptions): Proces
     });
   }, [focusRecord, onToggleDetail, openStepIds]);
 
+  const scanUpload = floorUploads[focusIndex];
+  const scanStatus = floorStatuses[focusIndex];
+  const scanRunId = scanUpload?.uploadId;
+  const isScanRunning = scanStatus === 'running';
+  // Khoá mang cả cờ đang chạy: lúc lượt vừa xong đọc thêm đúng một lần để lấy bước về sau cùng.
+  const scanResultsQuery = useQuery({
+    queryKey: ['processing', 'scanResults', scanRunId, isScanRunning],
+    enabled: scanRunId !== undefined && (isScanRunning || scanStatus === 'done'),
+    placeholderData: keepPreviousData,
+    refetchInterval: isScanRunning ? SCAN_RESULTS_POLL_INTERVAL : false,
+    retry: false,
+    queryFn: async ({ signal }) => {
+      const result = await gateway.readScanResults({ projectId, uploadId: scanRunId ?? '', signal });
+      if (!result.ok) throw result.error;
+      return result.data;
+    },
+  });
+  const scanResults = scanResultsQuery.data;
+
   const previewPanel = useMemo<ProcessingPreviewViewModel>(() => {
     const upload = floorUploads[focusIndex];
 
@@ -1461,8 +1489,9 @@ export function useProcessingScreen(options: UseProcessingScreenOptions): Proces
       isScanning: floorStatuses[focusIndex] === 'running',
       detectedGeometryPaths: focusRecord.detectedGeometryPaths ?? EMPTY_GEOMETRY,
       activeFloorId: upload.floorId,
+      ...(scanResults !== undefined ? { scanResults, scanRunId: upload.uploadId } : {}),
     };
-  }, [floorStatuses, floorUploads, focusIndex, focusRecord]);
+  }, [floorStatuses, floorUploads, focusIndex, focusRecord, scanResults]);
 
   /**
    * Khối tổng kết hiện ngay khi một tầng xong — kể cả khi chưa đọc được con số (lỗi N16): hai lối

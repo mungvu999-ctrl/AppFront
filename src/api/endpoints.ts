@@ -110,6 +110,9 @@ export const ENDPOINTS = {
     pipelineRuns: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}/pipeline-runs`,
     progress: (projectId: string, uploadId: string): string =>
       `${PROJECTS_ROOT}/${projectId}${DRAWINGS_ROOT}/uploads/${uploadId}/progress`,
+    /** N49 — kết quả mô hình đã có của lượt chạy mới nhất. */
+    scanResults: (projectId: string, uploadId: string): string =>
+      `${PROJECTS_ROOT}/${projectId}${DRAWINGS_ROOT}/uploads/${uploadId}/scan-results`,
   },
   featureFlags: {
     read: FEATURE_FLAGS_ROOT,

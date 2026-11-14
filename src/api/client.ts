@@ -85,7 +85,13 @@ import {
 import { ProjectSummarySchema, type ProjectSummary } from './schemas/projectSummaries';
 import { ProjectRuleConfigSchema, type ProjectRuleConfig, type UpdateRuleConfig } from './schemas/ruleConfig';
 import { MeSchema, type ChangePassword, type Me, type UpdateMe, type UploadAvatar } from './schemas/me';
-import { LatestFloorUploadSchema, PageThumbnailsSchema, type LatestFloorUpload } from './schemas/uploads';
+import {
+  LatestFloorUploadSchema,
+  PageThumbnailsSchema,
+  ScanResultsSchema,
+  type LatestFloorUpload,
+  type ScanResults,
+} from './schemas/uploads';
 import {
   type FloorVersionPageSchema,
   FloorVersionSnapshotSchema,
@@ -612,6 +618,7 @@ export interface DrawingsApi {
   /** N41 (UX41 U05) — ảnh nhỏ từng trang của một PDF chưa tải lên; `data:` URL theo thứ tự trang. */
   pageThumbnails(input: ReadPageThumbnailsInput): Promise<ApiResult<string[]>>;
   progress(input: ReadDrawingProgressInput): Promise<ApiResult<Progress>>;
+  scanResults(input: ReadDrawingProgressInput): Promise<ApiResult<ScanResults>>;
   sendChunk(input: SendDrawingChunkInput): Promise<ApiResult<Progress>>;
 }
 
@@ -1136,6 +1143,12 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
     signIn: async (input) => postWithoutBody(options.authHttp ?? http, ENDPOINTS.auth.login, input.body, input),
   },
   drawings: {
+    scanResults: async ({ projectId, signal, uploadId }) =>
+      decodeSingle(
+        await callGet<unknown>(http, ENDPOINTS.drawings.scanResults(projectId, uploadId), signal),
+        ScanResultsSchema,
+        'drawings.scanResults',
+      ),
     complete: async (input) => {
       const { body, projectId } = input;
 

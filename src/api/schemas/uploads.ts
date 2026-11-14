@@ -57,3 +57,27 @@ export const PageThumbnailsSchema = z
   .strict();
 
 export type PageThumbnails = z.infer<typeof PageThumbnailsSchema>;
+
+/**
+ * N49 — `GET …/drawings/uploads/{upload_id}/scan-results`: kết quả cuối của các bước
+ * mô hình đã xong, toạ độ pixel trang đã nắn (cùng hệ `sourceImageUrl`). Bước chưa xong
+ * là mảng rỗng.
+ */
+export const ScanResultsSchema = z
+  .object({
+    walls: z.array(z.object({ x1: z.number(), y1: z.number(), x2: z.number(), y2: z.number() }).strict()),
+    boxes: z.array(
+      z
+        .object({
+          label: z.string(),
+          xMin: z.number(),
+          yMin: z.number(),
+          xMax: z.number(),
+          yMax: z.number(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export type ScanResults = z.infer<typeof ScanResultsSchema>;

@@ -73,6 +73,8 @@ const SAMPLE_LAYER_DOCUMENT = {
   },
 };
 const STAGES = getPipelineStages();
+/** Nhịp hỏi lại N7 khi chưa có ảnh xem trước. */
+const SCAN_POLL_MS = 1500;
 
 /* -------------------------------------------------------------------------- */
 /* Bộ giả của môi trường: EventSource, tab ẩn/hiện, matchMedia.                 */
@@ -1743,6 +1745,33 @@ describe('useProcessingScreen — QA-03e (SCR-12)', () => {
     retryable: true,
     status: 503,
   };
+
+  it('hỏi lại N7 đến khi có ảnh xem trước, có ảnh thì thôi', async () => {
+    const harness = makeScriptedClient();
+    const [upload] = await readFloorUploads(harness.client, 1);
+    const noImage = { floorId: upload!.floorId, floorName: upload!.floorName, uploadId: upload!.uploadId };
+    harness.setLatest({ ok: true, data: [noImage] });
+    mountHook(harness.client, undefined, createTestQueryClient(), new MockVisibilityTarget());
+    await settle(clock);
+    const firstCalls = harness.latestCalls();
+
+    await act(async () => {
+      await clock.advance(SCAN_POLL_MS);
+    });
+    expect(harness.latestCalls()).toBe(firstCalls + 1);
+
+    harness.setLatest({ ok: true, data: [{ ...noImage, sourceImageUrl: '/trang.png' }] });
+    await act(async () => {
+      await clock.advance(SCAN_POLL_MS);
+    });
+    const callsWithImage = harness.latestCalls();
+    expect(callsWithImage).toBe(firstCalls + 2);
+
+    await act(async () => {
+      await clock.advance(SCAN_POLL_MS * 3);
+    });
+    expect(harness.latestCalls()).toBe(callsWithImage);
+  });
 
   it('BUG-543: lượt đã xong, không tầng nào chạy: chip của tầng đang hiện bước có aria-current', async () => {
     const harness = makeScriptedClient();
