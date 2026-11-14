@@ -27,11 +27,11 @@ function setup(api: SeparateUnitsApi) {
 }
 
 describe('useDetectFurniture', () => {
-  it('reads false when the project never saved the setting', async () => {
+  it('reads true when the project never saved the setting', async () => {
     const { api, read } = fakeApi(settings);
     const { result } = setup(api);
     await waitFor(() => expect(read).toHaveBeenCalled());
-    expect(result.current.detectFurniture).toBe(false);
+    expect(result.current.detectFurniture).toBe(true);
   });
 
   it('saves the full body with detectFurniture on the latest revision', async () => {
@@ -51,8 +51,8 @@ describe('useDetectFurniture', () => {
   it('keeps the old value and says so when the save fails', async () => {
     const { api } = fakeApi(settings, false);
     const { result } = setup(api);
-    act(() => result.current.setDetectFurniture(true));
+    act(() => result.current.setDetectFurniture(false));
     await waitFor(() => expect(result.current.saveError).toBe(DETECT_FURNITURE_SAVE_ERROR));
-    expect(result.current.detectFurniture).toBe(false);
+    expect(result.current.detectFurniture).toBe(true);
   });
 });

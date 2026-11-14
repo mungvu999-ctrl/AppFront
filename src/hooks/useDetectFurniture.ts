@@ -1,7 +1,7 @@
 /**
  * QT-FURN-TOGGLE — thiết lập dự án "Nhận diện đồ đạc" (`detectFurniture` của N5/N6).
  *
- * Tắt (mặc định của BE) thì lượt xử lý chỉ dựng tường, cửa và phòng; bật thì dựng cả đồ đạc AI.
+ * Bật (mặc định của BE từ BENCH3D-FURN-ON) thì dựng cả đồ đạc AI; tắt thì lượt xử lý chỉ dựng tường, cửa và phòng.
  * Đổi chỉ có hiệu lực từ lượt xử lý sau. Ghi = đọc N5 mới nhất rồi PUT đủ thân kèm `detectFurniture`,
  * cùng khuôn `useSeparateUnits`.
  */
@@ -34,7 +34,7 @@ export function useDetectFurniture(projectId: string, api?: SeparateUnitsApi): D
     queryFn: async () => {
       const result = await (await loadSeparateUnitsClient(api)).projectSettings.read({ projectId });
       if (!result.ok) throw new Error('project settings unavailable');
-      return result.data.detectFurniture === true;
+      return result.data.detectFurniture !== false;
     },
   });
   const mutation = useMutation({
@@ -55,7 +55,7 @@ export function useDetectFurniture(projectId: string, api?: SeparateUnitsApi): D
   });
 
   return {
-    detectFurniture: (mutation.isPending ? mutation.variables : undefined) ?? data ?? false,
+    detectFurniture: (mutation.isPending ? mutation.variables : undefined) ?? data ?? true,
     isSaving: mutation.isPending,
     saveError: mutation.isError ? DETECT_FURNITURE_SAVE_ERROR : null,
     setDetectFurniture: (next) => mutation.mutate(next),
