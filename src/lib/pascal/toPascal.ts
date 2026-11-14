@@ -1322,6 +1322,7 @@ export const toPascalScene = (
     furnish = 'off',
     additions = [],
     repairs,
+    relayout = true,
   }: {
     readonly style?: SceneStyle;
     /** Đồ tự bày (bày phòng trống + bày biện) — mặc định tắt: cảnh chỉ có đồ của bản vẽ (C1). */
@@ -1330,6 +1331,12 @@ export const toPascalScene = (
     readonly additions?: readonly DesignAddition[];
     /** Sửa cảnh cho đồ AI chưa xác nhận (làn sửa cảnh tính): chỉ GHI lên node đồ (`fields.repair`), không tính ở đây. */
     readonly repairs?: ReadonlyMap<FurnitureId, SceneRepair>;
+    /**
+     * M19 — thang dời chỗ T1–T3 (vòng 18). `false` = CHỈ chọn mẫu, không món nào bị dời: dùng cho cảnh "đích hoàn tác"
+     * (`touchedTargetFor`), nơi node phải đứng ĐÚNG dữ liệu đã lưu. Bật thì một vị trí do máy dời sẽ bị Ctrl+Z ghi vào
+     * dữ liệu của món, tức là máy sửa dữ liệu sau lưng người dùng.
+     */
+    readonly relayout?: boolean;
   } = {},
 ): PascalSceneResult & { readonly layer: SceneLayerSummary } => {
   const nodes: Record<PascalNodeId, PascalNode> = {};
@@ -1702,7 +1709,7 @@ export const toPascalScene = (
     new Map(builtRooms.map((room) => [room.id as string, zonesOf(room.levelId)] as const)),
     // Vòng 18: hình học phòng (m) cho tầng dời chỗ T1–T3. ponytail: chưa truyền `extra` (đồ cố định) — bộ chọn đã có
     // đồ ngoài bộ/đồ ghim làm vật cản (`planRoom` obstacles); thêm khi cần chặn đồ không thuộc sổ.
-    new Map(builtRooms.map((room) => [room.id as string, layoutRoomOf(room, builtGraph)] as const)),
+    relayout ? new Map(builtRooms.map((room) => [room.id as string, layoutRoomOf(room, builtGraph)] as const)) : new Map(),
   );
   // Món đã nhận còn mẫu luật chọn: twin đại diện trong sổ bộ (như trước khi nhận), không thành đồ cố định của bảng màu.
   const contextRoles = contextRolesOf(

@@ -475,7 +475,7 @@ describe('roomset trong đường dựng cảnh', () => {
         return scene;
       }
       save(raw: PascalScene): string[] {
-        const target = touchedTargetFor(this.session, () => this.stored, (g) => standardSceneOf(g, { style: ON, repairs: new Map() }).scene);
+        const target = touchedTargetFor(this.session, () => this.stored, (g) => standardSceneOf(g, { style: ON, repairs: new Map(), relayout: false }).scene);
         const { scene } = restoreDerived(this.history, raw, target);
         // Như `commitOfScenes` (tầng lib không import screens): node khác mốc là "đã đổi".
         const changedNodeIds = Object.keys(scene.nodes).filter((id) => JSON.stringify(scene.nodes[id]) !== JSON.stringify(this.base.nodes[id]));

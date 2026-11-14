@@ -554,7 +554,9 @@ export function usePascalProjectBridge(
       touchedTargetFor(
         repairSession.current,
         storedGraph,
-        (graph) => standardSceneOf(graph, { ...sceneOptions(), raw: !sceneRepairStore.get().enabled, repairs: new Map() }).scene,
+        // M19 `relayout: false`: đích hoàn tác phải là DỮ LIỆU ĐÃ LƯU — bật thang dời thì Ctrl+Z ghi vị trí máy tự dời
+        // vào dữ liệu của món (derivedHistory.test.ts: giường về 1110 thay vì 300).
+        (graph) => standardSceneOf(graph, { ...sceneOptions(), raw: !sceneRepairStore.get().enabled, repairs: new Map(), relayout: false }).scene,
       ),
     [sceneOptions, storedGraph],
   );
