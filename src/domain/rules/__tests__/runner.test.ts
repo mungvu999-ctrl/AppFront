@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { medianMs } from '@/lib/testing/timing';
+
 import {
   createSampleBuilding,
   SAMPLE_BUILDING,
@@ -617,11 +619,12 @@ describe('speed', () => {
 
     // One warm-up pass, so the figure is the steady state an editing session
     // sees rather than the first-call cost of compiling the checks.
-    runRules(normalizedSample(), { registry });
+    let result = runRules(normalizedSample(), { registry });
 
-    const startedAt = performance.now();
-    const result = runRules(normalizeSpatial(createSampleBuilding()), { registry });
-    const elapsedMs = performance.now() - startedAt;
+    // Median of five: one stall of the shared CI runner is not the checks (master 02/11: 203 ms).
+    const elapsedMs = medianMs(() => {
+      result = runRules(normalizeSpatial(createSampleBuilding()), { registry });
+    });
 
     expect(result.violations).toHaveLength(178);
     expect(elapsedMs).toBeLessThan(200);
@@ -632,13 +635,14 @@ describe('speed', () => {
     const graph = normalizedSample();
     const full = runRules(graph, { registry });
 
-    const startedAt = performance.now();
-    const edited = runRules(graph, {
-      registry,
-      previous: full.state,
-      changes: [{ entityId: FIRST_WALL_ID }],
+    let edited = full;
+    const elapsedMs = medianMs(() => {
+      edited = runRules(graph, {
+        registry,
+        previous: full.state,
+        changes: [{ entityId: FIRST_WALL_ID }],
+      });
     });
-    const elapsedMs = performance.now() - startedAt;
 
     expect(edited.evaluated).toHaveLength(WALL_DEPENDENT_CODES.length);
     expect(elapsedMs).toBeLessThan(200);
