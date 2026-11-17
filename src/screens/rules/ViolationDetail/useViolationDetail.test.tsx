@@ -41,7 +41,12 @@ const FLOOR_ID = VIOLATION.levelId ?? GRAPH.byKind.level[0] ?? '';
 // Trần chờ tấm trượt sang vi phạm kế sau "sửa nhanh" (kiểm lại luật + nạp động). 2 s đủ ở máy
 // nhưng mảnh vitest có đo độ phủ trên runner CI 4 vCPU từng vượt (master 02/11, 28V-A-023 và
 // 28V-C-004) — phép kiểm giữ nguyên, chỉ nới thời gian chờ; trần cả bài vẫn là `testTimeout` 30 s.
-const NEXT_VIOLATION_TIMEOUT_MS = 10_000;
+//
+// 17/11: vượt lần nữa ở 10 s (lượt 44039231403, mảnh 4 — tấm trượt còn đứng ở vi phạm #1 khi
+// phép kiểm chạy). Mảnh ấy xanh ở máy này, nên đây là chênh tốc độ runner, không phải luật sai.
+// Nới lên 20 s: vẫn là phép kiểm thật (bài đỏ nếu tấm trượt KHÔNG BAO GIỜ sang), vẫn dưới
+// `testTimeout` 30 s. Nếu còn vượt thì vấn đề là chỗ khác, đừng nới tiếp.
+const NEXT_VIOLATION_TIMEOUT_MS = 20_000;
 
 function Wired({ seed }: { readonly seed: ViolationDetailGatewaySeed }) {
   const props = useViolationDetail({

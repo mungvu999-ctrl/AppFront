@@ -77,6 +77,15 @@ jobs:
   typecheck:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # Trần heap Node: `tsc` của `tsconfig.pascal.json` dùng ~3,0 GB, sát trần mặc định của
+    # Node 20 trên runner này, nên job đổ vỡ ngẫu nhiên bằng OOM (exit 134) — `typecheck` ở
+    # lượt 44039231403, `build` ở lượt 43443310166 trên master. ĐÃ ĐO 17/11 trên hai commit
+    # liền nhau để biết đây không phải việc mã mới sinh ra: 3.014.823 K trước thay đổi và
+    # 2.978.234 K sau — tức trần đã sát từ trước. Đặt riêng ở hai job này, KHÔNG đặt ở mức
+    # workflow: luồng vitest cũng đọc `NODE_OPTIONS`, cho mỗi luồng trần 6 GB thì runner
+    # 16 GB hết chỗ. Đây là trần, không phải chỗ cấp sẵn.
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -171,6 +180,15 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # Trần heap Node: `tsc` của `tsconfig.pascal.json` dùng ~3,0 GB, sát trần mặc định của
+    # Node 20 trên runner này, nên job đổ vỡ ngẫu nhiên bằng OOM (exit 134) — `typecheck` ở
+    # lượt 44039231403, `build` ở lượt 43443310166 trên master. ĐÃ ĐO 17/11 trên hai commit
+    # liền nhau để biết đây không phải việc mã mới sinh ra: 3.014.823 K trước thay đổi và
+    # 2.978.234 K sau — tức trần đã sát từ trước. Đặt riêng ở hai job này, KHÔNG đặt ở mức
+    # workflow: luồng vitest cũng đọc `NODE_OPTIONS`, cho mỗi luồng trần 6 GB thì runner
+    # 16 GB hết chỗ. Đây là trần, không phải chỗ cấp sẵn.
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
