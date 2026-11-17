@@ -723,10 +723,24 @@ export const absoluteUrl = (url: string): string => {
 export const LIBROLES2_MODEL_PREFIX = 'appfront-libroles2-';
 const CANONICAL_ID = /^[a-z0-9_-]+$/;
 /** Id chuẩn của một id mẫu (bỏ tiền tố provenance); id không mang tiền tố hợp lệ trả nguyên. */
+const canonicalIdCache = new Map<string, string>();
+/**
+ * Id chuẩn của một id mẫu (bỏ tiền tố provenance); id không mang tiền tố hợp lệ trả nguyên.
+ * Có nhớ: `isServerModel`/`serverKindOf` bị gọi hàng trăm nghìn lượt trong một lượt chọn bộ đồ
+ * (CPU profile 15/11: 63 ms tự thân cho một lượt commit). Tập id là hữu hạn (danh mục + mẫu dựng sẵn).
+ */
 export const canonicalModelId = (id: string): string => {
-  if (!id.startsWith(LIBROLES2_MODEL_PREFIX)) return id;
-  const base = id.slice(LIBROLES2_MODEL_PREFIX.length);
-  return CANONICAL_ID.test(base) ? base : id;
+  const hit = canonicalIdCache.get(id);
+  if (hit !== undefined) return hit;
+  let out = id;
+  if (id.startsWith(LIBROLES2_MODEL_PREFIX)) {
+    const base = id.slice(LIBROLES2_MODEL_PREFIX.length);
+    if (CANONICAL_ID.test(base)) out = base;
+  }
+  // Chặn trên cho bộ nhớ: id sinh ra từ dữ liệu người dùng (tên thư mục mẫu tải lên) nên có thể nhiều.
+  if (canonicalIdCache.size > 5_000) canonicalIdCache.clear();
+  canonicalIdCache.set(id, out);
+  return out;
 };
 
 /** true khi thư mục đến từ thư viện máy chủ. */

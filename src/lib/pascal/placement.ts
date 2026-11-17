@@ -63,6 +63,9 @@ const axesOf = (r: Rect): readonly [Point, Point] => {
     { x: -s, y: c },
   ];
 };
+/** Nửa cạnh hộp bao THẲNG TRỤC của một hình xoay — dùng để loại nhanh cặp ở xa trước khi chạy SAT. */
+const halfExtentX = (r: Rect, c: number, s: number): number => Math.abs(c) * (r.w / 2) + Math.abs(s) * (r.d / 2);
+const halfExtentY = (r: Rect, c: number, s: number): number => Math.abs(s) * (r.w / 2) + Math.abs(c) * (r.d / 2);
 const dot = (p: Point, q: Point): number => p.x * q.x + p.y * q.y;
 const cross = (o: Point, p: Point, q: Point): number => (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x);
 
@@ -121,16 +124,39 @@ export const rectInsidePolygon = (r: Rect, outline: readonly Point[], insetMm: n
   });
 };
 
-/** Hai hình xoay chồng nhau (SAT); cách nhau đúng `gapMm` thì không tính là chồng. */
+/**
+ * Hai hình xoay chồng nhau (SAT); cách nhau đúng `gapMm` thì không tính là chồng.
+ *
+ * Viết không cấp phát (không mảng/đối tượng/khép kín mỗi lượt) và loại nhanh theo hộp bao thẳng trục:
+ * hàm này chạy O(n²) trong `scenePlacementIssues`, `repairScene` và thang bố trí, và từng chiếm
+ * ~0,2 s mỗi lượt commit (CPU profile 15/11). Kết quả giữ nguyên từng bit — `placementFast.test.ts`
+ * đối chiếu với bản tham chiếu trên 20 000 cặp ngẫu nhiên.
+ */
 export const rectsOverlap = (a: Rect, b: Rect, gapMm = 0): boolean => {
-  const [ax, ay] = axesOf(a);
-  const [bx, by] = axesOf(b);
-  const between = { x: b.cx - a.cx, y: b.cy - a.cy };
-  const half = (r: Rect, ex: Point, ey: Point, u: Point): number =>
-    Math.abs(dot(ex, u)) * (r.w / 2) + Math.abs(dot(ey, u)) * (r.d / 2);
-  return [ax, ay, bx, by].every(
-    (u) => Math.abs(dot(between, u)) < half(a, ax, ay, u) + half(b, bx, by, u) + gapMm - EPS,
-  );
+  const dx = b.cx - a.cx;
+  const dy = b.cy - a.cy;
+  const ta = radiansOf(a.rotationDeg);
+  const ca = Math.cos(ta);
+  const sa = Math.sin(ta);
+  const tb = radiansOf(b.rotationDeg);
+  const cb = Math.cos(tb);
+  const sb = Math.sin(tb);
+  // Loại nhanh: cách nhau quá cả hai hộp bao thẳng trục cộng |gap|·√2 thì chắc chắn SAT cũng bảo "không chồng".
+  const slack = Math.abs(gapMm) * Math.SQRT2 + 1e-6;
+  if (Math.abs(dx) > halfExtentX(a, ca, sa) + halfExtentX(b, cb, sb) + slack) return false;
+  if (Math.abs(dy) > halfExtentY(a, ca, sa) + halfExtentY(b, cb, sb) + slack) return false;
+  const aw = a.w / 2;
+  const ad = a.d / 2;
+  const bw = b.w / 2;
+  const bd = b.d / 2;
+  /** Một trục kiểm: |chiếu khoảng cách| < nửa chiếu của A + nửa chiếu của B + gap. */
+  const separated = (ux: number, uy: number): boolean =>
+    Math.abs(dx * ux + dy * uy) >=
+    (Math.abs(ca * ux + sa * uy) * aw + Math.abs(-sa * ux + ca * uy) * ad) +
+      (Math.abs(cb * ux + sb * uy) * bw + Math.abs(-sb * ux + cb * uy) * bd) +
+      gapMm -
+      EPS;
+  return !separated(ca, sa) && !separated(-sa, ca) && !separated(cb, sb) && !separated(-sb, cb);
 };
 
 /** Khoảng dò hai bên mặt tường để biết có phòng hay không (như `swingDirectionOf`), mm. */
@@ -199,7 +225,25 @@ export const wallRects = (graph: SpatialGraph, levelId: LevelId): Rect[] =>
  * lấy từ tường cùng tầng có cả hai đầu tâm tường cách đường cạnh ≤ dày/2 + 50 mm và phủ một
  * phần đoạn cạnh; `walled` là các đoạn cạnh có tường đó phía sau.
  */
+/**
+ * Nhớ kết quả theo (đồ thị, phòng) — `roomEdges` là hàm thuần nhưng `repairScene` gọi nó MỖI MÓN
+ * (`wallSpots`), nên một tầng 9 phòng × 50 món chạy lại hàng trăm lượt O(cạnh × tường). Khoá theo
+ * danh tính đối tượng: đồ thị mới (mọi lượt dựng đều tạo đồ thị mới) hay phòng mới thì tính lại.
+ * Đo 15/11: `derive:repairScene` 152 ms → xem `docs/editor-3d-performance-ux-audit/implementation`.
+ */
+const roomEdgesCache = new WeakMap<object, WeakMap<object, RoomEdge[]>>();
+
 export const roomEdges = (room: Pick<Room, 'levelId' | 'outline'>, graph: SpatialGraph): RoomEdge[] => {
+  const perGraph = roomEdgesCache.get(graph) ?? new WeakMap<object, RoomEdge[]>();
+  roomEdgesCache.set(graph, perGraph);
+  const hit = perGraph.get(room);
+  if (hit !== undefined) return hit;
+  const built = roomEdgesUncached(room, graph);
+  perGraph.set(room, built);
+  return built;
+};
+
+const roomEdgesUncached = (room: Pick<Room, 'levelId' | 'outline'>, graph: SpatialGraph): RoomEdge[] => {
   const outline = room.outline;
   if (outline.length < 3 || !outline.every(isFinitePoint)) return [];
   const sign = signedAreaMm2(outline.map(toPointMm)) >= 0 ? 1 : -1;

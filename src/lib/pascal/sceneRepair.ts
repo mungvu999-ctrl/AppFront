@@ -27,6 +27,7 @@
  * `repairScene(repairScene(g).graph)` không sửa thêm gì.
  */
 
+import { span } from '@/lib/perf/span';
 import { outlineContains } from '@/domain/rooms/area';
 import type { Furniture, FurnitureId, Point, Room, SpatialGraph } from '@/domain/spatial/types';
 import { degrees } from '@/domain/units/types';
@@ -689,14 +690,19 @@ export const repairScene = (
   graph: SpatialGraph,
   /** Luật vòng 6 đã tắt (`?disable=fit,door`); mặc định theo URL trang. */
   off: ReadonlySet<string> = SCENE_RULES_OFF,
-): { graph: SpatialGraph; repairs: readonly SceneRepair[] } => {
+): { graph: SpatialGraph; repairs: readonly SceneRepair[] } => span('derive:repairScene', () => {
   const original = new Map(graph.furniture.map((f) => [f.id, f]));
   const log = new Map<FurnitureId, { rules: string[]; reasons: string[]; after: Furniture | null }>();
   let furniture: readonly Furniture[] = graph.furniture;
 
   for (let round = 0; round < MAX_ROUNDS; round += 1) {
     // Quay hướng như cảnh 3D sẽ quay (đồ AI góc 0) để luật xét đúng hình người dùng thấy.
-    const steps = runRules(graph, orientDetectedFurniture(furniture, graph.walls), off);
+    // Hai mốc `?perf` tách hai phần của một vòng: xoay hướng (tuyến tính theo số món) và chạy luật
+    // (O(n²)). Đo 16/11: `derive:repairScene` tốn 258–343 ms mỗi lượt lưu — phải biết nó nằm ở đâu,
+    // và đếm được bao nhiêu vòng thật sự chạy (tối đa `MAX_ROUNDS`).
+    const oriented = span('derive:orient', () => orientDetectedFurniture(furniture, graph.walls));
+    const steps = span('derive:runRules', () => runRules(graph, oriented, off));
+    span('derive:repairRound', () => undefined);
     if (steps.length === 0) break;
     const changed = new Map(steps.map((s) => [s.id, s.after]));
     furniture = furniture.flatMap((f) => {
@@ -726,7 +732,7 @@ export const repairScene = (
     };
   });
   return { graph: { ...graph, furniture }, repairs };
-};
+});
 
 /** Tra nhanh theo id — dạng `toPascalScene({ repairs })` dự kiến nhận. */
 export const repairsById = (repairs: readonly SceneRepair[]): ReadonlyMap<FurnitureId, SceneRepair> =>
@@ -775,6 +781,9 @@ export const sessionRepairs = (session: RepairSession, stored: SpatialGraph): Re
   const furniture = stored.furniture.map((f) => (session.touched.has(f.id) && classOf(f) === 'ai' ? { ...f, edited: true } : f));
   const key = JSON.stringify([stored.walls, stored.openings, stored.rooms, furniture]);
   let hit = session.cache.get(key);
+  // Chẩn đoán ?perf: đếm lượt trúng/trượt ô đệm phiên (n của mốc), để biết `repairScene` chạy lại vì dữ liệu
+  // thật khác hay vì ô đệm trượt oan — xem `docs/editor-3d-performance-ux-audit/implementation`.
+  span(hit === undefined ? 'repairs:miss' : 'repairs:hit', () => undefined);
   if (hit === undefined) {
     const fixed = repairScene({ ...stored, furniture });
     hit = { furniture: fixed.repairs.length === 0 ? null : fixed.graph.furniture, repairs: fixed.repairs };

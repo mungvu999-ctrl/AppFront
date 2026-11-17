@@ -97,6 +97,8 @@ import {
   type SceneRepair,
   type UnplacedItem,
 } from './sceneLayer';
+import { span } from '@/lib/perf/span';
+
 import { layoutRoomOf, type MemberPose, type Pose } from './layoutSearch';
 import {
   isUserExactModelId,
@@ -1709,7 +1711,9 @@ export const toPascalScene = (
     new Map(builtRooms.map((room) => [room.id as string, zonesOf(room.levelId)] as const)),
     // Vòng 18: hình học phòng (m) cho tầng dời chỗ T1–T3. ponytail: chưa truyền `extra` (đồ cố định) — bộ chọn đã có
     // đồ ngoài bộ/đồ ghim làm vật cản (`planRoom` obstacles); thêm khi cần chặn đồ không thuộc sổ.
-    relayout ? new Map(builtRooms.map((room) => [room.id as string, layoutRoomOf(room, builtGraph)] as const)) : new Map(),
+    relayout
+      ? span('derive:layoutRooms', () => new Map(builtRooms.map((room) => [room.id as string, layoutRoomOf(room, builtGraph)] as const)))
+      : new Map(),
   );
   // Món đã nhận còn mẫu luật chọn: twin đại diện trong sổ bộ (như trước khi nhận), không thành đồ cố định của bảng màu.
   const contextRoles = contextRolesOf(
@@ -1724,7 +1728,7 @@ export const toPascalScene = (
   // trong `itemNodeOf`) chạy SAU `layoutPlacedOf` của chính món ấy → món dựng ở hộp đã lưu trong khi sổ ghi nó đã dời; anh
   // em chọn trên giả định sai. Cùng thành viên (đồ đã lưu, `contextRolesOf`) → cùng quyết định như lập lười; đồ sinh vào sổ
   // sau (`addRoomSetMembers`) nhận quyết định này làm đã chốt, không dời lại món đã dựng.
-  finishRoomSet(style);
+  span('derive:finishRoomSet1', () => finishRoomSet(style));
 
   /** Vòng 18: món đã dời (bản sao ở tư thế mới) theo id + các lần dời, cho trang trí/chặn chồng/chip. */
   const layoutShown = new Map<string, Furniture>();
@@ -1953,7 +1957,7 @@ export const toPascalScene = (
   );
   // Sổ `roomset` đủ mục (phòng chỉ có món ghim) — không đổi mẫu nào đã dựng. Vòng 18: chạy TRƯỚC lớp trang trí (cùng kết
   // quả như lập lười khi trang trí hỏi mẫu chủ) để tư thế dời của đồ sinh có sẵn: gối/chăn/đèn bàn đi theo món đã dời.
-  finishRoomSet(style);
+  span('derive:finishRoomSet2', () => finishRoomSet(style));
   const layoutRepairById = new Map<string, SceneRepair>();
   const furnished = furnishedRaw.map((f) => {
     // Twin của cặp đã nhận đứng theo đồ thật (`atAdopted`), không dời riêng.
