@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
  * Lượt kiểm của bảng "Đề xuất của máy cho cả nhà" (F3): bảy trạng thái, khả năng tiếp cận, tiếng Việt,
- * không màu thô, các nút "Nhận" gọi đúng hàm với đúng đối số, và không phần tử nào mang xanh "đã xác minh" (A5).
+ * không màu thô, từng ô nhận riêng (không nhận hàng loạt), số giả định không có nút, tiêu điểm sau khi
+ * nhận, và không phần tử nào mang xanh "đã xác minh" (A5) ở bất kỳ trạng thái nào.
  * Dữ liệu dựng từ `proposalArgsFor` của story — cùng bộ với story (R-70).
  */
 
@@ -14,6 +15,7 @@ import { expectSevenStates } from '@/lib/testing/expectSevenStates';
 import { expectVietnamese } from '@/lib/testing/expectVietnamese';
 import { renderWithProviders } from '@/lib/testing/render';
 import { createSevenStateScenarios, SEVEN_STATES, type SevenState } from '@/lib/testing/sevenStateScenarios';
+import type { HouseProposalRowVm } from '@/lib/viewmodel/houseProposal';
 
 import { FloorProposalPanel, type FloorProposalPanelProps } from './FloorProposalPanel';
 import { proposalArgsFor } from './FloorProposalPanel.stories';
@@ -22,6 +24,17 @@ afterEach(cleanup);
 
 const renderState = (state: SevenState, patch: Partial<FloorProposalPanelProps> = {}) =>
   renderWithProviders(<FloorProposalPanel {...proposalArgsFor(state)} {...patch} />);
+
+const ACCEPT_BUTTON = /^Nhận (cao độ|chiều cao) đề xuất cho /;
+const FIELDS = ['elevation', 'height'] as const;
+
+const SUCCESS = proposalArgsFor('success');
+const find = (predicate: (row: HouseProposalRowVm) => boolean): HouseProposalRowVm => {
+  const row = SUCCESS.rows.find(predicate);
+  if (row === undefined) throw new Error('bộ mẫu thiếu dòng cần cho bài kiểm');
+  return row;
+};
+const HEIGHT_ROW = find((row) => row.height.acceptable);
 
 describe('bảy trạng thái của A11', () => {
   it('dựng đủ 7/7, không trạng thái nào ra màn trắng', () => {
@@ -48,33 +61,33 @@ describe('bảy trạng thái của A11', () => {
     expectNoRawColor('src/screens/qc/FloorManager/FloorProposalRow.tsx');
   });
 
-  it('rỗng nói máy chưa có đề xuất; lỗi có nút thử lại gọi onRetry', () => {
+  it('lỗi: một dòng lặng trong thanh + "Thử lại", không báo đỏ', () => {
     const onRetry = vi.fn();
 
-    renderState('empty');
-    expect(screen.getByText('Máy chưa có đề xuất nào.')).toBeInTheDocument();
-    cleanup();
-
     renderState('error', { onRetry });
+    expect(screen.getByText('Chưa lấy được đề xuất của máy.')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('table')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Thử lại' }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it('thu gọn chỉ còn một thanh: câu tóm tắt, nút Xem đề xuất, nút nhận hàng loạt; không có bảng', () => {
+  it('thu gọn: tên, câu tóm tắt và đúng một nút "Xem đề xuất" (aria-expanded=false)', () => {
     const onToggleExpanded = vi.fn();
     const props = proposalArgsFor('collapsed');
 
     renderState('collapsed', { onToggleExpanded });
-    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.getByText('Đề xuất của máy cho cả nhà')).toBeInTheDocument();
     expect(screen.getByText(props.summary.headline)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Nhận các đề xuất không còn câu hỏi' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Xem đề xuất' }));
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Xem đề xuất', expanded: false }));
     expect(onToggleExpanded).toHaveBeenCalledTimes(1);
   });
 
-  it('thành công mà chưa mở: chỉ thanh; mở rồi thì có bảng và nút đổi thành Ẩn đề xuất', () => {
+  it('thành công mà chưa mở: chỉ thanh; mở rồi thì có bảng và nút đổi thành "Ẩn đề xuất"', () => {
     renderState('success', { expanded: false });
-    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.queryByRole('table')).toBeNull();
     expect(screen.getByRole('button', { name: 'Xem đề xuất', expanded: false })).toBeInTheDocument();
     cleanup();
 
@@ -84,90 +97,163 @@ describe('bảy trạng thái của A11', () => {
   });
 
   it('một phần: tầng máy không đề xuất có một dòng nói rõ', () => {
+    const props = proposalArgsFor('partial');
+    const missing = props.rows.find((row) => !row.hasProposal);
+
     renderState('partial');
-    expect(screen.getByText('Máy chưa có đề xuất cho tầng này')).toBeInTheDocument();
+    expect(screen.getByText(missing?.noProposalText ?? '?')).toBeInTheDocument();
   });
 });
 
 describe('bảng đề xuất', () => {
-  it('giữ nguyên thứ tự dòng của viewmodel: thứ tự tầng của dự án', () => {
-    const props = proposalArgsFor('success');
+  it('ghi chú "chưa có người duyệt" đúng một lần; bảng có caption và ba tiêu đề cột', () => {
+    renderState('success');
+    expect(screen.getAllByText('Đây là đề xuất của máy, chưa có người duyệt.')).toHaveLength(1);
+    const table = screen.getByRole('table', { name: /Đề xuất của máy theo từng tầng/ });
+    expect(within(table).getAllByRole('columnheader').map((th) => th.textContent)).toEqual([
+      'Tầng',
+      'Cao độ (hiện tại → đề xuất)',
+      'Chiều cao (hiện tại → đề xuất)',
+    ]);
+  });
 
-    renderWithProviders(<FloorProposalPanel {...props} />);
+  it('giữ nguyên thứ tự dòng của viewmodel: thứ tự tầng của dự án', () => {
+    renderState('success');
     const names = within(screen.getByRole('table'))
       .getAllByRole('rowheader')
       .map((header) => header.textContent ?? '');
 
-    props.rows.forEach((row, index) => expect(names[index]).toContain(row.floorName));
+    SUCCESS.rows.forEach((row, index) => expect(names[index]).toContain(row.floorName));
   });
 
-  it('nút Nhận gọi onAccept với tầng, ô và giá trị mm đúng; tên nút nêu tầng và ô', () => {
-    const onAccept = vi.fn();
-    const props = proposalArgsFor('success');
-
-    renderWithProviders(<FloorProposalPanel {...props} onAccept={onAccept} />);
-    const row = props.rows.find((entry) => entry.height.acceptable);
-
-    expect(row?.height.proposedMm).not.toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: `Nhận chiều cao đề xuất cho ${row?.floorName ?? ''}` }));
-    expect(onAccept).toHaveBeenCalledWith(row?.floorId, 'height', row?.height.proposedMm);
-
-    const elevationRow = props.rows.find((entry) => entry.elevation.acceptable);
-
-    fireEvent.click(screen.getByRole('button', { name: `Nhận cao độ đề xuất cho ${elevationRow?.floorName ?? ''}` }));
-    expect(onAccept).toHaveBeenLastCalledWith(elevationRow?.floorId, 'elevation', elevationRow?.elevation.proposedMm);
-  });
-
-  it('chỉ ô nhận được mới có nút Nhận', () => {
-    const props = proposalArgsFor('success');
-
-    renderWithProviders(<FloorProposalPanel {...props} />);
-    const expected = props.rows.reduce((sum, row) => sum + Number(row.elevation.acceptable) + Number(row.height.acceptable), 0);
-
-    expect(screen.getAllByRole('button', { name: /^Nhận (cao độ|chiều cao) đề xuất cho / })).toHaveLength(expected);
-  });
-
-  it('nút Nhận luôn nằm trong khe cố định cuối ô (cùng chỗ ở mọi ô)', () => {
-    renderState('success');
-    for (const button of screen.getAllByRole('button', { name: /^Nhận (cao độ|chiều cao) đề xuất cho / })) {
-      expect(button.parentElement?.className).toContain('w-14');
+  it('không có nút nhận hàng loạt ở bất kỳ trạng thái nào', () => {
+    for (const state of SEVEN_STATES) {
+      renderState(state);
+      expect(screen.queryByRole('button', { name: /tất cả|hàng loạt|các đề xuất/i })).toBeNull();
+      cleanup();
     }
   });
 
-  it('không có quyền: mọi nút Nhận biến mất, bảng vẫn còn', () => {
-    renderState('forbidden');
-    expect(screen.getByRole('table')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Nhận/ })).not.toBeInTheDocument();
+  it('nút "Nhận" gọi onAccept(dòng, ô); câu "Nhận sẽ…" nằm ngay dưới nút trước khi bấm', () => {
+    const onAccept = vi.fn();
+
+    renderState('success', { onAccept });
+    const button = screen.getByRole('button', { name: `Nhận chiều cao đề xuất cho ${HEIGHT_ROW.floorName}` });
+    if (HEIGHT_ROW.height.effectText !== null) {
+      expect(button.parentElement).toHaveTextContent(HEIGHT_ROW.height.effectText);
+    }
+    fireEvent.click(button);
+    expect(onAccept).toHaveBeenCalledWith(HEIGHT_ROW, 'height');
   });
 
-  it('câu hỏi của máy hiện dưới tên tầng', () => {
-    const props = proposalArgsFor('success');
-    const asking = props.rows.find((row) => row.questions.length > 0);
+  it('mỗi ô hiện hiện tại → đề xuất có đơn vị và chênh có dấu, độ chắc bằng lời và nguồn', () => {
+    renderState('success');
+    const cell = screen.getByRole('button', { name: `Nhận chiều cao đề xuất cho ${HEIGHT_ROW.floorName}` }).closest('td');
+    const { height } = HEIGHT_ROW;
 
-    renderWithProviders(<FloorProposalPanel {...props} />);
-    const list = screen.getByRole('list', { name: `Câu hỏi của máy về ${asking?.floorName ?? ''}` });
+    expect(cell).toHaveTextContent(height.currentText);
+    expect(cell).toHaveTextContent(height.proposedText);
+    expect(cell).toHaveTextContent(height.deltaText ?? '?');
+    expect(cell).toHaveTextContent(height.confidenceLabel ?? '?');
+    expect(cell).toHaveTextContent(height.sourceText ?? '?');
+  });
 
-    expect(within(list).getAllByRole('listitem')).toHaveLength(asking?.questions.length ?? -1);
+  it('chỉ ô nhận được mới có nút "Nhận"; số giả định không có nút mà có lời giải thích', () => {
+    renderState('success');
+    const expected = SUCCESS.rows.reduce((sum, row) => sum + Number(row.elevation.acceptable) + Number(row.height.acceptable), 0);
+    expect(screen.getAllByRole('button', { name: ACCEPT_BUTTON })).toHaveLength(expected);
+
+    const assumed = SUCCESS.rows.flatMap((row) => FIELDS.filter((f) => row[f].sourceKind === 'assumed').map((f) => ({ row, f })));
+    expect(assumed.length).toBeGreaterThan(0);
+    for (const { row, f } of assumed) {
+      expect(row[f].acceptable).toBe(false);
+      expect(screen.queryByRole('button', { name: `Nhận ${f === 'height' ? 'chiều cao' : 'cao độ'} đề xuất cho ${row.floorName}` })).toBeNull();
+    }
+    expect(screen.getAllByText(new RegExp(assumed[0]?.row[assumed[0].f].hint ?? '?')).length).toBeGreaterThan(0);
+  });
+
+  it('busy: mọi nút "Nhận" tắt', () => {
+    renderState('success', { busy: true });
+    for (const button of screen.getAllByRole('button', { name: ACCEPT_BUTTON })) {
+      expect(button).toBeDisabled();
+    }
+  });
+
+  it('không có quyền: mọi nút "Nhận" biến mất, bảng vẫn còn', () => {
+    renderState('forbidden');
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Nhận/ })).toBeNull();
+  });
+
+  it('ô không nhận được vì lý do: hiện đúng lý do', () => {
+    const blocked = SUCCESS.rows.flatMap((row) => FIELDS.map((f) => row[f])).find((vm) => vm.sourceKind !== 'assumed' && vm.blockedReason !== null);
+
+    renderState('success');
+    if (blocked?.blockedReason) {
+      expect(screen.getAllByText(blocked.blockedReason).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('tầng trên tầng thấp nhất: hiện câu đối chiếu cao độ; lệch thì có chip "Cần xem"', () => {
+    const checked = SUCCESS.rows.filter((row) => row.elevationCheck !== null);
+
+    renderState('success');
+    expect(checked.length).toBeGreaterThan(0);
+    for (const row of checked) {
+      expect(screen.getAllByText(row.elevationCheck?.text ?? '?').length).toBeGreaterThan(0);
+    }
+    expect(SUCCESS.rows[0]?.elevationCheck ?? null).toBeNull();
+    if (checked.some((row) => row.elevationCheck?.agrees === false)) {
+      expect(screen.getAllByText('Cần xem').length).toBeGreaterThan(0);
+    }
+  });
+
+  it('câu hỏi nằm dưới đúng chỗ: cả dòng dưới tên tầng, của ô dưới ô đó', () => {
+    renderState('success');
+    for (const row of SUCCESS.rows) {
+      if (row.questionsFor.row.length > 0) {
+        const list = screen.getByRole('list', { name: `Câu hỏi của máy về ${row.floorName}` });
+        expect(list.closest('th')).not.toBeNull();
+        expect(within(list).getAllByRole('listitem')).toHaveLength(row.questionsFor.row.length);
+      }
+      for (const f of FIELDS) {
+        if (row.questionsFor[f].length > 0) {
+          const name = `Câu hỏi của máy về ${f === 'height' ? 'chiều cao' : 'cao độ'} ${row.floorName}`;
+          expect(screen.getByRole('list', { name }).closest('td')).not.toBeNull();
+        }
+      }
+    }
+    expect(SUCCESS.rows.some((row) => row.questionsFor.row.length + row.questionsFor.elevation.length + row.questionsFor.height.length > 0)).toBe(true);
   });
 });
 
-describe('Nhận tất cả', () => {
-  it('nút nhận hàng loạt không hứa số cụ thể, gọi onAcceptAll khi bấm', () => {
-    const onAcceptAll = vi.fn();
-    const props = proposalArgsFor('success');
+describe('sau khi nhận', () => {
+  it('tiêu điểm về ô đầu dòng (tabIndex -1) của tầng vừa nhận', () => {
+    const view = renderState('success');
+    view.rerender(<FloorProposalPanel {...SUCCESS} focus={{ floorId: HEIGHT_ROW.floorId }} />);
+    const header = screen.getByRole('rowheader', { name: new RegExp(HEIGHT_ROW.floorName) });
 
-    expect(props.summary.oneClickCount).toBeGreaterThan(0);
-    renderWithProviders(<FloorProposalPanel {...props} onAcceptAll={onAcceptAll} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Nhận các đề xuất không còn câu hỏi' }));
-    expect(onAcceptAll).toHaveBeenCalledTimes(1);
-    expect(screen.getByText('Chỉ nhận các giá trị máy không còn câu hỏi; phần còn lại cần bạn xem.')).toBeInTheDocument();
+    expect(header).toHaveAttribute('tabindex', '-1');
+    expect(header).toHaveFocus();
   });
 
-  it('không có ô nào nhận được bằng một cú bấm thì không vẽ nút nhận hàng loạt', () => {
-    renderState('success', { summary: { ...proposalArgsFor('success').summary, oneClickCount: 0 } });
+  it('ô đã nhận (không còn khác) hiện "Đã nhận từ đề xuất của máy"; thông báo nằm trong vùng lịch sự', () => {
+    const settled: HouseProposalRowVm = {
+      ...HEIGHT_ROW,
+      height: { ...HEIGHT_ROW.height, differs: false, acceptable: false, deltaText: null, effectText: null },
+    };
+    const rows = SUCCESS.rows.map((row) => (row.floorId === HEIGHT_ROW.floorId ? settled : row));
 
-    expect(screen.queryByRole('button', { name: /đề xuất không còn câu hỏi$/ })).not.toBeInTheDocument();
-    expect(screen.queryByText(/Chỉ nhận các giá trị máy/)).not.toBeInTheDocument();
+    renderState('success', { rows, accepted: new Set([`${HEIGHT_ROW.floorId}:height`]), message: 'Đã nhận chiều cao.' });
+    expect(screen.getByText('Đã nhận từ đề xuất của máy')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Đã nhận chiều cao.');
+    expect(screen.getByRole('status')).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('nhận hỏng: câu "Chưa nhận được: …" trong vùng lịch sự, nút vẫn còn', () => {
+    renderState('success', { message: 'Chưa nhận được: chưa ghi được.' });
+    expect(screen.getByRole('status')).toHaveTextContent('Chưa nhận được: chưa ghi được.');
+    expect(screen.getByRole('button', { name: `Nhận chiều cao đề xuất cho ${HEIGHT_ROW.floorName}` })).toBeEnabled();
   });
 });
 
@@ -175,27 +261,19 @@ describe('đề xuất của máy không bao giờ là "đã xác minh" (A5)', (
   it.each(SEVEN_STATES)('trạng thái %s: không phần tử nào mang token xanh xác minh', (state) => {
     const { container } = renderState(state);
 
-    expect(container.querySelector('[class*="state-verified"]')).toBeNull();
+    expect(container.querySelector('[class*="verified"]')).toBeNull();
   });
 
-  it('mã verified lọt vào từ viewmodel vẫn bị hạ về trung tính', () => {
-    const props = proposalArgsFor('success');
-    const [first, ...rest] = props.rows;
+  it('cả sau khi nhận và khi viewmodel lọt mã verified: vẫn trung tính', () => {
+    const [first, ...rest] = SUCCESS.rows;
 
     if (first === undefined) {
       throw new Error('bộ mẫu không có dòng nào');
     }
     const forged = { ...first, storeyStatusCode: 'verified' as const, elevation: { ...first.elevation, statusCode: 'verified' as const } };
-    const { container } = renderWithProviders(<FloorProposalPanel {...props} rows={[forged, ...rest]} />);
+    const accepted = new Set(SUCCESS.rows.flatMap((row) => FIELDS.map((f) => `${row.floorId}:${f}`)));
+    const { container } = renderState('success', { rows: [forged, ...rest], accepted });
 
-    expect(container.querySelector('[class*="state-verified"]')).toBeNull();
-  });
-
-  it('mọi giá trị máy đưa ra mang chữ "máy đề xuất" và độ chắc bằng lời, không chỉ bằng màu', () => {
-    renderState('success');
-    expect(screen.getByText(/Đây là đề xuất của máy, chưa có người duyệt\./)).toBeInTheDocument();
-    expect(screen.getAllByText(/^theo /).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/máy đề xuất/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Hai nguồn khớp|Một nguồn|Chưa chắc/).length).toBeGreaterThan(0);
+    expect(container.querySelector('[class*="verified"]')).toBeNull();
   });
 });

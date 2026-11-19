@@ -1,70 +1,58 @@
 /**
- * Lớp trình bày của bảng "Đề xuất của máy cho cả nhà" (Mức 3, lát cắt 1, việc F2).
+ * Lớp trình bày của bảng "Đề xuất của máy cho cả nhà" (Mức 3, lát cắt 1).
  *
- * Hàm thuần: nhận `HouseProposal` của máy và các tầng của dự án, trả dòng bảng đã viết sẵn chữ.
- * View chỉ đặt chữ vào thẻ (A15) và ánh xạ `statusCode` sang token (A1).
+ * Hàm thuần: nhận `HouseProposal` của máy và các tầng của dự án, trả dòng bảng đã viết sẵn chữ. Luật
+ * "nhận được" của từng ô nằm ở MỘT chỗ là file này; view chỉ đặt chữ (A15) và ánh xạ `statusCode` (A1).
  *
- * Luật A5: đầu ra của máy không bao giờ mang mã `verified` (xanh dành cho người duyệt).
- * Độ chắc >= 0,9 là `neutral`, 0,7–0,9 là `attention`, dưới 0,7 là `violation`.
+ * Luật A5: đầu ra của máy không bao giờ mang mã `verified`. Không có "nhận tất cả" ở lát cắt này.
  *
- * Thứ tự dòng là thứ tự tầng của dự án (cùng thứ tự bảng tầng bên dưới); dòng cần xem giữ dấu
- * `attention`/`violation`, không đổi chỗ. "Nhận một cú bấm" tính theo TỪNG Ô: độ chắc ô >= 0,7, khác
- * hiện tại, nằm trong khoảng, và dòng không còn câu hỏi (chỉ có mặt bằng thì không ô nào đạt 0,9).
- *
- * Số hiển thị theo đúng cách màn Quản lý tầng đang viết (`FloorManager/floorFormat.ts`): cao độ là
- * mét có dấu (`+3.600`, `±0.000`), chiều cao là mm tách nghìn (`3.600`). Hai hàm đó nằm trong
- * `src/screens` mà `src/lib` không được nhập, nên bản dưới đây chép cùng công thức.
+ * Nhận được khi:
+ * - nguồn là số ĐỌC trên bản vẽ (`plan`, `plan+section`, `section`, `dims`); `convention`/`default` là
+ *   giá trị thường gặp, nguồn lạ hay thiếu là chưa rõ: không bao giờ nhận được;
+ * - khác hiện tại, trong khoảng, dòng không có câu hỏi cả dòng, ô không có câu hỏi của chính nó;
+ * - chiều cao: tầng không phải tầng hầm (đổi chiều cao tầng hầm dời tầng ±0.000 phía trên);
+ * - cao độ: chỉ tầng thấp nhất (mốc của chồng) và chỉ khi không chạm tầng trên — lệnh đổi cao độ chỉ
+ *   dời đúng tầng đó. Tầng khác: cao độ máy đọc chỉ để đối chiếu với cộng dồn chiều cao (`elevationCheck`).
  */
 
-import type { HouseFloorProposal, HouseLevelSource, HouseProposal, HouseQuestionCode } from '@/api/schemas/houseProposal';
+import type { HouseFloorProposal, HouseProposal } from '@/api/schemas/houseProposal';
+import { HOUSE_ELEVATION_RANGE_MM, HOUSE_HEIGHT_RANGE_MM } from '@/api/schemas/houseProposal';
 import { formatNumber, MISSING_VALUE } from '@/lib/format/number';
 
+import {
+  elevationDeltaText,
+  elevationWithUnit,
+  heightWithUnit,
+  type HouseQuestionsFor,
+  type HouseSourceKind,
+  mmDeltaText,
+  questionsOf,
+  restackWithHeights,
+  sourceOf,
+} from './houseProposalParts';
 import type { ViewStatusCode } from './types';
 
-/* -------------------------------------------------------------------------- */
-/* Hằng số.                                                                    */
-/* -------------------------------------------------------------------------- */
+export type { HouseQuestionsFor, HouseSourceKind } from './houseProposalParts';
 
-/** Từ mức này trở lên: máy khá chắc, dòng không cần chú ý. */
+/** Từ mức này trở lên: máy khá chắc. */
 export const HOUSE_CONFIDENCE_HIGH = 0.9;
-/** Dưới mức này: dòng là `violation` và đếm vào "cần xem". */
+/** Dưới mức này: dòng cần xem. */
 export const HOUSE_CONFIDENCE_LOW = 0.7;
+/** Cao độ máy đọc lệch cộng dồn chiều cao quá mức này thì đáng mở bản vẽ. */
+export const HOUSE_ELEVATION_AGREE_MM = 50;
 
-/** Khoảng của `FloorRow` phía BE (cùng số với `HouseFloorProposalSchema`). */
-export const HOUSE_ELEVATION_RANGE_MM = { min: -30000, max: 300000 } as const;
-export const HOUSE_HEIGHT_RANGE_MM = { min: 2000, max: 10000 } as const;
-
+export const HOUSE_ASSUMED_HINT = 'Giá trị thường gặp, máy không đọc được trên bản vẽ';
+const TYPE_IT_TEXT = 'Nếu biết giá trị đúng, gõ vào bảng tầng.';
 const NO_PROPOSAL_TEXT = 'Máy chưa có đề xuất cho tầng này';
 const UNKNOWN_STOREY_TEXT = 'Chưa rõ tầng';
-const MINUS_SIGN = '−';
 
-const STOREY_TEXTS = {
-  ground: 'Tầng trệt',
-  basement: 'Tầng hầm',
-  mezzanine: 'Tầng lửng',
-  attic: 'Tầng áp mái',
-  roof_terrace: 'Sân thượng',
-} as const;
-
-const SOURCE_TEXTS: Readonly<Record<HouseLevelSource, string>> = {
-  plan: 'mặt bằng',
-  'plan+section': 'mặt bằng và mặt cắt',
-  section: 'mặt cắt',
-  dims: 'kích thước ghi trên bản vẽ',
-  convention: 'quy ước',
-  default: 'giả định',
-};
-
-/** Câu hỏi cho người dùng: nói máy thấy gì và cần kiểm tra gì. Mã là của máy, câu là của giao diện. */
-export const HOUSE_QUESTION_TEXTS: Readonly<Record<HouseQuestionCode, string>> = {
-  STOREY_UNSURE: 'Máy chưa chắc đây là tầng nào. Kiểm tra tên tầng ghi trên bản vẽ.',
-  STOREY_CONFLICT: 'Chữ trên bản vẽ chỉ về hai tầng khác nhau. Mở bản vẽ và chọn tầng đúng.',
-  ORDER_DIFFERS: 'Thứ tự tầng máy đọc khác thứ tự trong dự án. Kiểm tra lại thứ tự các tầng.',
-  LEVEL_MISSING: 'Bản vẽ không ghi cao độ. Nhập cao độ của tầng này.',
-  HEIGHT_ASSUMED: 'Bản vẽ không ghi chiều cao tầng, máy lấy giá trị thường gặp. Kiểm tra lại chiều cao.',
-  NOT_A_PLAN: 'Bản vẽ này có vẻ không phải mặt bằng. Kiểm tra đã tải đúng bản vẽ chưa.',
-  NO_TEXT: 'Máy không đọc được chữ trên bản vẽ. Thử tải bản rõ hơn.',
-};
+const STOREY_TEXTS: ReadonlyMap<string, string> = new Map([
+  ['ground', 'Tầng trệt'],
+  ['basement', 'Tầng hầm'],
+  ['mezzanine', 'Tầng lửng'],
+  ['attic', 'Tầng áp mái'],
+  ['roof_terrace', 'Sân thượng'],
+]);
 
 /* -------------------------------------------------------------------------- */
 /* Kiểu.                                                                       */
@@ -82,80 +70,92 @@ export interface HouseProjectFloor {
 /** Một ô số (cao độ hoặc chiều cao) của một dòng. */
 export interface HouseFieldVm {
   readonly hasProposal: boolean;
-  /** Số thô để so sánh và để lệnh "Nhận" ghi; `null` khi máy không đề xuất. */
+  /** Số thô cho lệnh "Nhận"; `null` khi máy không đề xuất. */
   readonly proposedMm: number | null;
-  /** Chữ đề xuất, không kèm đơn vị (đơn vị nằm ở tiêu đề cột); `—` khi không có. */
+  /** Có đơn vị: `"+6.900 m"`, `"3.300 mm"`; `—` khi không có. */
   readonly proposedText: string;
   readonly currentText: string;
-  /** Có đề xuất và khác giá trị hiện tại. */
   readonly differs: boolean;
-  /** Ví dụ `"+0.600 m"`, `"−300 mm"`; `null` khi không khác. */
+  /** Chênh có dấu và đơn vị: `"+0.600 m"`, `"−300 mm"`; `null` khi không khác. */
   readonly deltaText: string | null;
   readonly statusCode: ViewStatusCode;
   readonly confidence: number | null;
   readonly confidenceLabel: string | null;
+  readonly sourceKind: HouseSourceKind | null;
   readonly sourceText: string | null;
-  /** Có đề xuất, khác hiện tại, và nằm trong khoảng cho phép. */
+  /** {@link HOUSE_ASSUMED_HINT} khi nguồn là giá trị thường gặp. */
+  readonly hint: string | null;
   readonly acceptable: boolean;
-  /** Nhận một cú bấm: `acceptable`, độ chắc >= 0,7 và dòng không có câu hỏi. */
-  readonly oneClick: boolean;
+  /** Ô khác hiện tại mà không nhận được: vì sao, và bảo người dùng gõ tay. `null` khi nhận được hoặc không khác. */
+  readonly blockedReason: string | null;
+  /** Nhận ô này sẽ làm gì thêm (dời tầng trên, để hở dưới tầng trên); `null` khi không có gì thêm. */
+  readonly effectText: string | null;
+}
+
+/** Một tầng phía trên mà việc nhận chiều cao sẽ dời. */
+export interface HouseCascadeEntry {
+  readonly floorId: string;
+  readonly floorName: string;
+  readonly shiftMm: number;
+  readonly shiftText: string;
+}
+
+/** Cao độ máy đọc so với cao độ chồng tầng sẽ cho (sau khi nhận các chiều cao nhận được bên dưới). */
+export interface HouseElevationCheck {
+  readonly stackedMm: number;
+  readonly stackedText: string;
+  readonly differenceMm: number;
+  readonly agrees: boolean;
+  readonly text: string;
 }
 
 export interface HouseProposalRowVm {
   readonly floorId: string;
   readonly floorName: string;
-  /** `false` ⟺ tầng có trong dự án nhưng máy không đề xuất gì. */
   readonly hasProposal: boolean;
-  /** Câu "Máy chưa có đề xuất…" khi `hasProposal` sai, `null` ở dòng thường. */
   readonly noProposalText: string | null;
   readonly storeyText: string;
   readonly storeyStatusCode: ViewStatusCode;
   readonly storeyConfidenceLabel: string | null;
   readonly elevation: HouseFieldVm;
   readonly height: HouseFieldVm;
-  /** Thấp nhất trong các độ chắc của tầng/cao độ/chiều cao; `null` khi không có đề xuất. */
   readonly minConfidence: number | null;
   readonly statusCode: ViewStatusCode;
-  readonly questions: readonly string[];
-  /** Có ít nhất một ô nhận được bằng một cú bấm. */
-  readonly oneClick: boolean;
-  /** Cần xem: có độ chắc dưới 0,7. */
-  readonly needsLook: boolean;
-  /** Có ô nhận được: nút "Nhận" của dòng bật hay tắt. */
+  /** Câu hỏi theo ô: `row` in trên cả dòng, hai ô còn lại in dưới ô của nó. */
+  readonly questionsFor: HouseQuestionsFor;
+  /** Số mã câu hỏi giao diện chưa biết (bỏ, không in). */
+  readonly unknownQuestions: number;
+  /** Tầng phía trên sẽ dời khi nhận chiều cao; rỗng khi chiều cao không nhận được. */
+  readonly cascade: readonly HouseCascadeEntry[];
+  /** Chỉ ở tầng không phải mốc, có cao độ máy đọc. */
+  readonly elevationCheck: HouseElevationCheck | null;
   readonly anyAcceptable: boolean;
+  /** Cần xem: có câu hỏi, độ chắc dưới 0,7, hoặc cao độ lệch cộng dồn. */
+  readonly needsLook: boolean;
 }
 
 export interface HouseProposalSummary {
-  /** Số dòng máy có đề xuất. */
   readonly proposedCount: number;
-  /** Số dòng có ít nhất một giá trị khác hiện tại. */
   readonly differingCount: number;
-  /** Số dòng có độ chắc dưới 0,7. */
+  /** Số TẦNG có ít nhất một ô nhận được. */
+  readonly acceptableCount: number;
+  /** Số TẦNG cần xem. */
   readonly needsLookCount: number;
-  /** Số Ô (cao độ hoặc chiều cao) nhận được bằng một cú bấm. */
-  readonly oneClickCount: number;
-  /** Không ô nào khác giá trị hiện tại và không dòng nào còn câu hỏi: không có gì để hiện. */
   readonly isEmpty: boolean;
-  /** Câu cho thanh đầu bảng. */
   readonly headline: string;
 }
 
 /* -------------------------------------------------------------------------- */
-/* Độ chắc.                                                                    */
+/* Độ chắc và chữ.                                                             */
 /* -------------------------------------------------------------------------- */
 
-/** Mã trạng thái theo độ chắc. Không bao giờ trả `verified` (A5). */
 export function statusOfConfidence(confidence: number | null | undefined): ViewStatusCode {
-  if (confidence === null || confidence === undefined) {
-    return 'neutral';
-  }
-  if (confidence >= HOUSE_CONFIDENCE_HIGH) {
+  if (confidence === null || confidence === undefined || confidence >= HOUSE_CONFIDENCE_HIGH) {
     return 'neutral';
   }
   return confidence >= HOUSE_CONFIDENCE_LOW ? 'attention' : 'violation';
 }
 
-/** Độ chắc bằng lời. */
 export function confidenceLabelOf(confidence: number): string {
   if (confidence >= HOUSE_CONFIDENCE_HIGH) {
     return 'Hai nguồn khớp';
@@ -163,60 +163,39 @@ export function confidenceLabelOf(confidence: number): string {
   return confidence >= HOUSE_CONFIDENCE_LOW ? 'Một nguồn' : 'Chưa chắc';
 }
 
-/* -------------------------------------------------------------------------- */
-/* Chữ.                                                                        */
-/* -------------------------------------------------------------------------- */
-
-export function storeyTextOf(label: HouseFloorProposal['storeyLabel'], storeyNo: number | undefined): string {
-  if (label === undefined) {
-    return UNKNOWN_STOREY_TEXT;
+export function storeyTextOf(label: string | undefined, storeyNo: number | undefined): string {
+  if (label === 'floor') {
+    return storeyNo === undefined || storeyNo < 1
+      ? UNKNOWN_STOREY_TEXT
+      : `Tầng ${formatNumber(storeyNo, { fractionDigits: 0, grouping: false })}`;
   }
-  if (label !== 'floor') {
-    return STOREY_TEXTS[label];
-  }
-  return storeyNo === undefined || storeyNo < 1
-    ? UNKNOWN_STOREY_TEXT
-    : `Tầng ${formatNumber(storeyNo, { fractionDigits: 0, grouping: false })}`;
+  return (label === undefined ? undefined : STOREY_TEXTS.get(label)) ?? UNKNOWN_STOREY_TEXT;
 }
 
-/** Cao độ mét có dấu, như cột "Cao độ (m)" của màn Quản lý tầng: 3600 → "+3.600", 0 → "±0.000". */
-function elevationText(valueMm: number): string {
-  const rounded = Math.round(valueMm);
-
-  if (rounded === 0) {
-    return '±0.000';
-  }
-  const absolute = Math.abs(rounded);
-  // ponytail: dưới 1 m tự đệm "0."; cao độ trên 999 m sẽ sai nhóm (cùng giới hạn với floorFormat.ts).
-  const body = absolute < 1000 ? `0.${String(absolute).padStart(3, '0')}` : formatNumber(absolute, { fractionDigits: 0 });
-
-  return `${rounded > 0 ? '+' : MINUS_SIGN}${body}`;
-}
-
-/** Chiều cao mm tách nghìn: 3600 → "3.600". */
-const heightText = (valueMm: number): string => formatNumber(Math.round(valueMm), { fractionDigits: 0 });
-
-const elevationDeltaText = (deltaMm: number): string => `${elevationText(deltaMm)} m`;
-const heightDeltaText = (deltaMm: number): string =>
-  `${deltaMm > 0 ? '+' : MINUS_SIGN}${heightText(Math.abs(deltaMm))} mm`;
+const count = (n: number): string => formatNumber(n, { fractionDigits: 0 });
+const inRange = (value: number, range: { readonly min: number; readonly max: number }): boolean =>
+  value >= range.min && value <= range.max;
 
 /* -------------------------------------------------------------------------- */
 /* Ô số.                                                                       */
 /* -------------------------------------------------------------------------- */
 
-interface FieldSpec {
+interface FieldInput {
   readonly proposedMm: number | undefined;
   readonly confidence: number | undefined;
-  readonly source: HouseLevelSource | undefined;
+  readonly source: string | undefined;
   readonly currentMm: number;
+  readonly withUnit: (valueMm: number) => string;
+  readonly deltaOf: (deltaMm: number) => string;
   readonly range: { readonly min: number; readonly max: number };
-  readonly textOf: (valueMm: number) => string;
-  readonly deltaTextOf: (deltaMm: number) => string;
+  /** Lý do riêng của ô khiến nó không nhận được dù số đọc tốt; `null` khi không có. */
+  readonly blockedBy: string | null;
+  readonly effectText: string | null;
 }
 
-function buildField(spec: FieldSpec): HouseFieldVm {
-  const { proposedMm, currentMm } = spec;
-  const currentText = spec.textOf(currentMm);
+function buildField(input: FieldInput): HouseFieldVm {
+  const { proposedMm, currentMm } = input;
+  const currentText = input.withUnit(currentMm);
 
   if (proposedMm === undefined) {
     return {
@@ -229,29 +208,43 @@ function buildField(spec: FieldSpec): HouseFieldVm {
       statusCode: 'neutral',
       confidence: null,
       confidenceLabel: null,
+      sourceKind: null,
       sourceText: null,
+      hint: null,
       acceptable: false,
-      oneClick: false,
+      blockedReason: null,
+      effectText: null,
     };
   }
-  // Có giá trị mà thiếu độ chắc: coi là 0 (không biết thì không tin).
-  const confidence = spec.confidence ?? 0;
+  const confidence = input.confidence ?? 0;
+  const source = sourceOf(input.source);
   const differs = proposedMm !== currentMm;
-  const inRange = proposedMm >= spec.range.min && proposedMm <= spec.range.max;
+  const blockedBy =
+    source.kind === 'assumed'
+      ? `${HOUSE_ASSUMED_HINT}. ${TYPE_IT_TEXT}`
+      : source.kind === 'unknown'
+        ? `Không rõ máy lấy số này từ đâu. ${TYPE_IT_TEXT}`
+        : !inRange(proposedMm, input.range)
+          ? `Số nằm ngoài khoảng cho phép. ${TYPE_IT_TEXT}`
+          : input.blockedBy;
+  const acceptable = differs && blockedBy === null;
 
   return {
     hasProposal: true,
     proposedMm,
-    proposedText: spec.textOf(proposedMm),
+    proposedText: input.withUnit(proposedMm),
     currentText,
     differs,
-    deltaText: differs ? spec.deltaTextOf(proposedMm - currentMm) : null,
+    deltaText: differs ? input.deltaOf(proposedMm - currentMm) : null,
     statusCode: statusOfConfidence(confidence),
     confidence,
     confidenceLabel: confidenceLabelOf(confidence),
-    sourceText: spec.source === undefined ? null : SOURCE_TEXTS[spec.source],
-    acceptable: differs && inRange,
-    oneClick: false, // cần biết câu hỏi của dòng: `proposedRow` tính lại
+    sourceKind: source.kind,
+    sourceText: source.text,
+    hint: source.kind === 'assumed' ? HOUSE_ASSUMED_HINT : null,
+    acceptable,
+    blockedReason: differs && !acceptable ? blockedBy : null,
+    effectText: acceptable ? input.effectText : null,
   };
 }
 
@@ -259,18 +252,23 @@ function buildField(spec: FieldSpec): HouseFieldVm {
 /* Dòng.                                                                       */
 /* -------------------------------------------------------------------------- */
 
-function noProposalRow(floor: HouseProjectFloor): HouseProposalRowVm {
-  const empty = (textOf: (v: number) => string, currentMm: number, range: FieldSpec['range']): HouseFieldVm =>
-    buildField({
-      proposedMm: undefined,
-      confidence: undefined,
-      source: undefined,
-      currentMm,
-      range,
-      textOf,
-      deltaTextOf: String,
-    });
+const NO_QUESTIONS: HouseQuestionsFor = { row: [], elevation: [], height: [] };
 
+function emptyField(currentMm: number, withUnit: (valueMm: number) => string): HouseFieldVm {
+  return buildField({
+    proposedMm: undefined,
+    confidence: undefined,
+    source: undefined,
+    currentMm,
+    withUnit,
+    deltaOf: String,
+    range: HOUSE_HEIGHT_RANGE_MM,
+    blockedBy: null,
+    effectText: null,
+  });
+}
+
+function noProposalRow(floor: HouseProjectFloor): HouseProposalRowVm {
   return {
     floorId: floor.id,
     floorName: floor.name,
@@ -279,54 +277,139 @@ function noProposalRow(floor: HouseProjectFloor): HouseProposalRowVm {
     storeyText: MISSING_VALUE,
     storeyStatusCode: 'neutral',
     storeyConfidenceLabel: null,
-    elevation: empty(elevationText, floor.elevationMm, HOUSE_ELEVATION_RANGE_MM),
-    height: empty(heightText, floor.heightMm, HOUSE_HEIGHT_RANGE_MM),
+    elevation: emptyField(floor.elevationMm, elevationWithUnit),
+    height: emptyField(floor.heightMm, heightWithUnit),
     minConfidence: null,
     statusCode: 'neutral',
-    questions: [],
-    oneClick: false,
-    needsLook: false,
+    questionsFor: NO_QUESTIONS,
+    unknownQuestions: 0,
+    cascade: [],
+    elevationCheck: null,
     anyAcceptable: false,
+    needsLook: false,
   };
 }
 
-function proposedRow(floor: HouseProjectFloor, proposal: HouseFloorProposal): HouseProposalRowVm {
-  const elevationBase = buildField({
+const isBasement = (floor: HouseProjectFloor, proposal: HouseFloorProposal): boolean =>
+  proposal.storeyLabel === 'basement' ||
+  (proposal.storeyNo !== undefined && proposal.storeyNo < 1) ||
+  floor.elevationMm < 0;
+
+/** Câu dời tầng: "Nhận sẽ dời cao độ Tầng 2, Tầng 3 (−300 mm)." — gộp khi mọi tầng dời cùng một khoảng. */
+export function cascadeTextOf(cascade: readonly HouseCascadeEntry[]): string | null {
+  const first = cascade[0];
+
+  if (first === undefined) {
+    return null;
+  }
+  const list = cascade.every((entry) => entry.shiftMm === first.shiftMm)
+    ? `${cascade.map((entry) => entry.floorName).join(', ')} (${first.shiftText})`
+    : cascade.map((entry) => `${entry.floorName} (${entry.shiftText})`).join(', ');
+
+  return `Nhận sẽ dời cao độ ${list}.`;
+}
+
+/** Ngữ cảnh chồng tầng của một dòng. */
+interface StackPlace {
+  readonly floors: readonly HouseProjectFloor[];
+  readonly index: number;
+  /** Cao độ chồng sẽ cho mỗi tầng sau khi nhận mọi chiều cao nhận được. */
+  readonly stackedMm: readonly number[];
+}
+
+function cascadeOf(place: StackPlace, newHeightMm: number): HouseCascadeEntry[] {
+  const floor = place.floors[place.index];
+  const restacked = restackWithHeights(place.floors, new Map(floor === undefined ? [] : [[floor.id, newHeightMm]]));
+
+  return place.floors.flatMap((above, index) => {
+    const shiftMm = (restacked[index] ?? above.elevationMm) - above.elevationMm;
+    return index > place.index && shiftMm !== 0
+      ? [{ floorId: above.id, floorName: above.name, shiftMm, shiftText: mmDeltaText(shiftMm) }]
+      : [];
+  });
+}
+
+function anchorElevation(place: StackPlace, floor: HouseProjectFloor, proposedMm: number | undefined) {
+  const above = place.floors[place.index + 1];
+
+  if (proposedMm === undefined || above === undefined) {
+    return { blockedBy: null, effectText: null };
+  }
+  const gapMm = above.elevationMm - (proposedMm + floor.heightMm);
+
+  if (gapMm < 0) {
+    return { blockedBy: `Đặt ở cao độ này thì tầng chạm lên ${above.name}. ${TYPE_IT_TEXT}`, effectText: null };
+  }
+  return {
+    blockedBy: null,
+    effectText: gapMm > 0 ? `Nhận sẽ để hở ${heightWithUnit(gapMm)} dưới ${above.name}; tầng đó thành "Ghi đè".` : null,
+  };
+}
+
+function elevationCheckOf(place: StackPlace, proposedMm: number | undefined): HouseElevationCheck | null {
+  const stackedMm = place.stackedMm[place.index];
+
+  if (place.index === 0 || proposedMm === undefined || stackedMm === undefined) {
+    return null;
+  }
+  const differenceMm = proposedMm - stackedMm;
+  const agrees = Math.abs(differenceMm) <= HOUSE_ELEVATION_AGREE_MM;
+
+  return {
+    stackedMm,
+    stackedText: elevationWithUnit(stackedMm),
+    differenceMm,
+    agrees,
+    text: agrees
+      ? 'Khớp với cộng dồn chiều cao các tầng dưới.'
+      : `Lệch ${heightWithUnit(Math.abs(differenceMm))} so với cộng dồn chiều cao các tầng dưới. Xem cốt trên bản vẽ.`,
+  };
+}
+
+function proposedRow(place: StackPlace, proposal: HouseFloorProposal): HouseProposalRowVm {
+  const floor = place.floors[place.index] as HouseProjectFloor;
+  const { questionsFor, unknownQuestions } = questionsOf(proposal.questions.map((question) => question.code));
+  const rowBlocked = questionsFor.row.length > 0 ? `Dòng còn câu hỏi. ${TYPE_IT_TEXT}` : null;
+  const askedBlocked = (asked: readonly string[]): string | null =>
+    rowBlocked ?? (asked.length > 0 ? `Còn câu hỏi ở ô này. ${TYPE_IT_TEXT}` : null);
+
+  const isAnchor = place.index === 0;
+  const anchor = anchorElevation(place, floor, proposal.elevationMm);
+  const elevation = buildField({
     proposedMm: proposal.elevationMm,
     confidence: proposal.elevationConfidence,
     source: proposal.elevationSource,
     currentMm: floor.elevationMm,
+    withUnit: elevationWithUnit,
+    deltaOf: elevationDeltaText,
     range: HOUSE_ELEVATION_RANGE_MM,
-    textOf: elevationText,
-    deltaTextOf: elevationDeltaText,
+    // Tầng không phải mốc: cao độ do chồng tầng quyết định, ô chỉ để đối chiếu (không lý do, không nút).
+    blockedBy: isAnchor ? (askedBlocked(questionsFor.elevation) ?? anchor.blockedBy) : '',
+    effectText: anchor.effectText,
   });
-  const heightBase = buildField({
+  const heightBlocked =
+    askedBlocked(questionsFor.height) ??
+    (isBasement(floor, proposal) ? `Tầng hầm: đổi chiều cao sẽ dời tầng ±0.000 phía trên. ${TYPE_IT_TEXT}` : null);
+  const heightCascade =
+    proposal.heightMm === undefined || heightBlocked !== null ? [] : cascadeOf(place, proposal.heightMm);
+  const height = buildField({
     proposedMm: proposal.heightMm,
     confidence: proposal.heightConfidence,
     source: proposal.heightSource,
     currentMm: floor.heightMm,
+    withUnit: heightWithUnit,
+    deltaOf: mmDeltaText,
     range: HOUSE_HEIGHT_RANGE_MM,
-    textOf: heightText,
-    deltaTextOf: heightDeltaText,
+    blockedBy: heightBlocked,
+    effectText: cascadeTextOf(heightCascade),
   });
-  const questions = [...new Set(proposal.questions.map((question) => question.code))].map(
-    (code) => HOUSE_QUESTION_TEXTS[code],
+  const elevationField = isAnchor ? elevation : { ...elevation, blockedReason: null };
+  const confidences = [proposal.storeyConfidence, elevation.confidence, height.confidence].filter(
+    (value): value is number => value !== null,
   );
-  const withOneClick = (field: HouseFieldVm): HouseFieldVm => ({
-    ...field,
-    oneClick: field.acceptable && (field.confidence ?? 0) >= HOUSE_CONFIDENCE_LOW && questions.length === 0,
-  });
-  const elevation = withOneClick(elevationBase);
-  const height = withOneClick(heightBase);
-  const confidences = [proposal.storeyConfidence];
-
-  for (const field of [elevation, height]) {
-    if (field.confidence !== null) {
-      confidences.push(field.confidence);
-    }
-  }
   const minConfidence = Math.min(...confidences);
-  const anyAcceptable = elevation.acceptable || height.acceptable;
+  const elevationCheck = elevationCheckOf(place, proposal.elevationMm);
+  const asked = questionsFor.row.length + questionsFor.elevation.length + questionsFor.height.length > 0;
 
   return {
     floorId: floor.id,
@@ -336,51 +419,66 @@ function proposedRow(floor: HouseProjectFloor, proposal: HouseFloorProposal): Ho
     storeyText: storeyTextOf(proposal.storeyLabel, proposal.storeyNo),
     storeyStatusCode: statusOfConfidence(proposal.storeyConfidence),
     storeyConfidenceLabel: confidenceLabelOf(proposal.storeyConfidence),
-    elevation,
+    elevation: elevationField,
     height,
     minConfidence,
     statusCode: statusOfConfidence(minConfidence),
-    questions,
-    oneClick: elevation.oneClick || height.oneClick,
-    needsLook: minConfidence < HOUSE_CONFIDENCE_LOW,
-    anyAcceptable,
+    questionsFor,
+    unknownQuestions,
+    cascade: height.acceptable ? heightCascade : [],
+    elevationCheck,
+    anyAcceptable: elevationField.acceptable || height.acceptable,
+    needsLook: asked || minConfidence < HOUSE_CONFIDENCE_LOW || elevationCheck?.agrees === false,
   };
 }
 
 /**
- * Một dòng cho mỗi tầng của dự án, đúng thứ tự tầng của dự án (`order`); tầng máy đề xuất mà dự án
- * không có thì bỏ. Không xếp lại theo độ chắc: hai bảng trên một màn phải cùng thứ tự.
+ * Một dòng cho mỗi tầng của dự án, đúng thứ tự tầng (`order`); tầng máy đề xuất mà dự án không có
+ * thì bỏ. Không xếp lại theo độ chắc: hai bảng trên một màn phải cùng thứ tự.
  */
 export function toHouseProposalRows(
   proposal: HouseProposal,
   floors: readonly HouseProjectFloor[],
 ): readonly HouseProposalRowVm[] {
   const byFloorId = new Map(proposal.floors.map((entry) => [entry.floorId, entry]));
+  const ordered = [...floors].sort((a, b) => a.order - b.order);
+  // Lượt 1: chiều cao nhận được (không cần `stackedMm`) → chồng tầng sau khi nhận hết, cho `elevationCheck`.
+  // ponytail: nhận đồng thời với tầng "Ghi đè" đọc từ chồng hiện tại; nhận lần lượt có thể khác khi
+  // một tầng Ghi đè bị đẩy lên rồi mất cờ — ca hiếm, số đối chiếu chỉ để tham khảo.
+  const draft = ordered.map((floor, index) => {
+    const entry = byFloorId.get(floor.id);
+    return entry === undefined ? null : proposedRow({ floors: ordered, index, stackedMm: [] }, entry);
+  });
+  const newHeights = new Map(
+    draft.flatMap((row) => (row?.height.acceptable === true && row.height.proposedMm !== null ? [[row.floorId, row.height.proposedMm]] : [])),
+  );
+  const stackedMm = restackWithHeights(ordered, newHeights);
 
-  return [...floors]
-    .sort((a, b) => a.order - b.order)
-    .map((floor) => {
-      const entry = byFloorId.get(floor.id);
-      return entry === undefined ? noProposalRow(floor) : proposedRow(floor, entry);
-    });
+  return ordered.map((floor, index) => {
+    const entry = byFloorId.get(floor.id);
+    return entry === undefined ? noProposalRow(floor) : proposedRow({ floors: ordered, index, stackedMm }, entry);
+  });
 }
 
 /* -------------------------------------------------------------------------- */
 /* Thanh tóm tắt.                                                              */
 /* -------------------------------------------------------------------------- */
 
-const count = (n: number): string => formatNumber(n, { fractionDigits: 0 });
-
 export function summarise(rows: readonly HouseProposalRowVm[]): HouseProposalSummary {
   const proposed = rows.filter((row) => row.hasProposal);
   const differingCount = proposed.filter((row) => row.elevation.differs || row.height.differs).length;
+  const acceptableCount = proposed.filter((row) => row.anyAcceptable).length;
   const needsLookCount = proposed.filter((row) => row.needsLook).length;
-  const oneClickCount = proposed.reduce((sum, row) => sum + Number(row.elevation.oneClick) + Number(row.height.oneClick), 0);
-  const headline =
-    differingCount === 0
-      ? 'Máy không đề xuất thay đổi nào.'
-      : `${count(differingCount)} tầng có đề xuất khác giá trị hiện tại, ${count(needsLookCount)} cần xem.`;
-  const isEmpty = differingCount === 0 && proposed.every((row) => row.questions.length === 0);
+  const isEmpty = differingCount === 0 && needsLookCount === 0;
+  const parts = [
+    acceptableCount > 0 ? `${count(acceptableCount)} tầng có giá trị nhận được` : null,
+    needsLookCount > 0 ? `${count(needsLookCount)} tầng cần xem` : null,
+  ].filter((part): part is string => part !== null);
+  const headline = isEmpty
+    ? 'Máy không đề xuất thay đổi nào.'
+    : parts.length === 0
+      ? `${count(differingCount)} tầng có đề xuất khác hiện tại, chưa giá trị nào nhận được.`
+      : `${parts.join(', ')}.`;
 
-  return { proposedCount: proposed.length, differingCount, needsLookCount, oneClickCount, isEmpty, headline };
+  return { proposedCount: proposed.length, differingCount, acceptableCount, needsLookCount, isEmpty, headline };
 }

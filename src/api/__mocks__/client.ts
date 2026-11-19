@@ -9,7 +9,7 @@ import type { MillimetresPerPixel } from '@/domain/units/types';
 import type { ProjectSettings } from '../schemas/projectSettings';
 import type { ProjectSummary } from '../schemas/projectSummaries';
 import type { Me } from '../schemas/me';
-import type { HouseProposal } from '../schemas/houseProposal';
+import { HOUSE_PROPOSAL_OFF, houseProposalOrNull, type HouseProposal } from '../schemas/houseProposal';
 import type { LightingBake } from '../schemas/lightingBake';
 import type { PipelineRun } from '../schemas/pipelineRuns';
 import type { ProjectRuleConfig } from '../schemas/ruleConfig';
@@ -1276,7 +1276,7 @@ const MOCK_SETTINGS_INITIAL: ProjectSettings = {
   snapToleranceMm: 50,
 };
 
-/** Id dự án có công tắc `DRAWING_SET_ENABLED` tắt: `houseProposal.read` trả `null` (503 `DRAWING_SET_DISABLED`). */
+/** Id dự án có công tắc `DRAWING_SET_ENABLED` tắt: máy chủ trả `{enabled: false, …}`, `houseProposal.read` trả `null`. */
 export const MOCK_HOUSE_PROPOSAL_DISABLED_PROJECT_ID = 'project-house-proposal-off';
 
 /** Mã tầng của dự án mẫu `project-1` (đọc qua bộ chuyển `MOCK_SPATIAL_PROJECT`), từ dưới lên. */
@@ -1285,10 +1285,12 @@ export const MOCK_PROPOSAL_FLOOR_IDS = ['L-0000000LX1', 'L-00000000L1', 'L-00000
 /**
  * Đề xuất cho bốn tầng của `project-1` (hiện tại: hầm −3.000/3.000, T1 ±0/3.900, T2 +3.900/3.600,
  * T3 +7.500/3.600). Các mức xếp chồng khít, không chồng nhau: cao độ = cao độ tầng dưới + chiều cao tầng dưới.
- * Đủ ba dải độ chắc (>= 0,9 · 0,7–0,9 · < 0,7), nhiều mã câu hỏi, và ba ô nhận được một cú bấm
- * (T1 chiều cao, T2 cao độ và chiều cao). Chỉ có mặt bằng nên không ô số nào đạt 0,9 ở nguồn "mặt bằng".
+ * Đủ ba dải độ chắc (>= 0,9 · 0,7–0,9 · < 0,7), nhiều mã câu hỏi, giá trị giả định (`convention`/`default`,
+ * không bao giờ nhận được) và hai chiều cao đọc được (T1 3.600, T2 3.300: nhận thì dời cao độ các tầng trên);
+ * cao độ T2/T3 khớp với cộng dồn chiều cao sau khi nhận.
  */
 export const MOCK_HOUSE_PROPOSAL: HouseProposal = {
+  enabled: true,
   floors: [
     {
       floorId: 'L-0000000LX1',
@@ -1915,7 +1917,11 @@ export const createMockApiClient = (): ApiClient => {
     },
     houseProposal: {
       read: async ({ projectId }) =>
-        projectId === MOCK_HOUSE_PROPOSAL_DISABLED_PROJECT_ID ? ok(null) : ok(clone(MOCK_HOUSE_PROPOSAL)),
+        ok(
+          houseProposalOrNull(
+            projectId === MOCK_HOUSE_PROPOSAL_DISABLED_PROJECT_ID ? HOUSE_PROPOSAL_OFF : clone(MOCK_HOUSE_PROPOSAL),
+          ),
+        ),
     },
     // AID-01: mock không có AI phong cách — thẻ giữ năm kiểu cũ.
     designConcept: {

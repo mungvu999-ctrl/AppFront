@@ -47,7 +47,7 @@ import {
   type DesignConceptState,
   type DesignStyleId,
 } from './schemas/designConcept';
-import { HouseProposalSchema, type HouseProposal } from './schemas/houseProposal';
+import { HouseProposalSchema, houseProposalOrNull, type HouseProposal } from './schemas/houseProposal';
 import { LightingBakeSchema, type LightingBake, type LightingBakeFileName } from './schemas/lightingBake';
 import { PipelineRunSchema, type PipelineRun } from './schemas/pipelineRuns';
 import { UserSchema, type SignInInput, type User as ApiUser } from './schemas';
@@ -1356,11 +1356,12 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
   },
   houseProposal: {
     read: async ({ projectId, signal }) => {
-      const result = await callGet<unknown>(http, ENDPOINTS.houseProposal(projectId), signal);
-      if (!result.ok && result.error.status === 503 && result.error.code === 'DRAWING_SET_DISABLED') {
-        return { ok: true, data: null };
-      }
-      return decodeSingle(result, HouseProposalSchema, 'houseProposal.read');
+      const decoded = decodeSingle(
+        await callGet<unknown>(http, ENDPOINTS.houseProposal(projectId), signal),
+        HouseProposalSchema,
+        'houseProposal.read',
+      );
+      return decoded.ok ? { ok: true, data: houseProposalOrNull(decoded.data) } : decoded;
     },
   },
   lightingBakes: {

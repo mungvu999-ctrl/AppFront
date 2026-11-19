@@ -22,8 +22,11 @@ export const PROPOSAL_SAMPLE_FLOORS: readonly HouseProjectFloor[] = [
 
 const IDLE = {
   expanded: true,
+  busy: false,
+  accepted: new Set<string>(),
+  message: '',
+  focus: null,
   onAccept: () => undefined,
-  onAcceptAll: () => undefined,
   onRetry: () => undefined,
   onToggleExpanded: () => undefined,
 } as const;
@@ -77,10 +80,10 @@ export const DangTai: Story = { args: proposalArgsFor('loading') };
 /** 3. Một phần — tầng 3 máy không đề xuất gì. */
 export const MotPhan: Story = { args: proposalArgsFor('partial') };
 
-/** 4. Lỗi — không đọc được đề xuất, có nút thử lại. */
+/** 4. Lỗi — một dòng lặng trong thanh, có nút thử lại. */
 export const Loi: Story = { args: proposalArgsFor('error') };
 
-/** 5. Xong, bảng mở — bốn tầng đủ ba dải độ chắc; ba ô nhận được bằng một cú bấm. */
+/** 5. Xong, bảng mở — bốn tầng đủ ba dải độ chắc; mỗi ô nhận được có nút riêng và câu nói trước việc nó làm. */
 export const ThanhCong: Story = { args: proposalArgsFor('success') };
 
 /** 6. Không có quyền — chỉ đọc, không có nút "Nhận". */

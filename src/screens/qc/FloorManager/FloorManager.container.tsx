@@ -172,6 +172,8 @@ function WiredFloorManager(props: FloorManagerContainerProps) {
   });
   const proposals = useFloorProposals(props.projectId, result.rows, {
     apply: result.applyLevelValue,
+    // Cùng việc ô nhập tay làm khi chốt: bỏ nháp của tầng để lần rời ô sau không ghi nháp cũ đè giá trị vừa nhận.
+    releaseDraft: result.onFloorFieldCancel,
     canEdit: result.canEdit,
     api: props.proposalApi ?? (props.gateway === undefined ? undefined : null),
   });

@@ -949,7 +949,7 @@ describe('F4 — bảng đề xuất của máy', () => {
     });
   };
 
-  it('công tắc tắt (mock 503 → null): không bảng, đọc một lần, DOM y như màn không có khe', async () => {
+  it('công tắc tắt (mock enabled: false → null): không bảng, đọc một lần, DOM y như màn không có khe', async () => {
     await mountWith();
     const baseline = domOf();
     cleanup();
@@ -991,7 +991,7 @@ describe('F4 — bảng đề xuất của máy', () => {
     useStore.getState().setSpatial(null, null);
     resetSelectorCaches();
 
-    await mountWith({ houseProposal: { read: () => Promise.resolve({ ok: true, data: { floors: [], runIds: [] } }) } });
+    await mountWith({ houseProposal: { read: () => Promise.resolve({ ok: true, data: { enabled: true, floors: [], runIds: [] } }) } });
     await act(async () => Promise.resolve());
     expect(screen.queryByText('Đề xuất của máy cho cả nhà')).toBeNull();
     expect(domOf()).toBe(baseline);

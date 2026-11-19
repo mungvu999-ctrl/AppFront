@@ -1,29 +1,33 @@
 /**
  * Bảng "Đề xuất của máy cho cả nhà" nối vào màn Quản lý tầng (Mức 3, lát cắt 1, việc F4).
  *
- * Đọc `houseProposal` một lần cho dự án, dựng dòng từ các tầng ĐANG có (nên nhận xong một ô thì
- * giá trị hiện tại đổi theo và ô đó tự hết "nhận được"), và đưa mọi lượt "Nhận" qua
- * `applyLevelValue` — đúng đường ghi của ô nhập tay. Máy không bao giờ tự ghi vào tầng.
+ * Đọc `houseProposal` một lần cho dự án, dựng dòng từ các tầng ĐANG có (nhận xong một ô thì giá trị
+ * hiện tại đổi theo và ô đó tự hết "nhận được"), và đưa từng lượt "Nhận" qua `applyLevelValue` — đúng
+ * đường ghi của ô nhập tay. Máy không bao giờ tự ghi vào tầng; không có nhận hàng loạt.
+ *
+ * ## Một lượt ghi một lúc
+ *
+ * `busy` khoá mọi nút "Nhận" khi một lượt đang chạy; `inFlightRef` chặn bấm đúp trước khi React kịp vẽ
+ * lại. Sau `await` chỉ ghi state khi hook còn sống và vẫn cùng dự án (`liveRef`).
  *
  * ## Ẩn
  *
- * `hidden` khi không có gì để hiện (không ô nào khác giá trị hiện tại và không câu hỏi — nhận xong hết
- * thì bảng tự biến), khi công tắc tắt (`data === null`), khi không có cửa đọc (`api === null`) và trong lượt
- * đọc ĐẦU: lớp http tự thử lại 503 theo thang 300/900/2.700 ms trước khi trả `null`, nên hiện
- * khung xương lúc đó là cho công tắc tắt một bảng lóe lên ~4 giây. Khung xương chỉ hiện khi đọc
- * lại sau lỗi. Truy vấn không thử lại thêm (`retry: false`).
+ * Ẩn khi công tắc tắt (`data === null`), khi không có cửa đọc (`api === null`), trong lượt đọc ĐẦU (lớp
+ * http tự thử lại 503 ~4 giây trước khi trả `null`) và khi không còn gì để hiện — trừ khi phiên này đã
+ * nhận ít nhất một ô (giữ chữ "Đã nhận" và tiêu điểm, không để bảng biến mất dưới tay người dùng).
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type { ApiClient } from '@/api/client';
-import { describeError, toAppError } from '@/lib/errors';
 import { queryKeys } from '@/lib/query/queryKeys';
 import {
+  type HouseCascadeEntry,
+  type HouseProjectFloor,
+  type HouseProposalRowVm,
   summarise,
   toHouseProposalRows,
-  type HouseProjectFloor,
 } from '@/lib/viewmodel/houseProposal';
 
 import type { FloorProposalPanelProps, FloorProposalState } from './FloorProposalPanel';
@@ -33,6 +37,8 @@ export type HouseProposalApi = Pick<ApiClient, 'houseProposal'>;
 
 export interface UseFloorProposalsOptions {
   readonly apply: ApplyLevelValue;
+  /** Bỏ nháp ô nhập tay của tầng (cùng việc ô nhập tay làm khi chốt) để nháp cũ không ghi đè giá trị vừa nhận. */
+  readonly releaseDraft: (floorId: string, field: LevelValueField) => void;
   readonly canEdit: boolean;
   /** Cửa đọc tiêm được; `null` = không đọc (bảng ẩn). Vắng thì dựng client thật, nạp lười. */
   readonly api?: HouseProposalApi | null | undefined;
@@ -46,23 +52,60 @@ export interface UseFloorProposalsResult {
 /** Tầng theo thứ tự màn đang hiện; `order` của viewmodel lấy từ vị trí. */
 export type ProposalFloor = Omit<HouseProjectFloor, 'order'>;
 
+const FIELD_NAMES: Readonly<Record<LevelValueField, string>> = { elevation: 'cao độ', height: 'chiều cao' };
+
+export const acceptedKey = (floorId: string, field: LevelValueField): string => `${floorId}:${field}`;
+
 const loadClient = async (api: HouseProposalApi | undefined): Promise<HouseProposalApi> =>
   api ?? (await import('@/api/appClient')).createAppApiClient();
+
+/** "Cao độ Tầng 2, Tầng 3 dời −300 mm." — gộp khi mọi tầng dời cùng một khoảng. */
+function cascadeSentence(cascade: readonly HouseCascadeEntry[]): string {
+  const first = cascade[0];
+
+  if (first === undefined) {
+    return '';
+  }
+  const list = cascade.every((entry) => entry.shiftMm === first.shiftMm)
+    ? `${cascade.map((entry) => entry.floorName).join(', ')} dời ${first.shiftText}`
+    : cascade.map((entry) => `${entry.floorName} dời ${entry.shiftText}`).join(', ');
+
+  return ` Cao độ ${list}.`;
+}
+
+/** Câu cho vùng thông báo. Thông báo hoàn tác chỉ nói "Đã đổi chiều cao tầng." nên câu này không lặp nó. */
+function acceptedMessage(row: HouseProposalRowVm, field: LevelValueField): string {
+  const cascade = field === 'height' ? cascadeSentence(row.cascade) : '';
+
+  return `Đã nhận ${FIELD_NAMES[field]} ${row.floorName}: ${row[field].proposedText}.${cascade}`;
+}
+
+const failedMessage = (row: HouseProposalRowVm, field: LevelValueField): string =>
+  `Chưa nhận được: ${FIELD_NAMES[field]} ${row.floorName} chưa ghi được, xem thông báo của bảng tầng.`;
+
+/** Phần trong phiên của một dự án: ô đã nhận và câu thông báo. Đổi dự án là phiên mới. */
+interface Session {
+  readonly projectId: string;
+  readonly accepted: ReadonlySet<string>;
+  readonly message: string;
+  /** Đối tượng mới mỗi lượt nhận được: view dời tiêu điểm về ô đầu dòng của tầng đó. */
+  readonly focus: { readonly floorId: string } | null;
+}
+
+const freshSession = (projectId: string): Session => ({ projectId, accepted: new Set(), message: '', focus: null });
 
 export function useFloorProposals(
   projectId: string,
   floors: readonly ProposalFloor[],
   options: UseFloorProposalsOptions,
 ): UseFloorProposalsResult {
-  const { apply, canEdit, api } = options;
+  const { apply, releaseDraft, canEdit, api } = options;
   const query = useQuery({
     queryKey: queryKeys.project.houseProposal(projectId),
     enabled: api !== null && projectId !== '',
     retry: false,
     queryFn: async ({ signal }) => {
-      const result = await (
-        await loadClient(api ?? undefined)
-      ).houseProposal.read({ projectId, signal });
+      const result = await (await loadClient(api ?? undefined)).houseProposal.read({ projectId, signal });
 
       if (!result.ok) {
         throw result.error;
@@ -72,83 +115,86 @@ export function useFloorProposals(
     },
   });
 
-  /** Mặc định thu gọn; nhớ suốt phiên của màn (state của hook, không ghi ra ngoài). */
   const [expanded, setExpanded] = useState(false);
   const onToggleExpanded = useCallback(() => setExpanded((value) => !value), []);
-  const proposal = query.data ?? null;
-  const rows = useMemo(
-    () =>
-      proposal === null
-        ? []
-        : toHouseProposalRows(
-            proposal,
-            floors.map((floor, order) => ({ ...floor, order })),
-          ),
-    [floors, proposal],
+  const [stored, setSession] = useState(() => freshSession(projectId));
+  const session = stored.projectId === projectId ? stored : freshSession(projectId);
+  const [busy, setBusy] = useState(false);
+
+  // Chỉ các trường viewmodel đọc: chọn/rê chuột ở bảng tầng không dựng lại dòng (C F8).
+  const floorsKey = floors.map((f) => `${f.id}\u0000${f.name}\u0000${f.elevationMm}\u0000${f.heightMm}`).join('\u0001');
+  const stableFloors = useMemo(
+    () => floors.map((floor, order) => ({ id: floor.id, name: floor.name, order, elevationMm: floor.elevationMm, heightMm: floor.heightMm })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- khoá theo nội dung, không theo danh tính mảng.
+    [floorsKey],
   );
+  const proposal = query.data ?? null;
+  const rows = useMemo(() => (proposal === null ? [] : toHouseProposalRows(proposal, stableFloors)), [proposal, stableFloors]);
   const summary = useMemo(() => summarise(rows), [rows]);
 
-  const onAccept = useCallback(
-    (floorId: string, field: LevelValueField, valueMm: number) => {
-      void apply(floorId, field, valueMm);
-    },
-    [apply],
-  );
-
-  /*
-   * Đổi chiều cao một tầng dồn cao độ các tầng trên (chồng tầng suy ra: cao độ = đỉnh tầng dưới, trừ ô
-   * "Ghi đè" tay), nên danh sách ô `oneClick` chụp từ đầu là cũ ngay sau lượt ghi đầu. Giữ dòng mới nhất
-   * trong ref (cập nhật đồng bộ sau mỗi lần dựng) để vòng lặp luôn đọc giá trị hiện tại.
-   */
-  const rowsRef = useRef(rows);
+  /** Còn sống và cùng dự án với lúc bắt đầu lượt ghi. */
+  const liveRef = useRef({ mounted: true, projectId });
   useLayoutEffect(() => {
-    rowsRef.current = rows;
-  }, [rows]);
-
-  /**
-   * Chiều cao trước (tầng thấp lên cao), rồi cao độ còn khác giá trị ĐÃ suy ra sau đó: cao độ đề xuất
-   * trùng cao độ suy ra thì không còn là ô `oneClick`, nên không bị ghi thành "Ghi đè". Mỗi vòng đọc lại
-   * dòng mới; chặn cứng số ô + 1 vòng, và dừng ngay lượt ghi hỏng đầu (lỗi đã được nói qua đường thường).
-   */
-  const onAcceptAll = useCallback(() => {
-    const nextStep = () => {
-      for (const field of ['height', 'elevation'] as const) {
-        for (const row of rowsRef.current) {
-          const cell = row[field];
-
-          if (cell.oneClick && cell.proposedMm !== null) {
-            return { floorId: row.floorId, field, valueMm: cell.proposedMm };
-          }
-        }
-      }
-
-      return null;
+    liveRef.current.projectId = projectId;
+  }, [projectId]);
+  useEffect(() => {
+    const live = liveRef.current;
+    live.mounted = true;
+    return () => {
+      live.mounted = false;
     };
+  }, []);
+  const inFlightRef = useRef(false);
 
-    void (async () => {
-      let previous: ReturnType<typeof nextStep> = null;
+  const runAccept = useCallback(
+    async (row: HouseProposalRowVm, field: LevelValueField) => {
+      const valueMm = row[field].proposedMm;
 
-      for (let budget = rowsRef.current.length * 2 + 1; budget > 0; budget -= 1) {
-        const step = nextStep();
-
-        // Không còn ô nào, hoặc dòng chưa kịp đổi sau lượt ghi trước (cùng ô, cùng số): dừng, không ghi lại.
-        if (
-          step === null ||
-          (previous !== null &&
-            previous.floorId === step.floorId &&
-            previous.field === step.field &&
-            previous.valueMm === step.valueMm)
-        ) {
-          return;
-        }
-        previous = step;
-
-        if (!(await apply(step.floorId, step.field, step.valueMm))) {
-          return;
-        }
+      if (inFlightRef.current || valueMm === null || !row[field].acceptable) {
+        return;
       }
-    })();
-  }, [apply]);
+      inFlightRef.current = true;
+      setBusy(true);
+      const startedFor = projectId;
+      const isLive = () => liveRef.current.mounted && liveRef.current.projectId === startedFor;
+      let ok = false;
+
+      try {
+        ok = await apply(row.floorId, field, valueMm, () => releaseDraft(row.floorId, field));
+      } catch {
+        ok = false;
+      } finally {
+        inFlightRef.current = false;
+      }
+
+      if (!liveRef.current.mounted) {
+        return;
+      }
+      setBusy(false);
+
+      if (!isLive()) {
+        return;
+      }
+      setSession((previous) => {
+        const base = previous.projectId === startedFor ? previous : freshSession(startedFor);
+        return ok
+          ? {
+              ...base,
+              accepted: new Set([...base.accepted, acceptedKey(row.floorId, field)]),
+              message: acceptedMessage(row, field),
+              focus: { floorId: row.floorId },
+            }
+          : { ...base, message: failedMessage(row, field) };
+      });
+    },
+    [apply, projectId, releaseDraft],
+  );
+  const onAccept = useCallback(
+    (row: HouseProposalRowVm, field: LevelValueField) => {
+      void runAccept(row, field);
+    },
+    [runAccept],
+  );
 
   const { refetch } = query;
   const onRetry = useCallback(() => {
@@ -172,16 +218,18 @@ export function useFloorProposals(
     hidden:
       api === null ||
       query.status === 'pending' ||
-      (query.isSuccess && (query.data === null || summary.isEmpty)),
+      (query.isSuccess && (query.data === null || (summary.isEmpty && session.accepted.size === 0))),
     panel: {
       state,
       rows,
       summary,
       expanded,
       onToggleExpanded,
-      errorMessage: query.isError ? describeError(toAppError(query.error)).description : undefined,
+      busy,
+      accepted: session.accepted,
+      message: session.message,
+      focus: session.focus,
       onAccept,
-      onAcceptAll,
       onRetry,
     },
   };

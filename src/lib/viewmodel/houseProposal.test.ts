@@ -1,31 +1,26 @@
 import { describe, expect, it } from 'vitest';
 
 import { MOCK_HOUSE_PROPOSAL } from '@/api/__mocks__/client';
-import {
-  HOUSE_QUESTION_CODES,
-  HOUSE_STOREY_LABELS,
-  type HouseFloorProposal,
-  type HouseProposal,
-} from '@/api/schemas/houseProposal';
+import type { HouseFloorProposal, HouseProposal } from '@/api/schemas/houseProposal';
 
 import {
-  confidenceLabelOf,
-  HOUSE_QUESTION_TEXTS,
+  HOUSE_ASSUMED_HINT,
   type HouseProjectFloor,
-  statusOfConfidence,
   storeyTextOf,
   summarise,
   toHouseProposalRows,
 } from './houseProposal';
-import { VIEW_STATUS_CODES } from './types';
+import { questionsOf } from './houseProposalParts';
 
-const floor = (id: string, order: number, elevationMm = 0, heightMm = 3300): HouseProjectFloor => ({
-  id,
-  name: `Tầng ${order + 1}`,
-  order,
+/** Ba tầng xếp khít: T1 ±0/3.600, T2 +3.600/3.600, T3 +7.200/3.600. */
+const floor = (index: number, elevationMm: number, heightMm = 3600): HouseProjectFloor => ({
+  id: `F${index}`,
+  name: `Tầng ${index}`,
+  order: index,
   elevationMm,
   heightMm,
 });
+const STACK = [floor(1, 0), floor(2, 3600), floor(3, 7200)];
 
 const entry = (floorId: string, patch: Partial<HouseFloorProposal> = {}): HouseFloorProposal => ({
   floorId,
@@ -34,349 +29,160 @@ const entry = (floorId: string, patch: Partial<HouseFloorProposal> = {}): HouseF
   storeyLabel: 'floor',
   storeyNo: 2,
   storeyConfidence: 0.95,
-  elevationMm: 3600,
   elevationConfidence: 0.95,
-  elevationSource: 'plan+section',
-  heightMm: 3300,
   heightConfidence: 0.95,
-  heightSource: 'plan+section',
   questions: [],
   ...patch,
 });
+const proposal = (...floors: HouseFloorProposal[]): HouseProposal => ({ enabled: true, floors, runIds: ['r'] });
+const rowsOf = (floors: readonly HouseProjectFloor[], ...entries: HouseFloorProposal[]) =>
+  toHouseProposalRows(proposal(...entries), floors);
+const rowOf = (id: string, floors: readonly HouseProjectFloor[], ...entries: HouseFloorProposal[]) =>
+  rowsOf(floors, ...entries).find((row) => row.floorId === id)!;
 
-const proposalOf = (...floors: HouseFloorProposal[]): HouseProposal => ({ floors, runIds: ['run-1'] });
+describe('chiều cao', () => {
+  it('nguồn đọc, khác, trong khoảng, không phải tầng hầm → nhận được, kèm danh sách tầng trên sẽ dời', () => {
+    const row = rowOf('F1', STACK, entry('F1', { storeyNo: 1, heightMm: 3300, heightSource: 'dims', heightConfidence: 0.8 }));
 
-describe('statusOfConfidence', () => {
-  it('đúng ranh giới 0,9 và 0,7; không bao giờ verified', () => {
-    expect(statusOfConfidence(1)).toBe('neutral');
-    expect(statusOfConfidence(0.9)).toBe('neutral');
-    expect(statusOfConfidence(0.8999)).toBe('attention');
-    expect(statusOfConfidence(0.7)).toBe('attention');
-    expect(statusOfConfidence(0.6999)).toBe('violation');
-    expect(statusOfConfidence(0)).toBe('violation');
-    expect(statusOfConfidence(undefined)).toBe('neutral');
+    expect(row.height).toMatchObject({ acceptable: true, proposedText: '3.300 mm', currentText: '3.600 mm', deltaText: '−300 mm' });
+    expect(row.cascade.map((c) => [c.floorName, c.shiftMm])).toEqual([['Tầng 2', -300], ['Tầng 3', -300]]);
+    expect(row.height.effectText).toBe('Nhận sẽ dời cao độ Tầng 2, Tầng 3 (−300 mm).');
+  });
 
-    for (let c = 0; c <= 1; c += 0.01) {
-      expect(statusOfConfidence(c)).not.toBe('verified');
-      expect(VIEW_STATUS_CODES).toContain(statusOfConfidence(c));
+  it('tầng "Ghi đè" phía trên giữ cao độ: không dời nó, cũng không dời tầng đặt trên nó', () => {
+    // T3 ghi đè ở +8.000 (đỉnh T2 là +7.200); T4 đặt trên T3.
+    const floors = [floor(1, 0), floor(2, 3600), floor(3, 8000), floor(4, 11600)];
+    const row = rowOf('F1', floors, entry('F1', { storeyNo: 1, heightMm: 3300, heightSource: 'plan' }));
+
+    expect(row.cascade.map((c) => c.floorName)).toEqual(['Tầng 2']);
+    // Tăng chiều cao T2 đẩy T3 lên khi chạm: T3 chỉ dời phần bị đẩy, T4 theo T3.
+    const pushed = rowOf('F2', floors, entry('F2', { heightMm: 5000, heightSource: 'plan' }));
+    expect(pushed.cascade.map((c) => [c.floorName, c.shiftMm])).toEqual([['Tầng 3', 600], ['Tầng 4', 600]]);
+    expect(pushed.height.effectText).toBe('Nhận sẽ dời cao độ Tầng 3, Tầng 4 (+600 mm).');
+  });
+
+  it('giá trị thường gặp (convention/default) không bao giờ nhận được, hiện gợi ý', () => {
+    for (const heightSource of ['convention', 'default']) {
+      const row = rowOf('F1', STACK, entry('F1', { storeyNo: 1, heightMm: 3300, heightSource, heightConfidence: 0.99 }));
+      expect(row.height).toMatchObject({ acceptable: false, hint: HOUSE_ASSUMED_HINT, sourceKind: 'assumed' });
+      expect(row.height.blockedReason).toContain('gõ vào bảng tầng');
+      expect(row.cascade).toEqual([]);
     }
   });
-});
 
-describe('confidenceLabelOf', () => {
-  it('ba nhãn bằng lời, ranh giới 0,9 và 0,7', () => {
-    expect(confidenceLabelOf(0.9)).toBe('Hai nguồn khớp');
-    expect(confidenceLabelOf(0.89)).toBe('Một nguồn');
-    expect(confidenceLabelOf(0.7)).toBe('Một nguồn');
-    expect(confidenceLabelOf(0.69)).toBe('Chưa chắc');
+  it('nguồn lạ hoặc thiếu → nguồn chưa rõ, không nhận được', () => {
+    for (const heightSource of ['laser', undefined]) {
+      const row = rowOf('F1', STACK, entry('F1', { storeyNo: 1, heightMm: 3300, ...(heightSource ? { heightSource } : {}) }));
+      expect(row.height).toMatchObject({ acceptable: false, sourceKind: 'unknown', sourceText: 'nguồn chưa rõ' });
+    }
+  });
+
+  it('tầng hầm (nhãn, số tầng < 1, hoặc cao độ âm) không nhận chiều cao', () => {
+    const floors = [floor(0, -3000, 3000), floor(1, 0)];
+    for (const patch of [{ storeyLabel: 'basement' }, { storeyNo: 0 }, {}]) {
+      const row = rowOf('F0', floors, entry('F0', { heightMm: 3300, heightSource: 'plan', ...patch }));
+      expect(row.height.acceptable).toBe(false);
+      expect(row.height.blockedReason).toContain('Tầng hầm');
+    }
+  });
+
+  it('bằng giá trị hiện tại → không khác, không nút', () => {
+    const row = rowOf('F1', STACK, entry('F1', { storeyNo: 1, heightMm: 3600, heightSource: 'plan' }));
+    expect(row.height).toMatchObject({ differs: false, acceptable: false, deltaText: null, blockedReason: null });
   });
 });
 
-describe('storeyTextOf', () => {
-  it('đủ sáu nhãn và trường hợp chưa rõ', () => {
-    expect(storeyTextOf('ground', 1)).toBe('Tầng trệt');
-    expect(storeyTextOf('basement', -1)).toBe('Tầng hầm');
-    expect(storeyTextOf('mezzanine', undefined)).toBe('Tầng lửng');
-    expect(storeyTextOf('attic', undefined)).toBe('Tầng áp mái');
-    expect(storeyTextOf('roof_terrace', undefined)).toBe('Sân thượng');
+describe('cao độ', () => {
+  it('tầng thấp nhất: nguồn đọc, khác, không chạm tầng trên → nhận được; hạ xuống thì báo tầng trên thành Ghi đè', () => {
+    const row = rowOf('F1', STACK, entry('F1', { storeyNo: 1, elevationMm: -300, elevationSource: 'section' }));
+    expect(row.elevation).toMatchObject({ acceptable: true, proposedText: '−0.300 m', deltaText: '−0.300 m' });
+    expect(row.elevation.effectText).toBe('Nhận sẽ để hở 300 mm dưới Tầng 2; tầng đó thành "Ghi đè".');
+    expect(row.elevationCheck).toBeNull();
+  });
+
+  it('tầng thấp nhất nâng lên chạm tầng trên → không nhận được (lệnh đổi cao độ sẽ từ chối)', () => {
+    const row = rowOf('F1', STACK, entry('F1', { storeyNo: 1, elevationMm: 500, elevationSource: 'plan' }));
+    expect(row.elevation.acceptable).toBe(false);
+    expect(row.elevation.blockedReason).toContain('chạm lên Tầng 2');
+  });
+
+  it('tầng khác: không bao giờ nhận được; đối chiếu với cộng dồn sau khi nhận chiều cao bên dưới', () => {
+    const t1 = entry('F1', { storeyNo: 1, heightMm: 3300, heightSource: 'plan' });
+    const agree = rowOf('F2', STACK, t1, entry('F2', { elevationMm: 3320, elevationSource: 'plan' }));
+    expect(agree.elevation).toMatchObject({ acceptable: false, blockedReason: null, differs: true });
+    expect(agree.elevationCheck).toMatchObject({ stackedMm: 3300, stackedText: '+3.300 m', agrees: true, differenceMm: 20 });
+    expect(agree.elevationCheck?.text).toBe('Khớp với cộng dồn chiều cao các tầng dưới.');
+
+    const differ = rowOf('F2', STACK, t1, entry('F2', { elevationMm: 3600, elevationSource: 'plan' }));
+    expect(differ.elevationCheck).toMatchObject({ agrees: false, differenceMm: 300 });
+    expect(differ.elevationCheck?.text).toBe('Lệch 300 mm so với cộng dồn chiều cao các tầng dưới. Xem cốt trên bản vẽ.');
+    expect(differ.needsLook).toBe(true);
+  });
+});
+
+describe('câu hỏi theo ô', () => {
+  it('mỗi mã vào đúng ô; mã lạ bị bỏ và đếm', () => {
+    const { questionsFor, unknownQuestions } = questionsOf(['LEVEL_MISSING', 'HEIGHT_ASSUMED', 'STOREY_UNSURE', 'NEW_CODE', 'NEW_CODE']);
+    expect(questionsFor.elevation).toEqual([expect.stringMatching(/^Cao độ: /)]);
+    expect(questionsFor.height).toEqual([expect.stringMatching(/^Chiều cao: .*Xem cốt ở mặt cắt\.$/)]);
+    expect(questionsFor.row).toEqual([expect.stringMatching(/^Tầng: /)]);
+    expect(unknownQuestions).toBe(1);
+    for (const code of ['STOREY_CONFLICT', 'ORDER_DIFFERS', 'NOT_A_PLAN', 'NO_TEXT']) {
+      expect(questionsOf([code]).questionsFor.row).toHaveLength(1);
+    }
+  });
+
+  it('câu hỏi của chiều cao chỉ chặn chiều cao; câu hỏi cả dòng chặn mọi ô', () => {
+    const base = { storeyNo: 1, elevationMm: -300, elevationSource: 'plan', heightMm: 3300, heightSource: 'plan' };
+    const heightOnly = rowOf('F1', STACK, entry('F1', { ...base, questions: [{ code: 'HEIGHT_ASSUMED' }] }));
+    expect([heightOnly.elevation.acceptable, heightOnly.height.acceptable]).toEqual([true, false]);
+
+    const elevationOnly = rowOf('F1', STACK, entry('F1', { ...base, questions: [{ code: 'LEVEL_MISSING' }] }));
+    expect([elevationOnly.elevation.acceptable, elevationOnly.height.acceptable]).toEqual([false, true]);
+
+    const whole = rowOf('F1', STACK, entry('F1', { ...base, questions: [{ code: 'ORDER_DIFFERS' }] }));
+    expect([whole.elevation.acceptable, whole.height.acceptable, whole.anyAcceptable]).toEqual([false, false, false]);
+    expect(whole.needsLook).toBe(true);
+  });
+
+  it('mã lạ không chặn ô nào, chỉ được đếm', () => {
+    const row = rowOf('F1', STACK, entry('F1', { storeyNo: 1, heightMm: 3300, heightSource: 'plan', questions: [{ code: 'X' }] }));
+    expect(row).toMatchObject({ unknownQuestions: 1, anyAcceptable: true, needsLook: false });
+  });
+});
+
+describe('chữ và tóm tắt', () => {
+  it('nhãn lạ → "Chưa rõ tầng"', () => {
+    expect(storeyTextOf('loft', undefined)).toBe('Chưa rõ tầng');
+    expect(storeyTextOf(undefined, 2)).toBe('Chưa rõ tầng');
     expect(storeyTextOf('floor', 2)).toBe('Tầng 2');
-    expect(storeyTextOf('floor', 12)).toBe('Tầng 12');
-    expect(storeyTextOf('floor', undefined)).toBe('Chưa rõ tầng');
-    expect(storeyTextOf('floor', 0)).toBe('Chưa rõ tầng');
-    expect(storeyTextOf(undefined, 3)).toBe('Chưa rõ tầng');
+    expect(storeyTextOf('basement', undefined)).toBe('Tầng hầm');
   });
 
-  it('mọi nhãn của hợp đồng đều có chữ', () => {
-    for (const label of HOUSE_STOREY_LABELS) {
-      expect(storeyTextOf(label, 2)).toMatch(/^(Tầng|Sân)/);
-    }
-  });
-});
-
-describe('câu hỏi', () => {
-  it('mỗi mã có đúng một câu tiếng Việt có dấu, ngắn, kết thúc bằng dấu chấm', () => {
-    expect(Object.keys(HOUSE_QUESTION_TEXTS).sort()).toEqual([...HOUSE_QUESTION_CODES].sort());
-
-    for (const code of HOUSE_QUESTION_CODES) {
-      const text = HOUSE_QUESTION_TEXTS[code];
-
-      expect(text).toMatch(/[ăâđêôơưáàảãạéèẻẽẹíìỉĩịóòỏõọúùủũụýỳỷỹỵ]/i);
-      expect(text.endsWith('.')).toBe(true);
-      expect(text.length).toBeLessThanOrEqual(100);
-    }
+  it('tầng dự án không có đề xuất giữ dòng trống; thứ tự theo dự án', () => {
+    const rows = rowsOf([STACK[2]!, STACK[0]!, STACK[1]!], entry('F2', {}));
+    expect(rows.map((row) => row.floorId)).toEqual(['F1', 'F2', 'F3']);
+    expect(rows[0]).toMatchObject({ hasProposal: false, anyAcceptable: false, cascade: [] });
   });
 
-  it('dòng mang câu theo mã, bỏ mã trùng, giữ thứ tự', () => {
-    const [row] = toHouseProposalRows(
-      proposalOf(entry('a', { questions: [{ code: 'NO_TEXT' }, { code: 'NOT_A_PLAN' }, { code: 'NO_TEXT' }] })),
-      [floor('a', 0)],
-    );
-
-    expect(row?.questions).toEqual([HOUSE_QUESTION_TEXTS.NO_TEXT, HOUSE_QUESTION_TEXTS.NOT_A_PLAN]);
-  });
-});
-
-describe('toHouseProposalRows — một dòng', () => {
-  it('định dạng cao độ và chiều cao như màn Quản lý tầng, kèm nguồn bằng lời', () => {
-    const [row] = toHouseProposalRows(proposalOf(entry('a')), [floor('a', 1, 0, 3000)]);
-
-    expect(row?.floorName).toBe('Tầng 2');
-    expect(row?.storeyText).toBe('Tầng 2');
-    expect(row?.elevation.proposedText).toBe('+3.600');
-    expect(row?.elevation.currentText).toBe('±0.000');
-    expect(row?.elevation.sourceText).toBe('mặt bằng và mặt cắt');
-    expect(row?.height.proposedText).toBe('3.300');
-    expect(row?.height.currentText).toBe('3.000');
-  });
-
-  it('khác bao nhiêu: cao độ theo mét, chiều cao theo mm, có dấu', () => {
-    const [row] = toHouseProposalRows(proposalOf(entry('a', { elevationMm: 600, heightMm: 2700 })), [
-      floor('a', 0, 3600, 3000),
-    ]);
-
-    expect(row?.elevation.differs).toBe(true);
-    expect(row?.elevation.deltaText).toBe('−3.000 m');
-    expect(row?.height.deltaText).toBe('−300 mm');
-  });
-
-  it('bằng giá trị hiện tại thì không khác, không nhận được, không có delta', () => {
-    const [row] = toHouseProposalRows(proposalOf(entry('a', { elevationMm: 0, heightMm: 3300 })), [floor('a', 0)]);
-
-    expect(row?.elevation.differs).toBe(false);
-    expect(row?.elevation.deltaText).toBeNull();
-    expect(row?.elevation.acceptable).toBe(false);
-    expect(row?.height.acceptable).toBe(false);
-    expect(row?.anyAcceptable).toBe(false);
-    expect(row?.oneClick).toBe(false);
-  });
-
-  it('nhận được khi có, khác, và nằm trong khoảng; ngoài khoảng thì không', () => {
-    const inside = toHouseProposalRows(proposalOf(entry('a', { elevationMm: 300000, heightMm: 2000 })), [floor('a', 0)]);
-    const outside = toHouseProposalRows(proposalOf(entry('a', { elevationMm: 300001, heightMm: 1999 })), [floor('a', 0)]);
-    const farBelow = toHouseProposalRows(proposalOf(entry('a', { elevationMm: -30001, heightMm: 10001 })), [
-      floor('a', 0),
-    ]);
-
-    expect(inside[0]?.elevation.acceptable).toBe(true);
-    expect(inside[0]?.height.acceptable).toBe(true);
-    expect(outside[0]?.elevation.acceptable).toBe(false);
-    expect(outside[0]?.height.acceptable).toBe(false);
-    expect(farBelow[0]?.elevation.acceptable).toBe(false);
-    expect(farBelow[0]?.height.acceptable).toBe(false);
-  });
-
-  it('thiếu cao độ/chiều cao: ô trống, không nhận được; độ chắc dòng chỉ tính ô có mặt', () => {
-    const [row] = toHouseProposalRows(
-      proposalOf(
-        entry('a', {
-          storeyConfidence: 0.8,
-          elevationMm: undefined,
-          elevationConfidence: undefined,
-          elevationSource: undefined,
-          heightMm: undefined,
-          heightConfidence: undefined,
-          heightSource: undefined,
-        }),
-      ),
-      [floor('a', 0)],
-    );
-
-    expect(row?.elevation.hasProposal).toBe(false);
-    expect(row?.elevation.proposedText).toBe('—');
-    expect(row?.elevation.acceptable).toBe(false);
-    expect(row?.minConfidence).toBe(0.8);
-    expect(row?.statusCode).toBe('attention');
-  });
-
-  it('có giá trị mà thiếu độ chắc thì coi là không chắc', () => {
-    const [row] = toHouseProposalRows(proposalOf(entry('a', { heightConfidence: undefined })), [floor('a', 0)]);
-
-    expect(row?.height.statusCode).toBe('violation');
-    expect(row?.height.confidenceLabel).toBe('Chưa chắc');
-    expect(row?.needsLook).toBe(true);
-  });
-
-  it('trạng thái từng ô theo độ chắc của chính ô đó', () => {
-    const [row] = toHouseProposalRows(
-      proposalOf(entry('a', { storeyConfidence: 0.9, elevationConfidence: 0.7, heightConfidence: 0.69 })),
-      [floor('a', 0)],
-    );
-
-    expect(row?.storeyStatusCode).toBe('neutral');
-    expect(row?.elevation.statusCode).toBe('attention');
-    expect(row?.height.statusCode).toBe('violation');
-    expect(row?.statusCode).toBe('violation');
-  });
-});
-
-describe('toHouseProposalRows — danh sách', () => {
-  it('thứ tự dòng là thứ tự tầng của dự án (order), không xếp theo độ chắc', () => {
-    const floors = [floor('c', 2), floor('a', 0), floor('b', 1), floor('d', 3)];
-    const rows = toHouseProposalRows(
-      proposalOf(
-        entry('c', { storeyConfidence: 0.95 }),
-        entry('a', { storeyConfidence: 0.95 }),
-        entry('b', { storeyConfidence: 0.5 }),
-        entry('d', { storeyConfidence: 0.5 }),
-      ),
-      floors,
-    );
-
-    expect(rows.map((row) => row.floorId)).toEqual(['a', 'b', 'c', 'd']);
-  });
-
-  it('tầng có trong dự án mà máy không đề xuất: giữ đúng chỗ, dòng "chưa có đề xuất"', () => {
-    const rows = toHouseProposalRows(proposalOf(entry('b', { storeyConfidence: 0.1 })), [floor('a', 0), floor('b', 1)]);
-
-    expect(rows.map((row) => row.floorId)).toEqual(['a', 'b']);
-    expect(rows[0]).toMatchObject({
-      floorId: 'a',
-      hasProposal: false,
-      noProposalText: 'Máy chưa có đề xuất cho tầng này',
-      storeyText: '—',
-      minConfidence: null,
-      statusCode: 'neutral',
-      questions: [],
-      oneClick: false,
-      needsLook: false,
-    });
-    expect(rows[0]?.elevation.hasProposal).toBe(false);
-    expect(rows[0]?.elevation.currentText).toBe('±0.000');
-    expect(rows[0]?.height.currentText).toBe('3.300');
-    expect(rows[1]?.statusCode).toBe('violation');
-  });
-
-  it('id đề xuất dự án không có thì bỏ', () => {
-    const rows = toHouseProposalRows(proposalOf(entry('ghost'), entry('a')), [floor('a', 0)]);
-
-    expect(rows.map((row) => row.floorId)).toEqual(['a']);
-  });
-
-  it('không dòng nào mang verified', () => {
-    const rows = toHouseProposalRows(MOCK_HOUSE_PROPOSAL, [floor('L-00000000L1', 0)]);
-
-    for (const row of rows) {
-      expect([row.statusCode, row.storeyStatusCode, row.elevation.statusCode, row.height.statusCode]).not.toContain(
-        'verified',
-      );
-    }
-  });
-});
-
-describe('một cú bấm theo từng ô', () => {
-  const only = (patch: Partial<HouseFloorProposal>, current = floor('a', 0, 0, 3000)) =>
-    toHouseProposalRows(proposalOf(entry('a', patch)), [current])[0];
-
-  it('đúng ranh giới 0,7: ô >= 0,7, khác hiện tại, không câu hỏi thì nhận được ngay', () => {
-    const row = only({ elevationConfidence: 0.7, heightConfidence: 0.69 });
-
-    expect(row?.elevation.oneClick).toBe(true);
-    expect(row?.height.oneClick).toBe(false);
-    expect(row?.oneClick).toBe(true);
-  });
-
-  it('có câu hỏi thì không ô nào nhận ngay', () => {
-    const row = only({ questions: [{ code: 'HEIGHT_ASSUMED' }] });
-
-    expect(row?.elevation.acceptable).toBe(true);
-    expect(row?.elevation.oneClick).toBe(false);
-    expect(row?.height.oneClick).toBe(false);
-    expect(row?.oneClick).toBe(false);
-  });
-
-  it('bằng giá trị hiện tại hoặc ngoài khoảng thì không nhận ngay', () => {
-    expect(only({ elevationMm: 0 })?.elevation.oneClick).toBe(false);
-    expect(only({ heightMm: 1999 })?.height.oneClick).toBe(false);
-  });
-
-  it('không cần độ chắc 0,9: chỉ có mặt bằng cũng nhận ngay được', () => {
-    expect(only({ elevationConfidence: 0.8, heightConfidence: 0.8 })?.oneClick).toBe(true);
-  });
-});
-
-describe('summarise', () => {
-  it('đếm tầng khác giá trị, tầng cần xem, và Ô nhận một cú bấm', () => {
-    const rows = toHouseProposalRows(
-      proposalOf(
-        entry('a'), // chắc, khác: hai ô nhận ngay
-        entry('b', { elevationMm: 0, heightMm: 3000 }), // không khác
-        entry('c', { heightConfidence: 0.8 }), // khác, hai ô nhận ngay
-        entry('d', { elevationConfidence: 0.5 }), // khác, cần xem; chỉ ô chiều cao nhận ngay
-        entry('e', { questions: [{ code: 'HEIGHT_ASSUMED' }] }), // khác nhưng có câu hỏi
-      ),
-      [0, 1, 2, 3, 4, 5].map((n) => floor('abcdef'.charAt(n), n, 0, 3000)),
-    );
+  it('ví dụ mock: hai tầng nhận được chiều cao, đếm tầng cần xem, không có trường "nhận tất cả"', () => {
+    const floors = [floor(0, -3000, 3000), floor(1, 0, 3900), floor(2, 3900), floor(3, 7500)].map((f, i) => ({
+      ...f,
+      id: MOCK_HOUSE_PROPOSAL.floors[i]!.floorId,
+    }));
+    const rows = toHouseProposalRows(MOCK_HOUSE_PROPOSAL, floors);
     const summary = summarise(rows);
 
-    expect(summary.proposedCount).toBe(5);
-    expect(summary.differingCount).toBe(4);
-    expect(summary.needsLookCount).toBe(1);
-    expect(summary.oneClickCount).toBe(5);
-    expect(summary.isEmpty).toBe(false);
-    expect(summary.headline).toBe('4 tầng có đề xuất khác giá trị hiện tại, 1 cần xem.');
+    expect(rows.map((row) => row.height.acceptable)).toEqual([false, true, true, false]);
+    expect(rows.every((row) => !row.elevation.acceptable)).toBe(true);
+    expect(rows[2]!.elevationCheck?.agrees).toBe(true);
+    expect(summary).toMatchObject({ acceptableCount: 2, needsLookCount: 2 });
+    expect(summary.headline).toBe('2 tầng có giá trị nhận được, 2 tầng cần xem.');
+    expect(summary).not.toHaveProperty('oneClickCount');
   });
 
-  it('không có gì khác và không câu hỏi: isEmpty; còn câu hỏi thì không', () => {
-    const same = entry('a', { elevationMm: 0, heightMm: 3300 });
-
-    expect(summarise(toHouseProposalRows(proposalOf(same), [floor('a', 0)])).isEmpty).toBe(true);
-    expect(
-      summarise(toHouseProposalRows(proposalOf({ ...same, questions: [{ code: 'NO_TEXT' }] }), [floor('a', 0)])).isEmpty,
-    ).toBe(false);
-  });
-
-  it('không có gì khác thì nói không đề xuất thay đổi', () => {
-    const summary = summarise(toHouseProposalRows(proposalOf(), [floor('a', 0)]));
-
-    expect(summary).toMatchObject({ proposedCount: 0, differingCount: 0, needsLookCount: 0, oneClickCount: 0, isEmpty: true });
-    expect(summary.headline).toBe('Máy không đề xuất thay đổi nào.');
-  });
-});
-
-describe('ví dụ giả của F1 từ đầu đến cuối (project-1)', () => {
-  const projectFloors = [
-    { ...floor('L-0000000LX1', 0, -3000, 3000), name: 'Tầng hầm' },
-    floor('L-00000000L1', 1, 0, 3900),
-    floor('L-00000000L2', 2, 3900, 3600),
-    floor('L-00000000L3', 3, 7500, 3600),
-  ];
-  const rows = toHouseProposalRows(MOCK_HOUSE_PROPOSAL, projectFloors);
-
-  it('thứ tự tầng của dự án, mỗi tầng có đề xuất; dấu trạng thái giữ theo độ chắc', () => {
-    expect(rows.map((row) => row.floorId)).toEqual(['L-0000000LX1', 'L-00000000L1', 'L-00000000L2', 'L-00000000L3']);
-    expect(rows.map((row) => row.statusCode)).toEqual(['violation', 'attention', 'attention', 'violation']);
-  });
-
-  it('các mức xếp chồng khít: cao độ = cao độ tầng dưới + chiều cao tầng dưới', () => {
-    for (let index = 1; index < rows.length; index += 1) {
-      const below = MOCK_HOUSE_PROPOSAL.floors[index - 1];
-      const here = MOCK_HOUSE_PROPOSAL.floors[index];
-
-      expect(here?.elevationMm).toBe((below?.elevationMm ?? NaN) + (below?.heightMm ?? NaN));
-    }
-  });
-
-  it('chữ từng dòng', () => {
-    const [basement, ground, second, third] = rows;
-
-    expect(basement).toMatchObject({ storeyText: 'Tầng hầm', needsLook: true });
-    expect(basement?.questions).toEqual([HOUSE_QUESTION_TEXTS.LEVEL_MISSING, HOUSE_QUESTION_TEXTS.HEIGHT_ASSUMED]);
-    expect(ground).toMatchObject({ storeyText: 'Tầng trệt', questions: [] });
-    expect(ground?.elevation).toMatchObject({ proposedText: '±0.000', differs: false, confidenceLabel: 'Hai nguồn khớp' });
-    expect(ground?.height).toMatchObject({ proposedText: '3.600', deltaText: '−300 mm', sourceText: 'kích thước ghi trên bản vẽ' });
-    expect(second?.elevation).toMatchObject({ proposedText: '+3.600', deltaText: '−0.300 m', confidenceLabel: 'Một nguồn' });
-    expect(third?.questions).toHaveLength(3);
-    expect(third?.height.sourceText).toBe('giả định');
-  });
-
-  it('thanh tóm tắt: ba ô nhận ngay (T1 cao, T2 cao độ và cao); tầng hầm và tầng 3 còn câu hỏi', () => {
-    expect(summarise(rows)).toMatchObject({
-      proposedCount: 4,
-      differingCount: 4,
-      needsLookCount: 2,
-      oneClickCount: 3,
-      isEmpty: false,
-    });
-    expect(rows.flatMap((row) => [row.elevation, row.height]).filter((field) => field.oneClick)).toHaveLength(3);
+  it('không có gì khác và không có gì cần xem → rỗng', () => {
+    const rows = rowsOf(STACK, entry('F1', { storeyNo: 1, heightMm: 3600, heightSource: 'plan' }));
+    expect(summarise(rows)).toMatchObject({ isEmpty: true, headline: 'Máy không đề xuất thay đổi nào.' });
   });
 });

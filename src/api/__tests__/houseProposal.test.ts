@@ -38,21 +38,42 @@ describe('houseProposal.read', () => {
     expect(result).toEqual({ ok: true, data: MOCK_HOUSE_PROPOSAL });
   });
 
-  it('503 DRAWING_SET_DISABLED → ok với null (tính năng tắt, không phải lỗi)', async () => {
-    const { api } = clientWith({ ok: false, error: wireError(503, 'DRAWING_SET_DISABLED') });
+  it('enabled: false → ok với null (tính năng tắt, không phải lỗi)', async () => {
+    const { api } = clientWith({ ok: true, data: { enabled: false, floors: [], runIds: [] } });
     expect(await api.houseProposal.read({ projectId: 'proj-1' })).toEqual({ ok: true, data: null });
   });
 
-  it('503 mã khác và 404 vẫn là lỗi', async () => {
-    for (const error of [wireError(503, 'UNAVAILABLE'), wireError(404, 'NOT_FOUND'), wireError(500, 'DRAWING_SET_DISABLED')]) {
+  it('5xx và 404 vẫn là lỗi (không còn ánh xạ 503 riêng)', async () => {
+    for (const error of [wireError(503, 'DRAWING_SET_DISABLED'), wireError(500, 'INTERNAL'), wireError(404, 'NOT_FOUND')]) {
       const { api } = clientWith({ ok: false, error });
-      const result = await api.houseProposal.read({ projectId: 'proj-1' });
-      expect(result.ok).toBe(false);
+      expect((await api.houseProposal.read({ projectId: 'proj-1' })).ok).toBe(false);
     }
   });
 
+  it('trường lạ, mã lạ, số ngoài khoảng không làm hỏng câu trả lời', async () => {
+    const floor = {
+      ...MOCK_HOUSE_PROPOSAL.floors[1],
+      kind: 'isometric',
+      storeyLabel: 'loft',
+      elevationSource: 'laser',
+      heightMm: 99999,
+      elevationConfidence: 7,
+      questions: [{ code: 'NEW_CODE', detail: 'x' }],
+      futureField: 1,
+    };
+    const { api } = clientWith({ ok: true, data: { enabled: true, floors: [floor], runIds: ['r'], extra: true } });
+    const result = await api.houseProposal.read({ projectId: 'proj-1' });
+
+    expect(result.ok).toBe(true);
+    const decoded = result.ok ? result.data?.floors[0] : undefined;
+    expect(decoded).toMatchObject({ kind: 'isometric', storeyLabel: 'loft', elevationSource: 'laser', questions: [{ code: 'NEW_CODE' }] });
+    expect(decoded?.heightMm).toBeUndefined();
+    expect(decoded?.elevationConfidence).toBeUndefined();
+    expect(decoded?.elevationMm).toBe(MOCK_HOUSE_PROPOSAL.floors[1]!.elevationMm);
+  });
+
   it('thân sai hợp đồng → lỗi giải mã, không phải dữ liệu', async () => {
-    const { api } = clientWith({ ok: true, data: { floors: [{ floorId: 'x' }], runIds: [] } });
+    const { api } = clientWith({ ok: true, data: { enabled: true, floors: [{ floorId: 'x' }], runIds: [] } });
     expect((await api.houseProposal.read({ projectId: 'proj-1' })).ok).toBe(false);
   });
 });
@@ -68,7 +89,7 @@ describe('mock houseProposal', () => {
     expect(new Set(parsed.floors.flatMap((f) => f.questions.map((q) => q.code))).size).toBeGreaterThanOrEqual(3);
   });
 
-  it('read trả ví dụ; dự án "tắt" trả null', async () => {
+  it('read trả ví dụ; dự án "tắt" (enabled: false) trả null', async () => {
     const mock = createMockApiClient();
     expect(await mock.houseProposal.read({ projectId: 'p' })).toEqual({ ok: true, data: MOCK_HOUSE_PROPOSAL });
     expect(await mock.houseProposal.read({ projectId: MOCK_HOUSE_PROPOSAL_DISABLED_PROJECT_ID })).toEqual({
