@@ -35,6 +35,11 @@ const find = (predicate: (row: HouseProposalRowVm) => boolean): HouseProposalRow
   return row;
 };
 const HEIGHT_ROW = find((row) => row.height.acceptable);
+const HEIGHT_NAME = `Nhận chiều cao đề xuất cho ${HEIGHT_ROW.floorName}: ${HEIGHT_ROW.height.proposedText}`;
+/** Nút "Nhận" của một ô bất kể giá trị trong tên: `Nhận <ô> đề xuất cho <tầng>: <giá trị>`. */
+const acceptNameOf = (row: HouseProposalRowVm, f: (typeof FIELDS)[number]) => (name: string) =>
+  name.startsWith(`Nhận ${f === 'height' ? 'chiều cao' : 'cao độ'} đề xuất cho ${row.floorName}:`);
+const withRow = (row: HouseProposalRowVm) => SUCCESS.rows.map((item) => (item.floorId === row.floorId ? row : item));
 
 describe('bảy trạng thái của A11', () => {
   it('dựng đủ 7/7, không trạng thái nào ra màn trắng', () => {
@@ -134,21 +139,22 @@ describe('bảng đề xuất', () => {
     }
   });
 
-  it('nút "Nhận" gọi onAccept(dòng, ô); câu "Nhận sẽ…" nằm ngay dưới nút trước khi bấm', () => {
+  it('nút "Nhận" gọi onAccept(dòng, ô); tên có giá trị đề xuất, câu "Nhận sẽ…" là mô tả của nút trước khi bấm', () => {
     const onAccept = vi.fn();
+    const effect = 'Nhận sẽ dời cao độ Tầng 2, Tầng 3 (−300 mm)';
+    const row = { ...HEIGHT_ROW, height: { ...HEIGHT_ROW.height, effectText: effect } };
 
-    renderState('success', { onAccept });
-    const button = screen.getByRole('button', { name: `Nhận chiều cao đề xuất cho ${HEIGHT_ROW.floorName}` });
-    if (HEIGHT_ROW.height.effectText !== null) {
-      expect(button.parentElement).toHaveTextContent(HEIGHT_ROW.height.effectText);
-    }
+    renderState('success', { onAccept, rows: withRow(row) });
+    const button = screen.getByRole('button', { name: HEIGHT_NAME });
+    expect(button).toHaveAccessibleDescription(effect);
+    expect(button.parentElement).toHaveTextContent(effect);
     fireEvent.click(button);
-    expect(onAccept).toHaveBeenCalledWith(HEIGHT_ROW, 'height');
+    expect(onAccept).toHaveBeenCalledWith(row, 'height');
   });
 
   it('mỗi ô hiện hiện tại → đề xuất có đơn vị và chênh có dấu, độ chắc bằng lời và nguồn', () => {
     renderState('success');
-    const cell = screen.getByRole('button', { name: `Nhận chiều cao đề xuất cho ${HEIGHT_ROW.floorName}` }).closest('td');
+    const cell = screen.getByRole('button', { name: HEIGHT_NAME }).closest('td');
     const { height } = HEIGHT_ROW;
 
     expect(cell).toHaveTextContent(height.currentText);
@@ -167,16 +173,31 @@ describe('bảng đề xuất', () => {
     expect(assumed.length).toBeGreaterThan(0);
     for (const { row, f } of assumed) {
       expect(row[f].acceptable).toBe(false);
-      expect(screen.queryByRole('button', { name: `Nhận ${f === 'height' ? 'chiều cao' : 'cao độ'} đề xuất cho ${row.floorName}` })).toBeNull();
+      expect(screen.queryByRole('button', { name: acceptNameOf(row, f) })).toBeNull();
     }
     expect(screen.getAllByText(new RegExp(assumed[0]?.row[assumed[0].f].hint ?? '?')).length).toBeGreaterThan(0);
   });
 
-  it('busy: mọi nút "Nhận" tắt', () => {
-    renderState('success', { busy: true });
+  it('busy: mọi nút "Nhận" tắt bằng aria-disabled, bấm không gọi onAccept', () => {
+    const onAccept = vi.fn();
+
+    renderState('success', { busy: true, onAccept });
     for (const button of screen.getAllByRole('button', { name: ACCEPT_BUTTON })) {
-      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(button);
     }
+    expect(onAccept).not.toHaveBeenCalled();
+  });
+
+  it('tiêu điểm ở lại nút "Nhận" khi lượt ghi chạy và sau khi hỏng', () => {
+    const view = renderState('success');
+    screen.getByRole('button', { name: HEIGHT_NAME }).focus();
+
+    view.rerender(<FloorProposalPanel {...SUCCESS} busy />);
+    expect(screen.getByRole('button', { name: HEIGHT_NAME })).toHaveFocus();
+    view.rerender(<FloorProposalPanel {...SUCCESS} message="Chưa nhận được: chưa ghi được." />);
+    expect(screen.getByRole('button', { name: HEIGHT_NAME })).toHaveFocus();
+    expect(screen.getByRole('button', { name: HEIGHT_NAME })).not.toHaveAttribute('aria-disabled');
   });
 
   it('không có quyền: mọi nút "Nhận" biến mất, bảng vẫn còn', () => {
@@ -185,13 +206,14 @@ describe('bảng đề xuất', () => {
     expect(screen.queryByRole('button', { name: /^Nhận/ })).toBeNull();
   });
 
-  it('ô không nhận được vì lý do: hiện đúng lý do', () => {
-    const blocked = SUCCESS.rows.flatMap((row) => FIELDS.map((f) => row[f])).find((vm) => vm.sourceKind !== 'assumed' && vm.blockedReason !== null);
+  it('ô không nhận được vì lý do (không phải số giả định): hiện đúng lý do, không có nút', () => {
+    const reason = 'Đặt ở cao độ này thì tầng chạm lên tầng trên. Nhập tay ở bảng tầng.';
+    const row = { ...HEIGHT_ROW, height: { ...HEIGHT_ROW.height, acceptable: false, blockedReason: reason, effectText: null } };
 
-    renderState('success');
-    if (blocked?.blockedReason) {
-      expect(screen.getAllByText(blocked.blockedReason).length).toBeGreaterThan(0);
-    }
+    expect(row.height.sourceKind).not.toBe('assumed');
+    renderState('success', { rows: withRow(row) });
+    expect(screen.getByText(reason)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: acceptNameOf(row, 'height') })).toBeNull();
   });
 
   it('tầng trên tầng thấp nhất: hiện câu đối chiếu cao độ; lệch thì có chip "Cần xem"', () => {
@@ -203,9 +225,17 @@ describe('bảng đề xuất', () => {
       expect(screen.getAllByText(row.elevationCheck?.text ?? '?').length).toBeGreaterThan(0);
     }
     expect(SUCCESS.rows[0]?.elevationCheck ?? null).toBeNull();
-    if (checked.some((row) => row.elevationCheck?.agrees === false)) {
-      expect(screen.getAllByText('Cần xem').length).toBeGreaterThan(0);
-    }
+  });
+
+  it('cao độ máy đọc lệch với cộng dồn: chip "Cần xem" cạnh câu đối chiếu', () => {
+    const text = 'Máy đọc cao độ 7.200 mm; cộng dồn chiều cao ra 7.500 mm.';
+    const row = {
+      ...HEIGHT_ROW,
+      elevationCheck: { stackedMm: 7500, stackedText: '7.500 mm', differenceMm: -300, agrees: false, text },
+    };
+
+    renderState('success', { rows: withRow(row) });
+    expect(screen.getByText(text, { exact: false })).toHaveTextContent('Cần xem');
   });
 
   it('câu hỏi nằm dưới đúng chỗ: cả dòng dưới tên tầng, của ô dưới ô đó', () => {
@@ -244,16 +274,18 @@ describe('sau khi nhận', () => {
     };
     const rows = SUCCESS.rows.map((row) => (row.floorId === HEIGHT_ROW.floorId ? settled : row));
 
-    renderState('success', { rows, accepted: new Set([`${HEIGHT_ROW.floorId}:height`]), message: 'Đã nhận chiều cao.' });
+    const { container } = renderState('success', { rows, accepted: new Set([`${HEIGHT_ROW.floorId}:height`]), message: 'Đã nhận chiều cao.' });
     expect(screen.getByText('Đã nhận từ đề xuất của máy')).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('Đã nhận chiều cao.');
     expect(screen.getByRole('status')).toHaveAttribute('aria-live', 'polite');
+    expect(screen.getByRole('status')).not.toHaveClass('sr-only');
+    expect(container.querySelectorAll('[aria-live], [role="status"]')).toHaveLength(1);
   });
 
   it('nhận hỏng: câu "Chưa nhận được: …" trong vùng lịch sự, nút vẫn còn', () => {
     renderState('success', { message: 'Chưa nhận được: chưa ghi được.' });
     expect(screen.getByRole('status')).toHaveTextContent('Chưa nhận được: chưa ghi được.');
-    expect(screen.getByRole('button', { name: `Nhận chiều cao đề xuất cho ${HEIGHT_ROW.floorName}` })).toBeEnabled();
+    expect(screen.getByRole('button', { name: HEIGHT_NAME })).toBeEnabled();
   });
 });
 

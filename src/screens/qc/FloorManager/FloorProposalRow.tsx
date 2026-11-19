@@ -7,6 +7,7 @@
  */
 
 import { ArrowRight } from 'lucide-react';
+import { useId } from 'react';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -79,6 +80,7 @@ function Comparison({ vm, isAccepted }: { readonly vm: HouseFieldVm; readonly is
 
 function FieldCell({ row, field, canAccept, busy, isAccepted, onAccept }: FieldCellProps) {
   const vm = row[field];
+  const effectId = useId();
   const questions = <Questions items={row.questionsFor[field]} label={`Câu hỏi của máy về ${FIELD_NAMES[field]} ${row.floorName}`} />;
 
   if (!vm.hasProposal) {
@@ -98,16 +100,24 @@ function FieldCell({ row, field, canAccept, busy, isAccepted, onAccept }: FieldC
       {assumed ? <p className={NOTE_CLASS}>{vm.blockedReason ?? vm.hint}</p> : null}
       {!assumed && canAccept && vm.acceptable ? (
         <div className="mt-1 flex flex-col items-start gap-0.5">
+          {/* aria-disabled, không `disabled`: nút giữ tiêu điểm khi lượt ghi chạy và khi nó hỏng. */}
           <Button
-            aria-label={`${ACCEPT_LABEL} ${FIELD_NAMES[field]} đề xuất cho ${row.floorName}`}
-            disabled={busy}
-            onClick={() => onAccept(row, field)}
+            aria-describedby={vm.effectText === null ? undefined : effectId}
+            aria-disabled={busy || undefined}
+            aria-label={`${ACCEPT_LABEL} ${FIELD_NAMES[field]} đề xuất cho ${row.floorName}: ${vm.proposedText}`}
+            onClick={() => {
+              if (!busy) onAccept(row, field);
+            }}
             size="sm"
             variant="secondary"
           >
             {ACCEPT_LABEL}
           </Button>
-          {vm.effectText === null ? null : <p className={NOTE_CLASS}>{vm.effectText}</p>}
+          {vm.effectText === null ? null : (
+            <p className={NOTE_CLASS} id={effectId}>
+              {vm.effectText}
+            </p>
+          )}
         </div>
       ) : null}
       {!assumed && !vm.acceptable && vm.blockedReason !== null ? <p className={NOTE_CLASS}>{vm.blockedReason}</p> : null}

@@ -48,7 +48,7 @@ export interface FloorProposalPanelProps {
   readonly busy: boolean;
   /** Khoá `floorId:field` đã nhận trong phiên (`acceptedKey`). */
   readonly accepted: ReadonlySet<string>;
-  /** Câu cho vùng thông báo lịch sự. */
+  /** Câu kết quả lượt nhận: hiện ngay dưới thanh, cũng là vùng thông báo lịch sự duy nhất của bảng. */
   readonly message: string;
   /** Đối tượng mới sau mỗi lượt nhận được: dời tiêu điểm về ô đầu dòng. */
   readonly focus: { readonly floorId: string } | null;
@@ -67,6 +67,7 @@ const RETRY_LABEL = 'Thử lại';
 const EMPTY_TITLE = 'Máy chưa có đề xuất nào.';
 const EMPTY_DESCRIPTION = 'Bạn vẫn nhập tay được ở bảng tầng.';
 const CAPTION = 'Đề xuất của máy theo từng tầng, cùng thứ tự với bảng tầng bên dưới.';
+const SCROLL_LABEL = 'Bảng đề xuất theo tầng';
 const HEADERS = ['Tầng', 'Cao độ (hiện tại → đề xuất)', 'Chiều cao (hiện tại → đề xuất)'] as const;
 const SKELETON_KEYS = ['a', 'b'] as const;
 
@@ -113,7 +114,8 @@ export function FloorProposalPanel(props: FloorProposalPanelProps) {
           </Button>
         ) : null}
       </div>
-      <p aria-live="polite" className="sr-only" role="status">
+      {/* Luôn có trong DOM (vùng sống phải có sẵn trước câu); rỗng thì bù khoảng gap để không chiếm chỗ. */}
+      <p aria-live="polite" className="text-[12px] text-text-secondary empty:-mt-2" role="status">
         {props.message}
       </p>
       {state === 'loading' ? (
@@ -124,7 +126,8 @@ export function FloorProposalPanel(props: FloorProposalPanelProps) {
         </div>
       ) : null}
       {open ? (
-        <div className="overflow-x-auto">
+        // Trần ~45vh để bảng tầng bên dưới vẫn trong màn khi nhận; tiêu điểm vào dòng khuất thì trình duyệt tự cuộn.
+        <div aria-label={SCROLL_LABEL} className="max-h-[45vh] overflow-auto" role="region" tabIndex={0}>
           <p className="pb-1 text-[12px] text-text-secondary">{NOT_VERIFIED_NOTE}</p>
           <table className="w-full table-fixed border-collapse text-left text-[14px]" ref={tableRef}>
             <caption className="sr-only">{CAPTION}</caption>
@@ -133,7 +136,7 @@ export function FloorProposalPanel(props: FloorProposalPanelProps) {
               <col className="w-[39%]" />
               <col className="w-[39%]" />
             </colgroup>
-            <thead className="bg-bg-sunken">
+            <thead className="sticky top-0 z-10 bg-bg-sunken">
               <tr>
                 {HEADERS.map((header) => (
                   <th className="px-3 py-1 text-[12px] font-semibold text-text-secondary" key={header} scope="col">

@@ -938,9 +938,10 @@ export interface DesignConceptApi {
 }
 
 /**
- * Mức 3 — `GET /projects/{projectId}/house-proposal`, chỉ đọc. `read` trả `null` khi công tắc
- * `DRAWING_SET_ENABLED` tắt (503 mã `DRAWING_SET_DISABLED`): "tính năng tắt" là trạng thái bình
- * thường, nơi gọi ẩn bảng chứ không hiện lỗi. Mọi lỗi khác (kể cả 503 mã khác) vẫn là `ok: false`.
+ * Mức 3 — `GET /projects/{projectId}/house-proposal`, chỉ đọc. `read` trả `null` khi tính năng tắt:
+ * thân `enabled: false` (công tắc `DRAWING_SET_ENABLED` tắt), hoặc 404 (máy chủ chưa có đường này).
+ * "Tính năng tắt" là trạng thái bình thường, nơi gọi ẩn bảng chứ không hiện lỗi. Mọi lỗi khác (5xx,
+ * mạng, giải mã) vẫn là `ok: false`.
  */
 export interface HouseProposalApi {
   read(input: { projectId: string } & RequestOptions): Promise<ApiResult<HouseProposal | null>>;
@@ -1356,8 +1357,11 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
   },
   houseProposal: {
     read: async ({ projectId, signal }) => {
+      const result = await callGet<unknown>(http, ENDPOINTS.houseProposal(projectId), signal);
+      // Máy chủ chưa có đường (404) = tính năng tắt, như `enabled: false`.
+      if (!result.ok && result.error.status === 404) return { ok: true, data: null };
       const decoded = decodeSingle(
-        await callGet<unknown>(http, ENDPOINTS.houseProposal(projectId), signal),
+        result,
         HouseProposalSchema,
         'houseProposal.read',
       );

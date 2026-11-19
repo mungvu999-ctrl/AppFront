@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { HttpClient, HttpError, Result } from '@/lib/http';
+import { createHttpClient, type HttpClient, type HttpError, type Result } from '@/lib/http';
 
 import { createApiClient } from '../client';
 import { ENDPOINTS } from '../endpoints';
@@ -43,11 +43,30 @@ describe('houseProposal.read', () => {
     expect(await api.houseProposal.read({ projectId: 'proj-1' })).toEqual({ ok: true, data: null });
   });
 
-  it('5xx và 404 vẫn là lỗi (không còn ánh xạ 503 riêng)', async () => {
-    for (const error of [wireError(503, 'DRAWING_SET_DISABLED'), wireError(500, 'INTERNAL'), wireError(404, 'NOT_FOUND')]) {
+  it('5xx vẫn là lỗi (không có ánh xạ 503 riêng)', async () => {
+    for (const error of [wireError(503, 'DRAWING_SET_DISABLED'), wireError(500, 'INTERNAL')]) {
       const { api } = clientWith({ ok: false, error });
       expect((await api.houseProposal.read({ projectId: 'proj-1' })).ok).toBe(false);
     }
+  });
+
+  it('HttpClient thật: 404 (máy chủ chưa có đường) → null sau đúng một lần gọi; 500 → lỗi', async () => {
+    const realClient = (status: number) => {
+      const fetchImpl = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ code: status === 404 ? 'NOT_FOUND' : 'INTERNAL' }), {
+            status,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+      );
+      return { api: createApiClient(createHttpClient({ baseUrl: 'https://api.example.com', fetchImpl })), fetchImpl };
+    };
+
+    const missing = realClient(404);
+    expect(await missing.api.houseProposal.read({ projectId: 'proj-1' })).toEqual({ ok: true, data: null });
+    expect(missing.fetchImpl).toHaveBeenCalledTimes(1);
+
+    expect((await realClient(500).api.houseProposal.read({ projectId: 'proj-1' })).ok).toBe(false);
   });
 
   it('trường lạ, mã lạ, số ngoài khoảng không làm hỏng câu trả lời', async () => {

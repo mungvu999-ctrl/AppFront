@@ -172,8 +172,9 @@ function WiredFloorManager(props: FloorManagerContainerProps) {
   });
   const proposals = useFloorProposals(props.projectId, result.rows, {
     apply: result.applyLevelValue,
-    // Cùng việc ô nhập tay làm khi chốt: bỏ nháp của tầng để lần rời ô sau không ghi nháp cũ đè giá trị vừa nhận.
-    releaseDraft: result.onFloorFieldCancel,
+    // Cùng việc ô nhập tay làm khi chốt: chỉ bỏ nháp của tầng đó, để lần rời ô sau không ghi nháp cũ đè giá trị
+    // vừa nhận — không xoá dấu "cao độ trùng" hay ô đang sửa của tầng khác (khác `onFloorFieldCancel`).
+    releaseDraft: result.releaseFloorDraft,
     canEdit: result.canEdit,
     api: props.proposalApi ?? (props.gateway === undefined ? undefined : null),
   });

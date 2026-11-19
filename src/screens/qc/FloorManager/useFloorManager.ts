@@ -601,7 +601,7 @@ export function misplacedFloorNameWarning(namesBottomUp: readonly string[]): str
 
 export function useFloorManager(
   options: UseFloorManagerOptions,
-): UseFloorManagerResult & { readonly applyLevelValue: ApplyLevelValue } {
+): UseFloorManagerResult & { readonly applyLevelValue: ApplyLevelValue; readonly releaseFloorDraft: (floorId: string) => void } {
   const { projectId } = options;
   const gateway = useResolvedGateway(options.gateway);
   const queryClient = useQueryClient();
@@ -1369,6 +1369,12 @@ export function useFloorManager(
     [levels, updateDrafts],
   );
 
+  /** Chỉ bỏ nháp của MỘT tầng — đúng việc `clearDraft` của lượt chốt tay; không đụng dấu trùng cao độ của tầng khác. */
+  const releaseFloorDraft = useCallback(
+    (floorId: string) => updateDrafts((previous) => withoutDraft(previous, floorId)),
+    [updateDrafts],
+  );
+
   const onFloorFieldCancel = useCallback(
     (floorId: string) => {
       setEditing(null);
@@ -1991,6 +1997,7 @@ export function useFloorManager(
     onFloorFieldCommit,
     onFloorFieldCancel,
     applyLevelValue,
+    releaseFloorDraft,
 
     onReorderFloors,
 

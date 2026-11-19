@@ -18,8 +18,8 @@ import {
   FLOOR_MANAGER_SAMPLE_SECOND_ID,
   levelsOf,
 } from './floorManagerGateway';
-import { useFloorManager, type ApplyLevelValue } from './useFloorManager';
-import { acceptedKey, useFloorProposals, type HouseProposalApi, type ProposalFloor } from './useFloorProposals';
+import { metreDraftText, useFloorManager, type ApplyLevelValue } from './useFloorManager';
+import { acceptedKey, UNSAVED_MESSAGE, useFloorProposals, type HouseProposalApi, type ProposalFloor } from './useFloorProposals';
 
 const PROJECT_ID = 'project-floor-proposals';
 const GROUND = String(FLOOR_MANAGER_SAMPLE_GROUND_ID);
@@ -100,7 +100,7 @@ function mountWired(api: HouseProposalApi) {
       });
       const proposals = useFloorProposals(PROJECT_ID, manager.rows, {
         apply: manager.applyLevelValue,
-        releaseDraft: manager.onFloorFieldCancel,
+        releaseDraft: manager.releaseFloorDraft,
         canEdit: manager.canEdit,
         api,
       });
@@ -260,6 +260,54 @@ describe('useFloorProposals — nhận', () => {
     await act(async () => throwing.result.current.panel.onAccept(groundOf(throwing.result.current.panel.rows), 'height'));
     expect(throwing.result.current.panel.message).toMatch(/^Chưa nhận được: /);
     expect(throwing.result.current.panel.busy).toBe(false);
+  });
+
+  it('hỏng y hệt hai lần: câu được xoá khi bấm lại rồi mới đặt lại (vùng sống đọc lại)', async () => {
+    let pending = deferred();
+    const mounted = mountAlone(okApi(PROPOSAL), vi.fn<ApplyLevelValue>(() => pending.promise));
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    const accept = () => mounted.result.current.panel.onAccept(groundOf(mounted.result.current.panel.rows), 'height');
+    act(accept);
+    await act(async () => pending.resolve(false));
+    const first = mounted.result.current.panel.message;
+    expect(first).toMatch(/^Chưa nhận được: /);
+
+    pending = deferred();
+    act(accept);
+    expect(mounted.result.current.panel.message).toBe('');
+    await act(async () => pending.resolve(false));
+    expect(mounted.result.current.panel.message).toBe(first);
+  });
+
+  it('hỏng nhưng tầng đã mang giá trị nhận (PATCH sau hỏng): nói "Đã đổi trên màn hình…"', async () => {
+    const pending = deferred();
+    const mounted = mountAlone(okApi(PROPOSAL), vi.fn<ApplyLevelValue>(() => pending.promise));
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    act(() => mounted.result.current.panel.onAccept(groundOf(mounted.result.current.panel.rows), 'height'));
+    const applied = STATIC_FLOORS.map((floor) => (floor.id === GROUND ? { ...floor, heightMm: 4200 } : floor));
+    mounted.rerender({ projectId: PROJECT_ID, floors: applied });
+    await act(async () => pending.resolve(false));
+    expect(mounted.result.current.panel.message).toBe(UNSAVED_MESSAGE);
+  });
+
+  it('nhận ở một tầng không xoá dấu "cao độ trùng" hay nháp của tầng khác', async () => {
+    const mounted = mountWired(okApi(PROPOSAL));
+    await waitFor(() => expect(mounted.result.current.proposals.hidden).toBe(false));
+    const typed = metreDraftText(levelOf(SECOND)?.elevationMm ?? 0);
+    await act(async () => {
+      mounted.result.current.manager.onFloorFieldChange(ROOF, 'elevation', typed);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      mounted.result.current.manager.onFloorFieldCommit(ROOF, 'elevation');
+      await Promise.resolve();
+    });
+    expect(mounted.result.current.manager.duplicateElevationMessage).not.toBeNull();
+
+    await act(async () => mounted.result.current.proposals.panel.onAccept(groundOf(mounted.result.current.proposals.panel.rows), 'height'));
+    await waitFor(() => expect(levelOf(GROUND)?.heightMm).toBe(4200));
+    expect(mounted.result.current.manager.duplicateElevationMessage).not.toBeNull();
+    expect(mounted.result.current.manager.rows.find((row) => row.id === ROOF)?.draft.elevation).toBe(typed);
   });
 
   it('gỡ màn khi lượt ghi đang chạy: ghi đúng một lần, sau đó không làm gì', async () => {

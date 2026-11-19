@@ -83,6 +83,11 @@ function acceptedMessage(row: HouseProposalRowVm, field: LevelValueField): strin
 const failedMessage = (row: HouseProposalRowVm, field: LevelValueField): string =>
   `Chưa nhận được: ${FIELD_NAMES[field]} ${row.floorName} chưa ghi được, xem thông báo của bảng tầng.`;
 
+/** Giá trị đã vào màn nhưng một lượt PATCH sau đó hỏng (`apply` trả `false` mà tầng đã mang giá trị nhận). */
+export const UNSAVED_MESSAGE = 'Đã đổi trên màn hình nhưng chưa lưu được lên máy chủ. Thử lưu lại ở bảng tầng.';
+
+const FIELD_MM: Readonly<Record<LevelValueField, 'elevationMm' | 'heightMm'>> = { elevation: 'elevationMm', height: 'heightMm' };
+
 /** Phần trong phiên của một dự án: ô đã nhận và câu thông báo. Đổi dự án là phiên mới. */
 interface Session {
   readonly projectId: string;
@@ -145,6 +150,11 @@ export function useFloorProposals(
     };
   }, []);
   const inFlightRef = useRef(false);
+  /** Tầng mới nhất, đọc sau `await` để biết lượt ghi hỏng có để lại giá trị trên màn hay không. */
+  const floorsRef = useRef(floors);
+  useLayoutEffect(() => {
+    floorsRef.current = floors;
+  }, [floors]);
 
   const runAccept = useCallback(
     async (row: HouseProposalRowVm, field: LevelValueField) => {
@@ -155,6 +165,8 @@ export function useFloorProposals(
       }
       inFlightRef.current = true;
       setBusy(true);
+      // Xoá câu cũ trước: câu hỏng y hệt lần trước vẫn được đọc lại khi nó quay về.
+      setSession((previous) => (previous.message === '' ? previous : { ...previous, message: '' }));
       const startedFor = projectId;
       const isLive = () => liveRef.current.mounted && liveRef.current.projectId === startedFor;
       let ok = false;
@@ -175,6 +187,7 @@ export function useFloorProposals(
       if (!isLive()) {
         return;
       }
+      const onScreen = floorsRef.current.find((floor) => floor.id === row.floorId)?.[FIELD_MM[field]] === valueMm;
       setSession((previous) => {
         const base = previous.projectId === startedFor ? previous : freshSession(startedFor);
         return ok
@@ -184,7 +197,7 @@ export function useFloorProposals(
               message: acceptedMessage(row, field),
               focus: { floorId: row.floorId },
             }
-          : { ...base, message: failedMessage(row, field) };
+          : { ...base, message: onScreen ? UNSAVED_MESSAGE : failedMessage(row, field) };
       });
     },
     [apply, projectId, releaseDraft],

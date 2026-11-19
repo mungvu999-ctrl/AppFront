@@ -4,7 +4,9 @@ import { MOCK_HOUSE_PROPOSAL } from '@/api/__mocks__/client';
 import type { HouseFloorProposal, HouseProposal } from '@/api/schemas/houseProposal';
 
 import {
+  confidenceLabelOf,
   HOUSE_ASSUMED_HINT,
+  storeyConfidenceLabelOf,
   type HouseProjectFloor,
   storeyTextOf,
   summarise,
@@ -111,12 +113,79 @@ describe('cao độ', () => {
     const agree = rowOf('F2', STACK, t1, entry('F2', { elevationMm: 3320, elevationSource: 'plan' }));
     expect(agree.elevation).toMatchObject({ acceptable: false, blockedReason: null, differs: true });
     expect(agree.elevationCheck).toMatchObject({ stackedMm: 3300, stackedText: '+3.300 m', agrees: true, differenceMm: 20 });
-    expect(agree.elevationCheck?.text).toBe('Khớp với cộng dồn chiều cao các tầng dưới.');
+    expect(agree.elevationCheck?.text).toBe('Khớp với cộng dồn chiều cao nếu nhận chiều cao đề xuất của các tầng dưới.');
 
     const differ = rowOf('F2', STACK, t1, entry('F2', { elevationMm: 3600, elevationSource: 'plan' }));
     expect(differ.elevationCheck).toMatchObject({ agrees: false, differenceMm: 300 });
-    expect(differ.elevationCheck?.text).toBe('Lệch 300 mm so với cộng dồn chiều cao các tầng dưới. Xem cốt trên bản vẽ.');
+    expect(differ.elevationCheck?.text).toBe(
+      'Lệch 300 mm so với cộng dồn chiều cao nếu nhận chiều cao đề xuất của các tầng dưới. Xem cốt trên bản vẽ.',
+    );
     expect(differ.needsLook).toBe(true);
+  });
+
+  it('không có chiều cao đề xuất bên dưới → câu nói rõ là cộng dồn chiều cao hiện tại', () => {
+    const row = rowOf('F2', STACK, entry('F2', { elevationMm: 3600, elevationSource: 'plan' }));
+    expect(row.elevationCheck?.text).toBe('Khớp với cộng dồn chiều cao hiện tại của các tầng dưới.');
+  });
+
+  it('cao độ là giá trị thường gặp hoặc chưa chắc → không có câu "khớp"', () => {
+    for (const patch of [
+      { elevationSource: 'convention' },
+      { elevationSource: 'plan', elevationConfidence: 0.5 },
+      { elevationSource: 'plan', elevationConfidence: undefined },
+    ]) {
+      expect(rowOf('F2', STACK, entry('F2', { elevationMm: 3600, ...patch })).elevationCheck).toBeNull();
+    }
+    // Lệch thì vẫn báo, kể cả khi cao độ chưa chắc.
+    const differ = rowOf('F2', STACK, entry('F2', { elevationMm: 4200, elevationSource: 'plan', elevationConfidence: 0.5 }));
+    expect(differ.elevationCheck).toMatchObject({ agrees: false });
+  });
+});
+
+describe('độ chắc và loại bản vẽ', () => {
+  const height = (patch: Partial<HouseFloorProposal>) =>
+    rowOf('F1', STACK, entry('F1', { storeyNo: 1, heightMm: 3300, heightSource: 'plan', ...patch })).height;
+
+  it('độ chắc dưới ngưỡng thấp hoặc vắng → không nhận được, bảo gõ tay', () => {
+    for (const heightConfidence of [0.4, undefined]) {
+      const vm = height({ heightConfidence });
+      expect(vm).toMatchObject({ acceptable: false, confidenceLabel: 'Chưa chắc' });
+      expect(vm.blockedReason).toBe('Máy chưa chắc số này. Nếu biết giá trị đúng, gõ vào bảng tầng.');
+    }
+    expect(height({ heightConfidence: 0.7 }).acceptable).toBe(true);
+  });
+
+  it('bản vẽ không phải mặt bằng → không ô nào nhận được, dòng cần xem', () => {
+    for (const kind of ['section', 'elevation']) {
+      const row = rowOf('F1', STACK, entry('F1', { kind, storeyNo: 1, elevationMm: -300, elevationSource: 'plan', heightMm: 3300, heightSource: 'plan' }));
+      expect([row.elevation.acceptable, row.height.acceptable, row.anyAcceptable, row.needsLook]).toEqual([false, false, false, true]);
+      expect(row.height.blockedReason).toBe('Bản vẽ của tầng này không phải mặt bằng. Nếu biết giá trị đúng, gõ vào bảng tầng.');
+    }
+  });
+});
+
+describe('chữ của chip', () => {
+  it('lời theo loại nguồn, số chỉ chọn màu', () => {
+    expect(confidenceLabelOf(0.9, 'convention')).toBe('Giá trị thường gặp');
+    expect(confidenceLabelOf(0.95, 'plan+section')).toBe('Hai nguồn khớp');
+    expect(confidenceLabelOf(0.8, 'plan+section')).toBe('Đọc trên hai nguồn');
+    expect(confidenceLabelOf(0.95, 'plan')).toBe('Một nguồn');
+    expect(confidenceLabelOf(0.5, 'dims')).toBe('Chưa chắc');
+    expect(confidenceLabelOf(0.95, 'laser')).toBe('Nguồn chưa rõ');
+    expect(confidenceLabelOf(0.95, undefined)).toBe('Nguồn chưa rõ');
+  });
+
+  it('mock Tầng 1: cao độ theo quy ước 0,9 không nói "Hai nguồn khớp"', () => {
+    const t1 = MOCK_HOUSE_PROPOSAL.floors[1]!;
+    const row = rowOf(t1.floorId, [{ ...floor(1, 0), id: t1.floorId }], t1);
+    expect(row.elevation.confidenceLabel).toBe('Giá trị thường gặp');
+    expect(row.storeyConfidenceLabel).toBe('Máy khá chắc');
+  });
+
+  it('ô tầng không bao giờ nói "hai nguồn"; tầng chưa rõ không bao giờ "khá chắc"', () => {
+    expect(storeyConfidenceLabelOf(0.95, 'Tầng 2')).toBe('Máy khá chắc');
+    expect(storeyConfidenceLabelOf(0.8, 'Tầng 2')).toBe('Chưa chắc');
+    expect(storeyConfidenceLabelOf(0.99, 'Chưa rõ tầng')).toBe('Chưa chắc');
   });
 });
 

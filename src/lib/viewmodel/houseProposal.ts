@@ -9,6 +9,7 @@
  * Nhận được khi:
  * - nguồn là số ĐỌC trên bản vẽ (`plan`, `plan+section`, `section`, `dims`); `convention`/`default` là
  *   giá trị thường gặp, nguồn lạ hay thiếu là chưa rõ: không bao giờ nhận được;
+ * - độ chắc của ô có và từ {@link HOUSE_CONFIDENCE_LOW} trở lên; bản vẽ của tầng là mặt bằng (`kind: 'plan'`);
  * - khác hiện tại, trong khoảng, dòng không có câu hỏi cả dòng, ô không có câu hỏi của chính nó;
  * - chiều cao: tầng không phải tầng hầm (đổi chiều cao tầng hầm dời tầng ±0.000 phía trên);
  * - cao độ: chỉ tầng thấp nhất (mốc của chồng) và chỉ khi không chạm tầng trên — lệnh đổi cao độ chỉ
@@ -127,10 +128,10 @@ export interface HouseProposalRowVm {
   readonly unknownQuestions: number;
   /** Tầng phía trên sẽ dời khi nhận chiều cao; rỗng khi chiều cao không nhận được. */
   readonly cascade: readonly HouseCascadeEntry[];
-  /** Chỉ ở tầng không phải mốc, có cao độ máy đọc. */
+  /** Chỉ ở tầng không phải mốc, có cao độ máy đọc; câu "khớp" bị bỏ khi cao độ là giá trị thường gặp hoặc chưa chắc. */
   readonly elevationCheck: HouseElevationCheck | null;
   readonly anyAcceptable: boolean;
-  /** Cần xem: có câu hỏi, độ chắc dưới 0,7, hoặc cao độ lệch cộng dồn. */
+  /** Cần xem: có câu hỏi, bản vẽ không phải mặt bằng, độ chắc dưới 0,7, hoặc cao độ lệch cộng dồn. */
   readonly needsLook: boolean;
 }
 
@@ -156,11 +157,31 @@ export function statusOfConfidence(confidence: number | null | undefined): ViewS
   return confidence >= HOUSE_CONFIDENCE_LOW ? 'attention' : 'violation';
 }
 
-export function confidenceLabelOf(confidence: number): string {
-  if (confidence >= HOUSE_CONFIDENCE_HIGH) {
-    return 'Hai nguồn khớp';
+/**
+ * Chữ của chip một ô số: lời lấy từ LOẠI NGUỒN, độ chắc chỉ chọn màu chip (`statusOfConfidence`) và
+ * tách "Chưa chắc". "Hai nguồn khớp" chỉ khi máy đọc cả mặt bằng lẫn mặt cắt và khá chắc.
+ */
+export function confidenceLabelOf(confidence: number, source: string | undefined): string {
+  const { kind } = sourceOf(source);
+
+  if (kind === 'assumed') {
+    return 'Giá trị thường gặp';
   }
-  return confidence >= HOUSE_CONFIDENCE_LOW ? 'Một nguồn' : 'Chưa chắc';
+  if (kind === 'unknown') {
+    return 'Nguồn chưa rõ';
+  }
+  if (confidence < HOUSE_CONFIDENCE_LOW) {
+    return 'Chưa chắc';
+  }
+  if (source === 'plan+section') {
+    return confidence >= HOUSE_CONFIDENCE_HIGH ? 'Hai nguồn khớp' : 'Đọc trên hai nguồn';
+  }
+  return 'Một nguồn';
+}
+
+/** Chữ của chip ô tầng. Dây chỉ có `storeyConfidence` (không có nguồn), nên không bao giờ nói "hai nguồn". */
+export function storeyConfidenceLabelOf(confidence: number, storeyText: string): string {
+  return storeyText !== UNKNOWN_STOREY_TEXT && confidence >= HOUSE_CONFIDENCE_HIGH ? 'Máy khá chắc' : 'Chưa chắc';
 }
 
 export function storeyTextOf(label: string | undefined, storeyNo: number | undefined): string {
@@ -224,9 +245,11 @@ function buildField(input: FieldInput): HouseFieldVm {
       ? `${HOUSE_ASSUMED_HINT}. ${TYPE_IT_TEXT}`
       : source.kind === 'unknown'
         ? `Không rõ máy lấy số này từ đâu. ${TYPE_IT_TEXT}`
-        : !inRange(proposedMm, input.range)
-          ? `Số nằm ngoài khoảng cho phép. ${TYPE_IT_TEXT}`
-          : input.blockedBy;
+        : input.confidence === undefined || input.confidence < HOUSE_CONFIDENCE_LOW
+          ? `Máy chưa chắc số này. ${TYPE_IT_TEXT}`
+          : !inRange(proposedMm, input.range)
+            ? `Số nằm ngoài khoảng cho phép. ${TYPE_IT_TEXT}`
+            : input.blockedBy;
   const acceptable = differs && blockedBy === null;
 
   return {
@@ -238,7 +261,7 @@ function buildField(input: FieldInput): HouseFieldVm {
     deltaText: differs ? input.deltaOf(proposedMm - currentMm) : null,
     statusCode: statusOfConfidence(confidence),
     confidence,
-    confidenceLabel: confidenceLabelOf(confidence),
+    confidenceLabel: confidenceLabelOf(confidence, input.source),
     sourceKind: source.kind,
     sourceText: source.text,
     hint: source.kind === 'assumed' ? HOUSE_ASSUMED_HINT : null,
@@ -315,6 +338,8 @@ interface StackPlace {
   readonly index: number;
   /** Cao độ chồng sẽ cho mỗi tầng sau khi nhận mọi chiều cao nhận được. */
   readonly stackedMm: readonly number[];
+  /** Chiều cao đề xuất nhận được đã tính vào `stackedMm`. */
+  readonly newHeights: ReadonlyMap<string, number>;
 }
 
 function cascadeOf(place: StackPlace, newHeightMm: number): HouseCascadeEntry[] {
@@ -346,7 +371,15 @@ function anchorElevation(place: StackPlace, floor: HouseProjectFloor, proposedMm
   };
 }
 
-function elevationCheckOf(place: StackPlace, proposedMm: number | undefined): HouseElevationCheck | null {
+/**
+ * Đối chiếu cao độ máy đọc với chồng tầng. Câu "khớp" chỉ ra khi chính cao độ là số đọc đủ chắc —
+ * một giá trị thường gặp "khớp" thì không nói lên gì. Câu nói rõ chồng tính bằng chiều cao nào.
+ */
+function elevationCheckOf(
+  place: StackPlace,
+  proposal: Pick<HouseFloorProposal, 'elevationMm' | 'elevationConfidence' | 'elevationSource'>,
+): HouseElevationCheck | null {
+  const proposedMm = proposal.elevationMm;
   const stackedMm = place.stackedMm[place.index];
 
   if (place.index === 0 || proposedMm === undefined || stackedMm === undefined) {
@@ -354,6 +387,15 @@ function elevationCheckOf(place: StackPlace, proposedMm: number | undefined): Ho
   }
   const differenceMm = proposedMm - stackedMm;
   const agrees = Math.abs(differenceMm) <= HOUSE_ELEVATION_AGREE_MM;
+  const trusted =
+    sourceOf(proposal.elevationSource).kind === 'read' && (proposal.elevationConfidence ?? 0) >= HOUSE_CONFIDENCE_LOW;
+
+  if (agrees && !trusted) {
+    return null;
+  }
+  const basis = place.floors.slice(0, place.index).some((below) => place.newHeights.has(below.id))
+    ? 'cộng dồn chiều cao nếu nhận chiều cao đề xuất của các tầng dưới'
+    : 'cộng dồn chiều cao hiện tại của các tầng dưới';
 
   return {
     stackedMm,
@@ -361,15 +403,21 @@ function elevationCheckOf(place: StackPlace, proposedMm: number | undefined): Ho
     differenceMm,
     agrees,
     text: agrees
-      ? 'Khớp với cộng dồn chiều cao các tầng dưới.'
-      : `Lệch ${heightWithUnit(Math.abs(differenceMm))} so với cộng dồn chiều cao các tầng dưới. Xem cốt trên bản vẽ.`,
+      ? `Khớp với ${basis}.`
+      : `Lệch ${heightWithUnit(Math.abs(differenceMm))} so với ${basis}. Xem cốt trên bản vẽ.`,
   };
 }
 
 function proposedRow(place: StackPlace, proposal: HouseFloorProposal): HouseProposalRowVm {
   const floor = place.floors[place.index] as HouseProjectFloor;
   const { questionsFor, unknownQuestions } = questionsOf(proposal.questions.map((question) => question.code));
-  const rowBlocked = questionsFor.row.length > 0 ? `Dòng còn câu hỏi. ${TYPE_IT_TEXT}` : null;
+  const notAPlan = proposal.kind !== 'plan';
+  const rowBlocked =
+    questionsFor.row.length > 0
+      ? `Dòng còn câu hỏi. ${TYPE_IT_TEXT}`
+      : notAPlan
+        ? `Bản vẽ của tầng này không phải mặt bằng. ${TYPE_IT_TEXT}`
+        : null;
   const askedBlocked = (asked: readonly string[]): string | null =>
     rowBlocked ?? (asked.length > 0 ? `Còn câu hỏi ở ô này. ${TYPE_IT_TEXT}` : null);
 
@@ -408,7 +456,8 @@ function proposedRow(place: StackPlace, proposal: HouseFloorProposal): HouseProp
     (value): value is number => value !== null,
   );
   const minConfidence = Math.min(...confidences);
-  const elevationCheck = elevationCheckOf(place, proposal.elevationMm);
+  const elevationCheck = elevationCheckOf(place, proposal);
+  const storeyText = storeyTextOf(proposal.storeyLabel, proposal.storeyNo);
   const asked = questionsFor.row.length + questionsFor.elevation.length + questionsFor.height.length > 0;
 
   return {
@@ -416,9 +465,9 @@ function proposedRow(place: StackPlace, proposal: HouseFloorProposal): HouseProp
     floorName: floor.name,
     hasProposal: true,
     noProposalText: null,
-    storeyText: storeyTextOf(proposal.storeyLabel, proposal.storeyNo),
+    storeyText,
     storeyStatusCode: statusOfConfidence(proposal.storeyConfidence),
-    storeyConfidenceLabel: confidenceLabelOf(proposal.storeyConfidence),
+    storeyConfidenceLabel: storeyConfidenceLabelOf(proposal.storeyConfidence, storeyText),
     elevation: elevationField,
     height,
     minConfidence,
@@ -428,7 +477,7 @@ function proposedRow(place: StackPlace, proposal: HouseFloorProposal): HouseProp
     cascade: height.acceptable ? heightCascade : [],
     elevationCheck,
     anyAcceptable: elevationField.acceptable || height.acceptable,
-    needsLook: asked || minConfidence < HOUSE_CONFIDENCE_LOW || elevationCheck?.agrees === false,
+    needsLook: asked || notAPlan || minConfidence < HOUSE_CONFIDENCE_LOW || elevationCheck?.agrees === false,
   };
 }
 
@@ -447,7 +496,7 @@ export function toHouseProposalRows(
   // một tầng Ghi đè bị đẩy lên rồi mất cờ — ca hiếm, số đối chiếu chỉ để tham khảo.
   const draft = ordered.map((floor, index) => {
     const entry = byFloorId.get(floor.id);
-    return entry === undefined ? null : proposedRow({ floors: ordered, index, stackedMm: [] }, entry);
+    return entry === undefined ? null : proposedRow({ floors: ordered, index, stackedMm: [], newHeights: new Map() }, entry);
   });
   const newHeights = new Map(
     draft.flatMap((row) => (row?.height.acceptable === true && row.height.proposedMm !== null ? [[row.floorId, row.height.proposedMm]] : [])),
@@ -456,7 +505,7 @@ export function toHouseProposalRows(
 
   return ordered.map((floor, index) => {
     const entry = byFloorId.get(floor.id);
-    return entry === undefined ? noProposalRow(floor) : proposedRow({ floors: ordered, index, stackedMm }, entry);
+    return entry === undefined ? noProposalRow(floor) : proposedRow({ floors: ordered, index, stackedMm, newHeights }, entry);
   });
 }
 

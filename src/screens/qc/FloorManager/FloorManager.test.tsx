@@ -934,8 +934,8 @@ describe('[K34] công tắc "Các tầng là các căn hộ riêng"', () => {
 describe('F4 — bảng đề xuất của máy', () => {
   /* `useId` đếm tiếp qua các lần gắn: bỏ mã sinh ra trước khi so. */
   const domOf = (): string => document.body.innerHTML.replace(/_r_[0-9a-z]+_/g, '_id_');
-  const mountWith = async (proposalApi?: HouseProposalApi): Promise<void> => {
-    renderWithProviders(
+  const mountWith = async (proposalApi?: HouseProposalApi) => {
+    const view = renderWithProviders(
       <FloorManagerContainer
         gateway={createMockFloorManagerGateway()}
         projectId={MOCK_HOUSE_PROPOSAL_DISABLED_PROJECT_ID}
@@ -947,6 +947,7 @@ describe('F4 — bảng đề xuất của máy', () => {
     await waitFor(() => {
       expect(screen.getByText(TABLE_CAPTION_MANUAL)).toBeInTheDocument();
     });
+    return view.queryClient;
   };
 
   it('công tắc tắt (mock enabled: false → null): không bảng, đọc một lần, DOM y như màn không có khe', async () => {
@@ -991,8 +992,12 @@ describe('F4 — bảng đề xuất của máy', () => {
     useStore.getState().setSpatial(null, null);
     resetSelectorCaches();
 
-    await mountWith({ houseProposal: { read: () => Promise.resolve({ ok: true, data: { enabled: true, floors: [], runIds: [] } }) } });
-    await act(async () => Promise.resolve());
+    const read = vi.fn(() => Promise.resolve({ ok: true as const, data: { enabled: true, floors: [], runIds: [] } }));
+    const client = await mountWith({ houseProposal: { read } });
+    /* Chờ lượt đọc xong hẳn (không chỉ được gọi) rồi mới khẳng định vắng: ẩn vì "đang đọc" không tính. */
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(client.isFetching()).toBe(0));
+    await act(() => new Promise((done) => setTimeout(done, 0)));
     expect(screen.queryByText('Đề xuất của máy cho cả nhà')).toBeNull();
     expect(domOf()).toBe(baseline);
   });
