@@ -9,6 +9,7 @@ import type { MillimetresPerPixel } from '@/domain/units/types';
 import type { ProjectSettings } from '../schemas/projectSettings';
 import type { ProjectSummary } from '../schemas/projectSummaries';
 import type { Me } from '../schemas/me';
+import type { HouseProposal } from '../schemas/houseProposal';
 import type { LightingBake } from '../schemas/lightingBake';
 import type { PipelineRun } from '../schemas/pipelineRuns';
 import type { ProjectRuleConfig } from '../schemas/ruleConfig';
@@ -1275,6 +1276,71 @@ const MOCK_SETTINGS_INITIAL: ProjectSettings = {
   snapToleranceMm: 50,
 };
 
+/** Id dự án có công tắc `DRAWING_SET_ENABLED` tắt: `houseProposal.read` trả `null` (503 `DRAWING_SET_DISABLED`). */
+export const MOCK_HOUSE_PROPOSAL_DISABLED_PROJECT_ID = 'project-house-proposal-off';
+
+/**
+ * Bốn tầng, đủ ba dải độ chắc (>= 0,9 · 0,7–0,9 · < 0,7) và ba mã câu hỏi. Chỉ có mặt bằng nên
+ * chiều cao không bao giờ đạt 0,9 (mục 1 của tài liệu tích hợp).
+ */
+export const MOCK_HOUSE_PROPOSAL: HouseProposal = {
+  floors: [
+    {
+      floorId: 'flr-mock-1',
+      kind: 'plan',
+      kindConfidence: 0.98,
+      storeyLabel: 'ground',
+      storeyNo: 1,
+      storeyConfidence: 0.95,
+      elevationMm: 0,
+      elevationConfidence: 0.93,
+      elevationSource: 'plan',
+      heightMm: 3600,
+      heightConfidence: 0.82,
+      heightSource: 'plan',
+      questions: [],
+    },
+    {
+      floorId: 'flr-mock-2',
+      kind: 'plan',
+      kindConfidence: 0.96,
+      storeyLabel: 'floor',
+      storeyNo: 2,
+      storeyConfidence: 0.88,
+      elevationMm: 3600,
+      elevationConfidence: 0.78,
+      elevationSource: 'dims',
+      heightMm: 3300,
+      heightConfidence: 0.72,
+      heightSource: 'convention',
+      questions: [{ code: 'HEIGHT_ASSUMED' }],
+    },
+    {
+      floorId: 'flr-mock-3',
+      kind: 'plan',
+      kindConfidence: 0.9,
+      storeyLabel: 'floor',
+      storeyNo: 3,
+      storeyConfidence: 0.64,
+      elevationMm: 6900,
+      elevationConfidence: 0.55,
+      elevationSource: 'convention',
+      heightMm: 3300,
+      heightConfidence: 0.4,
+      heightSource: 'default',
+      questions: [{ code: 'STOREY_UNSURE' }, { code: 'ORDER_DIFFERS' }, { code: 'HEIGHT_ASSUMED' }],
+    },
+    {
+      floorId: 'flr-mock-4',
+      kind: 'other',
+      kindConfidence: 0.35,
+      storeyConfidence: 0.1,
+      questions: [{ code: 'NOT_A_PLAN' }, { code: 'LEVEL_MISSING' }],
+    },
+  ],
+  runIds: ['run-mock-1', 'run-mock-2', 'run-mock-3', 'run-mock-4'],
+};
+
 const mockWireError = (status: number, code: string, requestId: string, raw: Record<string, unknown> = {}): HttpError => ({
   code,
   kind: 'http',
@@ -1834,6 +1900,10 @@ export const createMockApiClient = (): ApiClient => {
               makeFallbackLibraryItem(libraryItemId),
           ),
         ),
+    },
+    houseProposal: {
+      read: async ({ projectId }) =>
+        projectId === MOCK_HOUSE_PROPOSAL_DISABLED_PROJECT_ID ? ok(null) : ok(clone(MOCK_HOUSE_PROPOSAL)),
     },
     // AID-01: mock không có AI phong cách — thẻ giữ năm kiểu cũ.
     designConcept: {

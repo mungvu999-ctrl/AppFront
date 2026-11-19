@@ -47,6 +47,7 @@ import {
   type DesignConceptState,
   type DesignStyleId,
 } from './schemas/designConcept';
+import { HouseProposalSchema, type HouseProposal } from './schemas/houseProposal';
 import { LightingBakeSchema, type LightingBake, type LightingBakeFileName } from './schemas/lightingBake';
 import { PipelineRunSchema, type PipelineRun } from './schemas/pipelineRuns';
 import { UserSchema, type SignInInput, type User as ApiUser } from './schemas';
@@ -905,6 +906,7 @@ export interface ApiClient {
   drawings: DrawingsApi;
   featureFlags: FeatureFlagsApi;
   floors: FloorsApi;
+  houseProposal: HouseProposalApi;
   library: LibraryApi;
   lightingBakes: LightingBakesApi;
   me: MeApi;
@@ -933,6 +935,15 @@ export type SharedModel = z.infer<typeof SharedModelSchema>;
 export interface DesignConceptApi {
   read(input: { projectId: string } & RequestOptions): Promise<ApiResult<DesignConceptState>>;
   select(input: { projectId: string; styleId?: DesignStyleId } & WriteRequestOptions): Promise<ApiResult<DesignConcept>>;
+}
+
+/**
+ * Mức 3 — `GET /projects/{projectId}/house-proposal`, chỉ đọc. `read` trả `null` khi công tắc
+ * `DRAWING_SET_ENABLED` tắt (503 mã `DRAWING_SET_DISABLED`): "tính năng tắt" là trạng thái bình
+ * thường, nơi gọi ẩn bảng chứ không hiện lỗi. Mọi lỗi khác (kể cả 503 mã khác) vẫn là `ok: false`.
+ */
+export interface HouseProposalApi {
+  read(input: { projectId: string } & RequestOptions): Promise<ApiResult<HouseProposal | null>>;
 }
 
 /**
@@ -1342,6 +1353,15 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
         DesignConceptSchema,
         'designConcept.select',
       ),
+  },
+  houseProposal: {
+    read: async ({ projectId, signal }) => {
+      const result = await callGet<unknown>(http, ENDPOINTS.houseProposal(projectId), signal);
+      if (!result.ok && result.error.status === 503 && result.error.code === 'DRAWING_SET_DISABLED') {
+        return { ok: true, data: null };
+      }
+      return decodeSingle(result, HouseProposalSchema, 'houseProposal.read');
+    },
   },
   lightingBakes: {
     readFile: async (projectId, bakeId, name, options) =>
