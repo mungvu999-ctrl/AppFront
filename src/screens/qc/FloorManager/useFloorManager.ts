@@ -531,6 +531,17 @@ interface FloorStepPlan {
 /* Hook.                                                                       */
 /* -------------------------------------------------------------------------- */
 
+/** Hai ô số của một tầng mà ô nhập tay và bảng đề xuất cùng ghi. */
+export type LevelValueField = Exclude<FloorEditableField, 'name'>;
+
+/** Đường ghi chung của ô nhập tay và nút "Nhận" — xem `applyLevelValue` trong hook. */
+export type ApplyLevelValue = (
+  levelId: string,
+  field: LevelValueField,
+  valueMm: number,
+  releaseDraft?: () => void,
+) => Promise<boolean>;
+
 export interface UseFloorManagerOptions {
   readonly projectId: string;
   readonly roles?: readonly ProjectRole[];
@@ -588,7 +599,9 @@ export function misplacedFloorNameWarning(namesBottomUp: readonly string[]): str
   return null;
 }
 
-export function useFloorManager(options: UseFloorManagerOptions): UseFloorManagerResult {
+export function useFloorManager(
+  options: UseFloorManagerOptions,
+): UseFloorManagerResult & { readonly applyLevelValue: ApplyLevelValue } {
   const { projectId } = options;
   const gateway = useResolvedGateway(options.gateway);
   const queryClient = useQueryClient();
@@ -1372,6 +1385,102 @@ export function useFloorManager(options: UseFloorManagerOptions): UseFloorManage
    * `useNumericField.ts:14,86`), nên hook KHÔNG thêm một lớp debounce thứ hai và
    * không có con số 800 nào ở màn (R-71).
    */
+  /**
+   * Ghi MỘT giá trị cao độ/chiều cao vào một tầng — đường DUY NHẤT cho cả ô nhập tay lẫn nút
+   * "Nhận" của bảng đề xuất (F4): cùng kiểm trùng cao độ, cùng ngưỡng 2 m, cùng lệnh, cùng
+   * `PATCH …/spatial`, cùng vé hoàn tác 8 giây.
+   *
+   * `releaseDraft` chạy khi giá trị không còn phải giữ trong ô (mọi nhánh trừ cao độ bị chặn),
+   * đúng chỗ ô nhập tay vẫn xoá nháp. Trả `true` khi máy chủ đã nhận hết.
+   */
+  const applyLevelValue = useCallback(
+    async (levelIdText: string, field: LevelValueField, valueMm: number, releaseDraft?: () => void): Promise<boolean> => {
+      const context = readContext();
+
+      if (context === null) {
+        return false;
+      }
+
+      const levelId = levelIdText as LevelId;
+      let synced = false;
+      const onSynced = (): void => {
+        synced = true;
+      };
+
+      if (field === 'elevation') {
+        const conflict = findElevationConflict({ levelId, elevationMm: valueMm }, context);
+
+        if (conflict !== null) {
+          const message = conflict.reasons.join(' ');
+
+          setDuplicateElevation({ floorId: levelIdText, message, violation: conflict.violation });
+          announce(message);
+
+          return false;
+        }
+
+        setDuplicateElevation(null);
+        releaseDraft?.();
+
+        await executeStep((fresh) => {
+          const result = createChangeLevelElevationCommand({ levelId, elevationMm: valueMm }, fresh);
+
+          return result.ok
+            ? {
+                commands: [result.data],
+                label: result.data.description,
+                requests: patchRequestsOf([result.data]),
+                onApplied: (stepId) => {
+                  publishUndoTicket(
+                    FLOOR_ELEVATION_NOTIFICATION_TYPE,
+                    CHANGE_ELEVATION_TOAST_DESCRIPTION,
+                    stepId,
+                  );
+                  announceStackIssue();
+                },
+                onSynced,
+              }
+            : null;
+        });
+
+        return synced;
+      }
+
+      releaseDraft?.();
+
+      // Nói ngưỡng thay vì để máy chủ từ chối rồi quay về giá trị cũ (G3-18).
+      if (valueMm < MIN_FLOOR_HEIGHT_MM) {
+        say(FLOOR_MANAGER_TEXT.heightRefusedTitle, FLOOR_MANAGER_TEXT.heightTooLow);
+
+        return false;
+      }
+
+      await executeStep((fresh) => {
+        const built = createChangeFloorHeightCommands({ levelId, heightMm: valueMm }, fresh);
+
+        return built.ok
+          ? {
+              commands: built.commands,
+              label: built.commands[0]?.description ?? '',
+              requests: patchRequestsOf(built.commands),
+              onApplied: (stepId) => {
+                publishUndoTicket(
+                  FLOOR_HEIGHT_NOTIFICATION_TYPE,
+                  CHANGE_HEIGHT_TOAST_DESCRIPTION,
+                  stepId,
+                );
+                announceStackIssue();
+              },
+              onSynced,
+            }
+          : null;
+      });
+
+      return synced;
+    },
+    [announce, announceStackIssue, executeStep, patchRequestsOf, publishUndoTicket, readContext, say],
+  );
+
   const onFloorFieldCommit = useCallback(
     (floorId: string, field: FloorEditableField) => {
       setEditing(null);
@@ -1421,76 +1530,10 @@ export function useFloorManager(options: UseFloorManagerOptions): UseFloorManage
         return;
       }
 
-      if (field === 'elevation') {
-        const conflict = findElevationConflict({ levelId, elevationMm: valueMm }, context);
-
-        if (conflict !== null) {
-          const message = conflict.reasons.join(' ');
-
-          setDuplicateElevation({ floorId, message, violation: conflict.violation });
-          announce(message);
-
-          return;
-        }
-
-        setDuplicateElevation(null);
-        clearDraft();
-
-        void executeStep((fresh) => {
-          const result = createChangeLevelElevationCommand({ levelId, elevationMm: valueMm }, fresh);
-
-          return result.ok
-            ? {
-                commands: [result.data],
-                label: result.data.description,
-                requests: patchRequestsOf([result.data]),
-                onApplied: (stepId) => {
-                  publishUndoTicket(
-                    FLOOR_ELEVATION_NOTIFICATION_TYPE,
-                    CHANGE_ELEVATION_TOAST_DESCRIPTION,
-                    stepId,
-                  );
-                  announceStackIssue();
-                },
-              }
-            : null;
-        });
-
-        return;
-      }
-
-      clearDraft();
-
-      // Nói ngưỡng thay vì để máy chủ từ chối rồi quay về giá trị cũ (G3-18).
-      if (valueMm < MIN_FLOOR_HEIGHT_MM) {
-        say(FLOOR_MANAGER_TEXT.heightRefusedTitle, FLOOR_MANAGER_TEXT.heightTooLow);
-
-        return;
-      }
-
-      void executeStep((fresh) => {
-        const built = createChangeFloorHeightCommands({ levelId, heightMm: valueMm }, fresh);
-
-        return built.ok
-          ? {
-              commands: built.commands,
-              label: built.commands[0]?.description ?? '',
-              requests: patchRequestsOf(built.commands),
-              onApplied: (stepId) => {
-                publishUndoTicket(
-                  FLOOR_HEIGHT_NOTIFICATION_TYPE,
-                  CHANGE_HEIGHT_TOAST_DESCRIPTION,
-                  stepId,
-                );
-                announceStackIssue();
-              },
-            }
-          : null;
-      });
+      void applyLevelValue(floorId, field, valueMm, clearDraft);
     },
     [
-      announce,
-      announceStackIssue,
+      applyLevelValue,
       executeStep,
       patchRequestsOf,
       publishUndoTicket,
@@ -1947,6 +1990,7 @@ export function useFloorManager(options: UseFloorManagerOptions): UseFloorManage
     onFloorFieldChange,
     onFloorFieldCommit,
     onFloorFieldCancel,
+    applyLevelValue,
 
     onReorderFloors,
 
