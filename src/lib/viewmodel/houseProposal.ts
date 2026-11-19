@@ -7,6 +7,10 @@
  * Luật A5: đầu ra của máy không bao giờ mang mã `verified` (xanh dành cho người duyệt).
  * Độ chắc >= 0,9 là `neutral`, 0,7–0,9 là `attention`, dưới 0,7 là `violation`.
  *
+ * Thứ tự dòng là thứ tự tầng của dự án (cùng thứ tự bảng tầng bên dưới); dòng cần xem giữ dấu
+ * `attention`/`violation`, không đổi chỗ. "Nhận một cú bấm" tính theo TỪNG Ô: độ chắc ô >= 0,7, khác
+ * hiện tại, nằm trong khoảng, và dòng không còn câu hỏi (chỉ có mặt bằng thì không ô nào đạt 0,9).
+ *
  * Số hiển thị theo đúng cách màn Quản lý tầng đang viết (`FloorManager/floorFormat.ts`): cao độ là
  * mét có dấu (`+3.600`, `±0.000`), chiều cao là mm tách nghìn (`3.600`). Hai hàm đó nằm trong
  * `src/screens` mà `src/lib` không được nhập, nên bản dưới đây chép cùng công thức.
@@ -93,6 +97,8 @@ export interface HouseFieldVm {
   readonly sourceText: string | null;
   /** Có đề xuất, khác hiện tại, và nằm trong khoảng cho phép. */
   readonly acceptable: boolean;
+  /** Nhận một cú bấm: `acceptable`, độ chắc >= 0,7 và dòng không có câu hỏi. */
+  readonly oneClick: boolean;
 }
 
 export interface HouseProposalRowVm {
@@ -111,7 +117,7 @@ export interface HouseProposalRowVm {
   readonly minConfidence: number | null;
   readonly statusCode: ViewStatusCode;
   readonly questions: readonly string[];
-  /** Mọi độ chắc >= 0,9, không câu hỏi, và ít nhất một ô nhận được. */
+  /** Có ít nhất một ô nhận được bằng một cú bấm. */
   readonly oneClick: boolean;
   /** Cần xem: có độ chắc dưới 0,7. */
   readonly needsLook: boolean;
@@ -126,8 +132,10 @@ export interface HouseProposalSummary {
   readonly differingCount: number;
   /** Số dòng có độ chắc dưới 0,7. */
   readonly needsLookCount: number;
-  /** Số dòng nhận được bằng một cú bấm. */
+  /** Số Ô (cao độ hoặc chiều cao) nhận được bằng một cú bấm. */
   readonly oneClickCount: number;
+  /** Không ô nào khác giá trị hiện tại và không dòng nào còn câu hỏi: không có gì để hiện. */
+  readonly isEmpty: boolean;
   /** Câu cho thanh đầu bảng. */
   readonly headline: string;
 }
@@ -223,6 +231,7 @@ function buildField(spec: FieldSpec): HouseFieldVm {
       confidenceLabel: null,
       sourceText: null,
       acceptable: false,
+      oneClick: false,
     };
   }
   // Có giá trị mà thiếu độ chắc: coi là 0 (không biết thì không tin).
@@ -242,6 +251,7 @@ function buildField(spec: FieldSpec): HouseFieldVm {
     confidenceLabel: confidenceLabelOf(confidence),
     sourceText: spec.source === undefined ? null : SOURCE_TEXTS[spec.source],
     acceptable: differs && inRange,
+    oneClick: false, // cần biết câu hỏi của dòng: `proposedRow` tính lại
   };
 }
 
@@ -281,7 +291,7 @@ function noProposalRow(floor: HouseProjectFloor): HouseProposalRowVm {
 }
 
 function proposedRow(floor: HouseProjectFloor, proposal: HouseFloorProposal): HouseProposalRowVm {
-  const elevation = buildField({
+  const elevationBase = buildField({
     proposedMm: proposal.elevationMm,
     confidence: proposal.elevationConfidence,
     source: proposal.elevationSource,
@@ -290,7 +300,7 @@ function proposedRow(floor: HouseProjectFloor, proposal: HouseFloorProposal): Ho
     textOf: elevationText,
     deltaTextOf: elevationDeltaText,
   });
-  const height = buildField({
+  const heightBase = buildField({
     proposedMm: proposal.heightMm,
     confidence: proposal.heightConfidence,
     source: proposal.heightSource,
@@ -299,6 +309,15 @@ function proposedRow(floor: HouseProjectFloor, proposal: HouseFloorProposal): Ho
     textOf: heightText,
     deltaTextOf: heightDeltaText,
   });
+  const questions = [...new Set(proposal.questions.map((question) => question.code))].map(
+    (code) => HOUSE_QUESTION_TEXTS[code],
+  );
+  const withOneClick = (field: HouseFieldVm): HouseFieldVm => ({
+    ...field,
+    oneClick: field.acceptable && (field.confidence ?? 0) >= HOUSE_CONFIDENCE_LOW && questions.length === 0,
+  });
+  const elevation = withOneClick(elevationBase);
+  const height = withOneClick(heightBase);
   const confidences = [proposal.storeyConfidence];
 
   for (const field of [elevation, height]) {
@@ -307,9 +326,6 @@ function proposedRow(floor: HouseProjectFloor, proposal: HouseFloorProposal): Ho
     }
   }
   const minConfidence = Math.min(...confidences);
-  const questions = [...new Set(proposal.questions.map((question) => question.code))].map(
-    (code) => HOUSE_QUESTION_TEXTS[code],
-  );
   const anyAcceptable = elevation.acceptable || height.acceptable;
 
   return {
@@ -325,31 +341,28 @@ function proposedRow(floor: HouseProjectFloor, proposal: HouseFloorProposal): Ho
     minConfidence,
     statusCode: statusOfConfidence(minConfidence),
     questions,
-    oneClick: anyAcceptable && minConfidence >= HOUSE_CONFIDENCE_HIGH && questions.length === 0,
+    oneClick: elevation.oneClick || height.oneClick,
     needsLook: minConfidence < HOUSE_CONFIDENCE_LOW,
     anyAcceptable,
   };
 }
 
 /**
- * Một dòng cho mỗi tầng của dự án; tầng máy đề xuất mà dự án không có thì bỏ.
- * Thứ tự: độ chắc thấp nhất lên đầu, hoà thì theo thứ tự tầng; tầng không có đề xuất xuống cuối.
+ * Một dòng cho mỗi tầng của dự án, đúng thứ tự tầng của dự án (`order`); tầng máy đề xuất mà dự án
+ * không có thì bỏ. Không xếp lại theo độ chắc: hai bảng trên một màn phải cùng thứ tự.
  */
 export function toHouseProposalRows(
   proposal: HouseProposal,
   floors: readonly HouseProjectFloor[],
 ): readonly HouseProposalRowVm[] {
   const byFloorId = new Map(proposal.floors.map((entry) => [entry.floorId, entry]));
-  const ordered = [...floors].sort((a, b) => a.order - b.order);
-  const rows = ordered.map((floor) => {
-    const entry = byFloorId.get(floor.id);
-    return entry === undefined ? noProposalRow(floor) : proposedRow(floor, entry);
-  });
 
-  // Array.prototype.sort ổn định: hoà độ chắc giữ thứ tự tầng ở trên.
-  const rank = (row: HouseProposalRowVm): number => row.minConfidence ?? Number.POSITIVE_INFINITY;
-
-  return rows.sort((a, b) => (rank(a) < rank(b) ? -1 : rank(a) > rank(b) ? 1 : 0));
+  return [...floors]
+    .sort((a, b) => a.order - b.order)
+    .map((floor) => {
+      const entry = byFloorId.get(floor.id);
+      return entry === undefined ? noProposalRow(floor) : proposedRow(floor, entry);
+    });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -362,11 +375,12 @@ export function summarise(rows: readonly HouseProposalRowVm[]): HouseProposalSum
   const proposed = rows.filter((row) => row.hasProposal);
   const differingCount = proposed.filter((row) => row.elevation.differs || row.height.differs).length;
   const needsLookCount = proposed.filter((row) => row.needsLook).length;
-  const oneClickCount = proposed.filter((row) => row.oneClick).length;
+  const oneClickCount = proposed.reduce((sum, row) => sum + Number(row.elevation.oneClick) + Number(row.height.oneClick), 0);
   const headline =
     differingCount === 0
       ? 'Máy không đề xuất thay đổi nào.'
-      : `${count(differingCount)} đề xuất khác giá trị hiện tại, ${count(needsLookCount)} cần xem, ${count(oneClickCount)} nhận được ngay.`;
+      : `${count(differingCount)} tầng có đề xuất khác giá trị hiện tại, ${count(needsLookCount)} cần xem.`;
+  const isEmpty = differingCount === 0 && proposed.every((row) => row.questions.length === 0);
 
-  return { proposedCount: proposed.length, differingCount, needsLookCount, oneClickCount, headline };
+  return { proposedCount: proposed.length, differingCount, needsLookCount, oneClickCount, isEmpty, headline };
 }

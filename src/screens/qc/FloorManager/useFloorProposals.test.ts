@@ -131,6 +131,29 @@ describe('useFloorProposals — trạng thái', () => {
     await waitFor(() => expect(full.result.current.panel.state).toBe('success'));
   });
 
+  it('mặc định thu gọn; bật tắt giữ suốt phiên của hook', async () => {
+    const mounted = mountAlone(okApi(PROPOSAL));
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    expect(mounted.result.current.panel.expanded).toBe(false);
+    act(() => mounted.result.current.panel.onToggleExpanded());
+    expect(mounted.result.current.panel.expanded).toBe(true);
+    await act(async () => Promise.resolve());
+    expect(mounted.result.current.panel.expanded).toBe(true);
+  });
+
+  it('không ô nào khác giá trị hiện tại và không câu hỏi → ẩn hẳn; còn câu hỏi thì hiện', async () => {
+    const same = mountAlone(
+      okApi({ floors: [entry(GROUND, { elevationMm: 0, heightMm: 3900 })], runIds: ['run-1'] }),
+    );
+    await waitFor(() => expect(same.result.current.panel.state).not.toBe('loading'));
+    expect(same.result.current.hidden).toBe(true);
+
+    const asking = mountAlone(
+      okApi({ floors: [entry(GROUND, { elevationMm: 0, heightMm: 3900, questions: [{ code: 'NO_TEXT' }] })], runIds: ['run-1'] }),
+    );
+    await waitFor(() => expect(asking.result.current.hidden).toBe(false));
+  });
+
   it('lỗi không thử lại; "Thử lại" đọc lại và hiện bảng', async () => {
     const read = vi
       .fn<HouseProposalApi['houseProposal']['read']>()
@@ -156,7 +179,28 @@ describe('useFloorProposals — nhận', () => {
     expect(apply).toHaveBeenCalledWith(ROOF, 'elevation', 3900);
   });
 
-  it('"Nhận tất cả" chỉ chạm dòng oneClick, dừng ở lượt hỏng đầu', async () => {
+  it('"Nhận tất cả" nhận đúng các ô độ chắc >= 0,7 của dòng không câu hỏi', async () => {
+    const apply = vi.fn(() => Promise.resolve(true));
+    const mounted = mountAlone(
+      okApi({
+        floors: [
+          entry(GROUND, { elevationMm: 0, heightMm: 4200, heightConfidence: 0.7 }),
+          entry(SECOND, { elevationMm: 4200, elevationConfidence: 0.69, heightMm: 3300, heightConfidence: 0.8 }),
+          entry(ROOF, { elevationMm: 7500, heightMm: 3000, questions: [{ code: 'HEIGHT_ASSUMED' }] }),
+        ],
+        runIds: ['run-1'],
+      }),
+      apply,
+    );
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    expect(mounted.result.current.panel.summary.oneClickCount).toBe(2);
+    act(() => mounted.result.current.panel.onAcceptAll());
+    await waitFor(() => expect(apply).toHaveBeenCalledTimes(2));
+    expect(apply).toHaveBeenNthCalledWith(1, GROUND, 'height', 4200);
+    expect(apply).toHaveBeenNthCalledWith(2, SECOND, 'height', 3300);
+  });
+
+  it('"Nhận tất cả" chỉ chạm ô oneClick, dừng ở lượt hỏng đầu', async () => {
     const apply = vi.fn(() => Promise.resolve(true));
     const mounted = mountAlone(okApi(PROPOSAL), apply);
     await waitFor(() => expect(mounted.result.current.hidden).toBe(false));

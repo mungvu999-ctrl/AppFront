@@ -52,7 +52,7 @@ describe('bảy trạng thái của A11', () => {
     const onRetry = vi.fn();
 
     renderState('empty');
-    expect(screen.getByText('Máy chưa có đề xuất nào')).toBeInTheDocument();
+    expect(screen.getByText('Máy chưa có đề xuất nào.')).toBeInTheDocument();
     cleanup();
 
     renderState('error', { onRetry });
@@ -60,13 +60,27 @@ describe('bảy trạng thái của A11', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it('thu gọn chỉ còn thanh đầu và nút mở lại; không có bảng', () => {
-    const onExpand = vi.fn();
+  it('thu gọn chỉ còn một thanh: câu tóm tắt, nút Xem đề xuất, nút nhận hàng loạt; không có bảng', () => {
+    const onToggleExpanded = vi.fn();
+    const props = proposalArgsFor('collapsed');
 
-    renderState('collapsed', { onExpand });
+    renderState('collapsed', { onToggleExpanded });
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Mở bảng đề xuất' }));
-    expect(onExpand).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(props.summary.headline)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `Nhận ${props.summary.oneClickCount} đề xuất không còn câu hỏi` })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Xem đề xuất' }));
+    expect(onToggleExpanded).toHaveBeenCalledTimes(1);
+  });
+
+  it('thành công mà chưa mở: chỉ thanh; mở rồi thì có bảng và nút đổi thành Ẩn đề xuất', () => {
+    renderState('success', { expanded: false });
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Xem đề xuất', expanded: false })).toBeInTheDocument();
+    cleanup();
+
+    renderState('success', { expanded: true });
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ẩn đề xuất', expanded: true })).toBeInTheDocument();
   });
 
   it('một phần: tầng máy không đề xuất có một dòng nói rõ', () => {
@@ -76,7 +90,7 @@ describe('bảy trạng thái của A11', () => {
 });
 
 describe('bảng đề xuất', () => {
-  it('giữ nguyên thứ tự dòng của viewmodel: độ chắc thấp nhất lên đầu', () => {
+  it('giữ nguyên thứ tự dòng của viewmodel: thứ tự tầng của dự án', () => {
     const props = proposalArgsFor('success');
 
     renderWithProviders(<FloorProposalPanel {...props} />);
@@ -113,6 +127,13 @@ describe('bảng đề xuất', () => {
     expect(screen.getAllByRole('button', { name: /^Nhận (cao độ|chiều cao) đề xuất cho / })).toHaveLength(expected);
   });
 
+  it('nút Nhận luôn nằm trong khe cố định cuối ô (cùng chỗ ở mọi ô)', () => {
+    renderState('success');
+    for (const button of screen.getAllByRole('button', { name: /^Nhận (cao độ|chiều cao) đề xuất cho / })) {
+      expect(button.parentElement?.className).toContain('w-14');
+    }
+  });
+
   it('không có quyền: mọi nút Nhận biến mất, bảng vẫn còn', () => {
     renderState('forbidden');
     expect(screen.getByRole('table')).toBeInTheDocument();
@@ -131,26 +152,22 @@ describe('bảng đề xuất', () => {
 });
 
 describe('Nhận tất cả', () => {
-  it('nêu số tầng chắc chắn trên nút, gọi onAcceptAll khi bấm', () => {
+  it('nêu số đề xuất không còn câu hỏi trên nút, gọi onAcceptAll khi bấm', () => {
     const onAcceptAll = vi.fn();
     const props = proposalArgsFor('success');
 
     expect(props.summary.oneClickCount).toBeGreaterThan(0);
     renderWithProviders(<FloorProposalPanel {...props} onAcceptAll={onAcceptAll} />);
-    fireEvent.click(screen.getByRole('button', { name: `Nhận ${props.summary.oneClickCount} đề xuất chắc chắn` }));
+    fireEvent.click(screen.getByRole('button', { name: `Nhận ${props.summary.oneClickCount} đề xuất không còn câu hỏi` }));
     expect(onAcceptAll).toHaveBeenCalledTimes(1);
-    expect(screen.getByText('Chỉ nhận các tầng máy chắc chắn và không còn câu hỏi.')).toBeInTheDocument();
+    expect(screen.getByText('Chỉ nhận các giá trị máy không còn câu hỏi; phần còn lại cần bạn xem.')).toBeInTheDocument();
   });
 
-  it('tắt khi không tầng nào nhận được bằng một cú bấm', () => {
-    const onAcceptAll = vi.fn();
+  it('không có ô nào nhận được bằng một cú bấm thì không vẽ nút nhận hàng loạt', () => {
+    renderState('success', { summary: { ...proposalArgsFor('success').summary, oneClickCount: 0 } });
 
-    renderState('success', { summary: { ...proposalArgsFor('success').summary, oneClickCount: 0 }, onAcceptAll });
-    const button = screen.getByRole('button', { name: 'Nhận đề xuất chắc chắn' });
-
-    expect(button).toBeDisabled();
-    fireEvent.click(button);
-    expect(onAcceptAll).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /đề xuất không còn câu hỏi$/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Chỉ nhận các giá trị máy/)).not.toBeInTheDocument();
   });
 });
 
@@ -176,7 +193,8 @@ describe('đề xuất của máy không bao giờ là "đã xác minh" (A5)', (
 
   it('mọi giá trị máy đưa ra mang chữ "máy đề xuất" và độ chắc bằng lời, không chỉ bằng màu', () => {
     renderState('success');
-    expect(screen.getByText('Đây là đề xuất của máy, chưa có người duyệt.')).toBeInTheDocument();
+    expect(screen.getByText(/Đây là đề xuất của máy, chưa có người duyệt\./)).toBeInTheDocument();
+    expect(screen.getAllByText(/^theo /).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/máy đề xuất/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Hai nguồn khớp|Một nguồn|Chưa chắc/).length).toBeGreaterThan(0);
   });

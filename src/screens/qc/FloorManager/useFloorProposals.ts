@@ -7,14 +7,15 @@
  *
  * ## Ẩn
  *
- * `hidden` khi công tắc tắt (`data === null`), khi không có cửa đọc (`api === null`) và trong lượt
+ * `hidden` khi không có gì để hiện (không ô nào khác giá trị hiện tại và không câu hỏi — nhận xong hết
+ * thì bảng tự biến), khi công tắc tắt (`data === null`), khi không có cửa đọc (`api === null`) và trong lượt
  * đọc ĐẦU: lớp http tự thử lại 503 theo thang 300/900/2.700 ms trước khi trả `null`, nên hiện
  * khung xương lúc đó là cho công tắc tắt một bảng lóe lên ~4 giây. Khung xương chỉ hiện khi đọc
  * lại sau lỗi. Truy vấn không thử lại thêm (`retry: false`).
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import type { ApiClient } from '@/api/client';
 import { describeError, toAppError } from '@/lib/errors';
@@ -69,6 +70,9 @@ export function useFloorProposals(
     },
   });
 
+  /** Mặc định thu gọn; nhớ suốt phiên của màn (state của hook, không ghi ra ngoài). */
+  const [expanded, setExpanded] = useState(false);
+  const onToggleExpanded = useCallback(() => setExpanded((value) => !value), []);
   const proposal = query.data ?? null;
   const rows = useMemo(
     () =>
@@ -89,19 +93,17 @@ export function useFloorProposals(
     [apply],
   );
 
-  /** Chỉ dòng `oneClick`, lần lượt; hỏng ở đâu dừng ở đó (lỗi đã được nói qua đường thường). */
+  /** Chỉ ô `oneClick` (độ chắc >= 0,7, khác hiện tại, dòng không còn câu hỏi), lần lượt; hỏng ở đâu dừng ở đó (lỗi đã được nói qua đường thường). */
   const onAcceptAll = useCallback(() => {
-    const steps = rows
-      .filter((row) => row.oneClick)
-      .flatMap((row) =>
-        (['elevation', 'height'] as const).flatMap((field) => {
-          const cell = row[field];
+    const steps = rows.flatMap((row) =>
+      (['elevation', 'height'] as const).flatMap((field) => {
+        const cell = row[field];
 
-          return cell.acceptable && cell.proposedMm !== null
-            ? [{ floorId: row.floorId, field, valueMm: cell.proposedMm }]
-            : [];
-        }),
-      );
+        return cell.oneClick && cell.proposedMm !== null
+          ? [{ floorId: row.floorId, field, valueMm: cell.proposedMm }]
+          : [];
+      }),
+    );
 
     void (async () => {
       for (const step of steps) {
@@ -131,11 +133,14 @@ export function useFloorProposals(
               : 'success';
 
   return {
-    hidden: api === null || query.status === 'pending' || (query.isSuccess && query.data === null),
+    hidden:
+      api === null || query.status === 'pending' || (query.isSuccess && (query.data === null || summary.isEmpty)),
     panel: {
       state,
       rows,
       summary,
+      expanded,
+      onToggleExpanded,
       errorMessage: query.isError ? describeError(toAppError(query.error)).description : undefined,
       onAccept,
       onAcceptAll,

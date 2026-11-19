@@ -1279,29 +1279,48 @@ const MOCK_SETTINGS_INITIAL: ProjectSettings = {
 /** Id dự án có công tắc `DRAWING_SET_ENABLED` tắt: `houseProposal.read` trả `null` (503 `DRAWING_SET_DISABLED`). */
 export const MOCK_HOUSE_PROPOSAL_DISABLED_PROJECT_ID = 'project-house-proposal-off';
 
+/** Mã tầng của dự án mẫu `project-1` (đọc qua bộ chuyển `MOCK_SPATIAL_PROJECT`), từ dưới lên. */
+export const MOCK_PROPOSAL_FLOOR_IDS = ['L-0000000LX1', 'L-00000000L1', 'L-00000000L2', 'L-00000000L3'] as const;
+
 /**
- * Bốn tầng, đủ ba dải độ chắc (>= 0,9 · 0,7–0,9 · < 0,7) và ba mã câu hỏi. Chỉ có mặt bằng nên
- * chiều cao không bao giờ đạt 0,9 (mục 1 của tài liệu tích hợp).
+ * Đề xuất cho bốn tầng của `project-1` (hiện tại: hầm −3.000/3.000, T1 ±0/3.900, T2 +3.900/3.600,
+ * T3 +7.500/3.600). Các mức xếp chồng khít, không chồng nhau: cao độ = cao độ tầng dưới + chiều cao tầng dưới.
+ * Đủ ba dải độ chắc (>= 0,9 · 0,7–0,9 · < 0,7), nhiều mã câu hỏi, và ba ô nhận được một cú bấm
+ * (T1 chiều cao, T2 cao độ và chiều cao). Chỉ có mặt bằng nên không ô số nào đạt 0,9 ở nguồn "mặt bằng".
  */
 export const MOCK_HOUSE_PROPOSAL: HouseProposal = {
   floors: [
     {
-      floorId: 'flr-mock-1',
+      floorId: 'L-0000000LX1',
+      kind: 'plan',
+      kindConfidence: 0.7,
+      storeyLabel: 'basement',
+      storeyConfidence: 0.66,
+      elevationMm: -3300,
+      elevationConfidence: 0.55,
+      elevationSource: 'convention',
+      heightMm: 3300,
+      heightConfidence: 0.4,
+      heightSource: 'default',
+      questions: [{ code: 'LEVEL_MISSING' }, { code: 'HEIGHT_ASSUMED' }],
+    },
+    {
+      floorId: 'L-00000000L1',
       kind: 'plan',
       kindConfidence: 0.98,
       storeyLabel: 'ground',
       storeyNo: 1,
       storeyConfidence: 0.95,
       elevationMm: 0,
-      elevationConfidence: 0.93,
-      elevationSource: 'plan',
+      elevationConfidence: 0.9,
+      elevationSource: 'convention',
       heightMm: 3600,
       heightConfidence: 0.82,
-      heightSource: 'plan',
+      heightSource: 'dims',
       questions: [],
     },
     {
-      floorId: 'flr-mock-2',
+      floorId: 'L-00000000L2',
       kind: 'plan',
       kindConfidence: 0.96,
       storeyLabel: 'floor',
@@ -1309,14 +1328,14 @@ export const MOCK_HOUSE_PROPOSAL: HouseProposal = {
       storeyConfidence: 0.88,
       elevationMm: 3600,
       elevationConfidence: 0.78,
-      elevationSource: 'dims',
+      elevationSource: 'plan',
       heightMm: 3300,
-      heightConfidence: 0.72,
-      heightSource: 'convention',
-      questions: [{ code: 'HEIGHT_ASSUMED' }],
+      heightConfidence: 0.74,
+      heightSource: 'plan',
+      questions: [],
     },
     {
-      floorId: 'flr-mock-3',
+      floorId: 'L-00000000L3',
       kind: 'plan',
       kindConfidence: 0.9,
       storeyLabel: 'floor',
@@ -1329,13 +1348,6 @@ export const MOCK_HOUSE_PROPOSAL: HouseProposal = {
       heightConfidence: 0.4,
       heightSource: 'default',
       questions: [{ code: 'STOREY_UNSURE' }, { code: 'ORDER_DIFFERS' }, { code: 'HEIGHT_ASSUMED' }],
-    },
-    {
-      floorId: 'flr-mock-4',
-      kind: 'other',
-      kindConfidence: 0.35,
-      storeyConfidence: 0.1,
-      questions: [{ code: 'NOT_A_PLAN' }, { code: 'LEVEL_MISSING' }],
     },
   ],
   runIds: ['run-mock-1', 'run-mock-2', 'run-mock-3', 'run-mock-4'],

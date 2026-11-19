@@ -967,8 +967,33 @@ describe('F4 — bảng đề xuất của máy', () => {
     expect(domOf()).toBe(baseline);
   });
 
-  it('công tắc bật: bảng hiện phía trên bảng tầng', async () => {
-    await mountWith({ houseProposal: { read: () => Promise.resolve({ ok: true, data: MOCK_HOUSE_PROPOSAL }) } });
+  /** Bốn đề xuất mẫu gắn vào bốn tầng của cổng giả (id của MOCK_HOUSE_PROPOSAL là của project-1). */
+  const proposalForGateway = {
+    ...MOCK_HOUSE_PROPOSAL,
+    floors: MOCK_HOUSE_PROPOSAL.floors.map((entry, index) => ({
+      ...entry,
+      floorId: String(FLOOR_MANAGER_SAMPLE_LEVELS[index]?.id ?? entry.floorId),
+    })),
+  };
+
+  it('công tắc bật: thanh hiện phía trên bảng tầng, mặc định thu gọn, bấm Xem đề xuất mở bảng', async () => {
+    await mountWith({ houseProposal: { read: () => Promise.resolve({ ok: true, data: proposalForGateway }) } });
     expect(await screen.findByText('Đề xuất của máy cho cả nhà')).toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: /Đề xuất của máy theo từng tầng/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Xem đề xuất' }));
+    expect(screen.getByRole('table', { name: /Đề xuất của máy theo từng tầng/ })).toBeInTheDocument();
+  });
+
+  it('đề xuất không khác gì và không câu hỏi: không vẽ gì, DOM y như màn không có khe', async () => {
+    await mountWith();
+    const baseline = domOf();
+    cleanup();
+    useStore.getState().setSpatial(null, null);
+    resetSelectorCaches();
+
+    await mountWith({ houseProposal: { read: () => Promise.resolve({ ok: true, data: { floors: [], runIds: [] } }) } });
+    await act(async () => Promise.resolve());
+    expect(screen.queryByText('Đề xuất của máy cho cả nhà')).toBeNull();
+    expect(domOf()).toBe(baseline);
   });
 });
