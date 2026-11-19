@@ -30,7 +30,6 @@
 import { InlineAlert } from '@/components/feedback/InlineAlert';
 import { Skeleton } from '@/components/feedback/Skeleton';
 import { Button } from '@/components/ui/Button';
-import { formatNumber } from '@/lib/format/number';
 import type { HouseProposalRowVm, HouseProposalSummary } from '@/lib/viewmodel/houseProposal';
 
 import { FloorProposalRow, type FloorProposalField } from './FloorProposalRow';
@@ -68,8 +67,8 @@ const CAPTION = 'Đề xuất của máy theo từng tầng, cùng thứ tự v�
 const HEADERS = ['Tầng', 'Cao độ (m): hiện tại, đề xuất', 'Chiều cao (mm): hiện tại, đề xuất'] as const;
 const SKELETON_KEYS = ['a', 'b'] as const;
 
-const acceptAllLabel = (count: number): string =>
-  `Nhận ${formatNumber(count, { fractionDigits: 0 })} đề xuất không còn câu hỏi`;
+/** Không nêu số: đổi chiều cao một tầng dồn cao độ các tầng trên, nên số ô thật sự ghi chỉ biết sau khi ghi. */
+const ACCEPT_ALL_LABEL = 'Nhận các đề xuất không còn câu hỏi';
 
 interface HeaderBarProps {
   readonly headline: string;
@@ -98,7 +97,7 @@ function HeaderBar({ headline, acceptCount, showAcceptAll, onAcceptAll, toggle }
       )}
       {acceptable ? (
         <Button onClick={onAcceptAll} size="sm" variant="secondary">
-          {acceptAllLabel(acceptCount)}
+          {ACCEPT_ALL_LABEL}
         </Button>
       ) : null}
     </div>

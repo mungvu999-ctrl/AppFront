@@ -15,7 +15,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type { ApiClient } from '@/api/client';
 import { describeError, toAppError } from '@/lib/errors';
@@ -60,7 +60,9 @@ export function useFloorProposals(
     enabled: api !== null && projectId !== '',
     retry: false,
     queryFn: async ({ signal }) => {
-      const result = await (await loadClient(api ?? undefined)).houseProposal.read({ projectId, signal });
+      const result = await (
+        await loadClient(api ?? undefined)
+      ).houseProposal.read({ projectId, signal });
 
       if (!result.ok) {
         throw result.error;
@@ -93,26 +95,60 @@ export function useFloorProposals(
     [apply],
   );
 
-  /** Chỉ ô `oneClick` (độ chắc >= 0,7, khác hiện tại, dòng không còn câu hỏi), lần lượt; hỏng ở đâu dừng ở đó (lỗi đã được nói qua đường thường). */
-  const onAcceptAll = useCallback(() => {
-    const steps = rows.flatMap((row) =>
-      (['elevation', 'height'] as const).flatMap((field) => {
-        const cell = row[field];
+  /*
+   * Đổi chiều cao một tầng dồn cao độ các tầng trên (chồng tầng suy ra: cao độ = đỉnh tầng dưới, trừ ô
+   * "Ghi đè" tay), nên danh sách ô `oneClick` chụp từ đầu là cũ ngay sau lượt ghi đầu. Giữ dòng mới nhất
+   * trong ref (cập nhật đồng bộ sau mỗi lần dựng) để vòng lặp luôn đọc giá trị hiện tại.
+   */
+  const rowsRef = useRef(rows);
+  useLayoutEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
 
-        return cell.oneClick && cell.proposedMm !== null
-          ? [{ floorId: row.floorId, field, valueMm: cell.proposedMm }]
-          : [];
-      }),
-    );
+  /**
+   * Chiều cao trước (tầng thấp lên cao), rồi cao độ còn khác giá trị ĐÃ suy ra sau đó: cao độ đề xuất
+   * trùng cao độ suy ra thì không còn là ô `oneClick`, nên không bị ghi thành "Ghi đè". Mỗi vòng đọc lại
+   * dòng mới; chặn cứng số ô + 1 vòng, và dừng ngay lượt ghi hỏng đầu (lỗi đã được nói qua đường thường).
+   */
+  const onAcceptAll = useCallback(() => {
+    const nextStep = () => {
+      for (const field of ['height', 'elevation'] as const) {
+        for (const row of rowsRef.current) {
+          const cell = row[field];
+
+          if (cell.oneClick && cell.proposedMm !== null) {
+            return { floorId: row.floorId, field, valueMm: cell.proposedMm };
+          }
+        }
+      }
+
+      return null;
+    };
 
     void (async () => {
-      for (const step of steps) {
+      let previous: ReturnType<typeof nextStep> = null;
+
+      for (let budget = rowsRef.current.length * 2 + 1; budget > 0; budget -= 1) {
+        const step = nextStep();
+
+        // Không còn ô nào, hoặc dòng chưa kịp đổi sau lượt ghi trước (cùng ô, cùng số): dừng, không ghi lại.
+        if (
+          step === null ||
+          (previous !== null &&
+            previous.floorId === step.floorId &&
+            previous.field === step.field &&
+            previous.valueMm === step.valueMm)
+        ) {
+          return;
+        }
+        previous = step;
+
         if (!(await apply(step.floorId, step.field, step.valueMm))) {
           return;
         }
       }
     })();
-  }, [apply, rows]);
+  }, [apply]);
 
   const { refetch } = query;
   const onRetry = useCallback(() => {
@@ -134,7 +170,9 @@ export function useFloorProposals(
 
   return {
     hidden:
-      api === null || query.status === 'pending' || (query.isSuccess && (query.data === null || summary.isEmpty)),
+      api === null ||
+      query.status === 'pending' ||
+      (query.isSuccess && (query.data === null || summary.isEmpty)),
     panel: {
       state,
       rows,

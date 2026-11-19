@@ -44,18 +44,27 @@ const entry = (floorId: string, values: Partial<HouseFloorProposal>): HouseFloor
 const PROPOSAL: HouseProposal = {
   floors: [
     entry(GROUND, { storeyLabel: 'ground', elevationMm: 0, heightMm: 4200 }),
-    entry(ROOF, { elevationMm: 3900, elevationConfidence: 0.5, heightMm: 3000, heightConfidence: 0.5 }),
+    entry(ROOF, {
+      elevationMm: 3900,
+      elevationConfidence: 0.5,
+      heightMm: 3000,
+      heightConfidence: 0.5,
+    }),
   ],
   runIds: ['run-1'],
 };
 
-const apiOf = (read: HouseProposalApi['houseProposal']['read']): HouseProposalApi => ({ houseProposal: { read } });
-const okApi = (data: HouseProposal | null): HouseProposalApi => apiOf(() => Promise.resolve({ ok: true, data }));
+const apiOf = (read: HouseProposalApi['houseProposal']['read']): HouseProposalApi => ({
+  houseProposal: { read },
+});
+const okApi = (data: HouseProposal | null): HouseProposalApi =>
+  apiOf(() => Promise.resolve({ ok: true, data }));
 const FAILURE: HttpError = { kind: 'network', requestId: 'req-1', retryable: true, raw: 'offline' };
 
 const wrapperOf = () => {
   const client = createTestQueryClient();
-  return ({ children }: { children: ReactNode }): ReactNode => createElement(QueryClientProvider, { client }, children);
+  return ({ children }: { children: ReactNode }): ReactNode =>
+    createElement(QueryClientProvider, { client }, children);
 };
 
 const STATIC_FLOORS: readonly ProposalFloor[] = [
@@ -64,14 +73,20 @@ const STATIC_FLOORS: readonly ProposalFloor[] = [
   { id: ROOF, name: 'Tầng mái', elevationMm: 7500, heightMm: 3600 },
 ];
 
-function mountAlone(api: HouseProposalApi | null, apply: ApplyLevelValue = vi.fn(() => Promise.resolve(true))) {
-  return renderHook(() => useFloorProposals(PROJECT_ID, STATIC_FLOORS, { apply, canEdit: true, api }), {
-    wrapper: wrapperOf(),
-  });
+function mountAlone(
+  api: HouseProposalApi | null,
+  apply: ApplyLevelValue = vi.fn(() => Promise.resolve(true)),
+) {
+  return renderHook(
+    () => useFloorProposals(PROJECT_ID, STATIC_FLOORS, { apply, canEdit: true, api }),
+    {
+      wrapper: wrapperOf(),
+    },
+  );
 }
 
 /** Cả hai hook trên cổng giả: "Nhận" đi qua đường ghi thật của ô nhập tay. */
-function mountWired(api: HouseProposalApi) {
+function mountWired(api: HouseProposalApi, applied?: Parameters<ApplyLevelValue>[]) {
   const spoken: string[] = [];
   return renderHook(
     () => {
@@ -84,7 +99,10 @@ function mountWired(api: HouseProposalApi) {
         announcer: { announce: (line) => void spoken.push(line), destroy: () => undefined },
       });
       const proposals = useFloorProposals(PROJECT_ID, manager.rows, {
-        apply: manager.applyLevelValue,
+        apply: (...args) => {
+          applied?.push(args);
+          return manager.applyLevelValue(...args);
+        },
         canEdit: manager.canEdit,
         api,
       });
@@ -94,7 +112,8 @@ function mountWired(api: HouseProposalApi) {
   );
 }
 
-const levelOf = (id: string) => levelsOf(useStore.getState().spatial).find((level) => String(level.id) === id);
+const levelOf = (id: string) =>
+  levelsOf(useStore.getState().spatial).find((level) => String(level.id) === id);
 
 afterEach(() => {
   cleanup();
@@ -127,7 +146,9 @@ describe('useFloorProposals — trạng thái', () => {
   it('đề xuất rỗng → empty; đủ tầng → success', async () => {
     const empty = mountAlone(okApi({ floors: [], runIds: [] }));
     await waitFor(() => expect(empty.result.current.panel.state).toBe('empty'));
-    const full = mountAlone(okApi({ ...PROPOSAL, floors: [...PROPOSAL.floors, entry(SECOND, { heightMm: 3600 })] }));
+    const full = mountAlone(
+      okApi({ ...PROPOSAL, floors: [...PROPOSAL.floors, entry(SECOND, { heightMm: 3600 })] }),
+    );
     await waitFor(() => expect(full.result.current.panel.state).toBe('success'));
   });
 
@@ -149,7 +170,12 @@ describe('useFloorProposals — trạng thái', () => {
     expect(same.result.current.hidden).toBe(true);
 
     const asking = mountAlone(
-      okApi({ floors: [entry(GROUND, { elevationMm: 0, heightMm: 3900, questions: [{ code: 'NO_TEXT' }] })], runIds: ['run-1'] }),
+      okApi({
+        floors: [
+          entry(GROUND, { elevationMm: 0, heightMm: 3900, questions: [{ code: 'NO_TEXT' }] }),
+        ],
+        runIds: ['run-1'],
+      }),
     );
     await waitFor(() => expect(asking.result.current.hidden).toBe(false));
   });
@@ -180,24 +206,35 @@ describe('useFloorProposals — nhận', () => {
   });
 
   it('"Nhận tất cả" nhận đúng các ô độ chắc >= 0,7 của dòng không câu hỏi', async () => {
-    const apply = vi.fn(() => Promise.resolve(true));
-    const mounted = mountAlone(
+    const applied: Parameters<ApplyLevelValue>[] = [];
+    const mounted = mountWired(
       okApi({
         floors: [
           entry(GROUND, { elevationMm: 0, heightMm: 4200, heightConfidence: 0.7 }),
-          entry(SECOND, { elevationMm: 4200, elevationConfidence: 0.69, heightMm: 3300, heightConfidence: 0.8 }),
-          entry(ROOF, { elevationMm: 7500, heightMm: 3000, questions: [{ code: 'HEIGHT_ASSUMED' }] }),
+          entry(SECOND, {
+            elevationMm: 4200,
+            elevationConfidence: 0.69,
+            heightMm: 3300,
+            heightConfidence: 0.8,
+          }),
+          entry(ROOF, {
+            elevationMm: 7500,
+            heightMm: 3000,
+            questions: [{ code: 'HEIGHT_ASSUMED' }],
+          }),
         ],
         runIds: ['run-1'],
       }),
-      apply,
+      applied,
     );
-    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
-    expect(mounted.result.current.panel.summary.oneClickCount).toBe(2);
-    act(() => mounted.result.current.panel.onAcceptAll());
-    await waitFor(() => expect(apply).toHaveBeenCalledTimes(2));
-    expect(apply).toHaveBeenNthCalledWith(1, GROUND, 'height', 4200);
-    expect(apply).toHaveBeenNthCalledWith(2, SECOND, 'height', 3300);
+    await waitFor(() => expect(mounted.result.current.proposals.hidden).toBe(false));
+    expect(mounted.result.current.proposals.panel.summary.oneClickCount).toBe(2);
+    act(() => mounted.result.current.proposals.panel.onAcceptAll());
+    await waitFor(() => expect(levelOf(SECOND)?.heightMm).toBe(3300));
+    expect(applied.map(([id, field, mm]) => [id, field, mm])).toEqual([
+      [GROUND, 'height', 4200],
+      [SECOND, 'height', 3300],
+    ]);
   });
 
   it('"Nhận tất cả" chỉ chạm ô oneClick, dừng ở lượt hỏng đầu', async () => {
@@ -210,7 +247,10 @@ describe('useFloorProposals — nhận', () => {
 
     const failing = vi.fn(() => Promise.resolve(false));
     const two = mountAlone(
-      okApi({ ...PROPOSAL, floors: [entry(GROUND, { heightMm: 4200 }), entry(SECOND, { heightMm: 3300 })] }),
+      okApi({
+        ...PROPOSAL,
+        floors: [entry(GROUND, { heightMm: 4200 }), entry(SECOND, { heightMm: 3300 })],
+      }),
       failing,
     );
     await waitFor(() => expect(two.result.current.hidden).toBe(false));
@@ -223,7 +263,8 @@ describe('useFloorProposals — nhận', () => {
   it('nhận xong qua đường ghi thật: tầng đổi, ô hết "nhận được"', async () => {
     const mounted = mountWired(okApi(PROPOSAL));
     await waitFor(() => expect(mounted.result.current.proposals.hidden).toBe(false));
-    const groundRow = () => mounted.result.current.proposals.panel.rows.find((row) => row.floorId === GROUND);
+    const groundRow = () =>
+      mounted.result.current.proposals.panel.rows.find((row) => row.floorId === GROUND);
     expect(groundRow()?.height.acceptable).toBe(true);
 
     act(() => mounted.result.current.proposals.panel.onAcceptAll());
@@ -240,10 +281,84 @@ describe('useFloorProposals — nhận', () => {
 
     act(() => mounted.result.current.proposals.panel.onAccept(ROOF, 'elevation', 3900));
 
-    await waitFor(() => expect(mounted.result.current.manager.duplicateElevationMessage).not.toBeNull());
+    await waitFor(() =>
+      expect(mounted.result.current.manager.duplicateElevationMessage).not.toBeNull(),
+    );
     expect(mounted.result.current.manager.historyStepCount()).toBe(steps);
     expect(levelOf(ROOF)?.elevationMm).toBe(7500);
     const roofRow = mounted.result.current.proposals.panel.rows.find((row) => row.floorId === ROOF);
     expect(roofRow?.elevation.acceptable).toBe(true);
+  });
+
+  it('"Nhận tất cả" một lần: chiều cao trước, cao độ trùng giá trị suy ra thì không ghi (không thành "Ghi đè")', async () => {
+    const applied: Parameters<ApplyLevelValue>[] = [];
+    // Nhận chiều cao Tầng trệt 4.200 dồn Tầng 2 lên 4.200 và Tầng mái lên 7.800; chiều cao Tầng 2 3.000 dồn Tầng mái về 7.200.
+    const mounted = mountWired(
+      okApi({
+        floors: [
+          entry(GROUND, { elevationMm: 0, heightMm: 4200 }),
+          entry(SECOND, { elevationMm: 4200, heightMm: 3000 }),
+          entry(ROOF, { elevationMm: 7200, heightMm: 3600 }),
+        ],
+        runIds: ['run-1'],
+      }),
+      applied,
+    );
+    await waitFor(() => expect(mounted.result.current.proposals.hidden).toBe(false));
+    const rowOf = (id: string) =>
+      mounted.result.current.proposals.panel.rows.find((row) => row.floorId === id);
+    expect(rowOf(SECOND)?.elevation.oneClick).toBe(true);
+
+    act(() => mounted.result.current.proposals.panel.onAcceptAll());
+
+    await waitFor(() =>
+      expect(mounted.result.current.proposals.panel.summary.oneClickCount).toBe(0),
+    );
+    expect(applied.map(([id, field, mm]) => [id, field, mm])).toEqual([
+      [GROUND, 'height', 4200],
+      [SECOND, 'height', 3000],
+    ]);
+    expect(levelOf(SECOND)?.elevationMm).toBe(4200);
+    expect(levelOf(ROOF)?.elevationMm).toBe(7200);
+    expect(mounted.result.current.manager.rows.some((row) => row.isElevationOverridden)).toBe(
+      false,
+    );
+    // Ô đã trùng giá trị suy ra: không còn nút "Nhận".
+    expect(rowOf(SECOND)?.elevation.acceptable).toBe(false);
+    expect(rowOf(ROOF)?.elevation.acceptable).toBe(false);
+  });
+
+  it('nhận lẻ một cao độ đã trùng giá trị suy ra sau khi nhận chiều cao: ô hết "nhận được"', async () => {
+    const mounted = mountWired(
+      okApi({
+        floors: [entry(GROUND, { heightMm: 4200 }), entry(SECOND, { elevationMm: 4200 })],
+        runIds: ['run-1'],
+      }),
+    );
+    await waitFor(() => expect(mounted.result.current.proposals.hidden).toBe(false));
+    const secondElevation = () =>
+      mounted.result.current.proposals.panel.rows.find((row) => row.floorId === SECOND)?.elevation;
+    expect(secondElevation()?.acceptable).toBe(true);
+
+    act(() => mounted.result.current.proposals.panel.onAccept(GROUND, 'height', 4200));
+
+    await waitFor(() => expect(secondElevation()?.acceptable).toBe(false));
+    expect(secondElevation()?.differs).toBe(false);
+  });
+
+  it('"Nhận tất cả": ghi báo xong mà dòng không đổi thì dừng ở lượt đầu, không quay vòng', async () => {
+    const apply = vi.fn(() => Promise.resolve(true));
+    const mounted = mountAlone(
+      okApi({
+        floors: [entry(GROUND, { heightMm: 4200 }), entry(SECOND, { heightMm: 3300 })],
+        runIds: ['run-1'],
+      }),
+      apply,
+    );
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    act(() => mounted.result.current.panel.onAcceptAll());
+    await waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
+    await act(async () => Promise.resolve());
+    expect(apply).toHaveBeenCalledTimes(1);
   });
 });

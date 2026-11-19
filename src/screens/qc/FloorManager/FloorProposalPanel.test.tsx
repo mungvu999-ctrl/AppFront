@@ -67,7 +67,7 @@ describe('bảy trạng thái của A11', () => {
     renderState('collapsed', { onToggleExpanded });
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(screen.getByText(props.summary.headline)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: `Nhận ${props.summary.oneClickCount} đề xuất không còn câu hỏi` })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nhận các đề xuất không còn câu hỏi' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Xem đề xuất' }));
     expect(onToggleExpanded).toHaveBeenCalledTimes(1);
   });
@@ -152,13 +152,13 @@ describe('bảng đề xuất', () => {
 });
 
 describe('Nhận tất cả', () => {
-  it('nêu số đề xuất không còn câu hỏi trên nút, gọi onAcceptAll khi bấm', () => {
+  it('nút nhận hàng loạt không hứa số cụ thể, gọi onAcceptAll khi bấm', () => {
     const onAcceptAll = vi.fn();
     const props = proposalArgsFor('success');
 
     expect(props.summary.oneClickCount).toBeGreaterThan(0);
     renderWithProviders(<FloorProposalPanel {...props} onAcceptAll={onAcceptAll} />);
-    fireEvent.click(screen.getByRole('button', { name: `Nhận ${props.summary.oneClickCount} đề xuất không còn câu hỏi` }));
+    fireEvent.click(screen.getByRole('button', { name: 'Nhận các đề xuất không còn câu hỏi' }));
     expect(onAcceptAll).toHaveBeenCalledTimes(1);
     expect(screen.getByText('Chỉ nhận các giá trị máy không còn câu hỏi; phần còn lại cần bạn xem.')).toBeInTheDocument();
   });
