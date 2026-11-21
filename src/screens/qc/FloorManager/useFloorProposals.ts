@@ -58,8 +58,10 @@ const FIELD_NAMES: Readonly<Record<LevelValueField, string>> = { elevation: 'cao
 
 export const acceptedKey = (floorId: string, field: LevelValueField): string => `${floorId}:${field}`;
 
+/** Một client cho cả đọc lẫn ghi của bảng: cổng mẫu giữ trạng thái trong client, dựng mới mỗi lần thì dấu mặt cắt vừa ghi không đọc lại được. */
+let appClient: Promise<HouseProposalApi> | undefined;
 const loadClient = async (api: HouseProposalApi | undefined): Promise<HouseProposalApi> =>
-  api ?? (await import('@/api/appClient')).createAppApiClient();
+  api ?? (appClient ??= import('@/api/appClient').then((module) => module.createAppApiClient()));
 
 /** "Cao độ Tầng 2, Tầng 3 dời −300 mm." — gộp khi mọi tầng dời cùng một khoảng. */
 function cascadeSentence(cascade: readonly HouseCascadeEntry[]): string {
