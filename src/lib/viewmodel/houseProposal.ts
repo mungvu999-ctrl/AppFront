@@ -46,6 +46,7 @@ export const HOUSE_ASSUMED_HINT = 'Giá trị thường gặp, máy không đọ
 const TYPE_IT_TEXT = 'Nếu biết giá trị đúng, gõ vào bảng tầng.';
 const NO_PROPOSAL_TEXT = 'Máy chưa có đề xuất cho tầng này';
 const UNKNOWN_STOREY_TEXT = 'Chưa rõ tầng';
+export const HOUSE_SECTION_TEXT = 'Bạn đã đánh dấu bản vẽ này là mặt cắt. Máy đọc cốt trên nó để đối chiếu với các tầng.';
 
 const STOREY_TEXTS: ReadonlyMap<string, string> = new Map([
   ['ground', 'Tầng trệt'],
@@ -134,6 +135,10 @@ export interface HouseProposalRowVm {
   readonly anyAcceptable: boolean;
   /** Cần xem: có câu hỏi, bản vẽ không phải mặt bằng, độ chắc dưới 0,7, hoặc cao độ lệch cộng dồn. */
   readonly needsLook: boolean;
+  /** Người dùng đã đánh dấu bản vẽ của tầng là mặt cắt: dòng không có số, chỉ câu {@link HOUSE_SECTION_TEXT}. */
+  readonly isSection: boolean;
+  /** Máy nghi bản vẽ không phải mặt bằng (`NOT_A_PLAN`): nút "Đây là mặt cắt" nổi hơn. */
+  readonly maybeSection: boolean;
 }
 
 export interface HouseProposalSummary {
@@ -311,7 +316,15 @@ function noProposalRow(floor: HouseProjectFloor): HouseProposalRowVm {
     elevationCheck: null,
     anyAcceptable: false,
     needsLook: false,
+    isSection: false,
+    maybeSection: false,
   };
+}
+
+/** Dòng đã đánh dấu mặt cắt: không tầng/cốt/chiều cao để nhận; `NO_TEXT` (nếu có) vẫn hiện dưới tên. */
+function sectionRow(floor: HouseProjectFloor, proposal: HouseFloorProposal): HouseProposalRowVm {
+  const { questionsFor, unknownQuestions } = questionsOf(proposal.questions);
+  return { ...noProposalRow(floor), noProposalText: HOUSE_SECTION_TEXT, questionsFor, unknownQuestions, isSection: true };
 }
 
 const isBasement = (floor: HouseProjectFloor, proposal: HouseFloorProposal): boolean =>
@@ -479,6 +492,8 @@ function proposedRow(place: StackPlace, proposal: HouseFloorProposal): HouseProp
     elevationCheck,
     anyAcceptable: elevationField.acceptable || height.acceptable,
     needsLook: asked || notAPlan || minConfidence < HOUSE_CONFIDENCE_LOW || elevationCheck?.agrees === false,
+    isSection: false,
+    maybeSection: proposal.questions.some((question) => question.code === 'NOT_A_PLAN'),
   };
 }
 
@@ -506,6 +521,9 @@ export function toHouseProposalRows(
 
   return ordered.map((floor, index) => {
     const entry = byFloorId.get(floor.id);
+    if (entry?.isSection === true) {
+      return sectionRow(floor, entry);
+    }
     return entry === undefined ? noProposalRow(floor) : proposedRow({ floors: ordered, index, stackedMm, newHeights }, entry);
   });
 }

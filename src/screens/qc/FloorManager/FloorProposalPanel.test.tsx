@@ -18,7 +18,7 @@ import { createSevenStateScenarios, SEVEN_STATES, type SevenState } from '@/lib/
 import type { HouseProposalRowVm } from '@/lib/viewmodel/houseProposal';
 
 import { FloorProposalPanel, type FloorProposalPanelProps } from './FloorProposalPanel';
-import { proposalArgsFor } from './FloorProposalPanel.stories';
+import { proposalArgsFor, SECTION_ARGS } from './FloorProposalPanel.stories';
 
 afterEach(cleanup);
 
@@ -307,5 +307,40 @@ describe('đề xuất của máy không bao giờ là "đã xác minh" (A5)', (
     const { container } = renderState('success', { rows: [forged, ...rest], accepted });
 
     expect(container.querySelector('[class*="verified"]')).toBeNull();
+  });
+});
+
+describe('đánh dấu mặt cắt', () => {
+  it('mỗi dòng có nút với tên truy cập theo tầng; dòng mặt cắt có nhãn và nút bỏ dấu', () => {
+    const onToggleSection = vi.fn();
+    renderWithProviders(<FloorProposalPanel {...SECTION_ARGS} onToggleSection={onToggleSection} />);
+    const marked = SECTION_ARGS.rows.filter((row) => row.isSection);
+    expect(marked.map((row) => row.floorName)).toEqual(['Tầng 3']);
+
+    for (const row of SECTION_ARGS.rows.filter((item) => !item.isSection)) {
+      expect(screen.getByRole('button', { name: `Đánh dấu bản vẽ của ${row.floorName} là mặt cắt` })).toHaveTextContent('Đây là mặt cắt');
+    }
+    const unmark = screen.getByRole('button', { name: 'Bỏ đánh dấu mặt cắt cho Tầng 3' });
+    expect(unmark).toHaveTextContent('Không phải mặt cắt');
+    expect(screen.getByText(/Bạn đã đánh dấu bản vẽ này là mặt cắt/)).toBeInTheDocument();
+    expect(screen.getByText(/Có bản vẽ mặt cắt\? Tải nó lên như một tầng thêm/)).toBeInTheDocument();
+    fireEvent.click(unmark);
+    expect(onToggleSection).toHaveBeenCalledWith(marked[0]);
+  });
+
+  it('đang gửi: nút aria-disabled và không gọi lại; câu kết quả ở dòng status', () => {
+    const onToggleSection = vi.fn();
+    const message = 'Đã đánh dấu Tầng 3 là mặt cắt. Tầng này được ẩn khỏi 3D.';
+    renderWithProviders(<FloorProposalPanel {...SECTION_ARGS} busy message={message} onToggleSection={onToggleSection} />);
+    const unmark = screen.getByRole('button', { name: 'Bỏ đánh dấu mặt cắt cho Tầng 3' });
+    expect(unmark).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(unmark);
+    expect(onToggleSection).not.toHaveBeenCalled();
+    expect(screen.getByRole('status')).toHaveTextContent(message);
+  });
+
+  it('chỉ đọc: không có nút đánh dấu', () => {
+    renderState('forbidden');
+    expect(screen.queryByRole('button', { name: /mặt cắt/ })).toBeNull();
   });
 });

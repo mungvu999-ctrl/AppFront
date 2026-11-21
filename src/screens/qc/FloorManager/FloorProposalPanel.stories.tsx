@@ -27,6 +27,7 @@ const IDLE = {
   message: '',
   focus: null,
   onAccept: () => undefined,
+  onToggleSection: () => undefined,
   onRetry: () => undefined,
   onToggleExpanded: () => undefined,
 } as const;
@@ -40,6 +41,19 @@ const PARTIAL_ROWS = toHouseProposalRows(
   PROPOSAL_SAMPLE_FLOORS,
 );
 const PARTIAL_SUMMARY = summarise(PARTIAL_ROWS);
+/** Tầng 3 được người dùng đánh dấu là mặt cắt; máy chưa đọc được chữ trên nó. */
+const SECTION_ROWS = toHouseProposalRows(
+  {
+    ...MOCK_HOUSE_PROPOSAL,
+    floors: [
+      ...MOCK_HOUSE_PROPOSAL.floors.slice(0, 3),
+      { floorId: 'L-00000000L3', kind: 'section', kindConfidence: 1, storeyConfidence: 0, questions: [{ code: 'NO_TEXT' }], isSection: true },
+    ],
+  },
+  PROPOSAL_SAMPLE_FLOORS,
+);
+/** Props view có một dòng mặt cắt (story + bài kiểm). */
+export const SECTION_ARGS: FloorProposalPanelProps = { ...IDLE, state: 'partial', rows: SECTION_ROWS, summary: summarise(SECTION_ROWS) };
 
 /** Props view của một trạng thái. */
 export function proposalArgsFor(state: SevenState): FloorProposalPanelProps {
@@ -64,7 +78,7 @@ export function proposalArgsFor(state: SevenState): FloorProposalPanelProps {
 const meta = {
   title: 'Screens/QC/FloorManager/FloorProposalPanel',
   component: FloorProposalPanel,
-  excludeStories: ['proposalArgsFor', 'PROPOSAL_SAMPLE_FLOORS'],
+  excludeStories: ['proposalArgsFor', 'PROPOSAL_SAMPLE_FLOORS', 'SECTION_ARGS'],
 } satisfies Meta<typeof FloorProposalPanel>;
 
 export default meta;
@@ -91,3 +105,6 @@ export const KhongCoQuyen: Story = { args: proposalArgsFor('forbidden') };
 
 /** 7. Thu gọn — mặc định của màn: chỉ một thanh. */
 export const ThuGon: Story = { args: proposalArgsFor('collapsed') };
+
+/** Tầng 3 đã đánh dấu là mặt cắt: không số để nhận, có nút "Không phải mặt cắt". */
+export const MatCat: Story = { args: SECTION_ARGS };

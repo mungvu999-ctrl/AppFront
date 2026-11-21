@@ -1653,6 +1653,15 @@ export const MOCK_SHARE_TOKEN = 'mock-share-ok';
 export const createMockApiClient = (): ApiClient => {
   let project = buildProject();
   let floors = clone(project.floors);
+  /** Tầng người dùng đã đánh dấu là mặt cắt (PATCH #34 `isSection`); house-proposal đọc lại thấy ngay. */
+  const sectionIds = new Set<string>();
+  const withSections = (proposal: HouseProposal): HouseProposal => ({
+    ...proposal,
+    floors: [
+      ...proposal.floors.filter((entry) => !sectionIds.has(entry.floorId)),
+      ...[...sectionIds].map((floorId) => ({ floorId, kind: 'section', kindConfidence: 1, storeyConfidence: 0, questions: [], isSection: true })),
+    ],
+  });
   const currentLayer = (floorId: string): SpatialLayer =>
     clone(
       writtenLayers.get(floorId) ??
@@ -1919,7 +1928,7 @@ export const createMockApiClient = (): ApiClient => {
       read: async ({ projectId }) =>
         ok(
           houseProposalOrNull(
-            projectId === MOCK_HOUSE_PROPOSAL_DISABLED_PROJECT_ID ? HOUSE_PROPOSAL_OFF : clone(MOCK_HOUSE_PROPOSAL),
+            projectId === MOCK_HOUSE_PROPOSAL_DISABLED_PROJECT_ID ? HOUSE_PROPOSAL_OFF : withSections(clone(MOCK_HOUSE_PROPOSAL)),
           ),
         ),
     },
@@ -2224,7 +2233,13 @@ export const createMockApiClient = (): ApiClient => {
     spatial: {
       patchFloor: async ({ body, floorId }) => {
         const current = floors.find((item) => item.id === floorId) ?? makeFallbackFloor(floorId);
-        const next = applyFloorBody({ ...current, id: floorId }, body);
+        if (body.isSection !== undefined) {
+          if (body.isSection) sectionIds.add(floorId);
+          else sectionIds.delete(floorId);
+        }
+        // Như BE: đánh dấu mặt cắt thì tầng tự ẩn khỏi 3D.
+        const hidden = body.isSection === true ? true : body.hiddenIn3d;
+        const next = { ...applyFloorBody({ ...current, id: floorId }, body), ...(hidden === undefined ? {} : { hiddenIn3d: hidden }) };
         floors = floors.map((item) => (item.id === floorId ? next : item));
         project = { ...project, floors: clone(floors) };
         return ok(next);

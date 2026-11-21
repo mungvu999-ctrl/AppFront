@@ -6,6 +6,7 @@ import type { HouseFloorProposal, HouseProposal } from '@/api/schemas/housePropo
 import {
   confidenceLabelOf,
   HOUSE_ASSUMED_HINT,
+  HOUSE_SECTION_TEXT,
   storeyConfidenceLabelOf,
   type HouseProjectFloor,
   storeyTextOf,
@@ -268,5 +269,29 @@ describe('chữ và tóm tắt', () => {
   it('không có gì khác và không có gì cần xem → rỗng', () => {
     const rows = rowsOf(STACK, entry('F1', { storeyNo: 1, heightMm: 3600, heightSource: 'plan' }));
     expect(summarise(rows)).toMatchObject({ isEmpty: true, headline: 'Máy không đề xuất thay đổi nào.' });
+  });
+});
+
+describe('dòng đã đánh dấu mặt cắt', () => {
+  const section = (questions: HouseFloorProposal['questions'] = []) =>
+    entry('F3', { kind: 'section', kindConfidence: 1, storeyLabel: undefined, storeyNo: undefined, questions, isSection: true });
+
+  it('hiện là mặt cắt, không số để nhận, không tính vào tóm tắt', () => {
+    const rows = rowsOf(STACK, entry('F1', { storeyNo: 1, heightMm: 3300, heightSource: 'dims' }), section());
+    const row = rows.find((item) => item.floorId === 'F3')!;
+
+    expect(row).toMatchObject({ isSection: true, hasProposal: false, anyAcceptable: false, noProposalText: HOUSE_SECTION_TEXT });
+    expect(row.questionsFor.row).toEqual([]);
+    expect(summarise(rows).proposedCount).toBe(1);
+  });
+
+  it('NO_TEXT: giữ câu sẵn có của NO_TEXT', () => {
+    const row = rowOf('F3', STACK, section([{ code: 'NO_TEXT' }]));
+    expect(row.questionsFor.row).toEqual([questionsOf([{ code: 'NO_TEXT' }]).questionsFor.row[0]]);
+  });
+
+  it('dòng máy nghi không phải mặt bằng: maybeSection', () => {
+    expect(rowOf('F2', STACK, entry('F2', { kind: 'section', questions: [{ code: 'NOT_A_PLAN' }] })).maybeSection).toBe(true);
+    expect(rowOf('F2', STACK, entry('F2')).maybeSection).toBe(false);
   });
 });

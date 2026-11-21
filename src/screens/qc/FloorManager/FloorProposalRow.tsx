@@ -23,6 +23,7 @@ const NO_FIELD_PROPOSAL = 'máy không đề xuất';
 const ACCEPTED_TEXT = 'Đã nhận từ đề xuất của máy';
 const LOOK_LABEL = 'Cần xem';
 const ACCEPT_LABEL = 'Nhận';
+const SECTION_BADGE = 'Mặt cắt';
 const FIELD_NAMES: Readonly<Record<FloorProposalField, string>> = { elevation: 'cao độ', height: 'chiều cao' };
 const CELL_CLASS = 'px-3 py-1.5 align-top';
 const NOTE_CLASS = 'text-[12px] text-text-secondary';
@@ -140,9 +141,35 @@ export interface FloorProposalRowProps {
   readonly busy: boolean;
   readonly accepted: ReadonlySet<string>;
   readonly onAccept: AcceptHandler;
+  readonly onToggleSection: (row: HouseProposalRowVm) => void;
 }
 
-export function FloorProposalRow({ row, canAccept, busy, accepted, onAccept }: FloorProposalRowProps) {
+interface SectionToggleProps {
+  readonly row: HouseProposalRowVm;
+  readonly busy: boolean;
+  readonly onToggle: (row: HouseProposalRowVm) => void;
+}
+
+/** "Đây là mặt cắt" / "Không phải mặt cắt"; nổi hơn khi máy nghi bản vẽ không phải mặt bằng. */
+function SectionToggle({ row, busy, onToggle }: SectionToggleProps) {
+  return (
+    <div className="mt-1">
+      <Button
+        aria-disabled={busy || undefined}
+        aria-label={row.isSection ? `Bỏ đánh dấu mặt cắt cho ${row.floorName}` : `Đánh dấu bản vẽ của ${row.floorName} là mặt cắt`}
+        onClick={() => {
+          if (!busy) onToggle(row);
+        }}
+        size="sm"
+        variant={row.maybeSection && !row.isSection ? 'secondary' : 'ghost'}
+      >
+        {row.isSection ? 'Không phải mặt cắt' : 'Đây là mặt cắt'}
+      </Button>
+    </div>
+  );
+}
+
+export function FloorProposalRow({ row, canAccept, busy, accepted, onAccept, onToggleSection }: FloorProposalRowProps) {
   const { floorId, floorName } = row;
   const cell = (field: FloorProposalField) => (
     <FieldCell
@@ -159,7 +186,8 @@ export function FloorProposalRow({ row, canAccept, busy, accepted, onAccept }: F
     <tbody className="border-b border-border-default-50 last:border-0">
       <tr>
         <th className={`${CELL_CLASS} text-left font-normal`} data-floor-header={floorId} scope="row" tabIndex={-1}>
-          <span className="font-medium text-text-primary">{floorName}</span>
+          <span className="font-medium text-text-primary">{floorName}</span>{' '}
+          {row.isSection ? <Badge variant="neutral">{SECTION_BADGE}</Badge> : null}
           {row.hasProposal ? (
             <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
               <span className={NOTE_CLASS}>máy đọc: {row.storeyText}</span>
@@ -167,6 +195,7 @@ export function FloorProposalRow({ row, canAccept, busy, accepted, onAccept }: F
             </span>
           ) : null}
           <Questions items={row.questionsFor.row} label={`Câu hỏi của máy về ${floorName}`} />
+          {canAccept ? <SectionToggle busy={busy} onToggle={onToggleSection} row={row} /> : null}
         </th>
         {row.hasProposal ? (
           <>

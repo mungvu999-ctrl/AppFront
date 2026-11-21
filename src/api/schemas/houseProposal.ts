@@ -69,6 +69,8 @@ export const HouseFloorProposalSchema = z.object({
   heightConfidence: optionalConfidence,
   heightSource: optionalText,
   questions: z.array(HouseQuestionSchema),
+  /** Người dùng đã đánh dấu bản vẽ của dòng này là mặt cắt (PATCH #34 `isSection`); vắng khi không đánh dấu. */
+  isSection: z.boolean().optional().catch(undefined),
 });
 
 export type HouseFloorProposal = z.infer<typeof HouseFloorProposalSchema>;

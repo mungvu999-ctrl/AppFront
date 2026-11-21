@@ -54,6 +54,8 @@ export interface FloorProposalPanelProps {
   readonly focus: { readonly floorId: string } | null;
   /** Nhận một ô của một tầng. */
   readonly onAccept: (row: HouseProposalRowVm, field: FloorProposalField) => void;
+  /** Đánh dấu / bỏ đánh dấu bản vẽ của dòng là mặt cắt (dùng chung `busy`). */
+  readonly onToggleSection: (row: HouseProposalRowVm) => void;
   readonly onRetry: () => void;
 }
 
@@ -69,10 +71,11 @@ const EMPTY_DESCRIPTION = 'Bạn vẫn nhập tay được ở bảng tầng.';
 const CAPTION = 'Đề xuất của máy theo từng tầng, cùng thứ tự với bảng tầng bên dưới.';
 const SCROLL_LABEL = 'Bảng đề xuất theo tầng';
 const HEADERS = ['Tầng', 'Cao độ (hiện tại → đề xuất)', 'Chiều cao (hiện tại → đề xuất)'] as const;
+const SECTION_HINT = 'Có bản vẽ mặt cắt? Tải nó lên như một tầng thêm rồi bấm “Đây là mặt cắt” ở dòng đó.';
 const SKELETON_KEYS = ['a', 'b'] as const;
 
 export function FloorProposalPanel(props: FloorProposalPanelProps) {
-  const { state, rows, summary, onAccept, onRetry, busy, accepted, focus } = props;
+  const { state, rows, summary, onAccept, onToggleSection, onRetry, busy, accepted, focus } = props;
   const hasTable = state === 'partial' || state === 'success' || state === 'forbidden';
   const open = hasTable && props.expanded;
   const tableRef = useRef<HTMLTableElement>(null);
@@ -129,6 +132,7 @@ export function FloorProposalPanel(props: FloorProposalPanelProps) {
         // Trần ~45vh để bảng tầng bên dưới vẫn trong màn khi nhận; tiêu điểm vào dòng khuất thì trình duyệt tự cuộn.
         <div aria-label={SCROLL_LABEL} className="max-h-[45vh] overflow-auto" role="region" tabIndex={0}>
           <p className="pb-1 text-[12px] text-text-secondary">{NOT_VERIFIED_NOTE}</p>
+          <p className="pb-1 text-[12px] text-text-secondary">{SECTION_HINT}</p>
           <table className="w-full table-fixed border-collapse text-left text-[14px]" ref={tableRef}>
             <caption className="sr-only">{CAPTION}</caption>
             <colgroup>
@@ -152,6 +156,7 @@ export function FloorProposalPanel(props: FloorProposalPanelProps) {
                 canAccept={state !== 'forbidden'}
                 key={row.floorId}
                 onAccept={onAccept}
+                onToggleSection={onToggleSection}
                 row={row}
               />
             ))}

@@ -109,3 +109,11 @@ describe('HouseProposal (house-proposal)', () => {
     expect(ok({ floors: [floor], runIds: [] })).toBe(false);
   });
 });
+
+describe('isSection (dấu mặt cắt của người dùng)', () => {
+  it('nhận true, vắng thì vắng, giá trị hỏng thì bỏ trường', () => {
+    expect(firstFloor({ kind: 'section', isSection: true })?.isSection).toBe(true);
+    expect(firstFloor({}) ?? {}).not.toHaveProperty('isSection');
+    expect(firstFloor({ isSection: 'yes' })?.isSection).toBeUndefined();
+  });
+});

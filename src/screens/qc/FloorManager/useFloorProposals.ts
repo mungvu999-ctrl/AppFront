@@ -17,10 +17,11 @@
  * nhận ít nhất một ô (giữ chữ "Đã nhận" và tiêu điểm, không để bảng biến mất dưới tay người dùng).
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type { ApiClient } from '@/api/client';
+import { applyInvalidation } from '@/lib/query/invalidation';
 import { queryKeys } from '@/lib/query/queryKeys';
 import {
   type HouseCascadeEntry,
@@ -33,7 +34,8 @@ import {
 import type { FloorProposalPanelProps, FloorProposalState } from './FloorProposalPanel';
 import type { ApplyLevelValue, LevelValueField } from './useFloorManager';
 
-export type HouseProposalApi = Pick<ApiClient, 'houseProposal'>;
+/** `spatial` để đánh dấu mặt cắt (PATCH #34 `isSection`); vắng thì nút đó báo chưa lưu được. */
+export type HouseProposalApi = Pick<ApiClient, 'houseProposal'> & { readonly spatial?: Pick<ApiClient['spatial'], 'patchFloor'> };
 
 export interface UseFloorProposalsOptions {
   readonly apply: ApplyLevelValue;
@@ -85,6 +87,12 @@ const failedMessage = (row: HouseProposalRowVm, field: LevelValueField): string 
 
 /** Giá trị đã vào màn nhưng một lượt PATCH sau đó hỏng (`apply` trả `false` mà tầng đã mang giá trị nhận). */
 export const UNSAVED_MESSAGE = 'Đã đổi trên màn hình nhưng chưa lưu được lên máy chủ. Thử lưu lại ở bảng tầng.';
+
+export const MARK_FAILED_MESSAGE = 'Chưa lưu được lên máy chủ. Thử lại.';
+const markedMessage = (row: HouseProposalRowVm, isSection: boolean): string =>
+  isSection
+    ? `Đã đánh dấu ${row.floorName} là mặt cắt. Tầng này được ẩn khỏi 3D.`
+    : `Đã bỏ đánh dấu mặt cắt cho ${row.floorName}.`;
 
 const FIELD_MM: Readonly<Record<LevelValueField, 'elevationMm' | 'heightMm'>> = { elevation: 'elevationMm', height: 'heightMm' };
 
@@ -209,7 +217,56 @@ export function useFloorProposals(
     [runAccept],
   );
 
+  const queryClient = useQueryClient();
   const { refetch } = query;
+  /** Đánh dấu / bỏ đánh dấu mặt cắt; dùng chung `busy` và chặn bấm lặp với "Nhận". */
+  const runMark = useCallback(
+    async (row: HouseProposalRowVm) => {
+      if (inFlightRef.current) {
+        return;
+      }
+      inFlightRef.current = true;
+      setBusy(true);
+      setSession((previous) => (previous.message === '' ? previous : { ...previous, message: '' }));
+      const startedFor = projectId;
+      const isSection = !row.isSection;
+      let ok = false;
+
+      try {
+        const spatial = (await loadClient(api ?? undefined)).spatial;
+        ok = spatial !== undefined && (await spatial.patchFloor({ body: { isSection }, floorId: row.floorId, projectId })).ok;
+      } catch {
+        ok = false;
+      } finally {
+        inFlightRef.current = false;
+      }
+
+      if (!liveRef.current.mounted) {
+        return;
+      }
+      setBusy(false);
+
+      if (liveRef.current.projectId !== startedFor) {
+        return;
+      }
+      if (ok) {
+        // BE đổi `hiddenIn3d` theo dấu: đọc lại cả danh sách tầng lẫn đề xuất.
+        applyInvalidation(queryClient, 'editFloor', { floorId: row.floorId, projectId });
+        void refetch();
+      }
+      setSession((previous) => ({
+        ...(previous.projectId === startedFor ? previous : freshSession(startedFor)),
+        message: ok ? markedMessage(row, isSection) : MARK_FAILED_MESSAGE,
+      }));
+    },
+    [api, projectId, queryClient, refetch],
+  );
+  const onToggleSection = useCallback(
+    (row: HouseProposalRowVm) => {
+      void runMark(row);
+    },
+    [runMark],
+  );
   const onRetry = useCallback(() => {
     void refetch();
   }, [refetch]);
@@ -231,7 +288,7 @@ export function useFloorProposals(
     hidden:
       api === null ||
       query.status === 'pending' ||
-      (query.isSuccess && (query.data === null || (summary.isEmpty && session.accepted.size === 0))),
+      (query.isSuccess && (query.data === null || (summary.isEmpty && session.accepted.size === 0 && !rows.some((row) => row.isSection)))),
     panel: {
       state,
       rows,
@@ -243,6 +300,7 @@ export function useFloorProposals(
       message: session.message,
       focus: session.focus,
       onAccept,
+      onToggleSection,
       onRetry,
     },
   };
