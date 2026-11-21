@@ -52,6 +52,7 @@ const STOREY_TEXTS: ReadonlyMap<string, string> = new Map([
   ['basement', 'Tầng hầm'],
   ['mezzanine', 'Tầng lửng'],
   ['attic', 'Tầng áp mái'],
+  ['tum', 'Tầng tum'],
   ['roof_terrace', 'Sân thượng'],
 ]);
 
@@ -410,7 +411,7 @@ function elevationCheckOf(
 
 function proposedRow(place: StackPlace, proposal: HouseFloorProposal): HouseProposalRowVm {
   const floor = place.floors[place.index] as HouseProjectFloor;
-  const { questionsFor, unknownQuestions } = questionsOf(proposal.questions.map((question) => question.code));
+  const { questionsFor, unknownQuestions } = questionsOf(proposal.questions);
   const notAPlan = proposal.kind !== 'plan';
   const rowBlocked =
     questionsFor.row.length > 0

@@ -70,15 +70,33 @@ export function sourceOf(source: string | undefined): { kind: HouseSourceKind; t
 
 export type HouseQuestionScope = 'row' | 'elevation' | 'height';
 
+/** Phần của câu hỏi BE mà viewmodel cần; `HouseQuestion` của schema khớp cấu trúc. */
+export interface HouseQuestionInput {
+  readonly code: string;
+  readonly reason?: string | undefined;
+  readonly textStoreyNo?: number | undefined;
+}
+
+const KEEP_ORDER_TEXT = 'Máy giữ thứ tự của dự án.';
+
+/** Số tầng đi theo thứ tự dự án; chữ hay cốt trên bản vẽ lệch thì máy giữ và hỏi. Lý do vắng/lạ như `title` không có số. */
+function orderConflictText({ reason, textStoreyNo }: HouseQuestionInput): string {
+  if (reason === 'level') {
+    return `Thứ tự: cốt ghi trên bản vẽ không khớp vị trí của tầng này trong dự án. ${KEEP_ORDER_TEXT} Xem lại thứ tự các tầng hoặc cốt trên bản vẽ.`;
+  }
+  const what = reason === 'title' && textStoreyNo !== undefined ? `ghi tầng ${textStoreyNo}, khác` : 'không khớp';
+  return `Thứ tự: tên trên bản vẽ ${what} vị trí của tầng này trong dự án. ${KEEP_ORDER_TEXT} Xem lại thứ tự các tầng hoặc bản vẽ đã gắn.`;
+}
+
 /**
  * Mã câu hỏi → ô nó chạm và câu cho người dùng (bắt đầu bằng tên ô, nói xem gì trên bản vẽ).
  * `row`: cả dòng không nhận được. `NO_TEXT` (máy không đọc được chữ) cũng là cả dòng: tầng không có căn cứ.
  */
-export const HOUSE_QUESTIONS: ReadonlyMap<string, { scope: HouseQuestionScope; text: string }> = new Map(
+export const HOUSE_QUESTIONS: ReadonlyMap<string, { scope: HouseQuestionScope; text: string | ((question: HouseQuestionInput) => string) }> = new Map(
   Object.entries({
   STOREY_UNSURE: { scope: 'row', text: 'Tầng: máy chưa chắc đây là tầng nào. Xem tên tầng ghi dưới bản vẽ.' },
   STOREY_CONFLICT: { scope: 'row', text: 'Tầng: chữ trên bản vẽ chỉ về hai tầng khác nhau. Xem tên tầng và chọn tầng đúng.' },
-  ORDER_DIFFERS: { scope: 'row', text: 'Thứ tự: máy xếp tầng này khác thứ tự trong dự án. Xem lại thứ tự các tầng.' },
+  ORDER_TEXT_CONFLICT: { scope: 'row', text: orderConflictText },
   NOT_A_PLAN: { scope: 'row', text: 'Bản vẽ: có vẻ không phải mặt bằng. Xem đã gắn đúng bản vẽ cho tầng này chưa.' },
   NO_TEXT: { scope: 'row', text: 'Bản vẽ: máy không đọc được chữ. Xem bản vẽ có rõ không, tải bản rõ hơn nếu cần.' },
   LEVEL_MISSING: { scope: 'elevation', text: 'Cao độ: bản vẽ không ghi cốt tầng này. Xem cốt ở mặt cắt hoặc mặt đứng.' },
@@ -86,7 +104,7 @@ export const HOUSE_QUESTIONS: ReadonlyMap<string, { scope: HouseQuestionScope; t
     scope: 'height',
     text: 'Chiều cao: bản vẽ không ghi cốt tầng trên, máy lấy giá trị thường gặp. Xem cốt ở mặt cắt.',
   },
-  } satisfies Record<string, { scope: HouseQuestionScope; text: string }>),
+  } satisfies Record<string, { scope: HouseQuestionScope; text: string | ((question: HouseQuestionInput) => string) }>),
 );
 
 export interface HouseQuestionsFor {
@@ -96,17 +114,23 @@ export interface HouseQuestionsFor {
 }
 
 /** Câu hỏi chia theo ô; mã lạ bị bỏ và được đếm. Mã lặp chỉ ra một câu. */
-export function questionsOf(codes: readonly string[]): { questionsFor: HouseQuestionsFor; unknownQuestions: number } {
+export function questionsOf(questions: readonly HouseQuestionInput[]): { questionsFor: HouseQuestionsFor; unknownQuestions: number } {
   const known = { row: [] as string[], elevation: [] as string[], height: [] as string[] };
   let unknownQuestions = 0;
 
-  for (const code of new Set(codes)) {
-    const question = HOUSE_QUESTIONS.get(code);
+  const seen = new Set<string>();
+
+  for (const input of questions) {
+    if (seen.has(input.code)) {
+      continue;
+    }
+    seen.add(input.code);
+    const question = HOUSE_QUESTIONS.get(input.code);
 
     if (question === undefined) {
       unknownQuestions += 1;
     } else {
-      known[question.scope].push(question.text);
+      known[question.scope].push(typeof question.text === 'function' ? question.text(input) : question.text);
     }
   }
   return { questionsFor: known, unknownQuestions };

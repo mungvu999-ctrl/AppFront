@@ -191,14 +191,27 @@ describe('chữ của chip', () => {
 
 describe('câu hỏi theo ô', () => {
   it('mỗi mã vào đúng ô; mã lạ bị bỏ và đếm', () => {
-    const { questionsFor, unknownQuestions } = questionsOf(['LEVEL_MISSING', 'HEIGHT_ASSUMED', 'STOREY_UNSURE', 'NEW_CODE', 'NEW_CODE']);
+    const { questionsFor, unknownQuestions } = questionsOf([{ code: 'LEVEL_MISSING' }, { code: 'HEIGHT_ASSUMED' }, { code: 'STOREY_UNSURE' }, { code: 'NEW_CODE' }, { code: 'NEW_CODE' }]);
     expect(questionsFor.elevation).toEqual([expect.stringMatching(/^Cao độ: /)]);
     expect(questionsFor.height).toEqual([expect.stringMatching(/^Chiều cao: .*Xem cốt ở mặt cắt\.$/)]);
     expect(questionsFor.row).toEqual([expect.stringMatching(/^Tầng: /)]);
     expect(unknownQuestions).toBe(1);
-    for (const code of ['STOREY_CONFLICT', 'ORDER_DIFFERS', 'NOT_A_PLAN', 'NO_TEXT']) {
-      expect(questionsOf([code]).questionsFor.row).toHaveLength(1);
+    for (const code of ['STOREY_CONFLICT', 'ORDER_TEXT_CONFLICT', 'NOT_A_PLAN', 'NO_TEXT']) {
+      expect(questionsOf([{ code }]).questionsFor.row).toHaveLength(1);
     }
+  });
+
+  it('ORDER_TEXT_CONFLICT: câu theo lý do; lý do vắng hoặc lạ như tên không có số', () => {
+    const textOf = (question: { code: string; reason?: string; textStoreyNo?: number }) => questionsOf([question]).questionsFor.row[0];
+    const titleNo = 'Thứ tự: tên trên bản vẽ ghi tầng 3, khác vị trí của tầng này trong dự án. Máy giữ thứ tự của dự án. Xem lại thứ tự các tầng hoặc bản vẽ đã gắn.';
+    const titleBare = 'Thứ tự: tên trên bản vẽ không khớp vị trí của tầng này trong dự án. Máy giữ thứ tự của dự án. Xem lại thứ tự các tầng hoặc bản vẽ đã gắn.';
+    const level = 'Thứ tự: cốt ghi trên bản vẽ không khớp vị trí của tầng này trong dự án. Máy giữ thứ tự của dự án. Xem lại thứ tự các tầng hoặc cốt trên bản vẽ.';
+    const code = 'ORDER_TEXT_CONFLICT';
+    expect(textOf({ code, reason: 'title', textStoreyNo: 3 })).toBe(titleNo);
+    expect(textOf({ code, reason: 'title' })).toBe(titleBare);
+    expect(textOf({ code, reason: 'level', textStoreyNo: 3 })).toBe(level);
+    expect(textOf({ code })).toBe(titleBare);
+    expect(textOf({ code, reason: 'lạ', textStoreyNo: 3 })).toBe(titleBare);
   });
 
   it('câu hỏi của chiều cao chỉ chặn chiều cao; câu hỏi cả dòng chặn mọi ô', () => {
@@ -209,7 +222,7 @@ describe('câu hỏi theo ô', () => {
     const elevationOnly = rowOf('F1', STACK, entry('F1', { ...base, questions: [{ code: 'LEVEL_MISSING' }] }));
     expect([elevationOnly.elevation.acceptable, elevationOnly.height.acceptable]).toEqual([false, true]);
 
-    const whole = rowOf('F1', STACK, entry('F1', { ...base, questions: [{ code: 'ORDER_DIFFERS' }] }));
+    const whole = rowOf('F1', STACK, entry('F1', { ...base, questions: [{ code: 'ORDER_TEXT_CONFLICT', reason: 'level' }] }));
     expect([whole.elevation.acceptable, whole.height.acceptable, whole.anyAcceptable]).toEqual([false, false, false]);
     expect(whole.needsLook).toBe(true);
   });
@@ -226,6 +239,8 @@ describe('chữ và tóm tắt', () => {
     expect(storeyTextOf(undefined, 2)).toBe('Chưa rõ tầng');
     expect(storeyTextOf('floor', 2)).toBe('Tầng 2');
     expect(storeyTextOf('basement', undefined)).toBe('Tầng hầm');
+    expect(storeyTextOf('attic', undefined)).toBe('Tầng áp mái');
+    expect(storeyTextOf('tum', undefined)).toBe('Tầng tum');
   });
 
   it('tầng dự án không có đề xuất giữ dòng trống; thứ tự theo dự án', () => {

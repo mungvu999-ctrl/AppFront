@@ -19,7 +19,7 @@ import { z } from 'zod';
 export const HOUSE_VIEW_KINDS = ['plan', 'section', 'elevation', 'roof', 'site', 'detail', 'other'] as const;
 export type HouseViewKind = (typeof HOUSE_VIEW_KINDS)[number];
 
-export const HOUSE_STOREY_LABELS = ['ground', 'basement', 'mezzanine', 'attic', 'roof_terrace', 'floor'] as const;
+export const HOUSE_STOREY_LABELS = ['ground', 'basement', 'mezzanine', 'attic', 'tum', 'roof_terrace', 'floor'] as const;
 export type HouseStoreyLabel = (typeof HOUSE_STOREY_LABELS)[number];
 
 export const HOUSE_LEVEL_SOURCES = ['plan', 'plan+section', 'section', 'dims', 'convention', 'default'] as const;
@@ -28,7 +28,7 @@ export type HouseLevelSource = (typeof HOUSE_LEVEL_SOURCES)[number];
 export const HOUSE_QUESTION_CODES = [
   'STOREY_UNSURE',
   'STOREY_CONFLICT',
-  'ORDER_DIFFERS',
+  'ORDER_TEXT_CONFLICT',
   'LEVEL_MISSING',
   'HEIGHT_ASSUMED',
   'NOT_A_PLAN',
@@ -48,7 +48,12 @@ const optionalConfidence = z.number().min(0).max(1).optional().catch(undefined);
 const confidence = z.number().min(0).max(1).catch(0);
 const optionalText = z.string().optional().catch(undefined);
 
-export const HouseQuestionSchema = z.object({ code: z.string() });
+/** `reason` ("title" | "level") và `textStoreyNo` chỉ có ở `ORDER_TEXT_CONFLICT`; lý do lạ do viewmodel xử lý. */
+export const HouseQuestionSchema = z.object({
+  code: z.string(),
+  reason: optionalText,
+  textStoreyNo: z.number().int().optional().catch(undefined),
+});
 
 export const HouseFloorProposalSchema = z.object({
   floorId: z.string().min(1),

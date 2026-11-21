@@ -1349,7 +1349,7 @@ export const MOCK_HOUSE_PROPOSAL: HouseProposal = {
       heightMm: 3300,
       heightConfidence: 0.4,
       heightSource: 'default',
-      questions: [{ code: 'STOREY_UNSURE' }, { code: 'ORDER_DIFFERS' }, { code: 'HEIGHT_ASSUMED' }],
+      questions: [{ code: 'STOREY_UNSURE' }, { code: 'ORDER_TEXT_CONFLICT', reason: 'title', textStoreyNo: 3 }, { code: 'HEIGHT_ASSUMED' }],
     },
   ],
   runIds: ['run-mock-1', 'run-mock-2', 'run-mock-3', 'run-mock-4'],

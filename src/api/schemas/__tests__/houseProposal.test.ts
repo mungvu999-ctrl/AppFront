@@ -58,6 +58,18 @@ describe('HouseProposal (house-proposal)', () => {
     expect(ok(withFloor({ questions: [{ code: 'BOGUS' }] }))).toBe(true);
   });
 
+  it('câu hỏi nhận reason và textStoreyNo; giá trị hỏng thì bỏ trường, câu hỏi vẫn còn', () => {
+    const question = (q: Record<string, unknown>) => firstFloor({ questions: [q] })?.questions[0];
+    const code = 'ORDER_TEXT_CONFLICT';
+    expect(question({ code, reason: 'title', textStoreyNo: 3 })).toEqual({ code, reason: 'title', textStoreyNo: 3 });
+    expect(question({ code, reason: 'level' })).toEqual({ code, reason: 'level' });
+    expect(question({ code, reason: 'moi' })?.reason).toBe('moi');
+    expect(question({ code, reason: 5 })).toMatchObject({ code, reason: undefined });
+    expect(question({ code, reason: 'title', textStoreyNo: 2.5 })?.textStoreyNo).toBeUndefined();
+    expect(question({ code, reason: 'title', textStoreyNo: 'ba' })).toMatchObject({ code, reason: 'title', textStoreyNo: undefined });
+    expect(ok(withFloor({ storeyLabel: 'tum' }))).toBe(true);
+  });
+
   it('số hỏng chỉ mất số đó, dòng vẫn còn', () => {
     for (const key of ['storeyLabel', 'storeyNo', 'elevationMm', 'elevationConfidence', 'heightMm', 'heightSource']) {
       expect(firstFloor({ [key]: null })?.[key as keyof typeof floor], key).toBeUndefined();
