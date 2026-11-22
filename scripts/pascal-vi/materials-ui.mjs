@@ -381,9 +381,6 @@ export const MATERIALS_UI_VI = {
   [`${UI}controls/material-paint-panel.tsx`]: [
     ['\n          Erase\n', '\n          Tẩy\n'],
     ['\n          Reset all\n', '\n          Đặt lại tất cả\n'],
-    ['\n            Scene materials\n', '\n            Vật liệu trong cảnh\n'],
-    ['aria-label="Add material"', 'aria-label="Thêm vật liệu"'],
-    ['<TooltipContent>Add material</TooltipContent>', '<TooltipContent>Thêm vật liệu</TooltipContent>'],
   ],
   [`${UI}controls/material-picker.tsx`]: [
     [
@@ -406,20 +403,6 @@ export const MATERIALS_UI_VI = {
     ["{ id: 'library', label: 'Library' }", "{ id: 'library', label: 'Thư viện' }"],
     ["{ id: 'community', label: 'Community' }", "{ id: 'community', label: 'Cộng đồng' }"],
     ["{ id: 'mine', label: 'Mine' }", "{ id: 'mine', label: 'Của tôi' }"],
-  ],
-  [`${UI}controls/scene-material-list.tsx`]: [
-    [
-      "Used by {usageCount} {usageCount === 1 ? 'part' : 'parts'}",
-      'Dùng cho {usageCount} phần',
-    ],
-    ['aria-label="Paint with"', 'aria-label="Sơn bằng"'],
-    ['<TooltipContent>Paint with</TooltipContent>', '<TooltipContent>Sơn bằng</TooltipContent>'],
-    ['aria-label="Edit"', 'aria-label="Sửa"'],
-    ['<TooltipContent>Edit</TooltipContent>', '<TooltipContent>Sửa</TooltipContent>'],
-    ['aria-label="Duplicate"', 'aria-label="Nhân bản"'],
-    ['<TooltipContent>Duplicate</TooltipContent>', '<TooltipContent>Nhân bản</TooltipContent>'],
-    ['aria-label="Delete"', 'aria-label="Xoá"'],
-    ['<TooltipContent>Delete</TooltipContent>', '<TooltipContent>Xoá</TooltipContent>'],
   ],
   [`${UI}controls/panel-section.tsx`]: [
     [

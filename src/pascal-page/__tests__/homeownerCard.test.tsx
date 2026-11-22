@@ -261,10 +261,12 @@ describe('HomeownerCard', () => {
     expect(scene.getState().nodes[DOOR_ID]).toMatchObject({ slideDirection: 'right' });
   });
 
-  it('cửa sổ: các kiểu Pascal, chọn "Mở quay 2 cánh" ghi casementStyle french', () => {
+  it('cửa sổ: chỉ các kiểu lưu được, chọn "Mở quay 2 cánh" ghi casementStyle french', () => {
     const { scene, stores } = storesWith([WINDOW_ID]);
     render(<HomeownerCard readOnly={false} stores={stores} />);
-    expect(screen.getByRole('group', { name: 'Kiểu cửa sổ' }).querySelectorAll('button')).toHaveLength(6);
+    expect(screen.getByRole('group', { name: 'Kiểu cửa sổ' }).querySelectorAll('button')).toHaveLength(4);
+    expect(screen.queryByRole('button', { name: 'Mở hất' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Lá sách' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Mở quay 2 cánh' }));
     expect(scene.getState().nodes[WINDOW_ID]).toMatchObject({ windowType: 'casement', casementStyle: 'french' });
   });

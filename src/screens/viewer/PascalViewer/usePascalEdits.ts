@@ -94,8 +94,11 @@ export interface UsePascalEditsOptions {
    * `confirmMassDelete(nodeIds)` rồi cho editor xoá lại đúng các node ấy.
    */
   readonly onMassDelete?: (request: PascalMassDeleteRequest) => void;
-  /** Phần máy chủ chưa nhận của mỗi lượt sửa (`unsavedPascalEdits`, có thể rỗng) — màn báo người dùng. */
-  readonly onUnsaved?: (labels: readonly string[]) => void;
+  /**
+   * Phần máy chủ chưa nhận của mỗi lượt sửa (`unsavedEditsOf`, có thể rỗng). Màn báo người dùng MỖI lần và đặt
+   * `restoredNodes` vào editor: mốc "trước" của lượt sau đã là cảnh sau khi đặt lại.
+   */
+  readonly onUnsaved?: (labels: readonly string[], restoredNodes: Readonly<Record<string, PascalNode>>) => void;
   /** Câu báo sau một lượt đã lưu, vd "Phòng X có vách mới — mở màn Phòng để tách". */
   readonly onNotice?: (message: string) => void;
   readonly actorId?: string;
@@ -460,42 +463,81 @@ const paintUnsaved = (before: Readonly<Record<string, unknown>>, after: Readonly
  * màu cửa, kiểu cửa ngoài từ vựng `swing` (garage, cửa sổ hất…), màu và cỡ đèn trần, màu tự pha. Màu trần,
  * kiểu cửa đơn/đôi/lùa/xếp + hướng mở, xoá đồ tự bày đã lưu được (H4). Màu sàn/tường/đồ và mẫu đồ `/items/…`
  * đã lưu được (W3a, W3b) nên chỉ báo khi tham chiếu mới nằm ngoài luật ghi của `toSpatial`.
- * Lượt sửa ấy vẫn "lưu" phần còn lại (hoặc ra PASCAL_NO_CHANGE), nên phải nói rõ phần nào chưa lưu.
+ * Lượt sửa ấy vẫn lưu phần còn lại (hoặc ra PASCAL_NO_CHANGE), nên phần không lưu được phải đặt về như cũ NGAY
+ * và nói ra: người dùng không được thấy thứ mở lại sẽ mất.
  */
-export function unsavedPascalEdits(previous: PascalScene, next: PascalScene): string[] {
+const unsavedOfNode = (
+  nodeId: string,
+  before: Readonly<Record<string, unknown>>,
+  after: Readonly<Record<string, unknown>>,
+): readonly (readonly [label: string, fields: readonly string[]])[] => {
+  const type = after['type'];
+  const painted = differs(before, after, PAINT_FIELDS);
+
+  if (type === 'ceiling' && painted && paintUnsaved(before, after)) return [['màu trần', PAINT_FIELDS]];
+  if (type === 'slab' && painted && paintUnsaved(before, after)) return [['màu sàn', PAINT_FIELDS]];
+  if (type === 'wall' && painted && paintUnsaved(before, after)) return [['màu tường', PAINT_FIELDS]];
+  if (isGeneratedLightId(nodeId)) {
+    // Đèn trần chỉ nhớ được việc xoá (`Room.dressingOff`).
+    return painted || !sameValue(before['scale'], after['scale']) ? [['màu và cỡ đèn trần', [...PAINT_FIELDS, 'scale']]] : [];
+  }
+  if (type === 'item') {
+    // Mẫu thư viện máy chủ: `src` là URL ký nhưng toSpatial lưu đường `/items/<id>/…` thay vào.
+    const serverModel = isServerModel(String(fieldsOf(after['asset'])['id']));
+    const modelUnsaved = assetSrcOf(before) !== assetSrcOf(after) && !serverModel && !saveableModelSrc(assetSrcOf(after));
+
+    return [
+      ...(painted && paintUnsaved(before, after) ? [['màu đồ đạc', PAINT_FIELDS] as const] : []),
+      ...(modelUnsaved ? [['mẫu đồ đạc', ['asset']] as const] : []),
+    ];
+  }
+  if (type === 'door' || type === 'window') {
+    const kindFields = type === 'door' ? DOOR_FIELDS : WINDOW_FIELDS;
+
+    return [
+      ...(painted ? [['màu cửa', PAINT_FIELDS] as const] : []),
+      ...(differs(before, after, kindFields) && openingKindUnsaved(type, after) ? [['kiểu cửa', kindFields] as const] : []),
+    ];
+  }
+  return [];
+};
+
+export interface UnsavedEdits {
+  readonly labels: readonly string[];
+  /** Node có phần chưa lưu được, các trường ấy đã về như `previous`; phần còn lại của node vẫn là bản mới. */
+  readonly restoredNodes: Readonly<Record<string, PascalNode>>;
+}
+
+export function unsavedEditsOf(previous: PascalScene, next: PascalScene): UnsavedEdits {
   const labels = new Set<string>();
+  const restoredNodes: Record<string, PascalNode> = {};
 
   for (const [nodeId, node] of Object.entries(next.nodes)) {
     const after = fieldsOf(node);
-    const type = after['type'];
     // Đồ mới thêm so với "chưa có gì": khe và mẫu của nó đều là phần sửa.
-    const before = previous.nodes[nodeId] === undefined ? (type === 'item' ? {} : null) : fieldsOf(previous.nodes[nodeId]);
+    // Đèn trần sinh ra quay lại (Ctrl+Z sau khi xoá): không phải món mới mang mẫu lạ, và `scale` ~0 của nó không được xoá đi.
+    const isNewItem = after['type'] === 'item' && !isGeneratedLightId(nodeId);
+    const before = previous.nodes[nodeId] === undefined ? (isNewItem ? {} : null) : fieldsOf(previous.nodes[nodeId]);
 
     if (before === null) continue;
-    const painted = differs(before, after, PAINT_FIELDS);
+    const edits = unsavedOfNode(nodeId, before, after);
 
-    if (type === 'ceiling' && painted && paintUnsaved(before, after)) labels.add('màu trần');
-    else if (type === 'slab' && painted && paintUnsaved(before, after)) labels.add('màu sàn');
-    else if (type === 'wall' && painted && paintUnsaved(before, after)) labels.add('màu tường');
-    else if (isGeneratedLightId(nodeId)) {
-      // Đèn trần chỉ nhớ được việc xoá (`Room.dressingOff`).
-      if (painted || !sameValue(before['scale'], after['scale'])) labels.add('màu và cỡ đèn trần');
-    } else if (type === 'item') {
-      if (painted && paintUnsaved(before, after)) labels.add('màu đồ đạc');
-      // Mẫu thư viện máy chủ: `src` là URL ký nhưng toSpatial lưu đường `/items/<id>/…` thay vào.
-      const serverModel = isServerModel(String(fieldsOf(after['asset'])['id']));
-      if (assetSrcOf(before) !== assetSrcOf(after) && !serverModel && !saveableModelSrc(assetSrcOf(after))) labels.add('mẫu đồ đạc');
-    } else if (type === 'door' || type === 'window') {
-      if (painted) labels.add('màu cửa');
-      const kindFields = type === 'door' ? DOOR_FIELDS : WINDOW_FIELDS;
+    if (edits.length === 0) continue;
+    const restored: Record<string, unknown> = { ...after };
 
-      if (differs(before, after, kindFields) && openingKindUnsaved(type, after)) labels.add('kiểu cửa');
+    for (const [label, fields] of edits) {
+      labels.add(label);
+      // ponytail: đồ MỚI mang mẫu không ghi được không có mẫu cũ để về, nên chỉ được báo; toàn bộ mẫu trong danh mục đều ghi được.
+      for (const field of fields) if (field !== 'asset' || before['asset'] !== undefined) restored[field] = before[field];
     }
+    restoredNodes[nodeId] = restored as unknown as PascalNode;
   }
 
   // Xoá món bày sẵn không nhớ được không tới đây: `blockedGeneratedDeletes` chặn cả lượt.
-  return [...labels];
+  return { labels: [...labels], restoredNodes };
 }
+
+export const unsavedPascalEdits = (previous: PascalScene, next: PascalScene): string[] => [...unsavedEditsOf(previous, next).labels];
 
 export function usePascalEdits({
   spatial,
@@ -718,14 +760,20 @@ export function usePascalEdits({
 
       if (built === null) return false;
 
-      /* Phần máy chủ chưa nhận: báo cả khi phần còn lại lưu được lẫn khi chỉ còn "không có gì để ghi".
-         Gọi cả khi danh sách rỗng (V9): màn dựa vào đó để gỡ câu báo cũ. */
-      if ((built.ok || built.error.code === 'PASCAL_NO_CHANGE') && previous !== null) {
-        onUnsaved?.(unsavedPascalEdits(previous, scene));
-      }
+      /* Phần máy chủ chưa nhận: đặt về như cũ và báo, cả khi phần còn lại lưu được lẫn khi chỉ còn "không có gì để ghi".
+         Mốc đi theo cảnh đã đặt lại, không thì lượt tự lưu sau tính phần đặt lại thành một lượt sửa nữa. */
+      const settleUnsaved = (): void => {
+        if (previous === null) return;
+        const { labels, restoredNodes } = unsavedEditsOf(previous, scene);
+
+        if (labels.length > 0) savedScene.current = { ...scene, nodes: { ...scene.nodes, ...restoredNodes } };
+        onUnsaved?.(labels, restoredNodes);
+      };
 
       if (!built.ok) {
-        if (built.error.code !== 'PASCAL_NO_CHANGE') {
+        if (built.error.code === 'PASCAL_NO_CHANGE') {
+          settleUnsaved();
+        } else {
           onRejected(built.error.reasons[0] ?? PASCAL_REJECTED_FALLBACK);
         }
 
@@ -743,6 +791,7 @@ export function usePascalEdits({
       }
 
       savedScene.current = scene;
+      settleUnsaved();
       confirmedRemoval.current = null;
       acceptedPending.current ||= accepted;
       notices.forEach((message) => onNotice?.(message));
