@@ -21,7 +21,7 @@ import {
 } from './floorManagerGateway';
 import { PROPOSAL_SAMPLE_FLOORS } from './FloorProposalPanel.stories';
 import { metreDraftText, useFloorManager, type ApplyLevelValue } from './useFloorManager';
-import { acceptedKey, MARK_FAILED_MESSAGE, UNSAVED_MESSAGE, useFloorProposals, type HouseProposalApi, type ProposalFloor } from './useFloorProposals';
+import { acceptedKey, MARK_FAILED_MESSAGE, REREAD_FAILED, UNSAVED_MESSAGE, useFloorProposals, type HouseProposalApi, type ProposalFloor } from './useFloorProposals';
 
 const PROJECT_ID = 'project-floor-proposals';
 const GROUND = String(FLOOR_MANAGER_SAMPLE_GROUND_ID);
@@ -472,6 +472,43 @@ describe('useFloorProposals — đánh dấu mặt cắt', () => {
     await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
     await act(async () => mounted.result.current.panel.onToggleSection(ground(mounted)));
     expect(mounted.result.current.panel.message).toBe(MARK_FAILED_MESSAGE);
+  });
+
+  it('dấu đã lưu nhưng đọc lại hỏng: câu báo nói cả hai, bảng chuyển sang dòng lỗi', async () => {
+    const read = vi
+      .fn<HouseProposalApi['houseProposal']['read']>()
+      .mockResolvedValueOnce({ ok: true, data: PROPOSAL })
+      .mockResolvedValue({ ok: false, error: FAILURE });
+    const mounted = mountAlone({ ...apiOf(read), spatial: { patchFloor: okPatch } });
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    await act(async () => mounted.result.current.panel.onToggleSection(ground(mounted)));
+    await waitFor(() => expect(mounted.result.current.panel.busy).toBe(false));
+    expect(mounted.result.current.panel.message).toBe(
+      `Đã đánh dấu Tầng trệt là mặt cắt. Tầng này được ẩn khỏi 3D. ${REREAD_FAILED}`,
+    );
+    expect(mounted.result.current.panel.state).toBe('error');
+  });
+
+  it('rời dự án giữa lượt đánh dấu: đề xuất của dự án cũ bị coi là cũ, quay lại thì đọc lại', async () => {
+    let resolve: () => void = () => undefined;
+    const patchFloor = vi.fn<Patch>(
+      () => new Promise((done) => {
+        resolve = () => done({ ok: true, data: undefined as never });
+      }),
+    );
+    const api = withPatch(patchFloor);
+    const read = vi.spyOn(api.houseProposal, 'read');
+    const mounted = mountAlone(api);
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    act(() => mounted.result.current.panel.onToggleSection(ground(mounted)));
+    await waitFor(() => expect(patchFloor).toHaveBeenCalledTimes(1));
+    mounted.rerender({ projectId: 'prj_other', floors: STATIC_FLOORS });
+    await act(async () => resolve());
+    const readsOfOld = () => read.mock.calls.filter(([args]) => JSON.stringify(args).includes(PROJECT_ID)).length;
+    const before = readsOfOld();
+    mounted.rerender({ projectId: PROJECT_ID, floors: STATIC_FLOORS });
+    await waitFor(() => expect(readsOfOld()).toBe(before + 1));
+    expect(mounted.result.current.panel.message).toBe('');
   });
 
   it('bấm lặp khi đang gửi chỉ gửi một lần', async () => {

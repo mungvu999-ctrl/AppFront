@@ -139,7 +139,8 @@ export function FloorProposalPanel(props: FloorProposalPanelProps) {
         // Trần ~45vh để bảng tầng bên dưới vẫn trong màn khi nhận; tiêu điểm vào dòng khuất thì trình duyệt tự cuộn.
         <div aria-label={SCROLL_LABEL} className="max-h-[45vh] overflow-auto" role="region" tabIndex={0}>
           <p className="pb-1 text-[12px] text-text-secondary">{NOT_VERIFIED_NOTE}</p>
-          <p className="pb-1 text-[12px] text-text-secondary">{SECTION_HINT}</p>
+          {/* Không có quyền sửa thì không có nút để bấm: bỏ câu chỉ tới nút đó. */}
+          {state === 'forbidden' ? null : <p className="pb-1 text-[12px] text-text-secondary">{SECTION_HINT}</p>}
           <table className="w-full table-fixed border-collapse text-left text-[14px]" ref={tableRef}>
             <caption className="sr-only">{CAPTION}</caption>
             <colgroup>

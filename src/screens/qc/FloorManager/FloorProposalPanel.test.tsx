@@ -340,9 +340,10 @@ describe('đánh dấu mặt cắt', () => {
     expect(screen.getByRole('status')).toHaveTextContent(message);
   });
 
-  it('chỉ đọc: không có nút đánh dấu', () => {
+  it('chỉ đọc: không có nút đánh dấu, không có câu chỉ tới nút đó', () => {
     renderState('forbidden');
     expect(screen.queryByRole('button', { name: /mặt cắt/ })).toBeNull();
+    expect(screen.queryByText(/Có bản vẽ mặt cắt\?/)).toBeNull();
   });
 
   it('chỉ còn dòng mặt cắt: vẫn có bảng, nút bỏ dấu và vùng status', () => {

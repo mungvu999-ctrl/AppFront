@@ -103,6 +103,8 @@ const failedMessage = (row: HouseProposalRowVm, field: LevelValueField): string 
 /** Giá trị đã vào màn nhưng một lượt PATCH sau đó hỏng (`apply` trả `false` mà tầng đã mang giá trị nhận). */
 export const UNSAVED_MESSAGE = 'Đã đổi trên màn hình nhưng chưa lưu được lên máy chủ. Thử lưu lại ở bảng tầng.';
 
+/** Dấu đã lưu nhưng đọc lại đề xuất hỏng: bảng chuyển sang dòng lỗi có "Thử lại". */
+export const REREAD_FAILED = 'Chưa đọc lại được đề xuất của máy, bấm “Thử lại”.';
 export const MARK_FAILED_MESSAGE = 'Chưa lưu được lên máy chủ. Thử lại.';
 const markedMessage = (row: HouseProposalRowVm, isSection: boolean): string =>
   isSection
@@ -249,15 +251,20 @@ export function useFloorProposals(
       const isSection = !row.isSection;
       const isLive = () => liveRef.current.mounted && liveRef.current.projectId === startedFor;
       let ok = false;
+      let reread = true;
 
       try {
         const spatial = (await loadClient(api ?? undefined)).spatial;
         ok = spatial !== undefined && (await spatial.patchFloor({ body: { isSection }, floorId: row.floorId, projectId })).ok;
-        if (ok && isLive()) {
-          // BE đổi `hiddenIn3d` theo dấu: đọc lại cả danh sách tầng lẫn đề xuất. Giữ khoá tới khi dòng
-          // đã đổi, kẻo bấm lại gửi đúng giá trị vừa gửi.
-          applyInvalidation(queryClient, 'editFloor', { floorId: row.floorId, projectId });
-          await refetch();
+        if (ok) {
+          // BE đổi `hiddenIn3d` theo dấu: danh sách tầng lẫn đề xuất của dự án đã ghi đều cũ, kể cả khi người
+          // dùng đã rời dự án đó. Còn ở đây thì đọc lại ngay và giữ khoá tới khi dòng đã đổi, kẻo bấm lại gửi
+          // đúng giá trị vừa gửi.
+          applyInvalidation(queryClient, 'editFloor', { floorId: row.floorId, projectId: startedFor });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.project.houseProposal(startedFor), refetchType: 'none' });
+          if (isLive()) {
+            reread = !(await refetch()).isError;
+          }
         }
       } catch {
         ok = false;
@@ -276,7 +283,7 @@ export function useFloorProposals(
       setSession((previous) => ({
         ...(previous.projectId === startedFor ? previous : freshSession(startedFor)),
         marked: true,
-        message: ok ? markedMessage(row, isSection) : MARK_FAILED_MESSAGE,
+        message: !ok ? MARK_FAILED_MESSAGE : reread ? markedMessage(row, isSection) : `${markedMessage(row, isSection)} ${REREAD_FAILED}`,
       }));
     },
     [api, projectId, queryClient, refetch],
