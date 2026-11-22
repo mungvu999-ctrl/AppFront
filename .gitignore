@@ -117,3 +117,6 @@ public/models/
 
 # Kho pnpm cuc bo sinh ra khi cai dat trong container linux
 .pnpm-store/
+
+# Kết quả bộ đo `scripts/perf/` (L7-03) — số đo cục bộ, không commit.
+perf-runs/

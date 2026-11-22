@@ -24,6 +24,8 @@ import { LIBRARY_FALLBACK_NOTICE, libraryReadFailed, type LibrarySource } from '
 import { readSceneStyle, type SceneStyle, type SceneStyleId } from '@/lib/pascal/sceneStyles';
 import { toPascalId } from '@/lib/pascal/ids';
 import { createRepairSession, sessionRepairs } from '@/lib/pascal/sceneRepair';
+import { beginSpan, endSpan, timeSpan } from '@pascal-app/viewer';
+
 import { standardSceneOf } from '@/lib/pascal/sceneStandard';
 import type { PascalNode, PascalNodeId, PascalScene } from '@/lib/pascal/types';
 import { ROUTES } from '@/routes/paths';
@@ -503,23 +505,27 @@ export function usePascalProjectBridge(
     }),
     [style, additions, furnish],
   );
-  const sceneFromStore = useCallback((reason = 'build'): PascalScene | null => {
-    const stored = storedGraph();
+  const sceneFromStore = useCallback((reason = 'build'): PascalScene | null => timeSpan('scene:derive', () => {
+    const stored = timeSpan('scene:storedGraph', storedGraph);
     if (stored === null) return null;
 
     /* Sửa cảnh cho đồ AI chưa xác nhận: chỉ trên đồ thị trao cho cảnh, kho giữ bản gốc nên tự lưu ghi đúng dữ liệu
        gốc; lượt sửa sau chỉ ghi node người dùng đụng (chênh với mốc = cảnh editor sau lượt dựng gần nhất). */
-    const { graph, repairs } = sceneRepairStore.get().enabled ? sessionRepairs(repairSession.current, stored) : { graph: stored, repairs: [] };
+    const { graph, repairs } = sceneRepairStore.get().enabled
+      ? timeSpan('scene:sessionRepairs', () => sessionRepairs(repairSession.current, stored))
+      : { graph: stored, repairs: [] };
     // Hợp đồng lớp cảnh dẫn xuất v1 (`sceneLayer.ts`): mọi đường vào dùng `standardSceneOf`; sửa cảnh ghi lên node (`fields.repair`).
     // Đồ AI bổ sung (AID-01) và chế độ tự bày dự phòng đi cùng phong cách: chốt một lần mỗi lượt
     // mở trang, mọi lượt dựng dùng chung, không thì "sửa ma".
     const options = sceneOptions();
     const raw = !sceneRepairStore.get().enabled;
-    const { scene, layer } = standardSceneOf(graph, {
-      ...options,
-      raw,
-      repairs: new Map(repairs.map((r) => [r.furnitureId, r])),
-    });
+    const { scene, layer } = timeSpan('scene:standard', () =>
+      standardSceneOf(graph, {
+        ...options,
+        raw,
+        repairs: new Map(repairs.map((r) => [r.furnitureId, r])),
+      }),
+    );
     sceneRepairStore.set({ repairs, session: repairSession.current, layer });
     const built = markNotBuilt(scene, missingFloors.current);
     if (sceneTrace.enabled) {
@@ -538,15 +544,15 @@ export function usePascalProjectBridge(
     }
 
     return built;
-  }, [sceneOptions, storedGraph]);
+  }), [sceneOptions, storedGraph]);
 
   /** Sửa cảnh của kho hiện tại khác danh sách lượt dựng gần nhất đã áp → cảnh editor phải dựng lại. */
-  const repairsStale = useCallback((): boolean => {
+  const repairsStale = useCallback((): boolean => timeSpan('save:repairsStale', () => {
     const stored = storedGraph();
     if (stored === null) return false;
     const next = sceneRepairStore.get().enabled ? sessionRepairs(repairSession.current, stored).repairs : [];
     return JSON.stringify(next) !== JSON.stringify(sceneRepairStore.get().repairs);
-  }, [storedGraph]);
+  }), [storedGraph]);
 
   /** Node của món đã đụng ở dữ liệu trước khi đụng (đích hoàn tác về một vị trí đã sửa cảnh); dựng lười, chỉ khi cần. */
   const touchedTargetOf = useCallback(
@@ -598,18 +604,20 @@ export function usePascalProjectBridge(
   /* `applyScene` đổi đúng phần chênh (main.tsx), không dựng lại cả mô hình. */
   const revertToStore = useCallback(() => {
     const restored = sceneFromStore('revert');
-    if (restored !== null) applyScene?.(restored);
+    if (restored !== null) timeSpan('scene:applyScene', () => applyScene?.(restored));
   }, [applyScene, sceneFromStore]);
 
   /* Dựng lại cảnh từ kho (không bước hoàn tác) rồi lấy cảnh editor SAU khi dựng (đã điền mặc định) làm mốc — cả mốc
      lượt sửa kế (`rebaseOnRebuilt`) lẫn mốc nạp (đồ sinh rời so với nó, `editedLooseNodeIds`): bản dựng không phải sửa. */
-  const rebuildFromStore = useCallback(() => {
+  const rebuildFromStore = useCallback(() => timeSpan('save:rebuildFromStore', () => {
     revertToStore();
-    const rebuilt = editorScene?.();
+    const rebuilt = timeSpan('scene:editorScene', () => editorScene?.());
     if (rebuilt === undefined) return;
-    rebaseOnRebuilt(rebuilt as PascalScene);
-    rebaseLoaded(rebuilt);
-  }, [editorScene, rebaseLoaded, rebaseOnRebuilt, revertToStore]);
+    timeSpan('scene:rebase', () => {
+      rebaseOnRebuilt(rebuilt as PascalScene);
+      rebaseLoaded(rebuilt);
+    });
+  }), [editorScene, rebaseLoaded, rebaseOnRebuilt, revertToStore]);
 
   /* "Hiện dữ liệu gốc" (chip lỗi đặt đồ) bật/tắt sửa cảnh: dựng lại từ kho, như lượt nhận gợi ý — đổi hiển thị không
      phải lượt sửa, không được ghi vị trí nào về máy chủ. */
@@ -632,6 +640,7 @@ export function usePascalProjectBridge(
       rejection.current = null;
       massDeleteRef.current = null;
       pendingScene.current = scene;
+      const saveSpan = beginSpan('save:onSave');
       // Chạy cổng trước (phán quyết nhớ theo cảnh, `onSceneCommit` dùng lại): xoá nhiều → `onMassDelete` mở hộp hỏi.
       validateCommit(scene);
       const pending = onSceneCommit(scene).then(async (ok) => {
@@ -660,7 +669,11 @@ export function usePascalProjectBridge(
         if (autosave.getState() === 'failed') throw new Error(BRIDGE_SAVE_FAILED);
       });
       lastSave = pending;
-      await pending;
+      try {
+        await pending;
+      } finally {
+        endSpan(saveSpan);
+      }
     },
     [autosave, isFloorBlocked, onSceneCommit, readOnly, rebuildFromStore, repairsStale, revertToStore, takeSuggestionAccepted, touchedTargetOf, validateCommit],
   );
