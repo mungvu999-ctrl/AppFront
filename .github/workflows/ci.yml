@@ -25,7 +25,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Bốn cổng, đúng các bước của `pnpm verify`. Job e2e `visual` đã bỏ (02/11/2026): bộ e2e là test
-# của từng đợt làm việc, chạy tại máy bằng `pnpm e2e`, không phải cổng merge.
+# của từng đợt làm việc, chạy tại máy bằng `pnpm e2e`, không phải cổng merge. Ngoại lệ là hai job e2e nhỏ:
+# `e2e-stability` (hai spec Pascal) và `e2e-smoke` (K-53: vỏ app + bảng route + luồng F1 tải → duyệt → xuất;
+# xem khối chú thích trên job đó). `test-pascal` (bun test bốn gói vendor) chạy để HIỆN đỏ/xanh, `continue-on-error`,
+# chưa phải cổng.
 #
 # KHÔNG cổng nào `needs:` cổng nào. Đây là lựa chọn, không phải thiếu sót.
 #
@@ -235,3 +238,63 @@ jobs:
             test-results/
           if-no-files-found: ignore
           retention-days: 3
+
+  # K-53: cổng e2e nhỏ cho luồng F1 (tải bản vẽ → duyệt → xuất), trên máy chủ giả như `e2e-stability`.
+  # Spec: `smoke.spec.ts` (vỏ app) · `smoke-grid.spec.ts` (bảng route: mọi màn mở được, không trắng, không lỗi
+  # console) · `v4v5/upload.spec.ts` (tải) · `v4v5/quality.spec.ts` (duyệt chất lượng) · `v12a/export.spec.ts` (xuất).
+  # `--grep-invert` loại 4 bài ĐANG ĐỎ trên master tại máy (đo 22/11/2026, đỏ cả khi chạy riêng, không phải chập chờn):
+  #   - smoke-grid `projectScale`, `projectRooms` — màn không thấy heading kỳ vọng (vd "Duyệt phòng");
+  #   - upload `U03:` — không có nút "Bắt đầu xử lý" trong tình huống tầng trống;
+  #   - export `… .glb thì tệp tải về` — không nhận sự kiện download trong 20 s (cần WebGL để dựng GLB).
+  # Mỗi bài là nợ sửa riêng — bỏ khỏi `--grep-invert` khi đã xanh. Không dùng `.skip` trong spec (R-46).
+  # Đo tại máy (22/11/2026, 52 bài, 2 worker, retries=1, fail-on-flaky): 4/4 lượt ấm xanh, 61-66 s mỗi lượt (lượt đầu
+  # lạnh đỏ 2 bài login vì máy chủ dev chưa ấm; `run-playwright.mjs` có bước làm ấm nên CI không gặp).
+  # Chưa là check bắt buộc (K-52): chờ 7 ngày xanh liên tiếp trên master.
+  e2e-smoke:
+    runs-on: ubuntu-24.04
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          version: 9
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chrome
+      - run: pnpm e2e e2e/smoke.spec.ts e2e/smoke-grid.spec.ts e2e/v4v5/upload.spec.ts e2e/v4v5/quality.spec.ts e2e/v12a/export.spec.ts --workers=2 --retries=1 --grep-invert "projectScale|projectRooms|U03:|glb thì"
+        env:
+          E2E_PORT: '5192'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: playwright-report-smoke
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 3
+
+  # K-53: `bun test` bốn gói vendor Pascal (core, viewer, nodes, editor). `pnpm verify` không gọi script này.
+  # `continue-on-error: true`: chỉ để thấy đỏ/xanh trên mỗi lượt, KHÔNG chặn (chưa biết bốn gói có xanh không — nếu
+  # đỏ liên tục thì sửa hoặc bỏ, đừng để thành tín hiệu bị lờ). `oven-sh/setup-bun` ghim SHA (v2.2.0).
+  test-pascal:
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          version: 9
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:pascal
