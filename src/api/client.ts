@@ -1368,8 +1368,7 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
   houseProposal: {
     read: async ({ projectId, signal }) => {
       const result = await callGet<unknown>(http, ENDPOINTS.houseProposal(projectId), signal);
-      // Máy chủ chưa có đường (404) = tính năng tắt, như `enabled: false`.
-      if (!result.ok && result.error.status === 404) return { ok: true, data: null };
+      // L4-N04: công tắc tắt là 200 `enabled: false`; 404 (mất quyền, dự án đã xoá) là lỗi thật.
       const decoded = decodeSingle(
         result,
         HouseProposalSchema,

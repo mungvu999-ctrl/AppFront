@@ -50,7 +50,7 @@ describe('houseProposal.read', () => {
     }
   });
 
-  it('HttpClient thật: 404 (máy chủ chưa có đường) → null sau đúng một lần gọi; 500 → lỗi', async () => {
+  it('HttpClient thật: 404 (mất quyền, dự án đã xoá) và 500 → lỗi sau đúng một lần gọi (L4-N04)', async () => {
     const realClient = (status: number) => {
       const fetchImpl = vi.fn(
         async () =>
@@ -63,7 +63,9 @@ describe('houseProposal.read', () => {
     };
 
     const missing = realClient(404);
-    expect(await missing.api.houseProposal.read({ projectId: 'proj-1' })).toEqual({ ok: true, data: null });
+    const result = await missing.api.houseProposal.read({ projectId: 'proj-1' });
+    expect(result.ok).toBe(false);
+    expect(!result.ok && 'status' in result.error ? result.error.status : undefined).toBe(404);
     expect(missing.fetchImpl).toHaveBeenCalledTimes(1);
 
     expect((await realClient(500).api.houseProposal.read({ projectId: 'proj-1' })).ok).toBe(false);

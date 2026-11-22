@@ -142,7 +142,7 @@ export const ENDPOINTS = {
   },
   /** N47, N48 — AI chọn phong cách nội thất: đọc trạng thái (GET), chọn kiểu / quay về đề xuất (POST). */
   designConcept: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}/design-concept`,
-  /** Mức 3 — đề xuất số tầng, cốt, chiều cao cho cả nhà (GET, chỉ đọc; tính năng tắt → `enabled: false`, chưa có đường → 404; client đổi cả hai thành `null`). */
+  /** Mức 3 — đề xuất số tầng, cốt, chiều cao cho cả nhà (GET, chỉ đọc; tính năng tắt → `enabled: false`, client đổi thành `null`; 404 là lỗi thường, L4-N04). */
   houseProposal: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}/house-proposal`,
   /** N42–N44 — nướng ánh sáng: gửi GLB, đọc lượt mới nhất, tải một trong ba tệp kết quả. */
   lightingBakes: {
