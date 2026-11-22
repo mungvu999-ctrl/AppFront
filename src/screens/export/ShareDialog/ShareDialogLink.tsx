@@ -1,14 +1,10 @@
 /**
  * Mục 2 — tạo liên kết chia sẻ, và danh sách liên kết đang hoạt động.
  *
- * `Select` quyền truy cập chỉ hai mức (chỉ xem · góp ý) — `shareLink.ts` không biết gì
- * hơn `SharePermission`, nên "phạm vi ba mức" của đặc tả gốc không có ở đây (chú thích
- * đầu `types.ts`, khoản 2). Mật khẩu chỉ có ô nhập TRƯỚC khi tạo; sau khi lưu,
- * `ShareLink` không mang mật khẩu dạng rõ nữa nên hàng liên kết chỉ hiện dấu hiệu
- * "có mật khẩu" từ `row.passwordProtected` — không có đường nào để hiện lại được.
- *
- * Danh mục quyền/hạn dùng đến từ `model.form.permissionOptions`/`expiryChoices`, không
- * hardcode ở đây: nếu view tự khai danh mục thì id sẽ lệch với hook vào lúc không ai để ý.
+ * Liên kết mới luôn là "chỉ xem": quyền "góp ý" không có giao diện hay đường ghi nào ở
+ * trang chia sẻ nên không được chào mời. Liên kết cũ mang quyền ấy vẫn hiện đúng nhãn
+ * trong danh sách. Không có mật khẩu: máy chủ chưa kiểm mật khẩu nên không hứa gì về nó.
+ * Hạn dùng đến từ `model.form.expiryChoices`, không hardcode ở đây.
  */
 
 import { Check, Copy } from 'lucide-react';
@@ -16,9 +12,7 @@ import { Check, Copy } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
-import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
-import { Toggle } from '@/components/ui/Toggle';
 
 import type { ShareDialogActions, ShareLinkFormModel, ShareLinkRowModel } from './types';
 
@@ -27,18 +21,10 @@ export interface ShareDialogLinkProps {
   readonly rows: readonly ShareLinkRowModel[];
   readonly canCreateLink: boolean;
   readonly noPermissionReason: string | null;
-  readonly staleLinkNotice: string | null;
   readonly copiedTargetId: string | null;
   readonly actions: Pick<
     ShareDialogActions,
-    | 'setPermission'
-    | 'setExpiryChoice'
-    | 'setPasswordEnabled'
-    | 'setPassword'
-    | 'setIncludeViewpoint'
-    | 'createLink'
-    | 'revokeLink'
-    | 'copyLink'
+    'setExpiryChoice' | 'createLink' | 'revokeLink' | 'copyLink'
   >;
 }
 
@@ -67,7 +53,6 @@ function LinkRow({ row, isCopied, onCopy, onRevoke }: LinkRowProps) {
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant={row.tone}>{row.statusLabel}</Badge>
         <Badge variant="neutral">{row.permissionLabel}</Badge>
-        {row.passwordProtected && <Badge variant="neutral">Có mật khẩu</Badge>}
         <span className="ml-auto text-xs text-text-secondary">{row.expiryText}</span>
       </div>
 
@@ -96,22 +81,10 @@ export function ShareDialogLink({
   rows,
   canCreateLink,
   noPermissionReason,
-  staleLinkNotice,
   copiedTargetId,
   actions,
 }: ShareDialogLinkProps) {
-  const permissionSelectOptions = form.permissionOptions.map((option) => ({
-    label: option.label,
-    value: option.id,
-  }));
   const expirySelectOptions = form.expiryChoices.map((option) => ({ label: option.label, value: option.id }));
-
-  const handlePermissionChange = (value: string) => {
-    const option = form.permissionOptions.find((candidate) => candidate.id === value);
-    if (option) {
-      actions.setPermission(option.id);
-    }
-  };
 
   return (
     <section aria-label="Liên kết chia sẻ" className="flex flex-col gap-3">
@@ -121,15 +94,7 @@ export function ShareDialogLink({
         <p className="text-xs text-text-secondary">{noPermissionReason}</p>
       ) : (
         <div className="flex flex-col gap-3 rounded-lg border border-border-default p-3">
-          <div className="flex flex-col gap-1">
-            <Select
-              label="Quyền truy cập"
-              options={permissionSelectOptions}
-              value={form.permission}
-              onChange={handlePermissionChange}
-            />
-            <FieldError message={form.problems.permission} />
-          </div>
+          <p className="text-xs text-text-secondary">Người có liên kết chỉ xem được bản vẽ, không sửa được.</p>
 
           <div className="flex flex-col gap-1">
             <Select
@@ -139,36 +104,6 @@ export function ShareDialogLink({
               onChange={actions.setExpiryChoice}
             />
             <FieldError message={form.problems.expiresAt} />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Toggle
-              label="Yêu cầu mật khẩu"
-              description="Người xem phải nhập đúng mật khẩu trước khi mở liên kết."
-              checked={form.passwordEnabled}
-              onChange={actions.setPasswordEnabled}
-            />
-            {form.passwordEnabled && (
-              <Input
-                type="password"
-                label="Mật khẩu"
-                value={form.password}
-                error={form.problems.password}
-                onChange={(event) => {
-                  actions.setPassword(event.target.value);
-                }}
-              />
-            )}
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <Toggle
-              label="Kèm góc nhìn hiện tại"
-              description="Liên kết mở đúng vị trí đang xem, thay vì góc nhìn mặc định của tầng."
-              checked={form.includeViewpoint}
-              onChange={actions.setIncludeViewpoint}
-            />
-            <FieldError message={form.problems.viewpoint} />
           </div>
 
           <Button
@@ -181,8 +116,6 @@ export function ShareDialogLink({
           </Button>
         </div>
       )}
-
-      {staleLinkNotice !== null && <p className="text-xs text-state-attention-text">{staleLinkNotice}</p>}
 
       {rows.length > 0 && (
         <ul className="flex flex-col gap-2">

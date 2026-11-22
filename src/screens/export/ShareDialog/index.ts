@@ -30,11 +30,7 @@ export { ShareDialogContainer } from './ShareDialog.container';
 
 export { useShareDialog } from './useShareDialog';
 
-export { EMBED_COPY_TARGET_ID } from './types';
 export type {
-  EmbedEditableKey,
-  EmbedSectionModel,
-  EmbedSizePreset,
   MemberRowModel,
   ShareDialogActions,
   ShareDialogContainerProps,

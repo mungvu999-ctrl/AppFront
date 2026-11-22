@@ -9,10 +9,7 @@
  * | `rows[].url` | `shareLinkUrl(link)` — hook **không nối chuỗi URL** |
  * | `rows[].expiryText` | `describeShareLinkExpiry(link, now)` (P-02) |
  * | `rows[].statusLabel` | `SHARE_LINK_STATUS_LABELS` |
- * | `embed.code` | `buildEmbedCode` — hook **không nối thẻ iframe** |
- * | `embed.view` | `resolveEmbedView(params)` — TĨNH, **không nạp three** |
  * | `savedAtLabel` | `formatClockTime` (A15: hook không tự định dạng giờ) |
- * | `params.viewpointCode` | `encodeViewpoint(viewpoint)` (R-08) |
  *
  * ## Trạng thái máy chủ đi bằng `useQuery`/`useMutation` (R-64)
  *
@@ -30,34 +27,17 @@
  * nào của chia sẻ, và `src/lib/query` nằm ngoài phạm vi sửa (R-68). Nên hai lượt
  * ghi gọi thẳng `invalidateQueries` trên đúng khoá của mình.
  *
- * ## `embed.code` và `embed.view` luôn nói cùng một chuyện
  *
- * Cả hai dựng từ **cùng một** `EmbedParams` trong cùng một `useMemo` phụ thuộc:
- * đổi một khoá nhúng là cả hai tính lại cùng lúc. Đây là tiêu chí nghiệm thu, và
- * cách duy nhất giữ nó là không để hai đường dựng riêng — vì thế `embed.code` đi
- * qua `buildEmbedCode({ url, params, … })` chứ không qua `shareLinkEmbedCode`,
- * thứ trộn thêm `viewpointCode` của chính liên kết vào và có thể lệch khỏi
- * `params` mà khung xem trước đang vẽ.
+ * ## Không còn nhúng, mật khẩu, góc nhìn, quyền góp ý
  *
- * ## Bốn thứ đặc tả đòi mà hộp thoại này không có
- *
- * Mời người, phạm vi liên kết, ba công tắc quyền năng nhúng và hai công tắc
- * bảng — xem phần đầu `types.ts`. Không cái nào có chỗ nối ở tầng logic, nên
- * không cái nào có mặt ở đây dưới dạng một `TODO` hay một cờ luôn `false`.
+ * Máy chủ và trang chia sẻ không làm gì với bốn thứ đó, nên hộp thoại không chào mời chúng
+ * (xem phần đầu `types.ts`). Liên kết mới luôn gửi quyền `view`, không mật khẩu, không góc nhìn.
  */
 
-import { lowerFirst } from '@/lib/format/sentence';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import type { LevelId } from '@/domain/spatial/types';
 import type { ShareExpiryChoice } from '@/hooks/useShareLinks';
-import type { ColoringModeId } from '@/lib/coloring/modes';
-import {
-  buildEmbedCode,
-  resolveEmbedView,
-  type EmbedParams,
-} from '@/lib/export/embedParams';
 import {
   createShareLink,
   describeShareLinkExpiry,
@@ -72,35 +52,21 @@ import {
   type ShareLink,
   type ShareLinkRequestField,
   type ShareLinkStatus,
-  type SharePermission,
 } from '@/lib/export/shareLink';
 import { formatClockTime } from '@/lib/format/datetime';
-import { MOTION_DURATIONS_MS } from '@/lib/motion/tokens';
-import { createUndoTicket } from '@/lib/mutations/undoTicket';
 import type { SevenState } from '@/lib/testing/sevenStateScenarios';
-import { encodeViewpoint } from '@/lib/three/camera/viewpointCodec';
-import { useStore } from '@/store';
 
 import {
-  COLORING_OPTIONS,
-  DEFAULT_EMBED_SIZE_PRESET_ID,
   DEFAULT_SHARE_EXPIRY_CHOICE,
-  EMBED_SIZE_PRESETS,
   expiryDateFor,
-  INITIAL_EMBED_PARAMS,
-  matchEmbedSizePreset,
   MEMBERS_READ_ONLY_REASON,
   readShareLinkPermission,
   SHARE_EXPIRY_OPTIONS,
   SHARE_FORBIDDEN_REASON,
-  SHARE_PERMISSION_OPTIONS,
   shareLinksQueryKey,
   toExpiryChoice,
-  toLevelOptions,
 } from './shareDialogGateway';
-import { EMBED_COPY_TARGET_ID } from './types';
 import type {
-  EmbedEditableKey,
   MemberRowModel,
   ShareDialogActions,
   ShareDialogModel,
@@ -123,9 +89,6 @@ import type {
  */
 const COPY_FLASH_MS = 700;
 
-/** Dưới mức này thì khung xem trước rời khỏi màn — trạng thái thứ bảy. */
-const COLLAPSED_MEDIA_QUERY = '(width < 1280px)';
-
 /** Ba màu trạng thái, đúng ba (A4). */
 const TONE_BY_STATUS: Readonly<Record<ShareLinkStatus, ShareLinkRowModel['tone']>> = {
   /**
@@ -142,43 +105,6 @@ const TONE_BY_STATUS: Readonly<Record<ShareLinkStatus, ShareLinkRowModel['tone']
 
 const EMPTY_MEMBERS: readonly MemberRowModel[] = Object.freeze([]);
 const EMPTY_LINKS: readonly ShareLink[] = Object.freeze([]);
-
-/** Câu nhắc khi đổi khoá nhúng làm liên kết đã tạo không còn khớp. */
-const STALE_LINK_NOTICE =
-  'Các liên kết đã tạo vẫn mở theo tuỳ chọn nhúng cũ; tạo một liên kết mới để dùng tuỳ chọn vừa đổi';
-
-/* -------------------------------------------------------------------------- */
-/* Bề ngang màn — trạng thái thứ bảy                                          */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Màn có đang hẹp hơn 1280 không.
- *
- * Dựng riêng thay vì gọi `useAppShell()`: hook đó đọc và ghi `localStorage` cho
- * hai bảng bên của vỏ ứng dụng, thứ một hộp thoại không có việc gì phải chạm.
- * Chuỗi truy vấn giữ đúng mức `useAppShell.ts:73` đang dùng, nên hai nơi lật
- * cùng một lúc.
- */
-function useIsCollapsed(): boolean {
-  const [collapsed, setCollapsed] = useState(
-    () => globalThis.matchMedia?.(COLLAPSED_MEDIA_QUERY).matches ?? false,
-  );
-
-  useEffect(() => {
-    const media = globalThis.matchMedia?.(COLLAPSED_MEDIA_QUERY);
-    if (media === undefined) {
-      return;
-    }
-
-    setCollapsed(media.matches);
-    const listen = (event: MediaQueryListEvent): void => setCollapsed(event.matches);
-    media.addEventListener('change', listen);
-
-    return () => media.removeEventListener('change', listen);
-  }, []);
-
-  return collapsed;
-}
 
 /* -------------------------------------------------------------------------- */
 /* Dấu chớp tắt                                                               */
@@ -262,7 +188,6 @@ function writeToClipboard(value: string): Promise<void> {
  */
 export function useShareDialog(options: UseShareDialogOptions): ShareDialogResult {
   const { gateway, projectId, roles } = options;
-  const viewpoint = options.viewpoint ?? null;
   const members = options.members ?? EMPTY_MEMBERS;
   const { onToast, onDismiss, copyToClipboard } = options;
 
@@ -270,8 +195,6 @@ export function useShareDialog(options: UseShareDialogOptions): ShareDialogResul
   const readNow = useCallback((): Date => nowFn?.() ?? new Date(), [nowFn]);
 
   const queryClient = useQueryClient();
-  const isCollapsed = useIsCollapsed();
-  const levels = useStore((state) => state.floors);
 
   /* ---------------------------------------------------------------------- */
   /* Quyền                                                                   */
@@ -288,29 +211,11 @@ export function useShareDialog(options: UseShareDialogOptions): ShareDialogResul
   /* Lựa chọn của người dùng — thứ duy nhất `useState` giữ                   */
   /* ---------------------------------------------------------------------- */
 
-  const [permission, setPermissionState] = useState<SharePermission>('view');
   const [expiryChoice, setExpiryChoice] = useState<ShareExpiryChoice>(DEFAULT_SHARE_EXPIRY_CHOICE);
-  const [passwordEnabled, setPasswordEnabledState] = useState(false);
-  const [password, setPassword] = useState('');
-  const [includeViewpoint, setIncludeViewpoint] = useState(false);
-
-  const [embedDraft, setEmbedDraft] = useState<EmbedParams>(INITIAL_EMBED_PARAMS);
-  const [widthPx, setWidthPx] = useState(
-    () => EMBED_SIZE_PRESETS.find((preset) => preset.id === DEFAULT_EMBED_SIZE_PRESET_ID)?.widthPx ?? 0,
-  );
-  const [heightPx, setHeightPx] = useState(
-    () =>
-      EMBED_SIZE_PRESETS.find((preset) => preset.id === DEFAULT_EMBED_SIZE_PRESET_ID)?.heightPx ?? 0,
-  );
-
   const [savedAtMs, setSavedAtMs] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [staleLinkNotice, setStaleLinkNotice] = useState<string | null>(null);
   const [pendingRevokeId, setPendingRevokeId] = useState<string | null>(null);
 
-  const [recentlyChangedKey, flashEmbedKey] = useFlash<EmbedEditableKey>(
-    MOTION_DURATIONS_MS.standard,
-  );
   const [copiedTargetId, flashCopied] = useFlash<string>(COPY_FLASH_MS);
 
   /* ---------------------------------------------------------------------- */
@@ -335,55 +240,6 @@ export function useShareDialog(options: UseShareDialogOptions): ShareDialogResul
   const links = listQuery.data ?? EMPTY_LINKS;
   const activeLinks = useMemo(() => selectActiveShareLinks(links), [links]);
 
-  /**
-   * Liên kết mà mã nhúng nói về.
-   *
-   * Liên kết còn dùng được mới nhất; không có cái nào thì không có mã nhúng để
-   * chép, và mục nhúng rời khỏi màn thay vì hiện một khung `<iframe>` trỏ vào
-   * hư không.
-   */
-  const embedLink = activeLinks[activeLinks.length - 1] ?? null;
-
-  /* ---------------------------------------------------------------------- */
-  /* Khoá nhúng — `code` và `view` dựng từ CÙNG một `EmbedParams`            */
-  /* ---------------------------------------------------------------------- */
-
-  /**
-   * Mã góc nhìn, hoặc `null`.
-   *
-   * `encodeViewpoint` ném `RangeError` với một góc nhìn không đặt vào liên kết
-   * được (toạ độ `NaN`, mô hình xa vô lý, mã tầng không mã hoá được). Bắt lại và
-   * bỏ mã đi là đúng ở **khung xem trước**; lượt tạo liên kết thì không im lặng
-   * như vậy — `createShareLink` gọi lại `encodeViewpoint` và trả về một câu lỗi
-   * ở trường `viewpoint` thay vì gửi một liên kết mở sai chỗ.
-   */
-  const viewpointCode = useMemo<string | null>(() => {
-    if (!includeViewpoint || viewpoint === null) {
-      return null;
-    }
-
-    try {
-      return encodeViewpoint(viewpoint);
-    } catch {
-      return null;
-    }
-  }, [includeViewpoint, viewpoint]);
-
-  const embedParams = useMemo<EmbedParams>(
-    () => ({ ...embedDraft, viewpointCode }),
-    [embedDraft, viewpointCode],
-  );
-
-  const embedView = useMemo(() => resolveEmbedView(embedParams), [embedParams]);
-
-  const embedCode = useMemo(
-    () =>
-      embedLink === null
-        ? ''
-        : buildEmbedCode({ url: embedLink.url, params: embedParams, widthPx, heightPx }),
-    [embedLink, embedParams, widthPx, heightPx],
-  );
-
   /* ---------------------------------------------------------------------- */
   /* Form                                                                    */
   /* ---------------------------------------------------------------------- */
@@ -391,14 +247,11 @@ export function useShareDialog(options: UseShareDialogOptions): ShareDialogResul
   const buildRequest = useCallback(
     (now: Date): CreateShareLinkRequest => ({
       projectId,
-      permission,
+      permission: 'view',
       expiresAt: expiryDateFor(expiryChoice, now),
-      ...(passwordEnabled ? { password } : {}),
-      viewpoint: includeViewpoint ? viewpoint : null,
-      embed: embedParams,
       now,
     }),
-    [projectId, permission, expiryChoice, passwordEnabled, password, includeViewpoint, viewpoint, embedParams],
+    [projectId, expiryChoice],
   );
 
   const problems = useMemo(() => toProblemMap(buildRequest(readNow())), [buildRequest, readNow]);
@@ -422,7 +275,6 @@ export function useShareDialog(options: UseShareDialogOptions): ShareDialogResul
     },
     onSuccess: () => {
       setActionError(null);
-      setStaleLinkNotice(null);
       setSavedAtMs(readNow().getTime());
       invalidateLinks();
       onToast?.({ message: 'Đã tạo liên kết chia sẻ' });
@@ -488,7 +340,6 @@ export function useShareDialog(options: UseShareDialogOptions): ShareDialogResul
         statusLabel: SHARE_LINK_STATUS_LABELS[expiry.status],
         tone: TONE_BY_STATUS[expiry.status],
         expiryText: expiry.text,
-        passwordProtected: link.passwordProtected,
         canRevoke: canCreateLink && expiry.status === 'active',
       };
     });
@@ -507,14 +358,13 @@ export function useShareDialog(options: UseShareDialogOptions): ShareDialogResul
    *
    * Quyền đi trước tất cả: không tạo được liên kết thì mọi thứ phía sau là câu
    * hỏi không cần trả lời. Rồi tới lượt gọi đang chạy, rồi tới lỗi — một lỗi vừa
-   * xảy ra quan trọng hơn số hàng đang có. `collapsed` là chuyện bề ngang màn,
-   * đứng trước ba trạng thái đọc từ dữ liệu vì nó đúng bất kể dữ liệu ra sao.
+   * xảy ra quan trọng hơn số hàng đang có. Ba trạng thái cuối đọc từ dữ liệu.
    */
   const state = useMemo<SevenState>(() => {
     // Năng lực tắt đi trước cả quyền: truy vấn tắt vẫn `isPending`, nên để nó
     // rơi xuống sẽ treo ở `loading`; còn `forbidden` là chuyện thiếu quyền.
     if (!linksSupported) {
-      return isCollapsed ? 'collapsed' : 'success';
+      return 'success';
     }
     if (!canCreateLink) {
       return 'forbidden';
@@ -525,90 +375,20 @@ export function useShareDialog(options: UseShareDialogOptions): ShareDialogResul
     if (errorMessage !== null) {
       return 'error';
     }
-    if (isCollapsed) {
-      return 'collapsed';
-    }
     if (links.length === 0) {
       return 'empty';
     }
 
     return activeLinks.length === 0 ? 'partial' : 'success';
-  }, [linksSupported, canCreateLink, isBusy, errorMessage, isCollapsed, links.length, activeLinks.length]);
+  }, [linksSupported, canCreateLink, isBusy, errorMessage, links.length, activeLinks.length]);
 
   /* ---------------------------------------------------------------------- */
   /* Việc làm được                                                           */
   /* ---------------------------------------------------------------------- */
 
-  /**
-   * Đổi quyền truy cập là chỗ DUY NHẤT của màn dùng hoàn tác (A8, D-05).
-   *
-   * Mọi thay đổi khác ở đây hoặc không mất gì khi làm lại (đổi một khoá nhúng),
-   * hoặc đã có đường quay lại của riêng nó (thu hồi một liên kết là một lượt
-   * ghi máy chủ, không phải một lần bấm nhầm). Quyền thì khác: nó quyết định
-   * người nhận liên kết làm được gì, nên nó đi kèm một vé hoàn tác và một toast
-   * mang `onUndo`.
-   */
-  const setPermission = useCallback(
-    (next: SharePermission): void => {
-      const previous = permission;
-      if (previous === next) {
-        return;
-      }
-
-      setPermissionState(next);
-
-      const ticket = createUndoTicket({
-        description: `Đổi quyền chia sẻ sang ${lowerFirst(SHARE_PERMISSION_LABELS[next])}`,
-        undo: () => setPermissionState(previous),
-      });
-
-      onToast?.({
-        message: `Đã đổi quyền chia sẻ sang ${lowerFirst(SHARE_PERMISSION_LABELS[next])}`,
-        onUndo: () => {
-          ticket.undo();
-        },
-      });
-    },
-    [permission, onToast],
-  );
-
-  /**
-   * Đổi một khoá nhúng.
-   *
-   * Ba việc mỗi lần: ghi khoá, chớp dấu "vừa đổi" trong 260 ms, và — nếu đang có
-   * liên kết còn dùng được — đặt câu nhắc rằng những liên kết ấy vẫn mở theo
-   * tuỳ chọn cũ. Câu nhắc là một dòng chữ, không phải một hộp thoại: người dùng
-   * không mất gì, họ chỉ cần biết.
-   */
-  const changeEmbed = useCallback(
-    (key: EmbedEditableKey, next: Partial<EmbedParams>): void => {
-      setEmbedDraft((current) => ({ ...current, ...next }));
-      flashEmbedKey(key);
-
-      if (activeLinks.length > 0) {
-        setStaleLinkNotice(STALE_LINK_NOTICE);
-      }
-    },
-    [flashEmbedKey, activeLinks.length],
-  );
-
   const actions = useMemo<ShareDialogActions>(
     () => ({
-      setPermission,
       setExpiryChoice: (id: string) => setExpiryChoice(toExpiryChoice(id)),
-      setPasswordEnabled: (enabled: boolean) => {
-        setPasswordEnabledState(enabled);
-        // Tắt khoá thứ hai thì mật khẩu vừa gõ rời khỏi bộ nhớ ngay, không nằm
-        // chờ trong state cho tới lần bật sau.
-        if (!enabled) {
-          setPassword('');
-        }
-      },
-      setPassword,
-      setIncludeViewpoint: (include: boolean) => {
-        setIncludeViewpoint(include);
-        flashEmbedKey('viewpointCode');
-      },
       createLink: () => {
         if (linksSupported) createMutation.mutate();
       },
@@ -627,22 +407,9 @@ export function useShareDialog(options: UseShareDialogOptions): ShareDialogResul
           copy(id, row.url, 'Đã chép liên kết');
         }
       },
-      copyEmbedCode: () => copy(EMBED_COPY_TARGET_ID, embedCode, 'Đã chép mã nhúng'),
-      setEmbedLevel: (levelId: LevelId | null) => changeEmbed('levelId', { levelId }),
-      setEmbedColoring: (coloring: ColoringModeId | null) => changeEmbed('coloring', { coloring }),
-      setEmbedToolbar: (toolbar: boolean) => changeEmbed('toolbar', { toolbar }),
-      setEmbedSizePreset: (presetId: string) => {
-        const preset = EMBED_SIZE_PRESETS.find((candidate) => candidate.id === presetId);
-        if (preset !== undefined) {
-          setWidthPx(preset.widthPx);
-          setHeightPx(preset.heightPx);
-        }
-      },
-      setEmbedWidth: setWidthPx,
-      setEmbedHeight: setHeightPx,
       dismiss: () => onDismiss?.(),
     }),
-    [linksSupported, setPermission, flashEmbedKey, createMutation, revokeMutation, pendingRevokeId, rows, copy, embedCode, changeEmbed, onDismiss],
+    [linksSupported, createMutation, revokeMutation, pendingRevokeId, rows, copy, onDismiss],
   );
 
   /* ---------------------------------------------------------------------- */
@@ -659,34 +426,15 @@ export function useShareDialog(options: UseShareDialogOptions): ShareDialogResul
       members,
       membersReadOnlyReason: MEMBERS_READ_ONLY_REASON,
       form: {
-        permission,
-        permissionOptions: SHARE_PERMISSION_OPTIONS,
         expiryChoiceId: expiryChoice,
         expiryChoices: SHARE_EXPIRY_OPTIONS,
-        passwordEnabled,
-        password,
-        includeViewpoint,
         problems,
         canSubmit:
           linksSupported && canCreateLink && Object.keys(problems).length === 0 && !isBusy,
       },
       rows,
-      embed: {
-        params: embedParams,
-        view: embedView,
-        code: embedCode,
-        widthPx,
-        heightPx,
-        levelOptions: toLevelOptions(levels),
-        coloringOptions: COLORING_OPTIONS,
-        sizePresets: EMBED_SIZE_PRESETS,
-        activeSizePresetId: matchEmbedSizePreset(widthPx, heightPx),
-        recentlyChangedKey,
-        previewHidden: isCollapsed,
-      },
       copiedTargetId,
       errorMessage,
-      staleLinkNotice,
       pendingRevokeUrl: rows.find((row) => row.id === pendingRevokeId)?.url ?? null,
     }),
     [
@@ -695,25 +443,12 @@ export function useShareDialog(options: UseShareDialogOptions): ShareDialogResul
       canCreateLink,
       linksSupported,
       members,
-      permission,
       expiryChoice,
-      passwordEnabled,
-      password,
-      includeViewpoint,
       problems,
       isBusy,
       rows,
-      embedParams,
-      embedView,
-      embedCode,
-      widthPx,
-      heightPx,
-      levels,
-      recentlyChangedKey,
-      isCollapsed,
       copiedTargetId,
       errorMessage,
-      staleLinkNotice,
       pendingRevokeId,
     ],
   );

@@ -47,9 +47,6 @@
  *  - `Select` bắt buộc truyền `label` (trigger tự đặt `role="combobox"` nên mất tên đọc được).
  */
 
-import type { LevelId } from '@/domain/spatial/types';
-import type { ColoringModeId } from '@/lib/coloring/modes';
-import type { EmbedParams, EmbedView } from '@/lib/export/embedParams';
 import type {
   ShareLink,
   ShareLinkGateway,
@@ -57,20 +54,7 @@ import type {
   SharePermission,
 } from '@/lib/export/shareLink';
 import type { SevenState } from '@/lib/testing/sevenStateScenarios';
-import type { SharedViewpoint } from '@/lib/three/camera/viewpointCodec';
 import type { ProjectRole } from '@/types/project';
-
-/* ── Mục đang được chép ──────────────────────────────────────────────────────────────────── */
-
-/**
- * Giá trị của `copiedTargetId` khi thứ vừa được chép là MÃ NHÚNG.
- *
- * Mọi giá trị khác của trường đó là `id` của một liên kết. Hằng số này ở đây vì cùng một
- * lý do `ShareDialogOption` ở đây: `id` phải khớp giữa view và hook, và hai bên được viết
- * song song. Nếu view tự khai lấy chuỗi này thì dấu tích "đã chép" của mã nhúng sẽ im
- * lặng không bao giờ sáng — đúng loại lỗi chỉ lộ ra lúc chạy.
- */
-export const EMBED_COPY_TARGET_ID = 'embed-code';
 
 /* ── Danh mục lựa chọn ───────────────────────────────────────────────────────────────────── */
 
@@ -119,14 +103,10 @@ export interface ShareLinkRowModel {
   readonly tone: 'verified' | 'attention' | 'neutral';
   /** Do `describeShareLinkExpiry(link, now)` sinh (P-02). */
   readonly expiryText: string;
-  readonly passwordProtected: boolean;
   readonly canRevoke: boolean;
 }
 
 export interface ShareLinkFormModel {
-  readonly permission: SharePermission;
-  /** Hai mức, từ `SHARE_PERMISSIONS` + `SHARE_PERMISSION_LABELS`. */
-  readonly permissionOptions: readonly ShareDialogOption<SharePermission>[];
   readonly expiryChoiceId: string;
   /**
    * Danh mục hạn dùng. Nguồn duy nhất là `SHARE_EXPIRY_CHOICES` + `SHARE_EXPIRY_LABELS`
@@ -134,62 +114,9 @@ export interface ShareLinkFormModel {
    * view không phải nhập từ một hook khác và để id không lệch giữa hai bên.
    */
   readonly expiryChoices: readonly ShareDialogOption<string>[];
-  readonly passwordEnabled: boolean;
-  /**
-   * Chỉ sống trước khi lưu. Sau khi lưu, `ShareLink` chỉ mang `passwordProtected` kiểu
-   * boolean — `ShareLinkWireSchema` strip mọi khoá nó không kể tên, nên bản ghi trả về
-   * **không thể** mang mật khẩu. Màn không bao giờ hiện lại mật khẩu dạng rõ.
-   */
-  readonly password: string;
-  readonly includeViewpoint: boolean;
   /** Do `validateShareLinkRequest` sinh; màn không tự nghĩ ra câu lỗi (L-03). */
   readonly problems: Partial<Record<ShareLinkRequestField, string>>;
   readonly canSubmit: boolean;
-}
-
-/* ── Mục 3: nhúng ────────────────────────────────────────────────────────────────────────── */
-
-/** Khoá nhúng người dùng đổi được. Đúng bốn, vì `EMBED_PARAM_KEYS` có đúng bốn. */
-export type EmbedEditableKey = 'levelId' | 'coloring' | 'toolbar' | 'viewpointCode';
-
-export interface EmbedSizePreset {
-  readonly id: string;
-  /** Nhãn tiếng Việt, viết thường kiểu câu (A6). */
-  readonly label: string;
-  readonly widthPx: number;
-  readonly heightPx: number;
-}
-
-export interface EmbedSectionModel {
-  readonly params: EmbedParams;
-  /**
-   * Cái mà khung xem trước TĨNH vẽ. Do `resolveEmbedView(params)` sinh — không tự suy,
-   * và **không nạp three**: cổng kích thước gói tính mọi chunk dùng chung vào TỪNG route
-   * lazy, và route xấu nhất đang ở 273,8/280 KiB.
-   */
-  readonly view: EmbedView;
-  /**
-   * Do `buildEmbedCode` sinh, với `url` · `params` · `widthPx` · `heightPx`.
-   * Màn KHÔNG nối chuỗi thẻ iframe.
-   */
-  readonly code: string;
-  readonly widthPx: number;
-  readonly heightPx: number;
-  /**
-   * Các tầng của dự án, để dựng `Select` tầng. `EmbedParams.levelId` chỉ là GIÁ TRỊ ĐANG CHỌN,
-   * không phải danh mục. Nguồn: `Level[]` đọc từ store — đúng tiền lệ
-   * `ExportPanel/exportPanelGateway.ts:276` (`readonly levels: readonly Level[]`).
-   * Rỗng nghĩa là dự án chưa có tầng nào; view ẩn `Select` đó đi.
-   */
-  readonly levelOptions: readonly ShareDialogOption<LevelId>[];
-  /** Nguồn: `COLORING_MODE_IDS` + nhãn của `@/lib/coloring/modes`. */
-  readonly coloringOptions: readonly ShareDialogOption<ColoringModeId>[];
-  readonly sizePresets: readonly EmbedSizePreset[];
-  readonly activeSizePresetId: string | null;
-  /** Khoá vừa đổi — view tô nền `--bg-selected` trong chốc lát rồi bỏ. */
-  readonly recentlyChangedKey: EmbedEditableKey | null;
-  /** Trạng thái 7: dưới 1280 thì ẩn khung xem trước. */
-  readonly previewHidden: boolean;
 }
 
 /* ── Toàn hộp thoại ──────────────────────────────────────────────────────────────────────── */
@@ -212,12 +139,9 @@ export interface ShareDialogModel {
   readonly membersReadOnlyReason: string;
   readonly form: ShareLinkFormModel;
   readonly rows: readonly ShareLinkRowModel[];
-  readonly embed: EmbedSectionModel;
-  /** Mục vừa được chép — dấu tích giữ 700 ms rồi bỏ. `null` là không có gì đang chép. */
+  /** Liên kết vừa được chép — dấu tích giữ 700 ms rồi bỏ. `null` là không có gì đang chép. */
   readonly copiedTargetId: string | null;
   readonly errorMessage: string | null;
-  /** Đổi khoá thì liên kết cũ hết hiệu lực. Một dòng nhắc, không phải hộp thoại. */
-  readonly staleLinkNotice: string | null;
   /**
    * Liên kết đang chờ người dùng xác nhận thu hồi; `null` là không hỏi gì. Thu hồi
    * không có đường khôi phục (A8 không hoàn tác được), nên A9 đòi hỏi trước.
@@ -226,24 +150,13 @@ export interface ShareDialogModel {
 }
 
 export interface ShareDialogActions {
-  readonly setPermission: (permission: SharePermission) => void;
   readonly setExpiryChoice: (id: string) => void;
-  readonly setPasswordEnabled: (enabled: boolean) => void;
-  readonly setPassword: (password: string) => void;
-  readonly setIncludeViewpoint: (include: boolean) => void;
   readonly createLink: () => void;
   /** HỎI trước khi thu hồi (A9) — chưa gửi gì. `confirmRevoke` mới gửi. */
   readonly revokeLink: (id: string) => void;
   readonly confirmRevoke: () => void;
   readonly cancelRevoke: () => void;
   readonly copyLink: (id: string) => void;
-  readonly copyEmbedCode: () => void;
-  readonly setEmbedLevel: (levelId: LevelId | null) => void;
-  readonly setEmbedColoring: (coloring: ColoringModeId | null) => void;
-  readonly setEmbedToolbar: (toolbar: boolean) => void;
-  readonly setEmbedSizePreset: (presetId: string) => void;
-  readonly setEmbedWidth: (px: number) => void;
-  readonly setEmbedHeight: (px: number) => void;
   readonly dismiss: () => void;
 }
 
@@ -272,7 +185,6 @@ export interface ShareDialogContainerProps {
   readonly projectId: string;
   readonly onDismiss: () => void;
   readonly roles?: readonly ProjectRole[];
-  readonly viewpoint?: SharedViewpoint | null;
   /** Bơm vào để test và story không chạm mạng; mặc định là gateway HTTP thật. */
   readonly gateway?: ShareLinkGateway;
   readonly onToast?: (toast: ShareDialogToast) => void;
@@ -283,7 +195,6 @@ export interface UseShareDialogOptions {
   readonly projectId: string;
   readonly roles: readonly ProjectRole[];
   readonly members?: readonly MemberRowModel[];
-  readonly viewpoint?: SharedViewpoint | null;
   readonly now?: () => Date;
   readonly copyToClipboard?: (text: string) => Promise<void> | void;
   readonly onToast?: (toast: ShareDialogToast) => void;

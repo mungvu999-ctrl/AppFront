@@ -15,7 +15,7 @@
  * hoãn việc phân giải sang đúng lúc CHẠY, nên một import hỏng chỉ làm hỏng ĐÚNG một `it`.
  *
  * Vì thế, ở nhánh này: các bài cần view/hook thật HỎNG RIÊNG LẺ với "Failed to resolve",
- * còn các bài thuần dữ liệu (khoá nhúng, quét mã nguồn, mã màu) CHẠY VÀ XANH ngay hôm nay.
+ * còn các bài thuần dữ liệu (quét mã nguồn, mã màu) CHẠY VÀ XANH ngay hôm nay.
  * **Bộ này chưa được chạy trọn vẹn ở lớp W4 — nó sẽ chạy thật ở lớp gộp** (E.10: không báo
  * "đạt" cho bước chưa chạy).
  *
@@ -40,9 +40,6 @@ import { act, cleanup, fireEvent, renderHook, screen, waitFor } from '@testing-l
 import type { ComponentType, ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { sampleLevelId } from '@/domain/spatial/__fixtures__/sampleBuilding';
-import { parseEmbedParams } from '@/lib/export/embedParams';
-import type { EmbedParams } from '@/lib/export/embedParams';
 import type { ShareLinkGateway } from '@/lib/export/shareLink';
 import { expectAccessible } from '@/lib/testing/expectAccessible';
 import { expectNoRawColor } from '@/lib/testing/expectNoRawColor';
@@ -52,19 +49,14 @@ import { createTestQueryClient, renderWithProviders } from '@/lib/testing/render
 import { createSevenStateScenarios, SEVEN_STATES } from '@/lib/testing/sevenStateScenarios';
 
 import {
-  buildEmbedSection,
   buildLinksUnsupportedModel,
   buildShareDialogProps,
   SAMPLE_ACTIVE_LINK,
-  SAMPLE_DRAFT_PASSWORD,
-  SAMPLE_EMBED_PARAMS,
   SAMPLE_MEMBER_EMAILS,
   SAMPLE_MEMBERS,
   SAMPLE_PROJECT_ID,
-  SAMPLE_PROTECTED_LINK,
-  TOO_SHORT_PASSWORD,
 } from './shareDialogFixtures';
-import type { EmbedEditableKey, ShareDialogProps, ShareDialogResult, UseShareDialogOptions } from './types';
+import type { ShareDialogProps, ShareDialogResult, UseShareDialogOptions } from './types';
 
 afterEach(() => {
   cleanup();
@@ -179,7 +171,7 @@ describe('R-72 — expectAccessible và expectVietnamese trên cây render thậ
       <ShareDialogView {...buildShareDialogProps('success')} />,
     );
 
-    // Ba ngoại lệ, không cái nào là chữ của màn:
+    // Ngoại lệ, không cái nào là chữ của màn:
     //
     // - `^https?://` — ô địa chỉ chia sẻ mang một URL do máy chủ cấp. Cách né số 2.
     // - `^Level \d+$` — TÊN TẦNG đọc nguyên văn từ `SAMPLE_BUILDING` (`sampleBuilding.ts:85`).
@@ -289,132 +281,60 @@ describe('CẤM — màn không tự ghép URL chia sẻ và không tự sinh m�
 });
 
 /* ==========================================================================
- * D. Khoá nhúng và khung xem trước phải KHỚP NHAU.
+ * D. Không chào mời thứ chưa hoạt động: mật khẩu, nhúng, góc nhìn, quyền "góp ý".
  * ========================================================================== */
 
-/** Đọc ngược `EmbedParams` ra khỏi mã nhúng, qua đúng bộ đọc của lib. */
-function paramsFromEmbedCode(code: string): EmbedParams {
-  const match = /src="([^"]+)"/u.exec(code);
-  const src = (match?.[1] ?? '').replace(/&amp;/gu, '&');
-
-  return parseEmbedParams(src).params;
-}
-
-/** Ba khoá đổi được mà không cần dựng camera — khoá thứ tư (`viewpointCode`) cần mã hoá riêng. */
-const EMBED_CASES: readonly { readonly key: EmbedEditableKey; readonly params: EmbedParams }[] = [
-  { key: 'levelId', params: { ...SAMPLE_EMBED_PARAMS, levelId: sampleLevelId(2) } },
-  { key: 'coloring', params: { ...SAMPLE_EMBED_PARAMS, coloring: 'area' } },
-  { key: 'toolbar', params: { ...SAMPLE_EMBED_PARAMS, toolbar: false } },
-];
-
-describe('mã nhúng và khung xem trước cùng phản ánh MỘT EmbedParams', () => {
-  it.each(EMBED_CASES)('đổi khoá "$key": code và view không kể hai chuyện khác nhau', ({ params }) => {
-    const section = buildEmbedSection({ params });
-
-    // Khung xem trước tĩnh đi ra từ `resolveEmbedView`, nên nó nói đúng ba trường này.
-    expect(section.view.levelId).toBe(params.levelId);
-    expect(section.view.coloring).toBe(params.coloring);
-    expect(section.view.toolbar).toBe(params.toolbar);
-
-    // Và mã nhúng, đọc ngược qua `parseEmbedParams`, ra đúng bộ tham số ấy.
-    expect(paramsFromEmbedCode(section.code)).toEqual(params);
-  });
-
-  it('ba khoá cho ba mã nhúng khác nhau — không cái nào đứng yên khi tham số đổi', () => {
-    const codes = new Set(EMBED_CASES.map(({ params }) => buildEmbedSection({ params }).code));
-
-    expect(codes.size).toBe(EMBED_CASES.length);
-  });
-
-  it('view thật hiện đúng `model.embed.code`, không hiện một chuỗi tự dựng', async () => {
+describe('CẤM — hộp thoại không hứa thứ máy chủ và trang chia sẻ không làm', () => {
+  it('biểu mẫu tạo liên kết chỉ có hạn dùng: không mật khẩu, không nhúng, không góc nhìn, không chọn quyền', async () => {
     const ShareDialogView = await loadShareDialogView();
+    renderWithProviders(<ShareDialogView {...buildShareDialogProps('success')} />);
 
-    for (const { key, params } of EMBED_CASES) {
-      const embed = buildEmbedSection({ params });
-      const props = buildShareDialogProps('success', { embed });
-      const { container, unmount } = renderWithProviders(<ShareDialogView {...props} />);
-
-      expect(document.body.textContent, `khoá: ${key}`).toContain(embed.code);
-      expect(container).toBeTruthy();
-      unmount();
-    }
-  });
-});
-
-/* ==========================================================================
- * E. Mật khẩu không rò.
- *
- * Bước nghiệm thu gốc là "mở liên kết bằng cửa sổ ẩn danh và xem có bị hỏi mật khẩu
- * không". Bước ĐÓ KHÔNG CHẠY ĐƯỢC ở đây: repo không có máy chủ thật, `ShareLinkGateway`
- * là một cổng và test dùng bản giả. Bài dưới đây là bản thay thế đo được — nó khẳng định
- * điều mà màn CHỊU TRÁCH NHIỆM: sau khi liên kết đã tạo, chuỗi mật khẩu không còn ở bất
- * kỳ đâu trong DOM, chỉ còn dấu hiệu `passwordProtected`.
- * ========================================================================== */
-
-describe('CẤM — không hiện mật khẩu dạng rõ sau khi đã lưu', () => {
-  it('bản ghi trả về không mang nổi một mật khẩu: `ShareLink` chỉ có cờ boolean', () => {
-    expect(SAMPLE_PROTECTED_LINK.passwordProtected).toBe(true);
-    expect(JSON.stringify(SAMPLE_PROTECTED_LINK)).not.toContain(SAMPLE_DRAFT_PASSWORD);
+    expect(document.body.querySelectorAll('input[type="password"]')).toHaveLength(0);
+    expect(screen.queryByRole('switch')).toBeNull();
+    expect(screen.queryByRole('region', { name: /nhúng/iu })).toBeNull();
+    const text = document.body.textContent;
+    expect(text).not.toMatch(/mật khẩu|nhúng|góc nhìn/iu);
+    expect(screen.queryByRole('combobox', { name: /quyền truy cập/iu })).toBeNull();
+    expect(screen.getByRole('combobox', { name: /hạn dùng/iu })).toBeInTheDocument();
   });
 
-  it('trạng thái "thành công": không nơi nào trong DOM hiện chuỗi mật khẩu', async () => {
+  it('liên kết cũ mang quyền "góp ý" vẫn hiện đúng nhãn trong danh sách', async () => {
     const ShareDialogView = await loadShareDialogView();
     const props = buildShareDialogProps('success');
-
-    // Sau khi tạo xong, biểu mẫu phải đã bỏ mật khẩu nháp đi.
-    expect(props.model.form.password).toBe('');
-    expect(props.model.rows.some((row) => row.passwordProtected)).toBe(true);
-
     renderWithProviders(<ShareDialogView {...props} />);
 
-    expect(document.body.innerHTML).not.toContain(SAMPLE_DRAFT_PASSWORD);
-    expect(document.body.innerHTML).not.toContain(TOO_SHORT_PASSWORD);
-
-    // Và nếu còn một ô mật khẩu nào trên màn thì nó rỗng.
-    for (const input of Array.from(
-      document.body.querySelectorAll<HTMLInputElement>('input[type="password"]'),
-    )) {
-      expect(input.value).toBe('');
-    }
-
-    // Dấu hiệu thì vẫn phải nói ra, nếu không người dùng không biết liên kết có khoá.
-    expect(document.body.textContent).toMatch(/mật khẩu/iu);
+    expect(props.model.rows.map((row) => row.permissionLabel)).toContain('Góp ý');
+    expect(document.body.textContent).toContain('Góp ý');
   });
-});
 
-/* ==========================================================================
- * F. Hoàn tác (A8) — đổi quyền truy cập thì có toast kèm `onUndo`.
- * ========================================================================== */
-
-describe('A8 — mọi thay đổi hoàn tác được, kèm toast hoàn tác', () => {
-  it('đổi quyền truy cập gọi onToast với một onUndo', async () => {
+  it('tạo liên kết gửi quyền xem, không mật khẩu, không góc nhìn', async () => {
     const useShareDialog = await loadUseShareDialog();
-    const onToast = vi.fn();
+    const create = vi.fn<ShareLinkGateway['create']>(() =>
+      Promise.resolve({ ok: true, data: SAMPLE_ACTIVE_LINK }),
+    );
     const { result } = renderHook(
       () =>
         useShareDialog({
-          gateway: buildFakeGateway(),
+          gateway: buildFakeGateway({ create }),
           projectId: SAMPLE_PROJECT_ID,
           roles: ['admin'],
           members: SAMPLE_MEMBERS,
-          onToast,
         }),
       { wrapper: withQueryClient() },
     );
 
-    const [, actions] = result.current;
-
-    actions.setPermission('comment');
-
     await waitFor(() => {
-      expect(onToast).toHaveBeenCalled();
+      expect(result.current[0].form.canSubmit).toBe(true);
+    });
+    act(() => result.current[1].createLink());
+    await waitFor(() => {
+      expect(create).toHaveBeenCalledTimes(1);
     });
 
-    const toast = onToast.mock.calls.at(-1)?.[0] as { message: string; onUndo?: () => void };
-
-    expect(typeof toast.message).toBe('string');
-    expect(toast.message.length).toBeGreaterThan(0);
-    expect(typeof toast.onUndo).toBe('function');
+    const sent = create.mock.calls[0]?.[0].body as unknown as Record<string, unknown>;
+    expect(sent.permission).toBe('view');
+    expect(sent).not.toHaveProperty('password');
+    expect(sent.viewpointCode ?? null).toBeNull();
   });
 });
 
@@ -598,7 +518,7 @@ describe('F-06 — liên kết chia sẻ tắt (cổng `supported: false`)', () 
     expect(revoke).not.toHaveBeenCalled();
   });
 
-  it('view: không vùng liên kết, không mã nhúng; "người có quyền" vẫn hiện', async () => {
+  it('view: không vùng liên kết; "người có quyền" vẫn hiện', async () => {
     const ShareDialogView = await loadShareDialogView();
     renderWithProviders(
       <ShareDialogView {...buildShareDialogProps('success', buildLinksUnsupportedModel())} />,
@@ -606,7 +526,5 @@ describe('F-06 — liên kết chia sẻ tắt (cổng `supported: false`)', () 
 
     expect(screen.getByRole('region', { name: /người có quyền/iu })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: /liên kết chia sẻ/iu })).not.toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: /nhúng vào trang khác/iu })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /sao chép mã nhúng/iu })).not.toBeInTheDocument();
   });
 });
