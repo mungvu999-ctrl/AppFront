@@ -242,13 +242,13 @@ jobs:
   # K-53: cổng e2e nhỏ cho luồng F1 (tải bản vẽ → duyệt → xuất), trên máy chủ giả như `e2e-stability`.
   # Spec: `smoke.spec.ts` (vỏ app) · `smoke-grid.spec.ts` (bảng route: mọi màn mở được, không trắng, không lỗi
   # console) · `v4v5/upload.spec.ts` (tải) · `v4v5/quality.spec.ts` (duyệt chất lượng) · `v12a/export.spec.ts` (xuất).
-  # `--grep-invert` loại 4 bài ĐANG ĐỎ trên master tại máy (đo 22/11/2026, đỏ cả khi chạy riêng, không phải chập chờn):
-  #   - smoke-grid `projectScale`, `projectRooms` — màn không thấy heading kỳ vọng (vd "Duyệt phòng");
-  #   - upload `U03:` — không có nút "Bắt đầu xử lý" trong tình huống tầng trống;
-  #   - export `… .glb thì tệp tải về` — không nhận sự kiện download trong 20 s (cần WebGL để dựng GLB).
-  # Mỗi bài là nợ sửa riêng — bỏ khỏi `--grep-invert` khi đã xanh. Không dùng `.skip` trong spec (R-46).
+  # Chạy đủ mọi bài của năm spec, không `--grep-invert`: 4 bài từng bị loại tạm (smoke-grid `projectScale`/`projectRooms`,
+  # upload `U03:`, export `.glb`) là bài lỗi thời sau đổi giao diện/luồng, đã sửa ở nhánh fix/e2e-* (K-53).
+  # Bài đỏ thì sửa, không loại khỏi lệnh và không dùng `.skip` trong spec (R-46).
   # Đo tại máy (22/11/2026, 52 bài, 2 worker, retries=1, fail-on-flaky): 4/4 lượt ấm xanh, 61-66 s mỗi lượt (lượt đầu
   # lạnh đỏ 2 bài login vì máy chủ dev chưa ấm; `run-playwright.mjs` có bước làm ấm nên CI không gặp).
+  # Đo lại sau khi bỏ `--grep-invert` (22/11/2026, 56 bài, 2 worker, retries=0, gộp ba nhánh fix/e2e-*): 3 lượt liên tiếp
+  # xanh 56/56, ~50 s chạy bài; một lượt trước đó đỏ 1 bài vì WebSocket HMR `ERR_NO_BUFFER_SPACE` (máy hết socket, hạ tầng).
   # Chưa là check bắt buộc (K-52): chờ 7 ngày xanh liên tiếp trên master.
   e2e-smoke:
     runs-on: ubuntu-24.04
@@ -266,7 +266,7 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chrome
-      - run: pnpm e2e e2e/smoke.spec.ts e2e/smoke-grid.spec.ts e2e/v4v5/upload.spec.ts e2e/v4v5/quality.spec.ts e2e/v12a/export.spec.ts --workers=2 --retries=1 --grep-invert "projectScale|projectRooms|U03:|glb thì"
+      - run: pnpm e2e e2e/smoke.spec.ts e2e/smoke-grid.spec.ts e2e/v4v5/upload.spec.ts e2e/v4v5/quality.spec.ts e2e/v12a/export.spec.ts --workers=2 --retries=1
         env:
           E2E_PORT: '5192'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
