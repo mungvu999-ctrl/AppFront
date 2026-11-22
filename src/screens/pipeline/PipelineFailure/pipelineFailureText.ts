@@ -50,7 +50,7 @@ export const PIPELINE_FAILURE_TEXT = {
   technicalToggleLabel: 'Chi tiết kỹ thuật',
   collapseLabel: 'Thu gọn',
   expandLabel: 'Mở lại',
-  supportLinkLabel: 'Báo lỗi cho hỗ trợ',
+  uploadAgainLabel: 'Tải lại bản vẽ',
   continueLabel: 'Xem kết quả',
   stepperAriaLabel: 'Tiến độ lượt thử lại',
 
@@ -98,14 +98,14 @@ export const PIPELINE_FAILURE_TEXT = {
    * trợ** — không phải người dùng.
    */
   supportAfterAttempts:
-    'Bước này vẫn hỏng sau nhiều lần chạy lại. Bộ phận hỗ trợ đọc nhật ký sẽ tìm ra nguyên nhân nhanh hơn.',
+    'Bước này vẫn hỏng sau nhiều lần chạy lại. Hãy tải lại bản vẽ để chạy lượt mới; mã lỗi và nhật ký bên dưới có thể sao chép để lưu lại.',
   /**
    * Chế độ hỗ trợ vì hệ thống chưa chạy lại được riêng một bước. Đây là nhánh giao
    * diện THẬT cho khả năng `retryStep` chưa có endpoint — màn nói ra điều đó, thay
    * vì im lặng để một nút chết nằm trên màn.
    */
   supportRetryUnsupported:
-    'Hệ thống chưa chạy lại được riêng một bước. Bộ phận hỗ trợ chạy lại giúp cả lượt sẽ nhanh hơn.',
+    'Hệ thống chưa chạy lại được riêng một bước. Hãy tải lại bản vẽ để chạy lượt mới.',
 } as const;
 
 /* -------------------------------------------------------------------------- */

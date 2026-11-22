@@ -79,7 +79,7 @@
  *
  * ## R-65 — hợp đồng không mang đường dẫn
  *
- * Liên kết "Báo lỗi cho hỗ trợ" đi ra dưới dạng {@link PipelineFailureSupportLink}
+ * Nút "Tải lại bản vẽ" đi ra dưới dạng {@link PipelineFailureUploadLink}
  * với một hàm `onOpen`, không phải một chuỗi `href`. Chuỗi đường dẫn là việc của
  * bảng đường dẫn trong hook; không chuỗi nào trong file này bắt đầu bằng `/` hay
  * `http`.
@@ -349,19 +349,12 @@ export interface PipelineFailureTechnicalDetails {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Liên kết chìm "Báo lỗi cho hỗ trợ", điền sẵn mã lỗi và mã yêu cầu.
- *
- * Không có `href` ở đây: R-65 cấm chuỗi bắt đầu bằng `/` hay `http` trong mã chạy
- * được, và bảng đường dẫn là nguồn duy nhất dựng đường dẫn. View chỉ gọi `onOpen`.
+ * Nút đường về trang tải bản vẽ để chạy lượt mới. Không có `href` ở đây: R-65 cấm
+ * chuỗi đường dẫn trong mã chạy được; view chỉ gọi `onOpen`.
  */
-export interface PipelineFailureSupportLink {
-  /** Ví dụ "Báo lỗi cho hỗ trợ". */
+export interface PipelineFailureUploadLink {
+  /** Ví dụ "Tải lại bản vẽ". */
   readonly label: string;
-  /**
-   * Phần đã điền sẵn, cho người dùng thấy mình sắp gửi đi cái gì — ví dụ "SEG-2041
-   * · yêu cầu 8f2a-41". Chuỗi này ĐÃ ghép, view không nối mã lỗi với mã yêu cầu.
-   */
-  readonly prefilledSummary: string;
   readonly onOpen: () => void;
 }
 
@@ -375,8 +368,8 @@ export interface PipelineFailureRetryAttemptNotice {
 }
 
 /**
- * Chế độ đã thất bại quá nhiều: câu đổi sang gợi ý liên hệ hỗ trợ, kèm nút chép
- * TOÀN BỘ nhật ký và liên kết chìm.
+ * Chế độ đã thất bại quá nhiều: câu đổi sang gợi ý tải lại bản vẽ, kèm nút chép
+ * TOÀN BỘ nhật ký và nút tải lại bản vẽ.
  *
  * Ngưỡng ("sau 3 lần thất bại") sống trong hook, KHÔNG trong hợp đồng và không
  * trong view: hai chế độ là hai nhánh của union này, nên view chỉ đọc `kind` chứ
@@ -393,7 +386,7 @@ export interface PipelineFailureRetrySupportNotice {
   readonly suggestionSentence: string;
   /** Chép TOÀN BỘ nhật ký, khác với `copyLog` chỉ chép phần đang hiện. */
   readonly copyAllLogs: PipelineFailureCopyAction;
-  readonly supportLink: PipelineFailureSupportLink;
+  readonly uploadLink: PipelineFailureUploadLink;
 }
 
 /** Bộ đếm lần thử, một trong hai chế độ. Hook chọn, view không đếm. */

@@ -112,8 +112,8 @@ function PipelineFailureRetryNoticeBlock({ notice }: { readonly notice: Pipeline
       <p className="text-[13px] text-text-primary">{notice.suggestionSentence}</p>
       <div className="flex flex-wrap items-center gap-3">
         <PipelineFailureCopyButton action={notice.copyAllLogs} />
-        <Button onClick={notice.supportLink.onOpen} size="sm" variant="ghost">
-          {notice.supportLink.label}
+        <Button onClick={notice.uploadLink.onOpen} size="sm" variant="ghost">
+          {notice.uploadLink.label}
         </Button>
       </div>
     </div>
