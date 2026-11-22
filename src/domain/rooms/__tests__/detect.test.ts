@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { medianMs } from '@/lib/testing/timing';
+
 import {
   SAMPLE_ROOM_COUNT,
   SAMPLE_WALL_COUNT,
@@ -284,12 +286,9 @@ describe('the standard sample plan', () => {
     // than the first-call compilation of it.
     detectRooms(SAMPLE_PLAN);
 
-    const started = performance.now();
-    const runs = 10;
-    for (let run = 0; run < runs; run += 1) {
-      detectRooms(SAMPLE_PLAN);
-    }
-    const perRunMs = (performance.now() - started) / runs;
+    // Median, not mean: one stall of the shared CI runner would otherwise be
+    // spread over all ten runs.
+    const perRunMs = medianMs(() => detectRooms(SAMPLE_PLAN), 10);
 
     console.log(`detectRooms over ${String(SAMPLE_WALL_COUNT)} walls: ${perRunMs.toFixed(2)} ms`);
     expect(perRunMs).toBeLessThan(50);
