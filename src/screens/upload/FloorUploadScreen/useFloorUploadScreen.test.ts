@@ -2564,7 +2564,7 @@ describe('useFloorUploadScreen — UX41 tải bản vẽ', () => {
     });
     expect(harness.navigations).toHaveLength(0);
     expect(result.current.blockNotice?.reasons.map((reason) => reason.kind)).toEqual(['replacesDrawing']);
-    expect(result.current.blockNotice?.reasons[0]?.sentence).toContain('sẽ mất');
+    expect(result.current.blockNotice?.reasons[0]?.sentence).toContain('vẫn được giữ');
 
     act(() => {
       result.current.onSubmit();
