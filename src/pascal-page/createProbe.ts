@@ -43,6 +43,11 @@ export interface PascalProbe {
   /** Cờ thao tác của viewer (e2e M18 LE): `cameraDragging` = viewer coi chuột đang kéo camera → mọi `grid:*` bị bỏ. */
   cameraDragging(): boolean | undefined;
   /**
+   * Cờ "người dùng đang kéo" (kéo vật / tay nắm / nhả cú kéo từ tường) của viewer. U83 dùng nó để bỏ viền rê chuột trong lúc
+   * kéo, nên cờ kẹt `true` = viền rê chuột tắt mãi; e2e `pascal-input-dragging.spec.ts` khẳng định nó về `false` sau mỗi thao tác.
+   */
+  inputDragging(): boolean | undefined;
+  /**
    * Toạ độ màn hình (px CSS, theo viewport) của tâm hộp mesh của node, để test click chuột THẬT (M18 LE). Camera lấy qua
    * `onBeforeRender` của mesh ở khung vẽ kế tiếp (gọi `kick` để renderer nhàn rỗi vẽ). `null` = node không có mesh / không
    * vẽ trong ~2 s / tâm sau camera.
@@ -281,6 +286,7 @@ export const createPascalProbe = ({ useScene, useViewer, sceneRegistry, emitter,
     },
     select: (id) => useViewer.getState().setSelection?.({ selectedIds: [id] }),
     cameraDragging: () => (useViewer.getState() as { cameraDragging?: boolean }).cameraDragging,
+    inputDragging: () => (useViewer.getState() as { inputDragging?: boolean }).inputDragging,
     screenOf: async (id) => {
       const meshes: ProbeMesh[] = [];
       sceneRegistry.nodes.get(id)?.traverse?.((o) => {
