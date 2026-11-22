@@ -68,7 +68,17 @@ test('U03: tầng trống không chặn khi đã có tầng có bản vẽ — n
 
   await expect(page.getByText('Bỏ qua tầng chưa có bản vẽ: Tầng hầm, Tầng 2, Tầng 3.')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Bắt đầu xử lý' }).click();
+  // UX-07 (583f61fe): Tầng 1 của bộ mẫu đã xử lý và chưa thả tệp mới, nên nút chính là "Xử lý lại"
+  // và hỏi một lần trước khi thay bản vẽ (UX-51). Lời hỏi ấy không phải lời chặn: ba tầng trống
+  // không sinh lý do chặn nào — bấm lần hai là sang màn xử lý.
+  const reprocess = page.getByRole('button', { name: 'Xử lý lại' });
+  await reprocess.click();
+
+  await expect(page.getByText('Xử lý lại sẽ thay bản vẽ đang có. Bấm "Xử lý lại" lần nữa để đồng ý.')).toBeVisible();
+  await expect(page.getByText('Không thể bắt đầu xử lý')).toHaveCount(0);
+  expect(pathOf(page.url())).toBe(UPLOAD);
+
+  await reprocess.click();
 
   await expect.poll(() => pathOf(page.url())).toBe(PIPELINE);
 });
