@@ -77,6 +77,6 @@ export type {
   PipelineFailureRetryNotice,
   PipelineFailureRetrySupportNotice,
   PipelineFailureState,
-  PipelineFailureSupportLink,
+  PipelineFailureUploadLink,
   PipelineFailureTechnicalDetails,
 } from './types';

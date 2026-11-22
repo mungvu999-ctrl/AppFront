@@ -237,11 +237,10 @@ function alertBand(options: AlertBandOptions): PipelineFailureBand {
           kind: 'support',
           attemptLabel: 'Lần thử 3',
           suggestionSentence:
-            'Đã thử ba lần chưa thành công. Báo lỗi cho hỗ trợ để được hỗ trợ trực tiếp.',
+            'Đã thử ba lần chưa thành công. Hãy tải lại bản vẽ để chạy lượt mới.',
           copyAllLogs: copyAction('Sao chép toàn bộ nhật ký'),
-          supportLink: {
-            label: 'Báo lỗi cho hỗ trợ',
-            prefilledSummary: 'SEG-2041 · yêu cầu 8f2a-41',
+          uploadLink: {
+            label: 'Tải lại bản vẽ',
             onOpen: NO_OP,
           },
         }

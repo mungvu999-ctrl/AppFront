@@ -536,15 +536,22 @@ describe('usePipelineFailure — bộ đếm lần thử', () => {
     const gateway = createMockPipelineFailureGateway({
       detail: { ...PIPELINE_FAILURE_SAMPLE_DETAIL, attemptCount: 3 },
     });
-    const mounted = await mountSettled(gateway);
+    const onNavigate = vi.fn();
+    const mounted = await mountSettled(gateway, { onNavigate });
     const band = mounted.result.current.band;
 
     if (band.kind !== 'alert' || band.retryNotice.kind !== 'support') {
       throw new Error('Từ lần thử thứ ba, bộ đếm đổi sang chế độ hỗ trợ.');
     }
 
+    band.retryNotice.uploadLink.onOpen();
+    expect(onNavigate).toHaveBeenCalledWith(ROUTES.project.upload(PROJECT_ID));
+
     expect(band.retryNotice.suggestionSentence).toBe(PIPELINE_FAILURE_TEXT.supportAfterAttempts);
-    expect(band.retryNotice.supportLink.prefilledSummary).toBe('SEG-2041 · yêu cầu 8f2a-41');
+    expect(band.retryNotice.uploadLink.label).toBe('Tải lại bản vẽ');
+    expect(`${PIPELINE_FAILURE_TEXT.supportAfterAttempts}${PIPELINE_FAILURE_TEXT.supportRetryUnsupported}`).not.toMatch(
+      /hỗ trợ|Báo lỗi/,
+    );
     expect(band.retryNotice.copyAllLogs.label).toBe(PIPELINE_FAILURE_TEXT.copyLabel);
   });
 

@@ -752,10 +752,6 @@ export function usePipelineFailure(options: UsePipelineFailureOptions): Pipeline
     setIsTechnicalOpen((previous) => !previous);
   }, []);
 
-  const onOpenSupport = useCallback(() => {
-    onNavigateRef.current?.(ROUTES.account);
-  }, []);
-
   /** Cấp "Dự án" của đường dẫn về danh sách dự án, như ở Tải bản vẽ và Cổng chất lượng (BUG-546). */
   const onBackToProjects = useCallback(() => {
     onNavigateRef.current?.(ROUTES.dashboard);
@@ -887,10 +883,9 @@ export function usePipelineFailure(options: UsePipelineFailureOptions): Pipeline
         PIPELINE_FAILURE_TEXT.copyAllLogsAriaLabel,
         onCopyAllLogs,
       ),
-      supportLink: {
-        label: PIPELINE_FAILURE_TEXT.supportLinkLabel,
-        prefilledSummary: errorCodeLabel,
-        onOpen: onOpenSupport,
+      uploadLink: {
+        label: PIPELINE_FAILURE_TEXT.uploadAgainLabel,
+        onOpen: onUploadClearer,
       },
     };
     // `copyActionOf` đổi danh tính mỗi khi nhãn "Đã sao chép" bật/tắt, nên nó phải
@@ -899,10 +894,9 @@ export function usePipelineFailure(options: UsePipelineFailureOptions): Pipeline
   }, [
     attemptCount,
     copyActionOf,
-    errorCodeLabel,
     isRetrySupported,
     onCopyAllLogs,
-    onOpenSupport,
+    onUploadClearer,
     serverError,
   ]);
 
