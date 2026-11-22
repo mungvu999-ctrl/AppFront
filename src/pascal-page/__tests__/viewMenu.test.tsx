@@ -13,7 +13,7 @@ import { ViewMenu } from '../ViewMenu';
 vi.mock('../useLightingBake', () => ({
   bakeStatusLabel: () => null,
   isBakeActive: () => false,
-  useLightingBake: () => ({ bake: null, busy: false, error: null, previewing: false, start: vi.fn(), view: vi.fn(), hide: vi.fn() }),
+  useLightingBake: () => ({ available: true, bake: null, busy: false, error: null, previewing: false, start: vi.fn(), view: vi.fn(), hide: vi.fn() }),
 }));
 
 const useViewer = create<{ sceneTheme: string; setSceneTheme: (id: string) => void }>(() => ({

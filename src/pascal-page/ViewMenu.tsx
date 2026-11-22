@@ -53,10 +53,12 @@ export function ViewMenu({ projectId, useViewer, saveNow, flushAutosaves, reload
         <div aria-hidden="true" className={DIVIDER} />
         <QualityCard section />
         {exportGlb === undefined ? null : (
-          <>
-            <div aria-hidden="true" className={DIVIDER} />
-            <BakeLightingCard exportGlb={exportGlb} projectId={projectId} section />
-          </>
+          <BakeLightingCard
+            before={<div aria-hidden="true" className={DIVIDER} />}
+            exportGlb={exportGlb}
+            projectId={projectId}
+            section
+          />
         )}
         {display === undefined ? null : (
           <>

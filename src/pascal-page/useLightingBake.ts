@@ -36,6 +36,8 @@ const defaultClient = (): Promise<ApiClient> =>
   (clientPromise ??= import('@/api/appClient').then((m) => m.createAppApiClient()));
 
 export interface LightingBakeState {
+  /** `true` chỉ khi API báo bật; lỗi, 404 hay API cũ chưa có N49 đều là `false`. */
+  available: boolean;
   bake: LightingBake | null;
   busy: boolean;
   error: string | null;
@@ -54,6 +56,18 @@ export function useLightingBake(
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [available, setAvailable] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    void loadClient()
+      .then((client) => client.lightingBakes.readAvailability(projectId))
+      .then((result) => live && setAvailable(result.ok && result.data.enabled === true))
+      .catch(() => live && setAvailable(false));
+    return () => {
+      live = false;
+    };
+  }, [loadClient, projectId]);
 
   const refresh = useCallback(async () => {
     const result = await (await loadClient()).lightingBakes.readLatest(projectId);
@@ -129,5 +143,5 @@ export function useLightingBake(
     setPreviewing(false);
   }, []);
 
-  return { bake, busy, error, previewing, start, view, hide };
+  return { available, bake, busy, error, previewing, start, view, hide };
 }
