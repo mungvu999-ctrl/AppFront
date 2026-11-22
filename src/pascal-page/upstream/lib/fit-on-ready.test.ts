@@ -163,6 +163,22 @@ describe('fitPose (QA-2 L2, FE3D-FIX-002 V5 D13)', () => {
 })
 
 describe('planBoundsXZ (FE3D-FIX-004 V14)', () => {
+  it('bỏ mảnh sàn lạc ngoài nhà, giữ lô gia chạm tường', () => {
+    const nodes = {
+      a: { type: 'wall', start: [0, 0], end: [10, 0] },
+      b: { type: 'wall', start: [10, 0], end: [10, 8] },
+      loggia: { type: 'zone', polygon: [[10, 2], [12, 2], [12, 6], [10, 6]] },
+      stray: { type: 'zone', polygon: [[-9, 3], [-7, 3], [-7, 5], [-9, 5]] },
+    }
+    expect(planBoundsXZ(nodes)).toMatchObject({ center: [6, 4], size: [12, 8] })
+    // Mảnh lạc cũng không vào đường bao mà khung nhìn bám theo.
+    expect(planBoundsXZ(nodes)?.points?.some(([x]) => x < 0)).toBe(false)
+  })
+
+  it('không có tường thì vẫn tính mọi vùng', () => {
+    expect(planBoundsXZ({ z: { type: 'zone', polygon: [[0, 0], [2, 0], [2, 2]] } })).toMatchObject({ center: [1, 1], size: [2, 2] })
+  })
+
   it('frames walls + zones only: origin-placed building/stairs, wall-local doors and the site are ignored', () => {
     const nodes = {
       site: { type: 'site', polygon: { type: 'polygon', points: [[-40, -40], [40, -40], [40, 40], [-40, 40]] } },
