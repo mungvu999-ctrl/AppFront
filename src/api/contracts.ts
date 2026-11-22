@@ -184,8 +184,10 @@ export const toDrawingWirePayload = (input: Drawing | DrawingWireInput): Drawing
   widthMm: input.widthMm,
 });
 
-/** `isSection` chỉ đi lên (PATCH #34); `FloorSchema` của phản hồi không có nó nên ghép riêng. */
-export const toFloorWirePayload = (input: FloorPayload): Partial<FloorWire> & { isSection?: boolean } => ({
+/** `isSection` đi lên PATCH #34 cả `true` lẫn `false`; phản hồi `FloorSchema` chỉ mang `true` (K-31) nên ghép riêng. */
+export const toFloorWirePayload = (
+  input: FloorPayload,
+): Omit<Partial<FloorWire>, 'isSection'> & { isSection?: boolean } => ({
   ...(input.areaM2 !== undefined ? { areaM2: input.areaM2 } : {}),
   ...(input.drawings !== undefined ? { drawings: input.drawings.map(toDrawingWirePayload) } : {}),
   ...(input.elevationMm !== undefined ? { elevationMm: input.elevationMm } : {}),

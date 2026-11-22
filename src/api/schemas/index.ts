@@ -174,6 +174,8 @@ export const FloorSchema = z
     // FE3D-FIX-003 R1: chỉ đọc; tuỳ chọn tới khi BE (B3) luôn phát `floors.hidden_in_3d`.
     hiddenIn3d: z.boolean().optional(),
     id: idSchema,
+    // K-31 (HS-03): BE chỉ gửi `true` khi dòng được đánh dấu mặt cắt, vắng khi không — không có `false`.
+    isSection: z.literal(true).optional(),
     name: z.string().min(1),
     order: z.number().int(),
   })
@@ -185,6 +187,7 @@ export const FloorSchema = z
     heightMm: wireFloor.heightMm,
     ...(wireFloor.hiddenIn3d !== undefined ? { hiddenIn3d: wireFloor.hiddenIn3d } : {}),
     id: wireFloor.id,
+    ...(wireFloor.isSection === true ? { isSection: true as const } : {}),
     name: wireFloor.name,
     order: wireFloor.order,
   }));
