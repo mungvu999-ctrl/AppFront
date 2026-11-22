@@ -584,7 +584,7 @@ export interface CreateProjectRequest {
 
 /** The port this hook talks through — a fetch, an undo, and nothing else. */
 export interface CreateProjectGateway {
-  readonly create: (request: CreateProjectRequest) => Promise<Result<{ readonly id: string }, unknown>>;
+  readonly create: (request: CreateProjectRequest) => Promise<Result<{ readonly id: string; readonly settingsSaved?: boolean }, unknown>>;
   readonly remove: (projectId: string) => Promise<Result<void, unknown>>;
 }
 
@@ -924,6 +924,12 @@ export function useCreateProjectModal(
           });
         },
       });
+      // Dự án đã có; chỉ hai trường khởi tạo chưa lưu được. Nói ra, không làm hỏng lượt tạo.
+      if (created.settingsSaved === false) {
+        options.onToast?.({
+          message: 'Chưa lưu được loại công trình và ghi chú. Bạn có thể nhập lại trong Cài đặt dự án.',
+        });
+      }
       options.onCreated?.(created.id);
       options.onDismiss();
     });
