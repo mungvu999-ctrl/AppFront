@@ -28,10 +28,16 @@ import type { Page } from '@playwright/test';
 export interface SeedSpatialOptions {
   /** Dự án mà cổng nạp kho phải nạp xong trước khi bơm — xem docblock. */
   readonly projectId?: string;
+  /**
+   * Bơm cả "máy chủ" của bộ mẫu (`simulateServerGraph`): N15 `readGraph`/`exportGraph` trả đúng
+   * đồ thị vừa bơm. Cần khi màn đọc lại đồ thị từ máy chủ thay vì từ kho — vd màn xuất lấy đồ thị
+   * qua tuyến xuất có kiểm quyền (87bb47d6). Bộ mẫu dev mặc định không có tường nào.
+   */
+  readonly onServer?: boolean;
 }
 
 export async function seedSpatial(page: Page, options: SeedSpatialOptions = {}): Promise<void> {
-  await page.evaluate(async (projectId) => {
+  await page.evaluate(async ({ projectId, onServer }) => {
     // Biến, không chuỗi trần: TypeScript không tìm tệp ở `/src/...` trong Node.
     const load = (path: string): Promise<unknown> => import(/* @vite-ignore */ path);
 
@@ -76,6 +82,14 @@ export async function seedSpatial(page: Page, options: SeedSpatialOptions = {}):
     }
 
     const graph = fixture.createSampleBuilding();
+
+    if (onServer) {
+      const mockServer = (await load('/src/api/__mocks__/client.ts')) as {
+        simulateServerGraph: (graph: unknown) => void;
+      };
+      mockServer.simulateServerGraph(graph);
+    }
+
     const state = store.useStore.getState();
     /* Dự án của URL (hoặc `projectId` đã chờ) và revision 0 mỗi tầng: thiếu `source` thì bộ lưu lớp không lưu. */
     const sourceProject = projectId ?? /\/(?:projects|du-an)\/([^/]+)/.exec(location.pathname)?.[1] ?? '';
@@ -84,5 +98,5 @@ export async function seedSpatial(page: Page, options: SeedSpatialOptions = {}):
     );
     state.setSpatial(normalize.normalizeSpatial(graph), null, { floorRevisions, projectId: sourceProject });
     state.setFloors(graph.levels);
-  }, options.projectId);
+  }, { projectId: options.projectId, onServer: options.onServer === true });
 }

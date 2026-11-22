@@ -31,13 +31,19 @@ const GLB_EXPORT_TIMEOUT_MS = 20_000;
 /** Màn đã có dữ liệu — từ B-V12-01 cổng nạp kho trước khi màn vẽ. */
 const SCREEN_HEADING = 'Xuất mô hình';
 
-/** `goto` → cổng nạp kho xong (heading "Xuất bản vẽ") → bơm → nút `xuất` hiện → bỏ qua tour nếu nó đã hiện. */
-async function seedAndSettle(page: Page): Promise<void> {
+/**
+ * `goto` → cổng nạp kho xong (heading "Xuất bản vẽ") → bơm → nút `xuất` hiện → bỏ qua tour nếu nó đã hiện.
+ *
+ * `onServer`: bấm Xuất thì màn lấy đồ thị qua tuyến xuất có kiểm quyền (87bb47d6), không lấy kho
+ * trong trang — ca nào thật sự xuất tệp phải bơm cả phía máy chủ, không thì máy chủ bộ mẫu trả bốn
+ * tầng không tường và lượt xuất `.glb` báo "Xuất chưa thành công".
+ */
+async function seedAndSettle(page: Page, { onServer = false }: { readonly onServer?: boolean } = {}): Promise<void> {
   await page.goto(EXPORT_URL);
   await expect(page.getByRole('heading', { name: SCREEN_HEADING })).toBeVisible({
     timeout: FIRST_PAINT_TIMEOUT_MS,
   });
-  await seedSpatial(page, { projectId: PROJECT_ID });
+  await seedSpatial(page, { projectId: PROJECT_ID, onServer });
   await expect(page.getByRole('button', { name: /^Xuất (\.glb|\.json|PDF|ảnh)$/u })).toBeVisible();
   await dismissTour(page);
 }
@@ -60,7 +66,7 @@ test('vai người xem mở màn xuất thì thấy "không có quyền", không
 test('có bơm kho: bấm "xuất" .glb thì tệp tải về máy và hiện một dòng trong "Tệp đã xuất" với dung lượng dấu phẩy (A15, B-V12-05)', async ({
   page,
 }) => {
-  await seedAndSettle(page);
+  await seedAndSettle(page, { onServer: true });
 
   // G5-29: thẻ định dạng mang tên đọc được, "Mô hình 3D (.glb)", không còn chỉ đuôi ".glb".
   await expect(page.getByRole('radio', { name: /^Mô hình 3D \(\.glb\)/u })).toHaveAttribute('aria-checked', 'true');
