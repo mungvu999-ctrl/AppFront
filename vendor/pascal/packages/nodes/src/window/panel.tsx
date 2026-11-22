@@ -64,16 +64,11 @@ function normalizeWindowCornerRadii(
   return next.map((radius) => radius * scale) as [number, number, number, number]
 }
 
+// AppFront: chỉ các kiểu `Opening.swing` chứa được — kiểu khác mở lại là mất.
 const windowTypeOptions: Array<{ label: string; value: WindowNode['windowType'] }> = [
   { label: 'Fixed', value: 'fixed' },
   { label: 'Sliding', value: 'sliding' },
   { label: 'Casement', value: 'casement' },
-  { label: 'Awning', value: 'awning' },
-  { label: 'Single Hung', value: 'single-hung' },
-  { label: 'Double Hung', value: 'double-hung' },
-  { label: 'Bay', value: 'bay' },
-  { label: 'Bow', value: 'bow' },
-  { label: 'Louvered', value: 'louvered' },
 ]
 
 const shapedWindowTypes = new Set<WindowNode['windowType']>([

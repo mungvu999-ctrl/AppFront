@@ -522,7 +522,7 @@ export default function DoorPanel() {
             options={[
               { label: 'Door', value: 'door' },
               { label: 'Opening', value: 'opening' },
-              { label: 'Garage', value: 'garage' },
+              // AppFront: bỏ "Garage" — `Opening.swing` không chứa kiểu garage-*, mở lại là mất.
             ]}
             value={typeMode}
           />

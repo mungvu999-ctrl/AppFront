@@ -26,14 +26,6 @@ export const EDITOR_EXTRA4_VI = {
       '    parts.push(`${count} ${kindNameVi(type)}`)',
     ],
   ],
-  [`${UI}controls/material-properties-editor.tsx`]: [
-    L('Roughness', 'Độ nhám'),
-    L('Metalness', 'Độ kim loại'),
-    L('Opacity', 'Độ mờ'),
-    ['<option value="front">Front</option>', '<option value="front">Mặt trước</option>'],
-    ['<option value="back">Back</option>', '<option value="back">Mặt sau</option>'],
-    ['<option value="double">Double</option>', '<option value="double">Hai mặt</option>'],
-  ],
   [`${UI}controls/terrain-sculpt-panel.tsx`]: [
     L('Size', 'Kích thước'),
     L('Strength', 'Cường độ'),

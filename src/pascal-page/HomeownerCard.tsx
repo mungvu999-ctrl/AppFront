@@ -72,6 +72,8 @@ const DOOR_LABELS: Record<DoorKind, string> = {
   folding: 'Cửa xếp',
   opening: 'Không cánh',
 };
+/** Mở hất, lá sách: `Opening.swing` không chứa được, mở lại là mất nên không mời chọn (nhãn vẫn cần cho cửa đã có sẵn). */
+const SAVEABLE_WINDOW_KINDS: readonly WindowKind[] = ['fixed', 'sliding', 'casement', 'casement2'];
 const WINDOW_LABELS: Record<WindowKind, string> = {
   fixed: 'Kính cố định',
   sliding: 'Cửa lùa',
@@ -306,7 +308,7 @@ export function HomeownerCard({ stores, readOnly, extra }: HomeownerCardProps) {
         <KindRow
           current={windowKind}
           icons={WINDOW_ICONS}
-          kinds={Object.keys(WINDOW_LABELS) as WindowKind[]}
+          kinds={SAVEABLE_WINDOW_KINDS}
           label="Kiểu cửa sổ"
           labels={WINDOW_LABELS}
           onPick={(kind) => update(windowKindUpdate(node, kind))}

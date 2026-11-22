@@ -55,9 +55,9 @@ export { CONCEPT_FALLBACK_NOTICE, furnishModeOf } from '@/lib/pascal/sceneConcep
 /** Câu khi lượt gửi N16 hỏng mà không có dải khối nào nêu lý do. */
 export const BRIDGE_SAVE_FAILED = 'Lưu thất bại. Kiểm tra mạng rồi sửa tiếp để thử lại.';
 
-/** Câu báo một lần mỗi phiên cho phần sửa máy chủ chưa nhận (`unsavedPascalEdits`). */
+/** Câu báo MỖI lần cho phần sửa máy chủ chưa nhận (`unsavedEditsOf`): phần ấy vừa được đặt về như cũ. */
 export const unsavedNoticeOf = (labels: readonly string[]): string =>
-  `Chưa lưu được: ${labels.join(', ')} — sẽ có ở bản sau.`;
+  `Chưa lưu được: ${labels.join(', ')} — đã đặt về như cũ.`;
 
 /** Câu ném cho editor khi tầng bị khối (409/422/403) — lý do đầy đủ + "Tải lại tầng" ở thẻ trang. */
 export const BRIDGE_SAVE_BLOCKED = 'Tầng này chưa lưu được lên máy chủ. Xem thẻ ở góc trên để tải lại tầng.';
@@ -416,18 +416,18 @@ export function usePascalProjectBridge(
   const { autosave, isFloorBlocked, label: savedLabel, reloadFloor, saveBlock } = useFloorLayerAutosave({ projectId });
   const engineState = useSyncExternalStore(autosave.subscribe, autosave.getState, autosave.getState);
 
-  /* Phần sửa chưa lưu được: mỗi nhãn báo một lần mỗi phiên. */
-  const noticed = useRef(new Set<string>());
   const noticedMessages = useRef(new Set<string>());
+  /* Phần sửa chưa lưu được: đặt về như cũ ngay và báo mỗi lần — người dùng không được thấy thứ mở lại sẽ mất.
+     Không dựng lại từ kho như `revertToStore`: `nodeChangesTo` chỉ so khoá cảnh đích có, mà cảnh từ kho
+     không có `slots` của cửa nên màu cửa sẽ ở lại trên màn. */
   const onUnsaved = useCallback(
-    (labels: readonly string[]) => {
-      const fresh = labels.filter((item) => !noticed.current.has(item));
-
-      if (fresh.length === 0) return;
-      fresh.forEach((item) => noticed.current.add(item));
-      push('info', unsavedNoticeOf(fresh));
+    (labels: readonly string[], restoredNodes: Readonly<Record<string, unknown>>) => {
+      if (labels.length === 0) return;
+      push('info', unsavedNoticeOf(labels));
+      const current = editorScene?.();
+      if (current !== undefined) applyScene?.({ ...current, nodes: { ...current.nodes, ...restoredNodes } });
     },
-    [push],
+    [applyScene, editorScene, push],
   );
   // Lời báo của lượt sửa (vd. vách mới cần tách phòng — W3d): mỗi câu một lần mỗi phiên.
   const onNotice = useCallback(

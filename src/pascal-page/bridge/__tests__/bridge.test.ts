@@ -60,6 +60,7 @@ const commit = vi.hoisted(() => ({
   ok: true,
   reason: null as string | null,
   unsaved: [] as string[],
+  restored: {} as Record<string, unknown>,
   notices: [] as string[],
   accepted: false,
   rebased: [] as unknown[],
@@ -181,7 +182,7 @@ vi.mock('@/screens/viewer/PascalViewer/usePascalEdits', () => ({
   }: {
     onRejected: (reason: string) => void;
     onMassDelete: (request: { nodeIds: readonly string[]; reason: string }) => void;
-    onUnsaved: (labels: readonly string[]) => void;
+    onUnsaved: (labels: readonly string[], restoredNodes: Readonly<Record<string, unknown>>) => void;
     onNotice: (message: string) => void;
   }) => ({
     validateCommit: () => {
@@ -194,7 +195,7 @@ vi.mock('@/screens/viewer/PascalViewer/usePascalEdits', () => ({
     onSceneCommit: () => {
       if (commit.reason !== null) onRejected(commit.reason);
       // Như hook thật (V9): mọi lượt không bị từ chối đều gọi onUnsaved, kể cả danh sách rỗng.
-      else onUnsaved(commit.unsaved);
+      else onUnsaved(commit.unsaved, commit.restored);
       commit.notices.forEach(onNotice);
 
       return Promise.resolve(commit.ok);
@@ -231,6 +232,7 @@ describe('usePascalProjectBridge', () => {
     commit.ok = true;
     commit.reason = null;
     commit.unsaved = [];
+    commit.restored = {};
     commit.notices = [];
     commit.massDelete = null;
     commit.confirmed = [];
@@ -678,24 +680,44 @@ describe('usePascalProjectBridge', () => {
       await result.current.onSave({ nodes: {}, rootNodeIds: [] });
     });
     expect(textsOf(result.current)).toEqual([unsavedNoticeOf(['màu sàn', 'màu tường'])]);
-    expect(textsOf(result.current)).toEqual(['Chưa lưu được: màu sàn, màu tường — sẽ có ở bản sau.']);
+    expect(textsOf(result.current)).toEqual(['Chưa lưu được: màu sàn, màu tường — đã đặt về như cũ.']);
 
+    // A5: lần sửa thứ hai vẫn được báo, không chỉ lần đầu của phiên.
     act(() => result.current.save!.dismissNotice(result.current.save!.notices[0]!.id));
     await act(async () => {
       await result.current.onSave({ nodes: {}, rootNodeIds: [] });
     });
-    expect(textsOf(result.current)).toEqual([]);
-
-    commit.unsaved = ['màu sàn', 'kiểu cửa'];
-    await act(async () => {
-      await result.current.onSave({ nodes: {}, rootNodeIds: [] });
-    });
-    expect(textsOf(result.current)).toEqual(['Chưa lưu được: kiểu cửa — sẽ có ở bản sau.']);
+    expect(textsOf(result.current)).toEqual(['Chưa lưu được: màu sàn, màu tường — đã đặt về như cũ.']);
 
     detail.role = 'viewer';
     const { result: viewer } = renderHook(() => usePascalProjectBridge('p1'));
     await waitFor(() => expect(viewer.current.readOnly).toBe(true));
     expect(viewer.current.save).toBeUndefined();
+  });
+
+  it('A5 — phần chưa lưu được về như cũ trong editor MỖI lần, chỉ đụng node có phần ấy', async () => {
+    const applied: { nodes: Record<string, unknown> }[] = [];
+    const editor = { nodes: { door1: { id: 'door1', slots: { panel: 'x' } }, wall1: { id: 'wall1' } }, rootNodeIds: [] };
+    const { result } = renderHook(() =>
+      usePascalProjectBridge('p1', (scene) => applied.push(scene as { nodes: Record<string, unknown> }), () => editor),
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    commit.unsaved = ['màu cửa'];
+    commit.restored = { door1: { id: 'door1', slots: undefined } };
+    for (const expected of [1, 2]) {
+      await act(async () => {
+        await result.current.onSave({ nodes: {}, rootNodeIds: [] });
+      });
+      expect(applied).toHaveLength(expected);
+    }
+    expect(applied[1]?.nodes).toEqual({ door1: { id: 'door1', slots: undefined }, wall1: { id: 'wall1' } });
+
+    commit.unsaved = [];
+    await act(async () => {
+      await result.current.onSave({ nodes: {}, rootNodeIds: [] });
+    });
+    expect(applied).toHaveLength(2);
   });
 
   it('W3e — lời báo của lượt sửa (vách mới): lên thẻ như câu chưa lưu, mỗi câu một lần mỗi phiên', async () => {

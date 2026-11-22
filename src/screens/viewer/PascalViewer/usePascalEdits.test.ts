@@ -29,6 +29,7 @@ import {
   CEILING_LIGHT_MOVE_BLOCKED,
   GENERATED_EDIT_BLOCKED,
   SUGGESTION_ACCEPTED_NOTICE,
+  unsavedEditsOf,
   unsavedPascalEdits,
   usePascalEdits,
 } from './usePascalEdits';
@@ -293,6 +294,14 @@ describe('blockedGeneratedEdits — món tự sinh không có đường lưu th�
 });
 
 describe('đèn trần không dời được', () => {
+  it('đèn quay lại sau Ctrl+Z: không báo, không đặt lại cỡ', () => {
+    const light = Object.values(SCENE.nodes).find((node) => isGeneratedLightId(node.id));
+    if (light === undefined) throw new Error('bộ mẫu phải có đèn trần');
+    const nodes = Object.fromEntries(Object.entries(SCENE.nodes).filter(([id]) => id !== light.id));
+
+    expect(unsavedEditsOf({ ...SCENE, nodes }, SCENE)).toEqual({ labels: [], restoredNodes: {} });
+  });
+
   it('đèn đổi chỗ: chặn kèm câu báo; xoá đèn vẫn lưu', async () => {
     const light = Object.values(SCENE.nodes).find((node) => isGeneratedLightId(node.id));
 
@@ -665,7 +674,41 @@ describe('usePascalEdits', () => {
       await result.current.onSceneCommit(thickened());
     });
 
-    expect(onUnsaved).toHaveBeenCalledWith([]);
+    expect(onUnsaved).toHaveBeenCalledWith([], {});
+  });
+
+  it('A5 — phần chưa lưu được về như cũ, phần còn lại của node vẫn lưu; lượt tự lưu sau không tính là sửa nữa', async () => {
+    const onUnsaved = vi.fn();
+    const { result } = mount({ onUnsaved });
+    const door = Object.values(SCENE.nodes).find((node) => node.type === 'door') as PascalNode;
+    const painted: PascalScene = {
+      nodes: { ...thickened().nodes, [door.id]: { ...door, slots: { panel: SAVEABLE } } as PascalNode },
+      rootNodeIds: SCENE.rootNodeIds,
+    };
+
+    await act(async () => {
+      await result.current.onSceneCommit(painted);
+    });
+
+    const [labels, restored] = onUnsaved.mock.calls[0] as [string[], Record<string, PascalNode>];
+    expect(labels).toEqual(['màu cửa']);
+    expect(Object.keys(restored)).toEqual([door.id]);
+    expect((restored[door.id] as unknown as { slots?: unknown }).slots).toBeUndefined();
+
+    // Editor đã nhận cảnh đặt lại: so với mốc mới thì không còn gì, không báo lần hai cho lượt ấy.
+    onUnsaved.mockClear();
+    let ok = true;
+    await act(async () => {
+      ok = await result.current.onSceneCommit({ nodes: { ...painted.nodes, ...restored }, rootNodeIds: SCENE.rootNodeIds });
+    });
+    expect(ok).toBe(false);
+    expect(onUnsaved).not.toHaveBeenCalled();
+
+    // Sơn cửa lần nữa: vẫn báo và vẫn đặt lại.
+    await act(async () => {
+      await result.current.onSceneCommit(painted);
+    });
+    expect(onUnsaved).toHaveBeenCalledWith(['màu cửa'], expect.objectContaining({ [door.id]: expect.anything() }));
   });
 
   it('v3 V3 — sửa chỉ màu đồ đạc: không có gì để ghi, nhưng báo "màu đồ đạc" chưa lưu được', async () => {
@@ -683,7 +726,7 @@ describe('usePascalEdits', () => {
 
     expect(ok).toBe(false);
     expect(onRejected).not.toHaveBeenCalled();
-    expect(onUnsaved).toHaveBeenCalledWith(['màu đồ đạc']);
+    expect(onUnsaved).toHaveBeenCalledWith(['màu đồ đạc'], expect.objectContaining({ [real.id]: expect.anything() }));
   });
 
   it('nạp xong mà chưa ai sửa gì: KHÔNG ghi vào bản vẽ', async () => {
