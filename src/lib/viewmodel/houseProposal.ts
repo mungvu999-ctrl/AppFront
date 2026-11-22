@@ -507,24 +507,26 @@ export function toHouseProposalRows(
 ): readonly HouseProposalRowVm[] {
   const byFloorId = new Map(proposal.floors.map((entry) => [entry.floorId, entry]));
   const ordered = [...floors].sort((a, b) => a.order - b.order);
+  // Dòng mặt cắt không phải một sàn: không vào chồng tầng (cộng dồn, danh sách dời, tầng "bên trên").
+  const stack = ordered.filter((floor) => byFloorId.get(floor.id)?.isSection !== true);
   // Lượt 1: chiều cao nhận được (không cần `stackedMm`) → chồng tầng sau khi nhận hết, cho `elevationCheck`.
   // ponytail: nhận đồng thời với tầng "Ghi đè" đọc từ chồng hiện tại; nhận lần lượt có thể khác khi
   // một tầng Ghi đè bị đẩy lên rồi mất cờ — ca hiếm, số đối chiếu chỉ để tham khảo.
-  const draft = ordered.map((floor, index) => {
+  const draft = stack.map((floor, index) => {
     const entry = byFloorId.get(floor.id);
-    return entry === undefined ? null : proposedRow({ floors: ordered, index, stackedMm: [], newHeights: new Map() }, entry);
+    return entry === undefined ? null : proposedRow({ floors: stack, index, stackedMm: [], newHeights: new Map() }, entry);
   });
   const newHeights = new Map(
     draft.flatMap((row) => (row?.height.acceptable === true && row.height.proposedMm !== null ? [[row.floorId, row.height.proposedMm]] : [])),
   );
-  const stackedMm = restackWithHeights(ordered, newHeights);
+  const stackedMm = restackWithHeights(stack, newHeights);
 
-  return ordered.map((floor, index) => {
+  return ordered.map((floor) => {
     const entry = byFloorId.get(floor.id);
     if (entry?.isSection === true) {
       return sectionRow(floor, entry);
     }
-    return entry === undefined ? noProposalRow(floor) : proposedRow({ floors: ordered, index, stackedMm, newHeights }, entry);
+    return entry === undefined ? noProposalRow(floor) : proposedRow({ floors: stack, index: stack.indexOf(floor), stackedMm, newHeights }, entry);
   });
 }
 

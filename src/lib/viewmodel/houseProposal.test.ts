@@ -290,6 +290,25 @@ describe('dòng đã đánh dấu mặt cắt', () => {
     expect(row.questionsFor.row).toEqual([questionsOf([{ code: 'NO_TEXT' }]).questionsFor.row[0]]);
   });
 
+  it('nằm giữa thứ tự tầng: không vào cộng dồn và danh sách dời', () => {
+    const plain = [floor(1, 0), floor(2, 3600), floor(3, 7200)];
+    const withSection = [floor(1, 0), { ...floor(9, 3600), order: 1.5 }, { ...floor(2, 3600), order: 2 }, { ...floor(3, 7200), order: 3 }];
+    const entries = [
+      entry('F1', { storeyNo: 1, heightMm: 3300, heightSource: 'dims' }),
+      entry('F2', { storeyNo: 2, elevationMm: 3000, elevationSource: 'plan' }),
+      entry('F3', { storeyNo: 3, elevationMm: 6600, elevationSource: 'plan' }),
+    ];
+    const sectionEntry = entry('F9', { kind: 'section', storeyLabel: undefined, storeyNo: undefined, isSection: true });
+    const pick = (rows: ReturnType<typeof rowsOf>) =>
+      ['F1', 'F2', 'F3'].map((id) => {
+        const row = rows.find((item) => item.floorId === id)!;
+        return { cascade: row.cascade, elevationCheck: row.elevationCheck };
+      });
+
+    expect(pick(rowsOf(withSection, ...entries, sectionEntry))).toEqual(pick(rowsOf(plain, ...entries)));
+    expect(rowOf('F1', plain, ...entries).cascade.map((item) => item.floorName)).toEqual(['Tầng 2', 'Tầng 3']);
+  });
+
   it('dòng máy nghi không phải mặt bằng: maybeSection', () => {
     expect(rowOf('F2', STACK, entry('F2', { kind: 'section', questions: [{ code: 'NOT_A_PLAN' }] })).maybeSection).toBe(true);
     expect(rowOf('F2', STACK, entry('F2')).maybeSection).toBe(false);

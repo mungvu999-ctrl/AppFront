@@ -157,6 +157,8 @@ function SectionToggle({ row, busy, onToggle }: SectionToggleProps) {
       <Button
         aria-disabled={busy || undefined}
         aria-label={row.isSection ? `Bỏ đánh dấu mặt cắt cho ${row.floorName}` : `Đánh dấu bản vẽ của ${row.floorName} là mặt cắt`}
+        // Dòng thường: ghost + gạch chân (chưa có variant viền mảnh/liên kết) để vẫn nhận ra là nút bấm.
+        className={row.maybeSection && !row.isSection ? undefined : 'underline underline-offset-2'}
         onClick={() => {
           if (!busy) onToggle(row);
         }}
