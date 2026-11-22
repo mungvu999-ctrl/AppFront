@@ -929,6 +929,25 @@ describe('CreateProjectModal, wired to its hook', () => {
     expect(gateway.create).toHaveBeenCalledTimes(1);
   });
 
+  it('warns, and keeps the project, when only the settings write failed', async () => {
+    const onToast = vi.fn();
+    const onCreated = vi.fn();
+    const gateway = {
+      create: vi.fn(async () => ({ ok: true as const, data: { id: 'prj-1', settingsSaved: false } })),
+      remove: vi.fn(),
+    };
+    render(
+      <CreateProjectModal isOpen gateway={gateway} forceCompact={false} onDismiss={noop} onToast={onToast} onCreated={onCreated} />,
+    );
+
+    goToReview('Nhà Lưu Thiếu');
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo dự án' }));
+
+    await waitFor(() => expect(onToast).toHaveBeenCalledTimes(2));
+    expect(onCreated).toHaveBeenCalledWith('prj-1');
+    expect((onToast.mock.calls[1]?.[0] as { message: string }).message).toContain('Cài đặt dự án');
+  });
+
   it('undo after the cancel window closed says so instead of failing silently (CREATE_UNDO_CLOSED)', async () => {
     const onToast = vi.fn();
     const gateway = {
@@ -984,4 +1003,49 @@ describe('CreateProjectModal, giá trị gõ đầu tiên vào ô chiều cao t�
       expect(screen.getByLabelText('Chiều cao tầng (sàn–sàn) Tầng trệt')).toHaveValue('3,2');
     },
   );
+});
+
+describe('createProjectGateway: loại công trình và ghi chú đi qua cài đặt dự án', () => {
+  const floors = [] as const;
+  const request = { name: 'Nhà A', address: '', code: '', buildingType: 'residential', notes: '', floors };
+
+  it('does not touch settings when both fields are left at their defaults', async () => {
+    const { client, gateway } = buildGateway();
+    const replace = vi.spyOn(client.projectSettings, 'replace');
+
+    const result = await gateway.create(request);
+
+    expect(result.ok).toBe(true);
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('writes the filled fields once, on top of the settings read first', async () => {
+    const { client, gateway } = buildGateway();
+    const replace = vi.spyOn(client.projectSettings, 'replace');
+
+    const result = await gateway.create({ ...request, buildingType: 'commercial', notes: 'Ghi chú thử' });
+
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(replace.mock.calls[0]?.[0].body).toMatchObject({ buildingType: 'commercial', notes: 'Ghi chú thử' });
+    expect(result.ok && result.data.settingsSaved).toBeUndefined();
+  });
+
+  it('sends only notes when only notes were filled', async () => {
+    const { client, gateway } = buildGateway();
+    const replace = vi.spyOn(client.projectSettings, 'replace');
+
+    await gateway.create({ ...request, notes: 'Chỉ ghi chú' });
+
+    expect(replace.mock.calls[0]?.[0].body).toMatchObject({ buildingType: 'residential', notes: 'Chỉ ghi chú' });
+  });
+
+  it('still returns the project, flagged, when the settings write fails', async () => {
+    const { client, gateway } = buildGateway();
+    vi.spyOn(client.projectSettings, 'replace').mockRejectedValue(new Error('mạng'));
+
+    const result = await gateway.create({ ...request, notes: 'Ghi chú' });
+
+    expect(result.ok && result.data.settingsSaved).toBe(false);
+    expect(result.ok && result.data.id).toBeTruthy();
+  });
 });

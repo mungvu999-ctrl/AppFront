@@ -33,6 +33,7 @@ import { useMemo } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 import { createAppApiClient } from '@/api/appClient';
+import { PROJECT_BUILDING_TYPES } from '@/api/schemas/projectSettings';
 import type { ApiClient, Floor } from '@/api/client';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ScreenErrorBoundary, type ScreenErrorFallback } from '@/components/feedback/ScreenErrorBoundary';
@@ -47,14 +48,12 @@ import type { CreateProjectGateway, CreateProjectRequest } from './useCreateProj
 /** Names this screen to the error boundary, and to anything reading its report. */
 const SCREEN_ID = 'create-project';
 
+
 /**
  * `CreateProjectRequest` → `ProjectWriteBody`.
  *
- * `ProjectWriteBody` offers `name, address, code, status, floors, members,
- * progress, currentVersion` and `toProjectWirePayload` picks only those keys —
- * `buildingType` and `notes` have no wire field yet. They stay on the model
- * (collected in the form, carried on the request) so the day the API grows a
- * field for either, this is the one function that changes.
+ * `buildingType` and `notes` are not project fields: they go through the
+ * settings write (`saveStartSettings`) after the project exists.
  */
 function toProjectWriteBody(request: CreateProjectRequest) {
   const floors: Floor[] = request.floors.map((floor, index) => ({
@@ -70,10 +69,49 @@ function toProjectWriteBody(request: CreateProjectRequest) {
     name: request.name,
     status: 'draft' as const, // A5: automation never sets 'approved' — that marker is a person's alone.
     floors,
-    // TODO(api): buildingType and notes have no wire field yet — dropped here, not sent.
     ...(request.address !== '' ? { address: request.address } : {}),
     ...(request.code !== '' ? { code: request.code } : {}),
   };
+}
+
+/** Mặc định của BE; chọn đúng giá trị này và không ghi chú thì không có gì để gửi. */
+const DEFAULT_BUILDING_TYPE = 'residential';
+
+/**
+ * Gửi "Loại công trình" và "Ghi chú" qua N5/N6 (PUT thay cả thân, nên đọc trước để giữ phần còn lại).
+ * Chỉ gửi khi người dùng đã điền; trả `false` nếu hỏng — dự án đã tạo rồi, không được coi là lỗi tạo.
+ */
+async function saveStartSettings(client: ApiClient, projectId: string, request: CreateProjectRequest): Promise<boolean> {
+  const buildingType = PROJECT_BUILDING_TYPES.find((value) => value === request.buildingType);
+  const hasType = buildingType !== undefined && buildingType !== DEFAULT_BUILDING_TYPE;
+  const hasNotes = request.notes !== '';
+
+  if (!hasType && !hasNotes) {
+    return true;
+  }
+
+  try {
+    const current = await client.projectSettings.read({ projectId });
+
+    if (!current.ok) {
+      return false;
+    }
+
+    const { revision, ...settings } = current.data;
+    const saved = await client.projectSettings.replace({
+      projectId,
+      baseVersion: revision,
+      body: {
+        ...settings,
+        ...(hasType ? { buildingType } : {}),
+        ...(hasNotes ? { notes: request.notes } : {}),
+      },
+    });
+
+    return saved.ok;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -106,7 +144,9 @@ export function createProjectGateway(client: ApiClient, queryClient: QueryClient
         ),
       );
 
-      return { ok: true, data: { id: result.data.id } };
+      const settingsSaved = await saveStartSettings(client, result.data.id, request);
+
+      return { ok: true, data: { id: result.data.id, ...(settingsSaved ? {} : { settingsSaved: false }) } };
     },
     remove: async (projectId) => {
       // Huỷ tạo, không phải #27: Kỹ sư không có quyền xoá dự án nhưng được huỷ dự án mình vừa tạo.

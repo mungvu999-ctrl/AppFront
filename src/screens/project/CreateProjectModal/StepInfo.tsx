@@ -100,6 +100,7 @@ export function StepInfo(props: StepInfoProps) {
             />
             <Textarea
               label="Ghi chú"
+              maxLength={500}
               value={props.notes}
               onChange={(event) => props.setNotes(event.target.value)}
               disabled={props.isSubmitting}
