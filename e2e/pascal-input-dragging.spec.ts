@@ -6,8 +6,9 @@
  * (bật khi kéo tay nắm tường, khi nhả cú kéo từ tường — `upstream/lib/drag-not-select.ts` …). Chỉ cần một đường
  * quên hạ cờ là viền rê chuột tắt mãi tới khi tải lại trang, và không bài nào khác thấy.
  *
- * Mỗi chu kỳ làm lần lượt bằng chuột/phím THẬT: kéo một món đồ, kéo từ giữa một bức tường (xoay camera, nhả trên
- * tường), kéo tay nắm đầu tường đang chọn, đo hai điểm bằng công cụ đo (phím M, Esc). Sau mỗi thao tác khẳng định cả
+ * Mỗi chu kỳ làm lần lượt bằng chuột/phím THẬT: kéo một món đồ, dời món bằng menu chuột phải "Di chuyển" (đi rồi về),
+ * kéo từ giữa một bức tường (xoay camera, nhả trên tường), kéo tay nắm đầu tường đang chọn, đo hai điểm bằng công cụ đo
+ * (phím M, Esc). Sau mỗi thao tác khẳng định cả
  * `inputDragging` lẫn `cameraDragging` đã về `false` — khi đó nhánh U83 gán `suppressSecondary = false` ở khung kế,
  * tức viền rê chuột trở lại. Số chu kỳ: `PASCAL_STUCK_CYCLES` (mặc định 20 — tiêu chí của L7-03 là 0 lần kẹt / 20).
  *
@@ -75,6 +76,8 @@ const solveAffine = (pairs: readonly { w: [number, number]; s: { x: number; y: n
 
 /** Số lần thấy cờ `inputDragging` BẬT giữa cú kéo — chứng cứ bài thật sự đi qua đường bật cờ (in ra, không chặn). */
 const seenDuringDrag = { input: 0, drags: 0 };
+/** Như trên cho chế độ dời của menu "Di chuyển": đường này phải bật cờ, nên bài đòi thấy nó ít nhất một lần. */
+const moveMode = { input: 0, moves: 0 };
 
 async function pressDrag(page: Page, from: { x: number; y: number }, to: { x: number; y: number }, steps = 24): Promise<void> {
   await page.mouse.move(from.x, from.y);
@@ -146,6 +149,28 @@ test.describe('Cờ inputDragging không kẹt (U83)', () => {
       }
       await check(cycle, 'kéo đồ');
 
+      // 1b — dời món bằng menu chuột phải "Di chuyển" (chế độ dời của editor bật `inputDragging` suốt lúc rê), bấm đặt
+      // rồi dời về chỗ cũ; cờ phải bật trong lúc rê và tắt sau khi đặt.
+      for (const back of [false, true]) {
+        const from = await screenOf(page, dragItemId);
+        if (from === null) break;
+        await page.mouse.click(from.x, from.y, { button: 'right' });
+        const moveItem = page.getByRole('menuitem', { name: 'Di chuyển' });
+        if (!(await moveItem.isVisible({ timeout: 5_000 }).catch(() => false))) {
+          await page.keyboard.press('Escape');
+          break;
+        }
+        await moveItem.click();
+        await page.waitForTimeout(300);
+        const to = { x: from.x + (back ? -50 : 50), y: from.y };
+        await page.mouse.move(to.x, to.y, { steps: 12 });
+        await page.waitForTimeout(200);
+        moveMode.moves += 1;
+        if ((await flags(page)).input) moveMode.input += 1;
+        await page.mouse.click(to.x, to.y);
+        await check(cycle, `dời bằng menu (${back ? 'về' : 'đi'})`);
+      }
+
       // 2 — kéo từ giữa bức tường dài nhất (xoay camera, nhả trên tường: drag-not-select bật cờ một nhịp).
       const mid = await screenOf(page, wall.id);
       if (mid !== null) await pressDrag(page, mid, { x: mid.x + 60, y: mid.y + 20 });
@@ -179,6 +204,9 @@ test.describe('Cờ inputDragging không kẹt (U83)', () => {
     }
 
     console.log(`cờ inputDragging bật giữa cú kéo: ${seenDuringDrag.input}/${seenDuringDrag.drags} cú kéo`);
+    console.log(`cờ inputDragging bật lúc dời bằng menu: ${moveMode.input}/${moveMode.moves} lượt`);
+    // Bài chỉ có nghĩa khi ít nhất một đường thật sự bật cờ (không thì "luôn false" là đúng mà vô nghĩa).
+    expect(moveMode.input + seenDuringDrag.input, 'không thao tác nào bật được cờ inputDragging').toBeGreaterThan(0);
     expect(stuck, 'cờ kéo phải về false sau mỗi thao tác').toEqual([]);
   });
 });
