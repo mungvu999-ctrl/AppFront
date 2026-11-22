@@ -9,6 +9,7 @@ import type { MillimetresPerPixel } from '@/domain/units/types';
 import type { ProjectSettings } from '../schemas/projectSettings';
 import type { ProjectSummary } from '../schemas/projectSummaries';
 import type { Me } from '../schemas/me';
+import { HOUSE_PROPOSAL_OFF, houseProposalOrNull, type HouseProposal } from '../schemas/houseProposal';
 import type { LightingBake } from '../schemas/lightingBake';
 import type { PipelineRun } from '../schemas/pipelineRuns';
 import type { ProjectRuleConfig } from '../schemas/ruleConfig';
@@ -1275,6 +1276,85 @@ const MOCK_SETTINGS_INITIAL: ProjectSettings = {
   snapToleranceMm: 50,
 };
 
+/** Id dự án có công tắc `DRAWING_SET_ENABLED` tắt: máy chủ trả `{enabled: false, …}`, `houseProposal.read` trả `null`. */
+export const MOCK_HOUSE_PROPOSAL_DISABLED_PROJECT_ID = 'project-house-proposal-off';
+
+/** Mã tầng của dự án mẫu `project-1` (đọc qua bộ chuyển `MOCK_SPATIAL_PROJECT`), từ dưới lên. */
+export const MOCK_PROPOSAL_FLOOR_IDS = ['L-0000000LX1', 'L-00000000L1', 'L-00000000L2', 'L-00000000L3'] as const;
+
+/**
+ * Đề xuất cho bốn tầng của `project-1` (hiện tại: hầm −3.000/3.000, T1 ±0/3.900, T2 +3.900/3.600,
+ * T3 +7.500/3.600). Các mức xếp chồng khít, không chồng nhau: cao độ = cao độ tầng dưới + chiều cao tầng dưới.
+ * Đủ ba dải độ chắc (>= 0,9 · 0,7–0,9 · < 0,7), nhiều mã câu hỏi, giá trị giả định (`convention`/`default`,
+ * không bao giờ nhận được) và hai chiều cao đọc được (T1 3.600, T2 3.300: nhận thì dời cao độ các tầng trên);
+ * cao độ T2/T3 khớp với cộng dồn chiều cao sau khi nhận.
+ */
+export const MOCK_HOUSE_PROPOSAL: HouseProposal = {
+  enabled: true,
+  floors: [
+    {
+      floorId: 'L-0000000LX1',
+      kind: 'plan',
+      kindConfidence: 0.7,
+      storeyLabel: 'basement',
+      storeyConfidence: 0.66,
+      elevationMm: -3300,
+      elevationConfidence: 0.55,
+      elevationSource: 'convention',
+      heightMm: 3300,
+      heightConfidence: 0.4,
+      heightSource: 'default',
+      questions: [{ code: 'LEVEL_MISSING' }, { code: 'HEIGHT_ASSUMED' }],
+    },
+    {
+      floorId: 'L-00000000L1',
+      kind: 'plan',
+      kindConfidence: 0.98,
+      storeyLabel: 'ground',
+      storeyNo: 1,
+      storeyConfidence: 0.95,
+      elevationMm: 0,
+      elevationConfidence: 0.9,
+      elevationSource: 'convention',
+      heightMm: 3600,
+      heightConfidence: 0.82,
+      heightSource: 'dims',
+      questions: [],
+    },
+    {
+      floorId: 'L-00000000L2',
+      kind: 'plan',
+      kindConfidence: 0.96,
+      storeyLabel: 'floor',
+      storeyNo: 2,
+      storeyConfidence: 0.88,
+      elevationMm: 3600,
+      elevationConfidence: 0.78,
+      elevationSource: 'plan',
+      heightMm: 3300,
+      heightConfidence: 0.74,
+      heightSource: 'plan',
+      questions: [],
+    },
+    {
+      floorId: 'L-00000000L3',
+      kind: 'plan',
+      kindConfidence: 0.9,
+      storeyLabel: 'floor',
+      storeyNo: 3,
+      storeyConfidence: 0.64,
+      elevationMm: 6900,
+      elevationConfidence: 0.55,
+      elevationSource: 'convention',
+      heightMm: 3300,
+      heightConfidence: 0.4,
+      heightSource: 'default',
+      questions: [{ code: 'STOREY_UNSURE' }, { code: 'ORDER_TEXT_CONFLICT', reason: 'title', textStoreyNo: 3 }, { code: 'HEIGHT_ASSUMED' }],
+    },
+  ],
+  runIds: ['run-mock-1', 'run-mock-2', 'run-mock-3', 'run-mock-4'],
+};
+
 const mockWireError = (status: number, code: string, requestId: string, raw: Record<string, unknown> = {}): HttpError => ({
   code,
   kind: 'http',
@@ -1574,6 +1654,15 @@ export const MOCK_SHARE_TOKEN = 'mock-share-ok';
 export const createMockApiClient = (): ApiClient => {
   let project = buildProject();
   let floors = clone(project.floors);
+  /** Tầng người dùng đã đánh dấu là mặt cắt (PATCH #34 `isSection`); house-proposal đọc lại thấy ngay. */
+  const sectionIds = new Set<string>();
+  const withSections = (proposal: HouseProposal): HouseProposal => ({
+    ...proposal,
+    floors: [
+      ...proposal.floors.filter((entry) => !sectionIds.has(entry.floorId)),
+      ...[...sectionIds].map((floorId) => ({ floorId, kind: 'section', kindConfidence: 1, storeyConfidence: 0, questions: [], isSection: true })),
+    ],
+  });
   const currentLayer = (floorId: string): SpatialLayer =>
     clone(
       writtenLayers.get(floorId) ??
@@ -1833,6 +1922,14 @@ export const createMockApiClient = (): ApiClient => {
           clone(
             MOCK_LIBRARY_ITEMS.find((item) => item.id === libraryItemId) ??
               makeFallbackLibraryItem(libraryItemId),
+          ),
+        ),
+    },
+    houseProposal: {
+      read: async ({ projectId }) =>
+        ok(
+          houseProposalOrNull(
+            projectId === MOCK_HOUSE_PROPOSAL_DISABLED_PROJECT_ID ? HOUSE_PROPOSAL_OFF : withSections(clone(MOCK_HOUSE_PROPOSAL)),
           ),
         ),
     },
@@ -2137,7 +2234,13 @@ export const createMockApiClient = (): ApiClient => {
     spatial: {
       patchFloor: async ({ body, floorId }) => {
         const current = floors.find((item) => item.id === floorId) ?? makeFallbackFloor(floorId);
-        const next = applyFloorBody({ ...current, id: floorId }, body);
+        if (body.isSection !== undefined) {
+          if (body.isSection) sectionIds.add(floorId);
+          else sectionIds.delete(floorId);
+        }
+        // Như BE: đánh dấu mặt cắt thì tầng tự ẩn khỏi 3D.
+        const hidden = body.isSection === true ? true : body.hiddenIn3d;
+        const next = { ...applyFloorBody({ ...current, id: floorId }, body), ...(hidden === undefined ? {} : { hiddenIn3d: hidden }) };
         floors = floors.map((item) => (item.id === floorId ? next : item));
         project = { ...project, floors: clone(floors) };
         return ok(next);

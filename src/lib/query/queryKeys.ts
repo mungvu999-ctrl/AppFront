@@ -54,7 +54,8 @@ const createQueryKeyFactory = <
 
 const projectListRoot = freezeKey(['project', 'list'] as const);
 const projectDetailRoot = freezeKey(['project', 'detail'] as const);
-const projectMembersRoot = freezeKey(['project', 'members'] as const);
+const projectHouseProposalRoot = freezeKey(['project', 'houseProposal'] as const);
+const projectMembersRoot =freezeKey(['project', 'members'] as const);
 /*
  * Danh sách dự án gần đây của màn "không tìm thấy trang" — khoá RIÊNG, không
  * dùng lại `project.list`.
@@ -210,6 +211,11 @@ export const queryKeys = {
   },
   project: {
     detail: createQueryKeyFactory(projectDetailRoot, (projectId: string) => [...projectDetailRoot, projectId] as const),
+    /** Đề xuất số tầng/cốt/chiều cao cho cả nhà (Mức 3): chỉ đọc, `null` khi công tắc tắt. */
+    houseProposal: createQueryKeyFactory(projectHouseProposalRoot, (projectId: string) => [
+      ...projectHouseProposalRoot,
+      projectId,
+    ] as const),
     list: createQueryKeyFactory(projectListRoot, () => projectListRoot),
     recent: createQueryKeyFactory(projectRecentRoot, () => projectRecentRoot),
     members: createQueryKeyFactory(projectMembersRoot, (projectId: string) => [

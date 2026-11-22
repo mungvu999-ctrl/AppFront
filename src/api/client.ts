@@ -47,6 +47,7 @@ import {
   type DesignConceptState,
   type DesignStyleId,
 } from './schemas/designConcept';
+import { HouseProposalSchema, houseProposalOrNull, type HouseProposal } from './schemas/houseProposal';
 import {
   LightingBakeAvailabilitySchema,
   LightingBakeSchema,
@@ -913,6 +914,7 @@ export interface ApiClient {
   drawings: DrawingsApi;
   featureFlags: FeatureFlagsApi;
   floors: FloorsApi;
+  houseProposal: HouseProposalApi;
   library: LibraryApi;
   lightingBakes: LightingBakesApi;
   me: MeApi;
@@ -941,6 +943,16 @@ export type SharedModel = z.infer<typeof SharedModelSchema>;
 export interface DesignConceptApi {
   read(input: { projectId: string } & RequestOptions): Promise<ApiResult<DesignConceptState>>;
   select(input: { projectId: string; styleId?: DesignStyleId } & WriteRequestOptions): Promise<ApiResult<DesignConcept>>;
+}
+
+/**
+ * Mức 3 — `GET /projects/{projectId}/house-proposal`, chỉ đọc. `read` trả `null` khi tính năng tắt:
+ * thân `enabled: false` (công tắc `DRAWING_SET_ENABLED` tắt), hoặc 404 (máy chủ chưa có đường này).
+ * "Tính năng tắt" là trạng thái bình thường, nơi gọi ẩn bảng chứ không hiện lỗi. Mọi lỗi khác (5xx,
+ * mạng, giải mã) vẫn là `ok: false`.
+ */
+export interface HouseProposalApi {
+  read(input: { projectId: string } & RequestOptions): Promise<ApiResult<HouseProposal | null>>;
 }
 
 /**
@@ -1352,6 +1364,19 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
         DesignConceptSchema,
         'designConcept.select',
       ),
+  },
+  houseProposal: {
+    read: async ({ projectId, signal }) => {
+      const result = await callGet<unknown>(http, ENDPOINTS.houseProposal(projectId), signal);
+      // Máy chủ chưa có đường (404) = tính năng tắt, như `enabled: false`.
+      if (!result.ok && result.error.status === 404) return { ok: true, data: null };
+      const decoded = decodeSingle(
+        result,
+        HouseProposalSchema,
+        'houseProposal.read',
+      );
+      return decoded.ok ? { ok: true, data: houseProposalOrNull(decoded.data) } : decoded;
+    },
   },
   lightingBakes: {
     readAvailability: async (projectId, options) =>

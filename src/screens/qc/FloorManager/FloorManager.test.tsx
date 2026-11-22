@@ -68,7 +68,10 @@ import {
 import { resetSelectorCaches } from '@/store/selectors';
 import { useStore } from '@/store';
 
+import { createMockApiClient, MOCK_HOUSE_PROPOSAL, MOCK_HOUSE_PROPOSAL_DISABLED_PROJECT_ID } from '@/api/__mocks__/client';
+
 import { FloorManager } from './FloorManager';
+import type { HouseProposalApi } from './useFloorProposals';
 import { FloorManagerContainer, FloorManagerRoute } from './FloorManager.container';
 import { scenarioArgsFor } from './FloorManager.stories';
 import {
@@ -925,5 +928,77 @@ describe('[K34] công tắc "Các tầng là các căn hộ riêng"', () => {
       <FloorManager {...scenarioArgsFor('success')} axisMismatchNotice={notice} onToggleSeparateUnits={onToggleSeparateUnits} separateUnits />,
     );
     expect(screen.queryByText(notice.title)).toBeNull();
+  });
+});
+
+describe('F4 — bảng đề xuất của máy', () => {
+  /* `useId` đếm tiếp qua các lần gắn: bỏ mã sinh ra trước khi so. */
+  const domOf = (): string => document.body.innerHTML.replace(/_r_[0-9a-z]+_/g, '_id_');
+  const mountWith = async (proposalApi?: HouseProposalApi) => {
+    const view = renderWithProviders(
+      <FloorManagerContainer
+        gateway={createMockFloorManagerGateway()}
+        projectId={MOCK_HOUSE_PROPOSAL_DISABLED_PROJECT_ID}
+        registry={createShortcutRegistry()}
+        roles={['engineer']}
+        {...(proposalApi === undefined ? {} : { proposalApi })}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByText(TABLE_CAPTION_MANUAL)).toBeInTheDocument();
+    });
+    return view.queryClient;
+  };
+
+  it('công tắc tắt (mock enabled: false → null): không bảng, đọc một lần, DOM y như màn không có khe', async () => {
+    await mountWith();
+    const baseline = domOf();
+    cleanup();
+    useStore.getState().setSpatial(null, null);
+    resetSelectorCaches();
+
+    const mock = createMockApiClient();
+    const read = vi.spyOn(mock.houseProposal, 'read');
+    await mountWith(mock);
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    await act(async () => Promise.resolve());
+
+    expect(screen.queryByText('Đề xuất của máy cho cả nhà')).toBeNull();
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(domOf()).toBe(baseline);
+  });
+
+  /** Bốn đề xuất mẫu gắn vào bốn tầng của cổng giả (id của MOCK_HOUSE_PROPOSAL là của project-1). */
+  const proposalForGateway = {
+    ...MOCK_HOUSE_PROPOSAL,
+    floors: MOCK_HOUSE_PROPOSAL.floors.map((entry, index) => ({
+      ...entry,
+      floorId: String(FLOOR_MANAGER_SAMPLE_LEVELS[index]?.id ?? entry.floorId),
+    })),
+  };
+
+  it('công tắc bật: thanh hiện phía trên bảng tầng, mặc định thu gọn, bấm Xem đề xuất mở bảng', async () => {
+    await mountWith({ houseProposal: { read: () => Promise.resolve({ ok: true, data: proposalForGateway }) } });
+    expect(await screen.findByText('Đề xuất của máy cho cả nhà')).toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: /Đề xuất của máy theo từng tầng/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Xem đề xuất' }));
+    expect(screen.getByRole('table', { name: /Đề xuất của máy theo từng tầng/ })).toBeInTheDocument();
+  });
+
+  it('đề xuất không khác gì và không câu hỏi: không vẽ gì, DOM y như màn không có khe', async () => {
+    await mountWith();
+    const baseline = domOf();
+    cleanup();
+    useStore.getState().setSpatial(null, null);
+    resetSelectorCaches();
+
+    const read = vi.fn(() => Promise.resolve({ ok: true as const, data: { enabled: true, floors: [], runIds: [] } }));
+    const client = await mountWith({ houseProposal: { read } });
+    /* Chờ lượt đọc xong hẳn (không chỉ được gọi) rồi mới khẳng định vắng: ẩn vì "đang đọc" không tính. */
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(client.isFetching()).toBe(0));
+    await act(() => new Promise((done) => setTimeout(done, 0)));
+    expect(screen.queryByText('Đề xuất của máy cho cả nhà')).toBeNull();
+    expect(domOf()).toBe(baseline);
   });
 });
