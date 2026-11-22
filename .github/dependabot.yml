@@ -1,0 +1,50 @@
+version: 2
+
+# K-54 (L8): AppFront chưa từng có Dependabot; `pnpm audit --prod` 22/11/2026 báo 6 lỗ hổng high.
+# Khuôn theo AppBack/.github/dependabot.yml: nhóm minor/patch, bỏ qua bản major, tối đa 2 PR mở
+# (mỗi PR chạy cả cổng CI — hạn mức job chạy cùng lúc dùng chung với AppBack).
+#
+# `vendor/pascal/**` là mã chép (xem vendor/pascal/NGUON.md) và `vendor/basis/**` cũng vậy: Dependabot
+# chỉ đọc `package.json` + `pnpm-lock.yaml` ở gốc workspace, và phụ thuộc của gói vendor đi qua
+# `pnpm.overrides`, không qua PR bot. Nếu sau này bot đề xuất sửa `vendor/**`, thêm `exclude-paths` ở đây.
+#
+# Tiêu đề commit: `build(deps): Bump …` / `ci(deps): Bump …` (≤ 72 ký tự với tên gói thường gặp;
+# AppBack L8-N02 là bài học khi tiêu đề dài làm job `commits` đỏ).
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    open-pull-requests-limit: 2
+    schedule:
+      interval: "weekly"
+    groups:
+      npm-patches:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      # Khoá cứng có chủ đích, không phải bump thường: three.js/R3F/Pascal ghép với nhau theo
+      # phiên bản (CLAUDE.md, mục Dự án) và `zod` 3.x là phiên bản app dùng — bản vá của zod chỉ có
+      # ở 4.x (>=4.6.6), nâng major là việc riêng.
+      - dependency-name: "three"
+      - dependency-name: "@react-three/fiber"
+      - dependency-name: "@react-three/drei"
+    commit-message:
+      prefix: "build"
+      include: "scope"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    open-pull-requests-limit: 2
+    schedule:
+      interval: "weekly"
+    groups:
+      actions-patches:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "ci"
+      include: "scope"
