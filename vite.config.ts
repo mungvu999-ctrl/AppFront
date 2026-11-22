@@ -85,6 +85,9 @@ export default defineConfig(({ mode }) => {
       watch: { ignored: ['**/playwright-report/**', '**/test-results/**'] },
     },
     build: {
+      // Không tính gzip từng chunk trong tiến trình vite (đỉnh heap build trên CI ~2 GB, L8-N04);
+      // ngân sách gzip do `pnpm size` đo từ `dist/`.
+      reportCompressedSize: false,
       // terser thay vì esbuild: chậm hơn vài giây mỗi lần dựng, đổi lấy ~1,5%
       // gzip trên toàn bộ JS — đúng tinh thần cổng kích thước gói: sửa cách dựng,
       // không nới ngưỡng. Không mangle property nào; `passes: 2` cho terser nén
