@@ -38,6 +38,7 @@ import { ImageOff } from 'lucide-react';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { cssDurationMs, staggerSchedule } from '@/lib/motion';
 
+import { ScanCursorOverlay } from './ScanCursorOverlay';
 import type { ProcessingPreviewPanelProps } from './types';
 
 /* -------------------------------------------------------------------------- */
@@ -60,7 +61,8 @@ const FRAME_CLASSES =
 /* -------------------------------------------------------------------------- */
 
 export function ProcessingPreviewPanel({ prefersReducedMotion, preview }: ProcessingPreviewPanelProps) {
-  const { activeFloorId, altText, detectedGeometryPaths, isScanning, sourceImageUrl } = preview;
+  const { activeFloorId, altText, detectedGeometryPaths, isScanning, scanResults, scanRunId, sourceImageUrl } = preview;
+  const [pageSize, setPageSize] = useState<{ readonly height: number; readonly width: number } | null>(null);
 
   /** Bật lại một khung hình sau khi tầng đổi, để CSS transition có việc mà chạy. */
   const [isRevealed, setIsRevealed] = useState(false);
@@ -95,9 +97,22 @@ export function ProcessingPreviewPanel({ prefersReducedMotion, preview }: Proces
           <img
             alt={altText}
             className="h-full w-full object-contain transition-opacity ease-enter"
+            onLoad={(event) =>
+              setPageSize({ height: event.currentTarget.naturalHeight, width: event.currentTarget.naturalWidth })
+            }
             src={sourceImageUrl}
             style={{ opacity: isRevealed ? 1 : 0, transitionDuration: crossfadeDuration }}
           />
+
+          {scanResults === undefined || pageSize === null ? null : (
+            <ScanCursorOverlay
+              height={pageSize.height}
+              key={scanRunId}
+              prefersReducedMotion={prefersReducedMotion}
+              results={scanResults}
+              width={pageSize.width}
+            />
+          )}
 
           {detectedGeometryPaths.length === 0 ? null : (
             <svg

@@ -1727,6 +1727,7 @@ export const createMockApiClient = (): ApiClient => {
       },
     },
     drawings: {
+      scanResults: () => Promise.resolve({ ok: true, data: { walls: [], boxes: [] } }),
       complete: async ({ body, projectId }) => {
         const completed = makeProgress({ id: body.uploadId, progressPercent: 100, status: 'completed' });
         uploads.set(uploadKey(projectId, body.uploadId), completed);

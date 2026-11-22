@@ -75,6 +75,7 @@ import type { ApiClient, ApiResult, Floor, LatestFloorUpload, PipelineRunList, P
 import { ENDPOINTS, toApiUrl } from '@/api/endpoints';
 import type { Progress } from '@/api/schemas';
 import type { FloorLayerDocument, FloorReadiness } from '@/api/schemas/spatialLayer';
+import type { ScanResults } from '@/api/schemas/uploads';
 import type { PointMm } from '@/domain/units/compare';
 import { toPointMm } from '@/lib/commands/business/shared';
 import { refreshSingleFlight } from '@/lib/auth';
@@ -447,6 +448,8 @@ export interface ProcessingGateway {
   }) => Promise<ApiResult<Project>>;
   /** Lượt đọc mồi cho `useQuery` — một lần, không phải dòng sự kiện. */
   readonly readProgressOnce: (input: ReadProgressInput) => Promise<ApiResult<Progress>>;
+  /** N49 — tường và hộp của các bước mô hình đã xong, cho hiệu ứng con trỏ. */
+  readonly readScanResults: (input: ReadProgressInput) => Promise<ApiResult<ScanResults>>;
   /**
    * Theo dõi tiến độ của MỘT lượt xử lý. Trả hàm huỷ đăng ký.
    *
@@ -944,6 +947,13 @@ export function createProcessingGateway(
 
     readProject: ({ projectId, signal }) =>
       client.projects.read({ projectId, ...(signal !== undefined ? { signal } : {}) }),
+
+    readScanResults: ({ projectId, signal, uploadId }) =>
+      client.drawings.scanResults({
+        projectId,
+        uploadId,
+        ...(signal !== undefined ? { signal } : {}),
+      }),
 
     readProgressOnce: ({ projectId, signal, uploadId }) =>
       client.drawings.progress({

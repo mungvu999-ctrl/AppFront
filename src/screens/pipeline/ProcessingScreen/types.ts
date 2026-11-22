@@ -44,6 +44,8 @@
  * hình dạng một trường phải `ask` điều phối viên trước, không tự sửa.
  */
 
+import type { ScanResults } from '@/api/schemas/uploads';
+
 /* -------------------------------------------------------------------------- */
 /* Bảy trạng thái (A11).                                                       */
 /* -------------------------------------------------------------------------- */
@@ -204,6 +206,10 @@ export interface ProcessingPreviewViewModel {
   readonly isScanning: boolean;
   /** Đường hình học đã dò được, dạng path (SVG hoặc tương đương) để vẽ đè lên ảnh. */
   readonly detectedGeometryPaths: readonly string[];
+  /** Kết quả mô hình đã có của lượt đang xem, để con trỏ vẽ lên ảnh; vắng khi chưa đọc được. */
+  readonly scanResults?: ScanResults;
+  /** Lượt tải của `scanResults`: đổi lượt thì con trỏ vẽ lại từ đầu. */
+  readonly scanRunId?: string;
   /** Tầng đang hiện trên panel. `null` khi chưa có tầng nào để xem (rỗng/đang tải). */
   readonly activeFloorId: string | null;
 }
