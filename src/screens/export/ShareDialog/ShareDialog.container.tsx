@@ -10,8 +10,8 @@
  *
  * `<ShareDialogContainer isOpen onDismiss projectId />` là đủ. Mọi thứ còn lại
  * — cổng HTTP, danh sách thành viên, quyền, bộ nhớ đệm — file này tự lo, nên nơi
- * gọi không phải viết một dòng logic chia sẻ nào. Bốn prop còn lại (`roles`,
- * `viewpoint`, `gateway`, `onToast`) là đường tiêm cho test, story và cho một vỏ
+ * gọi không phải viết một dòng logic chia sẻ nào. Ba prop còn lại (`roles`,
+ * `gateway`, `onToast`) là đường tiêm cho test, story và cho một vỏ
  * ứng dụng muốn nói ra vai thật hay góc nhìn thật.
  *
  * ## Vì sao `onToast` là prop, không phải `useToast()`
@@ -102,7 +102,6 @@ function WiredShareDialog(props: ShareDialogContainerProps) {
     projectId: props.projectId,
     roles: props.roles ?? NO_ROLES,
     members: membersQuery.data ?? NO_MEMBERS,
-    viewpoint: props.viewpoint ?? null,
     onDismiss: props.onDismiss,
     isOpen: props.isOpen,
     ...(props.onToast !== undefined ? { onToast: props.onToast } : {}),

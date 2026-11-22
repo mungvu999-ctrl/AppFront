@@ -17,7 +17,7 @@
  *     dữ liệu còn thiếu: **T-01**), nên danh sách này **chỉ để xem** — xem
  *     {@link MEMBERS_READ_ONLY_REASON}.
  *  3. **Bảng tra và phép chuyển thuần** mà hook nối vào: nhãn vai, chữ cái đầu,
- *     hạn dùng, cỡ khung nhúng, khoá bộ nhớ đệm.
+ *     hạn dùng, khoá bộ nhớ đệm.
  *
  * ## Vì sao không dùng `useShareLinkGateway` của `src/hooks`
  *
@@ -32,32 +32,19 @@
 import { createAppApiClient, createAppHttpClient } from '@/api/appClient';
 import type { ApiClient, User } from '@/api/client';
 import { idsOnLevel, type NormalizedSpatial } from '@/domain/spatial/normalize';
-import type { Level, LevelId } from '@/domain/spatial/types';
+import type { Level } from '@/domain/spatial/types';
 import {
   SHARE_EXPIRY_CHOICES,
   SHARE_EXPIRY_LABELS,
   type ShareExpiryChoice,
 } from '@/hooks/useShareLinks';
 import { can } from '@/lib/auth/permissions';
-import { COLORING_MODE_IDS, COLORING_MODE_LABELS, type ColoringModeId } from '@/lib/coloring/modes';
-import {
-  DEFAULT_EMBED_HEIGHT_PX,
-  DEFAULT_EMBED_WIDTH_PX,
-  DEFAULT_TOOLBAR_VISIBLE,
-  type EmbedParams,
-} from '@/lib/export/embedParams';
-import {
-  createHttpShareLinkGateway,
-  SHARE_PERMISSION_LABELS,
-  SHARE_PERMISSIONS,
-  type SharePermission,
-  type ShareLinkGateway,
-} from '@/lib/export/shareLink';
+import { createHttpShareLinkGateway, type ShareLinkGateway } from '@/lib/export/shareLink';
 import { initialsOf } from '@/lib/format/initials';
 import { queryKeys } from '@/lib/query/queryKeys';
 import type { ProjectRole } from '@/types/project';
 
-import type { EmbedSizePreset, MemberRowModel, ShareDialogOption } from './types';
+import type { MemberRowModel, ShareDialogOption } from './types';
 
 /* -------------------------------------------------------------------------- */
 /* 1 — Cổng mạng                                                              */
@@ -215,28 +202,6 @@ export const SHARE_EXPIRY_OPTIONS: readonly ShareDialogOption<string>[] = Object
   SHARE_EXPIRY_CHOICES.map((id) => ({ id, label: SHARE_EXPIRY_LABELS[id] })),
 );
 
-/** Danh mục quyền: hai mức của `SHARE_PERMISSIONS`, nhãn của `SHARE_PERMISSION_LABELS`. */
-export const SHARE_PERMISSION_OPTIONS: readonly ShareDialogOption<SharePermission>[] =
-  Object.freeze(SHARE_PERMISSIONS.map((id) => ({ id, label: SHARE_PERMISSION_LABELS[id] })));
-
-/** Danh mục chế độ tô màu: `COLORING_MODE_IDS` + `COLORING_MODE_LABELS`. */
-export const COLORING_OPTIONS: readonly ShareDialogOption<ColoringModeId>[] = Object.freeze(
-  COLORING_MODE_IDS.map((id) => ({ id, label: COLORING_MODE_LABELS[id] })),
-);
-
-/**
- * Danh mục tầng, dựng từ `Level[]` của store.
- *
- * Nhãn là `level.name` chứ không phải mã tầng: mã là thứ đi vào liên kết,
- * tên là thứ người đọc nhận ra. Thứ tự theo `order` từ dưới lên, đúng cách
- * người ta đọc một chồng tầng.
- */
-export function toLevelOptions(levels: readonly Level[]): readonly ShareDialogOption<LevelId>[] {
-  return [...levels]
-    .sort((left, right) => left.order - right.order)
-    .map((level) => ({ id: level.id, label: level.name }));
-}
-
 /** Mức đã chọn thành một thời điểm, hoặc `null` cho "không đặt hạn". */
 export function expiryDateFor(choice: ShareExpiryChoice, now: Date): Date | null {
   const days = SHARE_EXPIRY_DAYS[choice];
@@ -250,63 +215,6 @@ export function toExpiryChoice(id: string): ShareExpiryChoice {
     ? (id as ShareExpiryChoice)
     : DEFAULT_SHARE_EXPIRY_CHOICE;
 }
-
-/* -------------------------------------------------------------------------- */
-/* 6 — Khung nhúng                                                            */
-/* -------------------------------------------------------------------------- */
-
-const COMPACT_EMBED_WIDTH_PX = 640;
-const COMPACT_EMBED_HEIGHT_PX = 400;
-const WIDE_EMBED_WIDTH_PX = 1280;
-const WIDE_EMBED_HEIGHT_PX = 720;
-
-/**
- * Ba cỡ khung dựng sẵn.
- *
- * Cỡ giữa là `DEFAULT_EMBED_WIDTH_PX` × `DEFAULT_EMBED_HEIGHT_PX` của
- * `src/lib/export/embedParams.ts` chứ không phải một con số viết tay: đó là cỡ
- * `buildEmbedCode` dùng khi người chép không nói gì, nên hai nơi không được lệch.
- */
-export const EMBED_SIZE_PRESETS: readonly EmbedSizePreset[] = Object.freeze([
-  {
-    id: 'compact',
-    label: 'Gọn',
-    widthPx: COMPACT_EMBED_WIDTH_PX,
-    heightPx: COMPACT_EMBED_HEIGHT_PX,
-  },
-  {
-    id: 'standard',
-    label: 'Vừa',
-    widthPx: DEFAULT_EMBED_WIDTH_PX,
-    heightPx: DEFAULT_EMBED_HEIGHT_PX,
-  },
-  {
-    id: 'wide',
-    label: 'Rộng',
-    widthPx: WIDE_EMBED_WIDTH_PX,
-    heightPx: WIDE_EMBED_HEIGHT_PX,
-  },
-]);
-
-/** Cỡ hộp thoại mở ra ở. */
-export const DEFAULT_EMBED_SIZE_PRESET_ID = 'standard';
-
-/** Cỡ nào trong {@link EMBED_SIZE_PRESETS} khớp đúng hai số hiện tại, nếu có. */
-export function matchEmbedSizePreset(widthPx: number, heightPx: number): string | null {
-  const preset = EMBED_SIZE_PRESETS.find(
-    (candidate) => candidate.widthPx === widthPx && candidate.heightPx === heightPx,
-  );
-
-  return preset?.id ?? null;
-}
-
-/** Bốn khoá nhúng lúc hộp thoại vừa mở: đúng `DEFAULT_EMBED_PARAMS` của `embedParams`. */
-export const INITIAL_EMBED_PARAMS: EmbedParams = Object.freeze({
-  levelId: null,
-  coloring: null,
-  toolbar: DEFAULT_TOOLBAR_VISIBLE,
-  viewpointCode: null,
-});
 
 /** U03: câu nhắc khi có tầng có bản vẽ mà chưa xác nhận tỷ lệ — diện tích trên trang chia sẻ chưa đúng. */
 export const SHARE_SCALE_NOTICE = 'Chưa đặt tỷ lệ: diện tích trên trang chia sẻ là số tạm.';

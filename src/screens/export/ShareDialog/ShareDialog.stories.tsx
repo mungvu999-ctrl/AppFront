@@ -6,9 +6,7 @@
  * khuôn `ExportPanel.stories.tsx` (tên export ASCII, tiếng Anh — mục B/E.11 của CLAUDE.md;
  * nhãn tiếng Việt của từng trạng thái nằm trong chú thích ngay trên mỗi story).
  *
- * Dữ liệu mẫu đến từ `shareDialogFixtures.ts`: địa chỉ liên kết do `shareLinkUrl` sinh, mã
- * nhúng do `buildEmbedCode` sinh, khung xem trước do `resolveEmbedView` sinh, câu hạn dùng
- * do `describeShareLinkExpiry` sinh — không viết tay ở đây (R-70). `ShareDialog.test.tsx`
+ * Dữ liệu mẫu đến từ `shareDialogFixtures.ts`:  địa chỉ liên kết do `shareLinkUrl` sinh, câu hạn dùng do `describeShareLinkExpiry` sinh — không viết tay ở đây (R-70). `ShareDialog.test.tsx`
  * dùng đúng bộ dữ liệu này, nên hai file không kể hai câu chuyện khác nhau về cùng một màn.
  *
  * Thêm một story ngoài bảy trạng thái: liên kết chia sẻ tắt (máy chủ v1).
@@ -56,18 +54,12 @@ export const Partial: Story = {
   args: buildShareDialogProps('partial'),
 };
 
-/**
- * 4 · lỗi — biểu mẫu sai (mật khẩu ngắn hơn `MIN_SHARE_PASSWORD_LENGTH`, câu lỗi do
- * `validateShareLinkRequest` sinh) cộng lời báo hỏng của lượt gọi mạng.
- */
+/** 4 · lỗi — lời báo hỏng của lượt gọi mạng, biểu mẫu khoá lại. */
 export const ErrorState: Story = {
   args: buildShareDialogProps('error'),
 };
 
-/**
- * 5 · thành công — hai liên kết dùng được, một trong hai có mật khẩu và chỉ hiện dấu
- * hiệu `passwordProtected`; mã nhúng và khung xem trước cùng nói về một `EmbedParams`.
- */
+/** 5 · thành công — hai liên kết dùng được, một trong hai là liên kết cũ mang quyền "góp ý". */
 export const Success: Story = {
   args: buildShareDialogProps('success'),
 };
@@ -77,7 +69,7 @@ export const Forbidden: Story = {
   args: buildShareDialogProps('forbidden'),
 };
 
-/** 7 · thu gọn — dưới 1280: khung xem trước ẩn (`embed.previewHidden`), phần còn lại vẫn đủ. */
+/** 7 · thu gọn — dưới 1280: không còn gì phải ẩn, giống thành công với một liên kết. */
 export const Collapsed: Story = {
   args: buildShareDialogProps('collapsed'),
 };

@@ -6,10 +6,7 @@
  * `useShareDialog` (do worker khác viết) sẽ gọi:
  *
  *  - địa chỉ liên kết  ← `shareLinkUrl(link)`                (`lib/export/shareLink.ts:853`)
- *  - mã nhúng          ← `buildEmbedCode({ … })`             (`lib/export/embedParams.ts:779`)
- *  - khung xem trước   ← `resolveEmbedView(params)`          (`lib/export/embedParams.ts:527`)
  *  - câu hạn dùng      ← `describeShareLinkExpiry(link, now)` (`shareLink.ts:798`)
- *  - câu lỗi biểu mẫu  ← `validateShareLinkRequest(req)`     (`shareLink.ts:440`)
  *  - nhãn quyền/trạng thái ← `SHARE_PERMISSION_LABELS` · `SHARE_LINK_STATUS_LABELS`
  *  - nhãn hạn dùng     ← `SHARE_EXPIRY_LABELS`               (`hooks/useShareLinks.ts:85`)
  *  - "Đã lưu lúc 14:32" ← `formatClockTime(FAKE_CLOCK_START)` (A7, A15)
@@ -31,52 +28,27 @@
  *     nữa: nó đi ra từ `toMemberRows` của `shareDialogGateway.ts`, đúng hàm mà container
  *     gọi trên câu trả lời của máy chủ.
  *
- * ## Mật khẩu
- *
- * `ShareLinkFormModel.password` chỉ sống TRƯỚC khi lưu. Sau khi lưu, một `ShareLink`
- * chỉ mang `passwordProtected: boolean` — `ShareLinkWireSchema` strip mọi khoá nó không
- * kể tên, nên bản ghi trả về **không thể** mang mật khẩu. Fixture giữ đúng ranh giới đó:
- * chuỗi mật khẩu chỉ xuất hiện ở `form.password` của trạng thái đang soạn, và không bao
- * giờ ở một `ShareLinkRowModel`.
  */
 
 import type { User } from '@/api/client';
-import { SAMPLE_BUILDING, sampleLevelId } from '@/domain/spatial/__fixtures__/sampleBuilding';
-import type { LevelId } from '@/domain/spatial/types';
 import { SHARE_EXPIRY_CHOICES, SHARE_EXPIRY_LABELS } from '@/hooks/useShareLinks';
-import { COLORING_MODE_IDS, COLORING_MODE_LABELS } from '@/lib/coloring/modes';
-import type { ColoringModeId } from '@/lib/coloring/modes';
-import {
-  buildEmbedCode,
-  DEFAULT_EMBED_HEIGHT_PX,
-  DEFAULT_EMBED_WIDTH_PX,
-  resolveEmbedView,
-} from '@/lib/export/embedParams';
-import type { EmbedParams } from '@/lib/export/embedParams';
 import {
   describeShareLinkExpiry,
-  MIN_SHARE_PASSWORD_LENGTH,
   SHARE_LINK_STATUS_LABELS,
   SHARE_PERMISSION_LABELS,
-  SHARE_PERMISSIONS,
   shareLinkUrl,
-  validateShareLinkRequest,
 } from '@/lib/export/shareLink';
-import type { ShareLink, ShareLinkRequestField, SharePermission } from '@/lib/export/shareLink';
+import type { ShareLink } from '@/lib/export/shareLink';
 import { formatClockTime } from '@/lib/format/datetime';
 import { FAKE_CLOCK_START } from '@/lib/testing/fakeClock';
 import type { SevenState } from '@/lib/testing/sevenStateScenarios';
 
 import {
-  EMBED_SIZE_PRESETS,
   MEMBERS_READ_ONLY_REASON as SHARE_MEMBERS_READ_ONLY_REASON,
   SHARE_FORBIDDEN_REASON,
   toMemberRows,
 } from './shareDialogGateway';
 import type {
-  EmbedEditableKey,
-  EmbedSectionModel,
-  EmbedSizePreset,
   MemberRowModel,
   ShareDialogActions,
   ShareDialogModel,
@@ -150,11 +122,8 @@ export const SAMPLE_EXPIRED_LINK: ShareLink = buildShareLink({
   permission: 'comment',
 });
 
-/** Liên kết có mật khẩu — chỉ mang cờ `passwordProtected`, không mang mật khẩu. */
-export const SAMPLE_PROTECTED_LINK: ShareLink = buildShareLink({
-  id: 'share-3',
-  passwordProtected: true,
-});
+/** Liên kết cũ còn dùng được, mang quyền "góp ý" (không còn tạo mới được). */
+export const SAMPLE_COMMENT_LINK: ShareLink = buildShareLink({ id: 'share-3', permission: 'comment' });
 
 /* ==========================================================================
  * 2. Hàng liên kết — mọi chuỗi do `lib/export/shareLink` sinh.
@@ -182,84 +151,7 @@ export function buildShareLinkRow(
     statusLabel: SHARE_LINK_STATUS_LABELS[link.status],
     tone: toneOf(link),
     expiryText: describeShareLinkExpiry(link, now).text,
-    passwordProtected: link.passwordProtected,
     canRevoke: link.status === 'active',
-  };
-}
-
-/* ==========================================================================
- * 3. Nhúng — `params` → `view` + `code`, cả hai đều do lib sinh.
- * ========================================================================== */
-
-/**
- * Ba khổ nhúng — ĐÚNG bộ mà hộp thoại thật vẽ.
- *
- * Ở lớp W4 đây là ba khổ tự đặt, vì `shareDialogGateway.ts` chưa được ghép vào. Lớp gộp
- * nối lại: story và test giờ hiện đúng ba nhãn người dùng thấy ("gọn · vừa · rộng"), và
- * `activeSizePresetId` khớp cùng một bảng mà `matchEmbedSizePreset` tra.
- */
-export const SAMPLE_SIZE_PRESETS: readonly EmbedSizePreset[] = EMBED_SIZE_PRESETS;
-
-/** Bộ tham số nhúng mặc định: tầng đầu của `SAMPLE_BUILDING`, tô theo công năng phòng. */
-export const SAMPLE_EMBED_PARAMS: EmbedParams = {
-  levelId: sampleLevelId(0),
-  coloring: 'roomUsage',
-  toolbar: true,
-  viewpointCode: null,
-};
-
-/**
- * Danh mục tầng, đọc thẳng từ bốn tầng của bộ mẫu chuẩn A14 (`SAMPLE_BUILDING.levels`),
- * đúng tiền lệ `exportPanelGateway.ts:276` — không tự đặt lại tên tầng.
- *
- * Tên tầng của bộ mẫu là `Level 0`…`Level 3` (`sampleBuilding.ts:85`), tức chữ tiếng Anh
- * trong dữ liệu chứ không phải trong chữ của màn; `ShareDialog.test.tsx` neo đúng dạng đó
- * qua `ignore`, cùng cách `ExportPanel.test.tsx:110` làm.
- */
-export const SAMPLE_LEVEL_OPTIONS: readonly ShareDialogOption<LevelId>[] = SAMPLE_BUILDING.levels.map(
-  (level) => ({ id: level.id, label: level.name }),
-);
-
-/** Bảy chế độ tô màu, nhãn tiếng Việt từ `COLORING_MODE_LABELS` — không viết tay. */
-export const SAMPLE_COLORING_OPTIONS: readonly ShareDialogOption<ColoringModeId>[] =
-  COLORING_MODE_IDS.map((id) => ({ id, label: COLORING_MODE_LABELS[id] }));
-
-export interface EmbedSectionOverrides {
-  readonly params?: EmbedParams;
-  readonly widthPx?: number;
-  readonly heightPx?: number;
-  readonly activeSizePresetId?: string | null;
-  readonly recentlyChangedKey?: EmbedEditableKey | null;
-  readonly previewHidden?: boolean;
-}
-
-/**
- * Một `EmbedSectionModel` mà `view` và `code` LUÔN được tính lại từ `params`.
- *
- * Đây là điểm tựa của bài "khoá nhúng và khung xem trước phải khớp nhau": đổi một khoá
- * trong `params` rồi gọi lại hàm này thì cả hai đầu ra cùng đổi theo, vì cả hai đều đi
- * ra từ `lib/export/embedParams`, không từ một chuỗi ghép tay.
- */
-export function buildEmbedSection(overrides: EmbedSectionOverrides = {}): EmbedSectionModel {
-  const params = overrides.params ?? SAMPLE_EMBED_PARAMS;
-  const widthPx = overrides.widthPx ?? DEFAULT_EMBED_WIDTH_PX;
-  const heightPx = overrides.heightPx ?? DEFAULT_EMBED_HEIGHT_PX;
-  const matching = SAMPLE_SIZE_PRESETS.find(
-    (preset) => preset.widthPx === widthPx && preset.heightPx === heightPx,
-  );
-
-  return {
-    params,
-    view: resolveEmbedView(params),
-    code: buildEmbedCode({ url: SAMPLE_ACTIVE_LINK.url, params, widthPx, heightPx }),
-    widthPx,
-    heightPx,
-    levelOptions: SAMPLE_LEVEL_OPTIONS,
-    coloringOptions: SAMPLE_COLORING_OPTIONS,
-    sizePresets: SAMPLE_SIZE_PRESETS,
-    activeSizePresetId: overrides.activeSizePresetId ?? matching?.id ?? null,
-    recentlyChangedKey: overrides.recentlyChangedKey ?? null,
-    previewHidden: overrides.previewHidden ?? false,
   };
 }
 
@@ -315,45 +207,9 @@ export const MEMBERS_READ_ONLY_REASON = SHARE_MEMBERS_READ_ONLY_REASON;
 /** Một câu nói vì sao không đổi được, hiện ngay tại mục bị khoá — cũng là chuỗi THẬT. */
 export const NO_PERMISSION_REASON = SHARE_FORBIDDEN_REASON;
 
-/** Đổi khoá nhúng thì liên kết cũ hết hiệu lực — một dòng nhắc, không phải hộp thoại. */
-export const STALE_LINK_NOTICE =
-  'Bạn vừa đổi thiết lập nhúng; mã nhúng đã sao chép trước đó không còn khớp.';
-
 /* ==========================================================================
  * 5. Biểu mẫu — câu lỗi do `validateShareLinkRequest` sinh (L-03).
  * ========================================================================== */
-
-/** Mật khẩu ngắn hơn ngưỡng THẬT của lib, để lib tự sinh câu lỗi thay vì ta nghĩ ra. */
-export const TOO_SHORT_PASSWORD = 'a'.repeat(MIN_SHARE_PASSWORD_LENGTH - 1);
-
-/** Mật khẩu hợp lệ, chỉ sống ở `form.password` của trạng thái đang soạn. */
-export const SAMPLE_DRAFT_PASSWORD = 'mo-khoa-2026';
-
-function problemsFor(password: string): Partial<Record<ShareLinkRequestField, string>> {
-  const found: Partial<Record<ShareLinkRequestField, string>> = {};
-
-  for (const problem of validateShareLinkRequest({
-    projectId: SAMPLE_PROJECT_ID,
-    permission: 'view',
-    expiresAt: sevenDaysAfterStart,
-    now: FAKE_CLOCK_START,
-    password,
-  })) {
-    found[problem.field] = problem.message;
-  }
-
-  return found;
-}
-
-/** Câu lỗi THẬT cho một mật khẩu quá ngắn — không viết tay (L-03, R-70). */
-export const SAMPLE_FORM_PROBLEMS = problemsFor(TOO_SHORT_PASSWORD);
-
-/** Hai mức quyền, nhãn từ `SHARE_PERMISSION_LABELS` — đúng thứ tự bộ chọn liệt kê. */
-export const SAMPLE_PERMISSION_OPTIONS: readonly ShareDialogOption<SharePermission>[] =
-  SHARE_PERMISSIONS.map((permission) => ({
-    id: permission,
-    label: SHARE_PERMISSION_LABELS[permission],
-  }));
 
 /** Năm lựa chọn hạn dùng, nhãn từ `SHARE_EXPIRY_LABELS` — không viết tay. */
 export const SAMPLE_EXPIRY_CHOICES: readonly ShareDialogOption<string>[] = SHARE_EXPIRY_CHOICES.map(
@@ -364,13 +220,8 @@ export function buildShareLinkForm(overrides: Partial<ShareLinkFormModel> = {}):
   const problems = overrides.problems ?? {};
 
   return {
-    permission: 'view',
-    permissionOptions: SAMPLE_PERMISSION_OPTIONS,
     expiryChoiceId: SEVEN_DAY_CHOICE,
     expiryChoices: SAMPLE_EXPIRY_CHOICES,
-    passwordEnabled: false,
-    password: '',
-    includeViewpoint: false,
     canSubmit: Object.keys(problems).length === 0,
     ...overrides,
     problems,
@@ -381,27 +232,16 @@ export function buildShareLinkForm(overrides: Partial<ShareLinkFormModel> = {}):
 export const SEVEN_DAY_EXPIRY_LABEL = SHARE_EXPIRY_LABELS[SEVEN_DAY_CHOICE];
 
 /* ==========================================================================
- * 6. Mười tám hành động — không làm gì; test tự ghi đè bằng `vi.fn()`.
+ * 6. Mười một hành động — không làm gì; test tự ghi đè bằng `vi.fn()`.
  * ========================================================================== */
 
 export const NOOP_SHARE_DIALOG_ACTIONS: ShareDialogActions = {
-  setPermission: () => undefined,
   setExpiryChoice: () => undefined,
-  setPasswordEnabled: () => undefined,
-  setPassword: () => undefined,
-  setIncludeViewpoint: () => undefined,
   createLink: () => undefined,
   revokeLink: () => undefined,
   confirmRevoke: () => undefined,
   cancelRevoke: () => undefined,
   copyLink: () => undefined,
-  copyEmbedCode: () => undefined,
-  setEmbedLevel: () => undefined,
-  setEmbedColoring: () => undefined,
-  setEmbedToolbar: () => undefined,
-  setEmbedSizePreset: () => undefined,
-  setEmbedWidth: () => undefined,
-  setEmbedHeight: () => undefined,
   dismiss: () => undefined,
 };
 
@@ -427,10 +267,8 @@ function modelForState(state: SevenState): ShareDialogModel {
     membersReadOnlyReason: MEMBERS_READ_ONLY_REASON,
     form: buildShareLinkForm(),
     rows: [],
-    embed: buildEmbedSection(),
     copiedTargetId: null,
     errorMessage: null,
-    staleLinkNotice: null,
     pendingRevokeUrl: null,
   };
 
@@ -445,24 +283,18 @@ function modelForState(state: SevenState): ShareDialogModel {
       // Có liên kết nhưng đã hết hạn — một phần việc đã xong, phần còn lại thì không.
       return { ...base, rows: [buildShareLinkRow(SAMPLE_EXPIRED_LINK)] };
     case 'error':
-      // Biểu mẫu sai (mật khẩu quá ngắn) CỘNG lời báo hỏng của lượt gọi mạng.
+      // Lời báo hỏng của lượt gọi mạng, biểu mẫu khoá lại.
       return {
         ...base,
         rows: [],
         errorMessage: SAMPLE_ERROR_MESSAGE,
-        form: buildShareLinkForm({
-          passwordEnabled: true,
-          password: TOO_SHORT_PASSWORD,
-          problems: SAMPLE_FORM_PROBLEMS,
-          canSubmit: false,
-        }),
+        form: buildShareLinkForm({ canSubmit: false }),
       };
     case 'success':
-      // Có liên kết dùng được, cộng một liên kết CÓ mật khẩu — để chứng minh rằng sau
-      // khi lưu chỉ còn dấu hiệu `passwordProtected`, không còn chuỗi mật khẩu nào.
+      // Một liên kết dùng được, cộng một liên kết cũ mang quyền "góp ý" — vẫn phải hiện đúng nhãn.
       return {
         ...base,
-        rows: [buildShareLinkRow(SAMPLE_ACTIVE_LINK), buildShareLinkRow(SAMPLE_PROTECTED_LINK)],
+        rows: [buildShareLinkRow(SAMPLE_ACTIVE_LINK), buildShareLinkRow(SAMPLE_COMMENT_LINK)],
       };
     case 'forbidden':
       return {
@@ -473,12 +305,8 @@ function modelForState(state: SevenState): ShareDialogModel {
         form: buildShareLinkForm({ canSubmit: false }),
       };
     case 'collapsed':
-      // Dưới 1280: khung xem trước ẩn, mọi thứ khác vẫn ở đó.
-      return {
-        ...base,
-        rows: [buildShareLinkRow(SAMPLE_ACTIVE_LINK)],
-        embed: buildEmbedSection({ previewHidden: true }),
-      };
+      // Không còn khung xem trước để ẩn: giống `success` với một liên kết.
+      return { ...base, rows: [buildShareLinkRow(SAMPLE_ACTIVE_LINK)] };
     default:
       return base;
   }
@@ -486,7 +314,7 @@ function modelForState(state: SevenState): ShareDialogModel {
 
 /**
  * Máy chủ không phục vụ liên kết chia sẻ (v1, BE-BIND #47–#49 là v2): trạng thái
- * `success`, chỉ còn "người có quyền" — phần liên kết và mã nhúng rời DOM.
+ * `success`, chỉ còn "người có quyền" — phần liên kết rời DOM.
  */
 export function buildLinksUnsupportedModel(): ShareDialogModel {
   return {
