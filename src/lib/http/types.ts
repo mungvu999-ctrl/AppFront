@@ -75,6 +75,12 @@ export interface HttpRequestOptions<TBody = undefined> {
    */
   failFastOnRateLimit?: boolean;
   disableSingleFlight?: boolean;
+  /**
+   * Let the request outlive the page (`fetch` `keepalive`), for a write that may be the last thing
+   * a leaving page sends. Dropped silently when the body is over the browser's limit — see
+   * `KEEPALIVE_BODY_LIMIT_BYTES` — so the caller must not treat it as a delivery guarantee.
+   */
+  keepalive?: boolean;
   query?: Record<string, QueryParamValue>;
   responseType?: HttpResponseType;
   signal?: AbortSignal;

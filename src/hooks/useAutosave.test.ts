@@ -646,6 +646,24 @@ describe('useFloorLayerAutosave', () => {
     expect(onA.result.current.saveBlock).toBeNull();
   });
 
+  it('A3: saveNow reaches writeLayer on microtasks alone, so the exit flush runs before the page can die', async () => {
+    const { client, writeLayer } = spyClient();
+
+    loadSample();
+    const { result } = renderHook(() => useFloorLayerAutosave({ apiClient: client, floorId: FLOOR_A, projectId: PROJECT }));
+
+    await tick();
+    act(() => editFloor(FLOOR_A));
+
+    await act(async () => {
+      void result.current.autosave.saveNow();
+      // Không `tick`: một chặng qua timer hay `import()` sẽ không kịp tới đây.
+      for (let turn = 0; turn < 50; turn += 1) await Promise.resolve();
+      expect(writeLayer).toHaveBeenCalledTimes(1);
+    });
+    await tick();
+  });
+
   it('guards beforeunload while a floor is unsaved', async () => {
     const { client } = spyClient();
 

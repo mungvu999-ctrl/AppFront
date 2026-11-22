@@ -33,6 +33,12 @@ const AUTHORIZATION_HEADER = 'Authorization';
 const MAX_REQUEST_LOG_SIZE = 50;
 const MAX_TEXT_RESPONSE_BYTES = 30 * 1024 * 1024;
 const SENSITIVE_QUERY_PARAM_RE = /(token|secret|jwt|api[_-]?key)/i;
+/**
+ * Fetch spec: in-flight `keepalive` bodies share 64 KiB; past it the browser rejects the fetch.
+ * ponytail: checks this body only. Another keepalive in flight can still use up the quota; that
+ * reject is a `TypeError`, which rides the normal retry ladder once the other one is done.
+ */
+const KEEPALIVE_BODY_LIMIT_BYTES = 64 * 1024;
 
 interface RequestLogBuffer {
   push: (entry: RequestLogEntry) => void;
@@ -419,6 +425,8 @@ export const createHttpClient = ({
       baseHeaders.set(IDEMPOTENCY_KEY_HEADER, idempotencyKey);
     }
     const requestBody = serializeBody(options.body, baseHeaders);
+    const keepalive =
+      options.keepalive === true && typeof requestBody === 'string' && new Blob([requestBody]).size <= KEEPALIVE_BODY_LIMIT_BYTES;
 
     /**
      * Waits out the retry backoff without ever rejecting: `waitForRetry` rejects with the
@@ -457,6 +465,7 @@ export const createHttpClient = ({
             headers,
             method,
             signal: managedAbortSignal.signal,
+            ...(keepalive ? { keepalive } : {}),
             ...(requestBody !== undefined ? { body: requestBody } : {}),
           });
 

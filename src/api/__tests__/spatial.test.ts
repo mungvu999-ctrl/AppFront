@@ -295,6 +295,14 @@ describe('spatial.writeLayer', () => {
     expect(result.ok && result.data.revision).toBe(2);
   });
 
+  it('A3 — mọi lượt PUT lớp xin keepalive, để lượt đang bay sống qua lúc rời trang', async () => {
+    const http = createHttp(layer);
+
+    await createApiClient(http).spatial.writeLayer({ baseVersion: 1, body: { layer }, floorId: 'L-LEVEL01', projectId: 'p-1' });
+
+    expect(http.put).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ keepalive: true }));
+  });
+
   it('biến phản hồi hỏng thành lỗi hợp đồng thay vì để nó đi tiếp', async () => {
     const client = createApiClient(createHttp({ ...layer, walls: [{ ...wall, thicknessMm: 0 }] }));
 

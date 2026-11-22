@@ -157,6 +157,8 @@ export interface WriteRequestOptions extends RequestOptions {
   idempotent?: boolean;
   /** 429 trả về ngay, không tự thử lại — lượt ghi do người dùng bấm (BUG-510). Mặc định tắt. */
   failFastOnRateLimit?: boolean;
+  /** Lượt gửi sống qua lúc rời trang (`fetch` keepalive); thân quá 64 KiB thì transport bỏ cờ này. */
+  keepalive?: boolean;
   /**
    * Ngân sách thời gian của lượt gửi.
    *
@@ -1037,11 +1039,11 @@ const decodeList = <S extends ZodTypeAny>(
 
 type TransportWriteOptions = Pick<
   HttpRequestOptions,
-  'failFastOnRateLimit' | 'idempotencyKey' | 'idempotent' | 'signal' | 'timeoutMode'
+  'failFastOnRateLimit' | 'idempotencyKey' | 'idempotent' | 'keepalive' | 'signal' | 'timeoutMode'
 >;
 
 /**
- * Năm khoá đi thẳng xuống transport, từng khoá chép khi `!== undefined`.
+ * Sáu khoá đi thẳng xuống transport, từng khoá chép khi `!== undefined`.
  *
  * Trải cả `undefined` xuống sẽ dựng ra `{ idempotent: undefined }`, thứ mà
  * `exactOptionalPropertyTypes` từ chối và `toStrictEqual` trong bài kiểm bắt
@@ -1051,6 +1053,7 @@ const toRequestOptions = (options: WriteRequestOptions = {}): TransportWriteOpti
   ...(options.failFastOnRateLimit !== undefined ? { failFastOnRateLimit: options.failFastOnRateLimit } : {}),
   ...(options.idempotencyKey !== undefined ? { idempotencyKey: options.idempotencyKey } : {}),
   ...(options.idempotent !== undefined ? { idempotent: options.idempotent } : {}),
+  ...(options.keepalive !== undefined ? { keepalive: options.keepalive } : {}),
   ...(options.signal !== undefined ? { signal: options.signal } : {}),
   ...(options.timeoutMode !== undefined ? { timeoutMode: options.timeoutMode } : {}),
 });
@@ -1691,12 +1694,16 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
      * `PUT {baseVersion, body}` — `body` là `{ layer?, scaleMillimetresPerPixel? }`, gửi nguyên. Đúng route #35 của BE
      * (`spatial_write/router.py`). Bản trước gửi `PATCH` trần lớp, mà BE không
      * có `PATCH` nào ở đường này: mọi lượt lưu trên máy chủ thật là 405 (B-G-07).
+     *
+     * `keepalive` mọi lượt, không riêng lượt xả lúc rời trang: lượt lưu thường đang bay khi người
+     * dùng rời trang cũng phải tới nơi, và không phải luồn cờ qua engine + saver. Thân quá 64 KiB
+     * thì lượt gửi vẫn bị huỷ khi rời trang: hộp hỏi rời trang (`beforeunload`) là phần bù.
      */
     writeLayer: async (input) => {
       const { baseVersion, body, floorId, projectId } = input;
 
       return decodeSingle(
-        await callPut(http, ENDPOINTS.spatial.layer(projectId, floorId), { baseVersion, body }, input),
+        await callPut(http, ENDPOINTS.spatial.layer(projectId, floorId), { baseVersion, body }, { ...input, keepalive: true }),
         FloorLayerWriteResultSchema,
         'spatial.writeLayer',
       );

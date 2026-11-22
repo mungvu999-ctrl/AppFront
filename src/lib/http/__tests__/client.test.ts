@@ -15,6 +15,28 @@ describe('http/client.ts', () => {
     vi.useRealTimers();
   });
 
+  // A3: over the browser's 64 KiB limit a keepalive fetch rejects outright, so the big body goes as
+  // a plain fetch (cancelled on leaving; the leave prompt covers that) and never trips a reject.
+  it.each([
+    ['fits', 64 * 1024 - 20, true],
+    ['too large', 64 * 1024, false],
+  ])('keepalive reaches fetch only when the body fits: %s', async (_name, size, expected) => {
+    const fetchImpl = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(() => Promise.resolve(new Response(null, { status: 204 })));
+    const client = createHttpClient({ baseUrl: 'https://api.example.com', fetchImpl });
+
+    await client.put('/layer', { body: { text: 'x'.repeat(size) }, keepalive: true });
+
+    expect(fetchImpl.mock.calls[0]?.[1]?.keepalive === true).toBe(expected);
+  });
+
+  it('keepalive stays off unless asked for', async () => {
+    const fetchImpl = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(() => Promise.resolve(new Response(null, { status: 204 })));
+
+    await createHttpClient({ baseUrl: 'https://api.example.com', fetchImpl }).put('/layer', { body: { a: 1 } });
+
+    expect(fetchImpl.mock.calls[0]?.[1]).not.toHaveProperty('keepalive');
+  });
+
   // B-V3-04: StrictMode (or any unmount) aborts the first GET; the remount's GET for the
   // same URL joined it through single-flight and inherited the abort — ShareDialog opened
   // on "thao tác chia sẻ đã bị huỷ" with a healthy server behind it.

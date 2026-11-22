@@ -61,6 +61,7 @@ const commit = vi.hoisted(() => ({
   reason: null as string | null,
   unsaved: [] as string[],
   restored: {} as Record<string, unknown>,
+  pending: false,
   notices: [] as string[],
   accepted: false,
   rebased: [] as unknown[],
@@ -185,6 +186,7 @@ vi.mock('@/screens/viewer/PascalViewer/usePascalEdits', () => ({
     onUnsaved: (labels: readonly string[], restoredNodes: Readonly<Record<string, unknown>>) => void;
     onNotice: (message: string) => void;
   }) => ({
+    hasPendingEdit: () => commit.pending,
     validateCommit: () => {
       if (commit.massDelete !== null && commit.reason !== null) onMassDelete({ nodeIds: commit.massDelete, reason: commit.reason });
       return { ok: commit.reason === null };
@@ -233,6 +235,7 @@ describe('usePascalProjectBridge', () => {
     commit.reason = null;
     commit.unsaved = [];
     commit.restored = {};
+    commit.pending = false;
     commit.notices = [];
     commit.massDelete = null;
     commit.confirmed = [];
@@ -718,6 +721,24 @@ describe('usePascalProjectBridge', () => {
       await result.current.onSave({ nodes: {}, rootNodeIds: [] });
     });
     expect(applied).toHaveLength(2);
+  });
+
+  it('A3 — còn lượt sửa chờ debounce của editor thì bật hộp hỏi rời trang; hết thì thôi', async () => {
+    const { result } = renderHook(() => usePascalProjectBridge('p1', undefined, () => ({ nodes: {}, rootNodeIds: [] })));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    const leave = (): boolean => {
+      const event = new Event('beforeunload', { cancelable: true });
+
+      window.dispatchEvent(event);
+
+      return event.defaultPrevented;
+    };
+
+    expect(leave()).toBe(false);
+    commit.pending = true;
+    expect(leave()).toBe(true);
+    commit.pending = false;
+    expect(leave()).toBe(false);
   });
 
   it('W3e — lời báo của lượt sửa (vách mới): lên thẻ như câu chưa lưu, mỗi câu một lần mỗi phiên', async () => {

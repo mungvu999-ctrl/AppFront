@@ -117,6 +117,8 @@ export interface UsePascalEditsResult {
   readonly onSceneCommit: (scene: PascalScene) => Promise<boolean>;
   /** Truyền cho khung nhúng: phán quyết 6A, chạy trước khi lượt sửa vào lịch sử. */
   readonly validateCommit: (scene: PascalScene) => PascalCommitVerdict;
+  /** Cảnh editor đang giữ có lượt sửa ghi được mà chưa vào kho (vendor còn đợi debounce). */
+  readonly hasPendingEdit: (scene: PascalScene) => boolean;
   /** Người dùng đã xác nhận xoá đúng các node này: lượt xoá kế tiếp của chúng được qua cổng. */
   readonly confirmMassDelete: (nodeIds: readonly string[]) => void;
   /**
@@ -748,6 +750,12 @@ export function usePascalEdits({
     confirmedRemoval.current = new Set(nodeIds);
   }, []);
 
+  // Lượt bị từ chối cũng không tính: có lưu đâu mà mất, editor đặt nó về như cũ ở lượt lưu kế tiếp.
+  const hasPendingEdit = useCallback(
+    (scene: PascalScene): boolean => !readOnly && buildFor(settle(scene))?.ok === true,
+    [buildFor, readOnly, settle],
+  );
+
   const onSceneCommit = useCallback(
     async (raw: PascalScene): Promise<boolean> => {
       if (readOnly) return false;
@@ -813,5 +821,5 @@ export function usePascalEdits({
     savedScene.current = scene;
   }, []);
 
-  return { onSceneCommit, validateCommit, confirmMassDelete, history, takeSuggestionAccepted, rebaseOnRebuilt };
+  return { onSceneCommit, validateCommit, hasPendingEdit, confirmMassDelete, history, takeSuggestionAccepted, rebaseOnRebuilt };
 }

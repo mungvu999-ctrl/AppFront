@@ -14,9 +14,11 @@ import { denormalizeSpatial } from '@/domain/spatial/normalize';
 import type { SpatialGraph } from '@/domain/spatial/types';
 import { useFloorLayerAutosave } from '@/hooks/useAutosave';
 import { useSession } from '@/hooks/useSession';
+import { guardBeforeUnload } from '@/lib/autosave/beforeUnload';
 import { can } from '@/lib/auth/permissions';
 import { getSessionSnapshot } from '@/lib/auth/state';
 import { readWireError } from '@/lib/errors/wireError';
+import type { ApiClient } from '@/api/client';
 import type { DesignAddition, DesignConcept, DesignConceptState, DesignStyleId } from '@/api/schemas/designConcept';
 import { CATALOG_MODELS, isServerModel } from '@/lib/pascal/furnitureCatalog';
 import { CONCEPT_FALLBACK_NOTICE, readConcept, sceneConceptOf } from '@/lib/pascal/sceneConcept';
@@ -223,6 +225,7 @@ const messageOf = (error: unknown): string => {
 };
 
 async function loadProject(projectId: string, signal?: AbortSignal): Promise<{
+  readonly client: ApiClient;
   readonly projectName: string;
   readonly style: SceneStyle;
   readonly additions: readonly DesignAddition[];
@@ -319,6 +322,7 @@ async function loadProject(projectId: string, signal?: AbortSignal): Promise<{
 
   sceneTrace.source('concept', concept.source);
   return {
+    client,
     projectName: project.name,
     style,
     additions: concept.additions,
@@ -333,6 +337,7 @@ let nextNoticeId = 1;
 
 interface LoadState {
   readonly status: PascalBridge['status'];
+  readonly client?: ApiClient;
   readonly error?: string;
   readonly projectName?: string;
   readonly style?: SceneStyle;
@@ -383,9 +388,9 @@ export function usePascalProjectBridge(
     setLoad({ status: 'loading' });
     const scene = new AbortController();
     loadProject(projectId, scene.signal).then(
-      ({ projectName, style, additions, furnish, concept }) => {
+      ({ client, projectName, style, additions, furnish, concept }) => {
         if (cancelled) return;
-        setLoad({ status: 'ready', projectName, style, additions, furnish });
+        setLoad({ status: 'ready', client, projectName, style, additions, furnish });
         if (concept.startsWith('fallback:')) push('info', CONCEPT_FALLBACK_NOTICE);
       },
       (error: unknown) => {
@@ -412,8 +417,12 @@ export function usePascalProjectBridge(
 
   /* Bộ tự lưu tầng dùng chung (A7): mỗi `commit` của `usePascalEdits` đổi kho, saver gửi N16.
      Trạng thái thật của nó (đang lưu / đã lưu / bị khối) lên thẻ trang — "đã lưu" của Pascal chỉ
-     là lượt vào kho, không phải lượt PUT (v3 BE.md major 1). */
-  const { autosave, isFloorBlocked, label: savedLabel, reloadFloor, saveBlock } = useFloorLayerAutosave({ projectId });
+     là lượt vào kho, không phải lượt PUT (v3 BE.md major 1). Trao sẵn client: saver mà tự `import()` ở lượt lưu đầu
+     thì lượt xả lúc rời trang phải đợi qua một task, trang có thể đã mất trước khi `fetch` keepalive kịp chạy. */
+  const { autosave, isFloorBlocked, label: savedLabel, reloadFloor, saveBlock } = useFloorLayerAutosave({
+    projectId,
+    ...(load.client === undefined ? {} : { apiClient: load.client }),
+  });
   const engineState = useSyncExternalStore(autosave.subscribe, autosave.getState, autosave.getState);
 
   const noticedMessages = useRef(new Set<string>());
@@ -471,7 +480,7 @@ export function usePascalProjectBridge(
     },
     [showAlert],
   );
-  const { onSceneCommit, validateCommit, confirmMassDelete, takeSuggestionAccepted, rebaseOnRebuilt } = usePascalEdits({
+  const { onSceneCommit, validateCommit, hasPendingEdit, confirmMassDelete, takeSuggestionAccepted, rebaseOnRebuilt } = usePascalEdits({
     spatial,
     loadedScene,
     readOnly,
@@ -481,6 +490,19 @@ export function usePascalProjectBridge(
     onNotice,
     ...(session.user?.id === undefined ? {} : { actorId: session.user.id }),
   });
+
+  /* Rời trang trong lúc editor còn đợi debounce (1 s, `use-auto-save.ts`): kho chưa biết gì nên bộ canh của
+     `useFloorLayerAutosave` không thấy lượt sửa này. Editor xả lượt ấy bằng PUT keepalive khi rời trang, nhưng
+     thân quá 64 KiB thì trình duyệt huỷ, nên hộp hỏi rời trang phải bật trước, bất kể cỡ thân.
+     `[]`: đăng ký trước khi editor gắn, nên chạy trước lượt xả (lượt xả đổi mốc so sánh). */
+  const pendingEdit = useRef<() => boolean>(() => false);
+  useEffect(() => {
+    pendingEdit.current = () => {
+      const scene = editorScene?.();
+      return scene !== undefined && hasPendingEdit(scene as PascalScene);
+    };
+  });
+  useEffect(() => guardBeforeUnload({ hasUnsavedChanges: () => pendingEdit.current(), sendBeacon: () => undefined }), []);
 
   /* Đọc kho lúc gọi chứ không theo render: sau mỗi lượt sửa kho đổi, và một `onLoad`
      đổi danh tính sẽ khiến trang nạp lại cảnh đè lên việc đang làm. */
