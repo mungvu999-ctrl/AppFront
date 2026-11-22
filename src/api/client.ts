@@ -47,7 +47,13 @@ import {
   type DesignConceptState,
   type DesignStyleId,
 } from './schemas/designConcept';
-import { LightingBakeSchema, type LightingBake, type LightingBakeFileName } from './schemas/lightingBake';
+import {
+  LightingBakeAvailabilitySchema,
+  LightingBakeSchema,
+  type LightingBake,
+  type LightingBakeAvailability,
+  type LightingBakeFileName,
+} from './schemas/lightingBake';
 import { PipelineRunSchema, type PipelineRun } from './schemas/pipelineRuns';
 import { UserSchema, type SignInInput, type User as ApiUser } from './schemas';
 import {
@@ -941,6 +947,7 @@ export interface DesignConceptApi {
  * header Bearer nên không gắn thẳng URL vào loader được; nơi gọi tự `URL.createObjectURL`).
  */
 export interface LightingBakesApi {
+  readAvailability(projectId: string, options?: RequestOptions): Promise<ApiResult<LightingBakeAvailability>>;
   readFile(projectId: string, bakeId: string, name: LightingBakeFileName, options?: RequestOptions): Promise<ApiResult<Blob>>;
   readLatest(projectId: string, options?: RequestOptions): Promise<ApiResult<LightingBake | null>>;
   start(projectId: string, glb: Blob, options?: RequestOptions): Promise<ApiResult<LightingBake>>;
@@ -1344,6 +1351,12 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
       ),
   },
   lightingBakes: {
+    readAvailability: async (projectId, options) =>
+      decodeSingle(
+        await callGet<unknown>(http, ENDPOINTS.lightingBakes.availability(projectId), options?.signal),
+        LightingBakeAvailabilitySchema,
+        'lightingBakes.readAvailability',
+      ),
     readFile: async (projectId, bakeId, name, options) =>
       asApiResult(
         await http.get<Blob>(ENDPOINTS.lightingBakes.file(projectId, bakeId, name), {

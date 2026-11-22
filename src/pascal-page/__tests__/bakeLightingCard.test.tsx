@@ -8,8 +8,18 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ApiClient } from '@/api/client';
 import type { LightingBake } from '@/api/schemas/lightingBake';
 
-import { BakeLightingView } from '../BakeLightingCard';
+import { BakeLightingCard, BakeLightingView } from '../BakeLightingCard';
 import { bakeStatusLabel, useLightingBake } from '../useLightingBake';
+
+let availability: unknown = { ok: true, data: { enabled: true } };
+vi.mock('@/api/appClient', () => ({
+  createAppApiClient: () => ({
+    lightingBakes: {
+      readAvailability: async () => availability,
+      readLatest: async () => ({ ok: true, data: null }),
+    },
+  }),
+}));
 
 const T = '2026-11-02T08:00:00.000Z';
 const ID = 'bak_01JABCDEFGHJKMNPQRSTVWXYZ0';
@@ -64,5 +74,26 @@ describe('nướng ánh sáng', () => {
     render(<BakeLightingView bake={null} busy={false} error={null} onHide={noop} onStart={onStart} onView={noop} previewing={false} />);
     fireEvent.click(screen.getByRole('button', { name: 'Nướng ánh sáng' }));
     expect(onStart).toHaveBeenCalledOnce();
+  });
+});
+
+describe('công tắc nướng ánh sáng (N49)', () => {
+  const card = () => render(<BakeLightingCard exportGlb={async () => null} projectId="P-1" />);
+
+  it('hiện khi API báo enabled=true', async () => {
+    availability = { ok: true, data: { enabled: true } };
+    card();
+    expect(await screen.findByRole('button', { name: 'Nướng ánh sáng' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['enabled=false', { ok: true, data: { enabled: false } }],
+    ['API cũ (404)', { ok: false, error: { kind: 'http', status: 404 } }],
+    ['thiếu cờ', { ok: true, data: {} }],
+  ])('ẩn hẳn khi %s', async (_name, result) => {
+    availability = result;
+    const { container } = card();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(container).toBeEmptyDOMElement();
   });
 });

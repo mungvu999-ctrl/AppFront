@@ -1544,6 +1544,7 @@ const mockBakeView = (bake: { id: string; createdAt: string; startMs: number }):
     : { id: bake.id, status: 'done', createdAt: bake.createdAt, startedAt: bake.createdAt, endedAt: new Date().toISOString() };
 
 const mockLightingBakes: ApiClient['lightingBakes'] = {
+  readAvailability: async () => ok({ enabled: true }),
   readFile: async (_projectId, _bakeId, name) =>
     ok(
       name === 'manifest.json'

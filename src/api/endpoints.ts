@@ -146,6 +146,7 @@ export const ENDPOINTS = {
   lightingBakes: {
     file: (projectId: string, bakeId: string, fileName: string): string =>
       `${PROJECTS_ROOT}/${projectId}/lighting-bakes/${bakeId}/files/${fileName}`,
+    availability: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}/lighting-bakes/availability`,
     latest: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}/lighting-bakes/latest`,
     start: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}/lighting-bakes`,
   },

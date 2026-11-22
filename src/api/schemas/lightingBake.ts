@@ -43,3 +43,7 @@ export type LightingBakeStatus = (typeof LIGHTING_BAKE_STATUSES)[number];
 /** Ba tệp kết quả N44 phục vụ (khớp `LIGHTING_BAKE_FILES` của AppBack, trừ `input.glb`). */
 export const LIGHTING_BAKE_FILES = ['baked.glb', 'lightmap.png', 'manifest.json'] as const;
 export type LightingBakeFileName = (typeof LIGHTING_BAKE_FILES)[number];
+
+/** N49 — máy chủ có worker nướng không (`LIGHTING_BAKE_ENABLED`). Thiếu/sai dạng = coi như không có. */
+export const LightingBakeAvailabilitySchema = z.object({ enabled: z.boolean() });
+export type LightingBakeAvailability = z.infer<typeof LightingBakeAvailabilitySchema>;

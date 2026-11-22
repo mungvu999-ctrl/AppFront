@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { LightingBakeSchema } from '../../schemas/lightingBake';
+import { LightingBakeAvailabilitySchema, LightingBakeSchema } from '../../schemas/lightingBake';
 
 const ID = 'bak_01JABCDEFGHJKMNPQRSTVWXYZ0';
 const T = '2026-11-02T08:00:00.000Z';
+
+describe('LightingBakeAvailabilitySchema', () => {
+  it('chỉ nhận enabled là boolean', () => {
+    expect(LightingBakeAvailabilitySchema.safeParse({ enabled: true }).success).toBe(true);
+    expect(LightingBakeAvailabilitySchema.safeParse({}).success).toBe(false);
+  });
+});
 
 describe('LightingBakeSchema', () => {
   it('nhận đủ bốn trạng thái với mốc thời gian khớp', () => {

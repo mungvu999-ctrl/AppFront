@@ -3,6 +3,7 @@
  * lớp (`main.tsx` ẩn khi `readOnly`, tức `!can('edit', 'layer')`). Logic ở `./useLightingBake`.
  */
 import { ChevronDown } from 'lucide-react';
+import type { ReactNode } from 'react';
 
 import type { LightingBake } from '@/api/schemas/lightingBake';
 
@@ -69,20 +70,27 @@ export interface BakeLightingCardProps {
   readonly projectId: string;
   readonly exportGlb: () => Promise<Blob | null>;
   readonly section?: boolean;
+  /** Vẽ ngay trước thẻ (đường kẻ của menu); thẻ ẩn thì nó ẩn theo. */
+  readonly before?: ReactNode;
 }
 
-export function BakeLightingCard({ projectId, exportGlb, section = false }: BakeLightingCardProps) {
+export function BakeLightingCard({ projectId, exportGlb, section = false, before = null }: BakeLightingCardProps) {
   const state = useLightingBake(projectId, exportGlb);
+  // Chưa biết hoặc tắt (API cũ, không có worker) thì ẩn hẳn, không mời người dùng chờ vô ích.
+  if (!state.available) return null;
   return (
-    <BakeLightingView
-      bake={state.bake}
-      busy={state.busy}
-      error={state.error}
-      onHide={state.hide}
-      onStart={state.start}
-      onView={state.view}
-      previewing={state.previewing}
-      section={section}
-    />
+    <>
+      {before}
+      <BakeLightingView
+        bake={state.bake}
+        busy={state.busy}
+        error={state.error}
+        onHide={state.hide}
+        onStart={state.start}
+        onView={state.view}
+        previewing={state.previewing}
+        section={section}
+      />
+    </>
   );
 }
