@@ -15,10 +15,11 @@ import { expectSevenStates } from '@/lib/testing/expectSevenStates';
 import { expectVietnamese } from '@/lib/testing/expectVietnamese';
 import { renderWithProviders } from '@/lib/testing/render';
 import { createSevenStateScenarios, SEVEN_STATES, type SevenState } from '@/lib/testing/sevenStateScenarios';
-import type { HouseProposalRowVm } from '@/lib/viewmodel/houseProposal';
+import { MOCK_HOUSE_PROPOSAL } from '@/api/__mocks__/client';
+import { type HouseProposalRowVm, summarise, toHouseProposalRows } from '@/lib/viewmodel/houseProposal';
 
 import { FloorProposalPanel, type FloorProposalPanelProps } from './FloorProposalPanel';
-import { proposalArgsFor, SECTION_ARGS } from './FloorProposalPanel.stories';
+import { PROPOSAL_SAMPLE_FLOORS, proposalArgsFor, SECTION_ARGS } from './FloorProposalPanel.stories';
 
 afterEach(cleanup);
 
@@ -342,5 +343,32 @@ describe('đánh dấu mặt cắt', () => {
   it('chỉ đọc: không có nút đánh dấu', () => {
     renderState('forbidden');
     expect(screen.queryByRole('button', { name: /mặt cắt/ })).toBeNull();
+  });
+
+  it('chỉ còn dòng mặt cắt: vẫn có bảng, nút bỏ dấu và vùng status', () => {
+    const rows = SECTION_ARGS.rows.filter((row) => row.isSection);
+    renderWithProviders(<FloorProposalPanel {...SECTION_ARGS} message="Đã đánh dấu Tầng 3 là mặt cắt." rows={rows} summary={summarise(rows)} />);
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Bỏ đánh dấu mặt cắt cho Tầng 3' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Đã đánh dấu Tầng 3 là mặt cắt.');
+  });
+
+  it('trống: vùng status vẫn có và đọc câu kết quả', () => {
+    renderState('empty', { message: 'Đã bỏ đánh dấu mặt cắt cho Tầng 3.' });
+    expect(screen.getByRole('status')).toHaveTextContent('Đã bỏ đánh dấu mặt cắt cho Tầng 3.');
+  });
+
+  it('tầng không có trong đề xuất của máy chủ: không có nút; dòng máy hỏi NOT_A_PLAN không số: vẫn có nút', () => {
+    const notAPlan = toHouseProposalRows(
+      {
+        ...MOCK_HOUSE_PROPOSAL,
+        floors: [{ floorId: 'L-00000000L2', kind: 'section', kindConfidence: 0.9, storeyConfidence: 0.5, questions: [{ code: 'NOT_A_PLAN' }] }],
+      },
+      PROPOSAL_SAMPLE_FLOORS,
+    );
+    renderWithProviders(<FloorProposalPanel {...SECTION_ARGS} rows={notAPlan} summary={summarise(notAPlan)} />);
+    expect(screen.getByRole('button', { name: 'Đánh dấu bản vẽ của Tầng 2 là mặt cắt' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Đánh dấu bản vẽ của Tầng 1 là mặt cắt' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Đánh dấu bản vẽ của Tầng 3 là mặt cắt' })).toBeNull();
   });
 });

@@ -3,6 +3,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { createMockApiClient } from '@/api/__mocks__/client';
 import type { HouseFloorProposal, HouseProposal } from '@/api/schemas/houseProposal';
 import type { HttpError } from '@/lib/http';
 import { createShortcutRegistry } from '@/lib/input/shortcutRegistry';
@@ -18,6 +19,7 @@ import {
   FLOOR_MANAGER_SAMPLE_SECOND_ID,
   levelsOf,
 } from './floorManagerGateway';
+import { PROPOSAL_SAMPLE_FLOORS } from './FloorProposalPanel.stories';
 import { metreDraftText, useFloorManager, type ApplyLevelValue } from './useFloorManager';
 import { acceptedKey, MARK_FAILED_MESSAGE, UNSAVED_MESSAGE, useFloorProposals, type HouseProposalApi, type ProposalFloor } from './useFloorProposals';
 
@@ -363,10 +365,18 @@ describe('useFloorProposals — đánh dấu mặt cắt', () => {
   type Patch = NonNullable<HouseProposalApi['spatial']>['patchFloor'];
   const withPatch = (patchFloor: Patch): HouseProposalApi => ({ ...okApi(PROPOSAL), spatial: { patchFloor } });
   const okPatch = () => Promise.resolve({ ok: true as const, data: undefined as never });
-  const ground = (mounted: ReturnType<typeof mountAlone>) => {
-    const row = mounted.result.current.panel.rows.find((item) => item.floorId === GROUND);
-    if (row === undefined) throw new Error('thiếu Tầng trệt');
+  const rowOf = (mounted: ReturnType<typeof mountAlone>, floorId: string) => {
+    const row = mounted.result.current.panel.rows.find((item) => item.floorId === floorId);
+    if (row === undefined) throw new Error(`thiếu tầng ${floorId}`);
     return row;
+  };
+  const ground = (mounted: ReturnType<typeof mountAlone>) => rowOf(mounted, GROUND);
+  const UNMARKED = 'Đã bỏ đánh dấu mặt cắt cho Tầng trệt. Tầng này vẫn ẩn khỏi 3D; bật lại ở bảng tầng nếu cần.';
+  /** Máy chỉ trả dòng mặt cắt của Tầng trệt (máy chủ chỉ gửi `isSection: true`). */
+  const SECTION_ONLY: HouseProposal = {
+    enabled: true,
+    floors: [entry(GROUND, { kind: 'section', storeyConfidence: 0, isSection: true })],
+    runIds: ['r'],
   };
 
   it('thành công: PATCH isSection, đọc lại đề xuất, báo ở dòng trạng thái', async () => {
@@ -387,7 +397,74 @@ describe('useFloorProposals — đánh dấu mặt cắt', () => {
     await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
     await act(async () => mounted.result.current.panel.onToggleSection({ ...ground(mounted), isSection: true }));
     expect(patchFloor.mock.calls[0]?.[0].body).toEqual({ isSection: false });
-    expect(mounted.result.current.panel.message).toBe('Đã bỏ đánh dấu mặt cắt cho Tầng trệt.');
+    await waitFor(() => expect(mounted.result.current.panel.message).toBe(UNMARKED));
+  });
+
+  it('cổng mẫu thật: đánh dấu rồi đọc lại → dòng thành mặt cắt; bỏ dấu → trở lại', async () => {
+    const mounted = mountAlone(createMockApiClient());
+    mounted.rerender({ projectId: PROJECT_ID, floors: PROPOSAL_SAMPLE_FLOORS });
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    const second = () => rowOf(mounted, 'L-00000000L2');
+    expect([second().isSection, second().hasProposal]).toEqual([false, true]);
+
+    act(() => mounted.result.current.panel.onToggleSection(second()));
+    await waitFor(() => expect(mounted.result.current.panel.busy).toBe(false));
+    expect([second().isSection, second().hasProposal]).toEqual([true, false]);
+
+    act(() => mounted.result.current.panel.onToggleSection(second()));
+    await waitFor(() => expect(mounted.result.current.panel.busy).toBe(false));
+    expect([second().isSection, second().hasProposal]).toEqual([false, true]);
+    expect(mounted.result.current.panel.message).toBe(
+      'Đã bỏ đánh dấu mặt cắt cho Tầng 2. Tầng này vẫn ẩn khỏi 3D; bật lại ở bảng tầng nếu cần.',
+    );
+  });
+
+  it('dự án một tầng chỉ có dòng mặt cắt: không "trống", bảng vẫn hiện', async () => {
+    const mounted = mountAlone(okApi(SECTION_ONLY));
+    mounted.rerender({ projectId: PROJECT_ID, floors: STATIC_FLOORS.slice(0, 1) });
+    await waitFor(() => expect(mounted.result.current.panel.state).toBe('partial'));
+    expect(mounted.result.current.hidden).toBe(false);
+    expect(ground(mounted).isSection).toBe(true);
+  });
+
+  it('khoá tới khi đọc lại xong: busy, bấm lại không gửi, câu báo chỉ đặt sau lượt đọc', async () => {
+    let release: () => void = () => undefined;
+    const read = vi
+      .fn<HouseProposalApi['houseProposal']['read']>()
+      .mockResolvedValueOnce({ ok: true, data: PROPOSAL })
+      .mockImplementation(
+        () =>
+          new Promise((done) => {
+            release = () => done({ ok: true, data: PROPOSAL });
+          }),
+      );
+    const patchFloor = vi.fn<Patch>(okPatch);
+    const mounted = mountAlone({ ...apiOf(read), spatial: { patchFloor } });
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    act(() => mounted.result.current.panel.onToggleSection(ground(mounted)));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    expect(mounted.result.current.panel.busy).toBe(true);
+    expect(mounted.result.current.panel.message).toBe('');
+    act(() => mounted.result.current.panel.onToggleSection(ground(mounted)));
+    await act(async () => release());
+    await waitFor(() => expect(mounted.result.current.panel.busy).toBe(false));
+    expect(patchFloor).toHaveBeenCalledTimes(1);
+    expect(mounted.result.current.panel.message).toBe('Đã đánh dấu Tầng trệt là mặt cắt. Tầng này được ẩn khỏi 3D.');
+  });
+
+  it('bỏ dấu dòng mặt cắt cuối khi máy không đề xuất gì khác: bảng không biến mất', async () => {
+    const read = vi
+      .fn<HouseProposalApi['houseProposal']['read']>()
+      .mockResolvedValueOnce({ ok: true, data: SECTION_ONLY })
+      .mockResolvedValue({ ok: true, data: { enabled: true, floors: [entry(GROUND, { elevationMm: 0, heightMm: 3900 })], runIds: ['r'] } });
+    const mounted = mountAlone({ ...apiOf(read), spatial: { patchFloor: okPatch } });
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    act(() => mounted.result.current.panel.onToggleSection(ground(mounted)));
+    await waitFor(() => expect(mounted.result.current.panel.busy).toBe(false));
+    expect(ground(mounted).isSection).toBe(false);
+    expect(mounted.result.current.panel.summary.isEmpty).toBe(true);
+    expect(mounted.result.current.hidden).toBe(false);
+    expect(mounted.result.current.panel.message).toBe(UNMARKED);
   });
 
   it('thất bại: "Chưa lưu được lên máy chủ. Thử lại."', async () => {

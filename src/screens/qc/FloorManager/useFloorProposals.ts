@@ -14,7 +14,8 @@
  *
  * Ẩn khi công tắc tắt (`data === null`), khi không có cửa đọc (`api === null`), trong lượt đọc ĐẦU (lớp
  * http tự thử lại 503 ~4 giây trước khi trả `null`) và khi không còn gì để hiện — trừ khi phiên này đã
- * nhận ít nhất một ô (giữ chữ "Đã nhận" và tiêu điểm, không để bảng biến mất dưới tay người dùng).
+ * nhận ít nhất một ô hay đánh dấu / bỏ dấu mặt cắt (giữ câu báo và tiêu điểm, không để bảng biến mất
+ * dưới tay người dùng). Dòng mặt cắt không bao giờ làm bảng thành "trống": nút bỏ dấu nằm ở đó.
  */
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -58,10 +59,22 @@ const FIELD_NAMES: Readonly<Record<LevelValueField, string>> = { elevation: 'cao
 
 export const acceptedKey = (floorId: string, field: LevelValueField): string => `${floorId}:${field}`;
 
-/** Một client cho cả đọc lẫn ghi của bảng: cổng mẫu giữ trạng thái trong client, dựng mới mỗi lần thì dấu mặt cắt vừa ghi không đọc lại được. */
-let appClient: Promise<HouseProposalApi> | undefined;
-const loadClient = async (api: HouseProposalApi | undefined): Promise<HouseProposalApi> =>
-  api ?? (appClient ??= import('@/api/appClient').then((module) => module.createAppApiClient()));
+/**
+ * Cổng mẫu giữ trạng thái trong client: dùng chung một cái, kẻo dấu mặt cắt vừa ghi không đọc lại được.
+ * Client thật ghim người dùng đầu tiên nên dựng mới mỗi lượt (đổi người trong cùng thẻ vẫn đúng).
+ */
+let mockClient: HouseProposalApi | undefined;
+async function loadClient(api: HouseProposalApi | undefined): Promise<HouseProposalApi> {
+  if (api !== undefined) {
+    return api;
+  }
+  const module = await import('@/api/appClient');
+  // `DEV` viết thẳng ở đây để bản dựng thật bỏ hẳn nhánh này.
+  if (import.meta.env.DEV && module.resolveUseMockApi()) {
+    return (mockClient ??= module.createAppApiClient());
+  }
+  return module.createAppApiClient();
+}
 
 /** "Cao độ Tầng 2, Tầng 3 dời −300 mm." — gộp khi mọi tầng dời cùng một khoảng. */
 function cascadeSentence(cascade: readonly HouseCascadeEntry[]): string {
@@ -94,7 +107,7 @@ export const MARK_FAILED_MESSAGE = 'Chưa lưu được lên máy chủ. Thử l
 const markedMessage = (row: HouseProposalRowVm, isSection: boolean): string =>
   isSection
     ? `Đã đánh dấu ${row.floorName} là mặt cắt. Tầng này được ẩn khỏi 3D.`
-    : `Đã bỏ đánh dấu mặt cắt cho ${row.floorName}.`;
+    : `Đã bỏ đánh dấu mặt cắt cho ${row.floorName}. Tầng này vẫn ẩn khỏi 3D; bật lại ở bảng tầng nếu cần.`;
 
 const FIELD_MM: Readonly<Record<LevelValueField, 'elevationMm' | 'heightMm'>> = { elevation: 'elevationMm', height: 'heightMm' };
 
@@ -102,12 +115,14 @@ const FIELD_MM: Readonly<Record<LevelValueField, 'elevationMm' | 'heightMm'>> = 
 interface Session {
   readonly projectId: string;
   readonly accepted: ReadonlySet<string>;
+  /** Phiên đã có lượt đánh dấu / bỏ dấu mặt cắt: bảng không ẩn dưới tay người dùng. */
+  readonly marked: boolean;
   readonly message: string;
   /** Đối tượng mới mỗi lượt nhận được: view dời tiêu điểm về ô đầu dòng của tầng đó. */
   readonly focus: { readonly floorId: string } | null;
 }
 
-const freshSession = (projectId: string): Session => ({ projectId, accepted: new Set(), message: '', focus: null });
+const freshSession = (projectId: string): Session => ({ projectId, accepted: new Set(), marked: false, message: '', focus: null });
 
 export function useFloorProposals(
   projectId: string,
@@ -232,11 +247,18 @@ export function useFloorProposals(
       setSession((previous) => (previous.message === '' ? previous : { ...previous, message: '' }));
       const startedFor = projectId;
       const isSection = !row.isSection;
+      const isLive = () => liveRef.current.mounted && liveRef.current.projectId === startedFor;
       let ok = false;
 
       try {
         const spatial = (await loadClient(api ?? undefined)).spatial;
         ok = spatial !== undefined && (await spatial.patchFloor({ body: { isSection }, floorId: row.floorId, projectId })).ok;
+        if (ok && isLive()) {
+          // BE đổi `hiddenIn3d` theo dấu: đọc lại cả danh sách tầng lẫn đề xuất. Giữ khoá tới khi dòng
+          // đã đổi, kẻo bấm lại gửi đúng giá trị vừa gửi.
+          applyInvalidation(queryClient, 'editFloor', { floorId: row.floorId, projectId });
+          await refetch();
+        }
       } catch {
         ok = false;
       } finally {
@@ -248,16 +270,12 @@ export function useFloorProposals(
       }
       setBusy(false);
 
-      if (liveRef.current.projectId !== startedFor) {
+      if (!isLive()) {
         return;
-      }
-      if (ok) {
-        // BE đổi `hiddenIn3d` theo dấu: đọc lại cả danh sách tầng lẫn đề xuất.
-        applyInvalidation(queryClient, 'editFloor', { floorId: row.floorId, projectId });
-        void refetch();
       }
       setSession((previous) => ({
         ...(previous.projectId === startedFor ? previous : freshSession(startedFor)),
+        marked: true,
         message: ok ? markedMessage(row, isSection) : MARK_FAILED_MESSAGE,
       }));
     },
@@ -278,7 +296,7 @@ export function useFloorProposals(
       ? 'loading'
       : query.isError
         ? 'error'
-        : rows.every((row) => !row.hasProposal)
+        : rows.every((row) => !row.hasProposal && !row.isSection)
           ? 'empty'
           : !canEdit
             ? 'forbidden'
@@ -290,7 +308,7 @@ export function useFloorProposals(
     hidden:
       api === null ||
       query.status === 'pending' ||
-      (query.isSuccess && (query.data === null || (summary.isEmpty && session.accepted.size === 0 && !rows.some((row) => row.isSection)))),
+      (query.isSuccess && (query.data === null || (summary.isEmpty && session.accepted.size === 0 && !session.marked && !rows.some((row) => row.isSection)))),
     panel: {
       state,
       rows,

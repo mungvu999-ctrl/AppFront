@@ -13,7 +13,7 @@
  *
  * | `state`     | Vẽ gì                                                                          |
  * |-------------|--------------------------------------------------------------------------------|
- * | `empty`     | một dòng "Máy chưa có đề xuất nào" (container không bao giờ vẽ trạng thái này)  |
+ * | `empty`     | một dòng "Máy chưa có đề xuất nào" + vùng thông báo (chỉ sau lượt đánh dấu)     |
  * | `loading`   | thanh đầu "đang đọc" + khung xương (chỉ khi đọc lại sau lỗi)                    |
  * | `partial`   | thanh (+ bảng khi mở); tầng máy không đề xuất có một dòng nói rõ                |
  * | `error`     | một dòng lặng trong thanh: "Chưa lấy được đề xuất của máy." + "Thử lại"         |
@@ -88,10 +88,20 @@ export function FloorProposalPanel(props: FloorProposalPanelProps) {
     header?.focus();
   }, [focus]);
 
+  // Luôn có trong DOM (vùng sống phải có sẵn trước câu); rỗng thì bù khoảng gap để không chiếm chỗ.
+  const status = (
+    <p aria-live="polite" className="text-[12px] text-text-secondary empty:-mt-2" role="status">
+      {props.message}
+    </p>
+  );
+
   if (state === 'empty') {
     return (
-      <section aria-label={TITLE} className="rounded-lg border border-border-default px-4 py-2 text-[14px] text-text-secondary">
-        <span className="font-semibold text-text-primary">{EMPTY_TITLE}</span> {EMPTY_DESCRIPTION}
+      <section aria-label={TITLE} className="flex flex-col gap-2 rounded-lg border border-border-default px-4 py-2 text-[14px] text-text-secondary">
+        <p>
+          <span className="font-semibold text-text-primary">{EMPTY_TITLE}</span> {EMPTY_DESCRIPTION}
+        </p>
+        {status}
       </section>
     );
   }
@@ -117,10 +127,7 @@ export function FloorProposalPanel(props: FloorProposalPanelProps) {
           </Button>
         ) : null}
       </div>
-      {/* Luôn có trong DOM (vùng sống phải có sẵn trước câu); rỗng thì bù khoảng gap để không chiếm chỗ. */}
-      <p aria-live="polite" className="text-[12px] text-text-secondary empty:-mt-2" role="status">
-        {props.message}
-      </p>
+      {status}
       {state === 'loading' ? (
         <div className="flex flex-col gap-2">
           {SKELETON_KEYS.map((key) => (

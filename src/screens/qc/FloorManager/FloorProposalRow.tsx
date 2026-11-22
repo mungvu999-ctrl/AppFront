@@ -197,7 +197,9 @@ export function FloorProposalRow({ row, canAccept, busy, accepted, onAccept, onT
             </span>
           ) : null}
           <Questions items={row.questionsFor.row} label={`Câu hỏi của máy về ${floorName}`} />
-          {canAccept ? <SectionToggle busy={busy} onToggle={onToggleSection} row={row} /> : null}
+          {/* Chỉ dòng có trong đề xuất của máy chủ (kể cả dòng không số, máy hỏi `NOT_A_PLAN`) hay đã là mặt cắt:
+              tầng máy chủ không đề xuất thì đọc lại không thấy dấu, nút không bỏ dấu được. */}
+          {canAccept && (row.hasProposal || row.isSection) ? <SectionToggle busy={busy} onToggle={onToggleSection} row={row} /> : null}
         </th>
         {row.hasProposal ? (
           <>
