@@ -36,7 +36,7 @@ const defaultClient = (): Promise<ApiClient> =>
   (clientPromise ??= import('@/api/appClient').then((m) => m.createAppApiClient()));
 
 export interface LightingBakeState {
-  /** `true` chỉ khi API báo bật; lỗi, 404 hay API cũ chưa có N49 đều là `false`. */
+  /** `true` chỉ khi API báo bật; lỗi, 404 hay API cũ chưa có N50 đều là `false`. */
   available: boolean;
   bake: LightingBake | null;
   busy: boolean;

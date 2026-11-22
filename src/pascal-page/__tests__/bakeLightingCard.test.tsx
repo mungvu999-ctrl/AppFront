@@ -77,7 +77,7 @@ describe('nướng ánh sáng', () => {
   });
 });
 
-describe('công tắc nướng ánh sáng (N49)', () => {
+describe('công tắc nướng ánh sáng (N50)', () => {
   const card = () => render(<BakeLightingCard exportGlb={async () => null} projectId="P-1" />);
 
   it('hiện khi API báo enabled=true', async () => {

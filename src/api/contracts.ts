@@ -105,6 +105,8 @@ export interface FloorPayload {
   heightMm?: FloorHeightMm;
   /** Chỉ PATCH #34 mang nó (BE bb255414); POST tạo tầng không gửi. */
   hiddenIn3d?: boolean;
+  /** Chỉ PATCH #34: đánh dấu bản vẽ của tầng là mặt cắt (BE tự ẩn khỏi 3D). Phản hồi không mang lại khoá này. */
+  isSection?: boolean;
   name?: FloorName;
   order?: FloorOrder;
 }
@@ -182,12 +184,16 @@ export const toDrawingWirePayload = (input: Drawing | DrawingWireInput): Drawing
   widthMm: input.widthMm,
 });
 
-export const toFloorWirePayload = (input: FloorPayload): Partial<FloorWire> => ({
+/** `isSection` đi lên PATCH #34 cả `true` lẫn `false`; phản hồi `FloorSchema` chỉ mang `true` (K-31) nên ghép riêng. */
+export const toFloorWirePayload = (
+  input: FloorPayload,
+): Omit<Partial<FloorWire>, 'isSection'> & { isSection?: boolean } => ({
   ...(input.areaM2 !== undefined ? { areaM2: input.areaM2 } : {}),
   ...(input.drawings !== undefined ? { drawings: input.drawings.map(toDrawingWirePayload) } : {}),
   ...(input.elevationMm !== undefined ? { elevationMm: input.elevationMm } : {}),
   ...(input.heightMm !== undefined ? { heightMm: input.heightMm } : {}),
   ...(input.hiddenIn3d !== undefined ? { hiddenIn3d: input.hiddenIn3d } : {}),
+  ...(input.isSection !== undefined ? { isSection: input.isSection } : {}),
   ...(input.name !== undefined ? { name: input.name } : {}),
   ...(input.order !== undefined ? { order: input.order } : {}),
 });

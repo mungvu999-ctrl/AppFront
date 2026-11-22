@@ -56,6 +56,23 @@ describe('FloorSchema hiddenIn3d (FE3D-FIX-003 R1)', () => {
   });
 });
 
+describe('FloorSchema isSection (K-31, NO-471)', () => {
+  it('parses a floor without isSection unchanged', () => {
+    expect(FloorSchema.parse(createFloor('1'))).not.toHaveProperty('isSection');
+  });
+
+  it('keeps isSection true', () => {
+    expect(FloorSchema.parse({ ...createFloor('1'), isSection: true })).toStrictEqual({
+      ...createFloor('1'),
+      isSection: true,
+    });
+  });
+
+  it.each([false, null, 'true', 1])('rejects isSection %s', (isSection) => {
+    expect(FloorSchema.safeParse({ ...createFloor('1'), isSection }).success).toBe(false);
+  });
+});
+
 describe('safeParseList', () => {
   it('drops invalid items and still returns the list when the invalid ratio is at most 20%', () => {
     const input = Array.from({ length: 10 }, (_value, index) =>

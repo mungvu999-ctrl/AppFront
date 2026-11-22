@@ -1,0 +1,534 @@
+import { createElement, type ReactNode } from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { createMockApiClient } from '@/api/__mocks__/client';
+import type { HouseFloorProposal, HouseProposal } from '@/api/schemas/houseProposal';
+import type { HttpError } from '@/lib/http';
+import { createShortcutRegistry } from '@/lib/input/shortcutRegistry';
+import { createNotificationBus } from '@/lib/mutations/notificationBus';
+import { createTestQueryClient } from '@/lib/testing/render';
+import { resetSelectorCaches } from '@/store/selectors';
+import { useStore } from '@/store';
+
+import {
+  createMockFloorManagerGateway,
+  FLOOR_MANAGER_SAMPLE_GROUND_ID,
+  FLOOR_MANAGER_SAMPLE_ROOF_ID,
+  FLOOR_MANAGER_SAMPLE_SECOND_ID,
+  levelsOf,
+} from './floorManagerGateway';
+import { PROPOSAL_SAMPLE_FLOORS } from './FloorProposalPanel.stories';
+import { metreDraftText, useFloorManager, type ApplyLevelValue } from './useFloorManager';
+import { acceptedKey, MARK_FAILED_MESSAGE, REREAD_FAILED, UNSAVED_MESSAGE, useFloorProposals, type HouseProposalApi, type ProposalFloor } from './useFloorProposals';
+
+const PROJECT_ID = 'project-floor-proposals';
+const GROUND = String(FLOOR_MANAGER_SAMPLE_GROUND_ID);
+const SECOND = String(FLOOR_MANAGER_SAMPLE_SECOND_ID);
+const ROOF = String(FLOOR_MANAGER_SAMPLE_ROOF_ID);
+
+const entry = (floorId: string, values: Partial<HouseFloorProposal>): HouseFloorProposal => ({
+  floorId,
+  kind: 'plan',
+  kindConfidence: 0.98,
+  storeyLabel: 'floor',
+  storeyConfidence: 0.95,
+  elevationConfidence: 0.95,
+  elevationSource: 'plan',
+  heightConfidence: 0.95,
+  heightSource: 'plan',
+  questions: [],
+  ...values,
+});
+
+/** Tầng trệt: chiều cao 4,2 m đọc được (nhận được, dời hai tầng trên). Tầng mái: số giả định. */
+const PROPOSAL: HouseProposal = {
+  enabled: true,
+  floors: [
+    entry(GROUND, { storeyLabel: 'ground', elevationMm: 0, heightMm: 4200 }),
+    entry(ROOF, { elevationMm: 7500, heightMm: 3000, heightSource: 'default' }),
+  ],
+  runIds: ['run-1'],
+};
+
+const apiOf = (read: HouseProposalApi['houseProposal']['read']): HouseProposalApi => ({ houseProposal: { read } });
+const okApi = (data: HouseProposal | null): HouseProposalApi => apiOf(() => Promise.resolve({ ok: true, data }));
+const FAILURE: HttpError = { kind: 'network', requestId: 'req-1', retryable: true, raw: 'offline' };
+
+const wrapperOf = () => {
+  const client = createTestQueryClient();
+  return ({ children }: { children: ReactNode }): ReactNode => createElement(QueryClientProvider, { client }, children);
+};
+
+const STATIC_FLOORS: readonly ProposalFloor[] = [
+  { id: GROUND, name: 'Tầng trệt', elevationMm: 0, heightMm: 3900 },
+  { id: SECOND, name: 'Tầng 2', elevationMm: 3900, heightMm: 3600 },
+  { id: ROOF, name: 'Tầng mái', elevationMm: 7500, heightMm: 3600 },
+];
+
+/** Promise mở tay: lượt ghi treo cho tới khi bài kiểm cho xong. */
+function deferred() {
+  let resolve: (value: boolean) => void = () => undefined;
+  const promise = new Promise<boolean>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+function mountAlone(
+  api: HouseProposalApi | null,
+  apply: ApplyLevelValue = vi.fn(() => Promise.resolve(true)),
+  releaseDraft = vi.fn(),
+) {
+  return renderHook(
+    ({ projectId, floors }: { projectId: string; floors: readonly ProposalFloor[] }) =>
+      useFloorProposals(projectId, floors, { apply, releaseDraft, canEdit: true, api }),
+    { wrapper: wrapperOf(), initialProps: { projectId: PROJECT_ID, floors: STATIC_FLOORS } },
+  );
+}
+
+/** Cả hai hook trên cổng giả: "Nhận" đi qua đường ghi thật của ô nhập tay. */
+function mountWired(api: HouseProposalApi) {
+  return renderHook(
+    () => {
+      const manager = useFloorManager({
+        projectId: PROJECT_ID,
+        roles: ['engineer'],
+        gateway: createMockFloorManagerGateway(),
+        registry: createShortcutRegistry(),
+        notifications: createNotificationBus(),
+        announcer: { announce: () => undefined, destroy: () => undefined },
+      });
+      const proposals = useFloorProposals(PROJECT_ID, manager.rows, {
+        apply: manager.applyLevelValue,
+        releaseDraft: manager.releaseFloorDraft,
+        canEdit: manager.canEdit,
+        api,
+      });
+      return { manager, proposals };
+    },
+    { wrapper: wrapperOf() },
+  );
+}
+
+const levelOf = (id: string) => levelsOf(useStore.getState().spatial).find((level) => String(level.id) === id);
+
+afterEach(() => {
+  cleanup();
+  useStore.getState().setSpatial(null, null);
+  resetSelectorCaches();
+});
+
+describe('useFloorProposals — trạng thái', () => {
+  it('lượt đọc đầu: ẩn; xong thì partial (Tầng 2 không có đề xuất)', async () => {
+    const mounted = mountAlone(okApi(PROPOSAL));
+    expect(mounted.result.current.hidden).toBe(true);
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    expect(mounted.result.current.panel.state).toBe('partial');
+  });
+
+  it('công tắc tắt (data null) → ẩn, đọc đúng một lần', async () => {
+    const read = vi.fn(() => Promise.resolve({ ok: true as const, data: null }));
+    const mounted = mountAlone(apiOf(read));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    await act(async () => Promise.resolve());
+    expect(mounted.result.current.hidden).toBe(true);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('api null → không đọc, ẩn', () => {
+    expect(mountAlone(null).result.current.hidden).toBe(true);
+  });
+
+  it('đủ tầng → success', async () => {
+    const full = mountAlone(okApi({ ...PROPOSAL, floors: [...PROPOSAL.floors, entry(SECOND, { heightMm: 3600 })] }));
+    await waitFor(() => expect(full.result.current.panel.state).toBe('success'));
+  });
+
+  it('mặc định thu gọn; bật tắt giữ suốt phiên của hook', async () => {
+    const mounted = mountAlone(okApi(PROPOSAL));
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    expect(mounted.result.current.panel.expanded).toBe(false);
+    act(() => mounted.result.current.panel.onToggleExpanded());
+    expect(mounted.result.current.panel.expanded).toBe(true);
+  });
+
+  it('không ô nào khác giá trị hiện tại và không câu hỏi → ẩn hẳn; còn câu hỏi thì hiện', async () => {
+    const same = mountAlone(okApi({ enabled: true, floors: [entry(GROUND, { elevationMm: 0, heightMm: 3900 })], runIds: ['r'] }));
+    await act(async () => Promise.resolve());
+    await waitFor(() => expect(same.result.current.panel.state).not.toBe('loading'));
+    expect(same.result.current.hidden).toBe(true);
+
+    const asking = mountAlone(
+      okApi({
+        enabled: true,
+        floors: [entry(GROUND, { elevationMm: 0, heightMm: 3900, questions: [{ code: 'NO_TEXT' }] })],
+        runIds: ['r'],
+      }),
+    );
+    await waitFor(() => expect(asking.result.current.hidden).toBe(false));
+  });
+
+  it('lỗi đọc: một dòng lặng (state error, không ẩn), không tự thử lại; "Thử lại" đọc lại', async () => {
+    const read = vi
+      .fn<HouseProposalApi['houseProposal']['read']>()
+      .mockResolvedValueOnce({ ok: false, error: FAILURE })
+      .mockResolvedValue({ ok: true, data: PROPOSAL });
+    const mounted = mountAlone(apiOf(read));
+    await waitFor(() => expect(mounted.result.current.panel.state).toBe('error'));
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(mounted.result.current.hidden).toBe(false);
+    act(() => mounted.result.current.panel.onRetry());
+    await waitFor(() => expect(mounted.result.current.panel.state).toBe('partial'));
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it('điểm 8: mảng tầng mới cùng nội dung không dựng lại dòng', async () => {
+    const mounted = mountAlone(okApi(PROPOSAL));
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    const before = mounted.result.current.panel.rows;
+    mounted.rerender({ projectId: PROJECT_ID, floors: STATIC_FLOORS.map((floor) => ({ ...floor })) });
+    expect(mounted.result.current.panel.rows).toBe(before);
+    mounted.rerender({ projectId: PROJECT_ID, floors: STATIC_FLOORS.map((floor) => ({ ...floor, heightMm: 3000 })) });
+    expect(mounted.result.current.panel.rows).not.toBe(before);
+  });
+});
+
+describe('useFloorProposals — nhận', () => {
+  const groundOf = (rows: ReturnType<typeof mountAlone>['result']['current']['panel']['rows']) => {
+    const row = rows.find((item) => item.floorId === GROUND);
+    if (row === undefined) throw new Error('thiếu Tầng trệt');
+    return row;
+  };
+
+  it('không có nhận hàng loạt: panel chỉ có onAccept cho từng ô', async () => {
+    const mounted = mountAlone(okApi(PROPOSAL));
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    expect(Object.keys(mounted.result.current.panel).filter((key) => /all|bulk/i.test(key))).toEqual([]);
+  });
+
+  it('"Nhận" gọi apply(floorId, field, mm, releaseDraft); releaseDraft bỏ nháp của đúng ô', async () => {
+    const apply = vi.fn<ApplyLevelValue>(() => Promise.resolve(true));
+    const releaseDraft = vi.fn();
+    const mounted = mountAlone(okApi(PROPOSAL), apply, releaseDraft);
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    await act(async () => mounted.result.current.panel.onAccept(groundOf(mounted.result.current.panel.rows), 'height'));
+    expect(apply).toHaveBeenCalledTimes(1);
+    const [id, field, mm, release] = apply.mock.calls[0] ?? [];
+    expect([id, field, mm]).toEqual([GROUND, 'height', 4200]);
+    release?.();
+    expect(releaseDraft).toHaveBeenCalledWith(GROUND, 'height');
+  });
+
+  it('một lượt một lúc: busy khi đang ghi, bấm đúp chỉ ghi một lần', async () => {
+    const pending = deferred();
+    const apply = vi.fn<ApplyLevelValue>(() => pending.promise);
+    const mounted = mountAlone(okApi(PROPOSAL), apply);
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    const row = groundOf(mounted.result.current.panel.rows);
+    act(() => {
+      mounted.result.current.panel.onAccept(row, 'height');
+      mounted.result.current.panel.onAccept(row, 'height');
+    });
+    expect(mounted.result.current.panel.busy).toBe(true);
+    await act(async () => pending.resolve(true));
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(mounted.result.current.panel.busy).toBe(false);
+  });
+
+  it('nhận được: ô vào "đã nhận", tiêu điểm về dòng, câu thông báo nói thêm việc dời tầng', async () => {
+    const mounted = mountAlone(okApi(PROPOSAL));
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    await act(async () => mounted.result.current.panel.onAccept(groundOf(mounted.result.current.panel.rows), 'height'));
+    const { panel } = mounted.result.current;
+    expect(panel.accepted.has(acceptedKey(GROUND, 'height'))).toBe(true);
+    expect(panel.focus).toEqual({ floorId: GROUND });
+    expect(panel.message).toMatch(/^Đã nhận chiều cao Tầng trệt: .*Cao độ Tầng 2, Tầng mái dời/);
+  });
+
+  it('nhận hỏng: thông báo "Chưa nhận được:", ô vẫn nhận được, không vào "đã nhận"', async () => {
+    const mounted = mountAlone(okApi(PROPOSAL), vi.fn(() => Promise.resolve(false)));
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    await act(async () => mounted.result.current.panel.onAccept(groundOf(mounted.result.current.panel.rows), 'height'));
+    const { panel } = mounted.result.current;
+    expect(panel.message).toMatch(/^Chưa nhận được: /);
+    expect(panel.accepted.size).toBe(0);
+    expect(panel.focus).toBeNull();
+    expect(groundOf(panel.rows).height.acceptable).toBe(true);
+
+    const throwing = mountAlone(okApi(PROPOSAL), vi.fn(() => Promise.reject(new Error('x'))));
+    await waitFor(() => expect(throwing.result.current.hidden).toBe(false));
+    await act(async () => throwing.result.current.panel.onAccept(groundOf(throwing.result.current.panel.rows), 'height'));
+    expect(throwing.result.current.panel.message).toMatch(/^Chưa nhận được: /);
+    expect(throwing.result.current.panel.busy).toBe(false);
+  });
+
+  it('hỏng y hệt hai lần: câu được xoá khi bấm lại rồi mới đặt lại (vùng sống đọc lại)', async () => {
+    let pending = deferred();
+    const mounted = mountAlone(okApi(PROPOSAL), vi.fn<ApplyLevelValue>(() => pending.promise));
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    const accept = () => mounted.result.current.panel.onAccept(groundOf(mounted.result.current.panel.rows), 'height');
+    act(accept);
+    await act(async () => pending.resolve(false));
+    const first = mounted.result.current.panel.message;
+    expect(first).toMatch(/^Chưa nhận được: /);
+
+    pending = deferred();
+    act(accept);
+    expect(mounted.result.current.panel.message).toBe('');
+    await act(async () => pending.resolve(false));
+    expect(mounted.result.current.panel.message).toBe(first);
+  });
+
+  it('hỏng nhưng tầng đã mang giá trị nhận (PATCH sau hỏng): nói "Đã đổi trên màn hình…"', async () => {
+    const pending = deferred();
+    const mounted = mountAlone(okApi(PROPOSAL), vi.fn<ApplyLevelValue>(() => pending.promise));
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    act(() => mounted.result.current.panel.onAccept(groundOf(mounted.result.current.panel.rows), 'height'));
+    const applied = STATIC_FLOORS.map((floor) => (floor.id === GROUND ? { ...floor, heightMm: 4200 } : floor));
+    mounted.rerender({ projectId: PROJECT_ID, floors: applied });
+    await act(async () => pending.resolve(false));
+    expect(mounted.result.current.panel.message).toBe(UNSAVED_MESSAGE);
+  });
+
+  it('nhận ở một tầng không xoá dấu "cao độ trùng" hay nháp của tầng khác', async () => {
+    const mounted = mountWired(okApi(PROPOSAL));
+    await waitFor(() => expect(mounted.result.current.proposals.hidden).toBe(false));
+    const typed = metreDraftText(levelOf(SECOND)?.elevationMm ?? 0);
+    await act(async () => {
+      mounted.result.current.manager.onFloorFieldChange(ROOF, 'elevation', typed);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      mounted.result.current.manager.onFloorFieldCommit(ROOF, 'elevation');
+      await Promise.resolve();
+    });
+    expect(mounted.result.current.manager.duplicateElevationMessage).not.toBeNull();
+
+    await act(async () => mounted.result.current.proposals.panel.onAccept(groundOf(mounted.result.current.proposals.panel.rows), 'height'));
+    await waitFor(() => expect(levelOf(GROUND)?.heightMm).toBe(4200));
+    expect(mounted.result.current.manager.duplicateElevationMessage).not.toBeNull();
+    expect(mounted.result.current.manager.rows.find((row) => row.id === ROOF)?.draft.elevation).toBe(typed);
+  });
+
+  it('gỡ màn khi lượt ghi đang chạy: ghi đúng một lần, sau đó không làm gì', async () => {
+    const pending = deferred();
+    const apply = vi.fn<ApplyLevelValue>(() => pending.promise);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const mounted = mountAlone(okApi(PROPOSAL), apply);
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    act(() => mounted.result.current.panel.onAccept(groundOf(mounted.result.current.panel.rows), 'height'));
+    mounted.unmount();
+    await act(async () => pending.resolve(true));
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
+  });
+
+  it('đổi dự án khi lượt ghi đang chạy: phiên mới không nhận chữ "Đã nhận" của dự án cũ', async () => {
+    const pending = deferred();
+    const mounted = mountAlone(okApi(PROPOSAL), vi.fn<ApplyLevelValue>(() => pending.promise));
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    act(() => mounted.result.current.panel.onAccept(groundOf(mounted.result.current.panel.rows), 'height'));
+    mounted.rerender({ projectId: 'project-other', floors: STATIC_FLOORS });
+    await act(async () => pending.resolve(true));
+    expect(mounted.result.current.panel.message).toBe('');
+    expect(mounted.result.current.panel.accepted.size).toBe(0);
+    expect(mounted.result.current.panel.busy).toBe(false);
+  });
+
+  it('nhận qua đường ghi thật: tầng đổi, tầng trên dời theo, ô hết "nhận được" và dòng vẫn hiện', async () => {
+    const mounted = mountWired(okApi(PROPOSAL));
+    await waitFor(() => expect(mounted.result.current.proposals.hidden).toBe(false));
+    const groundRow = () => groundOf(mounted.result.current.proposals.panel.rows);
+    expect(groundRow().height.acceptable).toBe(true);
+
+    await act(async () => mounted.result.current.proposals.panel.onAccept(groundRow(), 'height'));
+
+    await waitFor(() => expect(levelOf(GROUND)?.heightMm).toBe(4200));
+    await waitFor(() => expect(groundRow().height.acceptable).toBe(false));
+    expect(levelOf(SECOND)?.elevationMm).toBe(4200);
+    expect(mounted.result.current.proposals.hidden).toBe(false);
+  });
+
+  it('số giả định không bao giờ nhận được', async () => {
+    const mounted = mountAlone(okApi(PROPOSAL));
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    const roof = mounted.result.current.panel.rows.find((row) => row.floorId === ROOF);
+    expect(roof?.height.sourceKind).toBe('assumed');
+    expect(roof?.height.acceptable).toBe(false);
+  });
+});
+
+describe('useFloorProposals — đánh dấu mặt cắt', () => {
+  type Patch = NonNullable<HouseProposalApi['spatial']>['patchFloor'];
+  const withPatch = (patchFloor: Patch): HouseProposalApi => ({ ...okApi(PROPOSAL), spatial: { patchFloor } });
+  const okPatch = () => Promise.resolve({ ok: true as const, data: undefined as never });
+  const rowOf = (mounted: ReturnType<typeof mountAlone>, floorId: string) => {
+    const row = mounted.result.current.panel.rows.find((item) => item.floorId === floorId);
+    if (row === undefined) throw new Error(`thiếu tầng ${floorId}`);
+    return row;
+  };
+  const ground = (mounted: ReturnType<typeof mountAlone>) => rowOf(mounted, GROUND);
+  const UNMARKED = 'Đã bỏ đánh dấu mặt cắt cho Tầng trệt. Tầng này vẫn ẩn khỏi 3D; bật lại ở bảng tầng nếu cần.';
+  /** Máy chỉ trả dòng mặt cắt của Tầng trệt (máy chủ chỉ gửi `isSection: true`). */
+  const SECTION_ONLY: HouseProposal = {
+    enabled: true,
+    floors: [entry(GROUND, { kind: 'section', storeyConfidence: 0, isSection: true })],
+    runIds: ['r'],
+  };
+
+  it('thành công: PATCH isSection, đọc lại đề xuất, báo ở dòng trạng thái', async () => {
+    const patchFloor = vi.fn<Patch>(okPatch);
+    const api = withPatch(patchFloor);
+    const read = vi.spyOn(api.houseProposal, 'read');
+    const mounted = mountAlone(api);
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    await act(async () => mounted.result.current.panel.onToggleSection(ground(mounted)));
+    expect(patchFloor).toHaveBeenCalledWith({ body: { isSection: true }, floorId: GROUND, projectId: PROJECT_ID });
+    expect(mounted.result.current.panel.message).toBe('Đã đánh dấu Tầng trệt là mặt cắt. Tầng này được ẩn khỏi 3D.');
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+  });
+
+  it('bỏ dấu ở dòng mặt cắt: gửi isSection false', async () => {
+    const patchFloor = vi.fn<Patch>(okPatch);
+    const mounted = mountAlone(withPatch(patchFloor));
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    await act(async () => mounted.result.current.panel.onToggleSection({ ...ground(mounted), isSection: true }));
+    expect(patchFloor.mock.calls[0]?.[0].body).toEqual({ isSection: false });
+    await waitFor(() => expect(mounted.result.current.panel.message).toBe(UNMARKED));
+  });
+
+  it('cổng mẫu thật: đánh dấu rồi đọc lại → dòng thành mặt cắt; bỏ dấu → trở lại', async () => {
+    const mounted = mountAlone(createMockApiClient());
+    mounted.rerender({ projectId: PROJECT_ID, floors: PROPOSAL_SAMPLE_FLOORS });
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    const second = () => rowOf(mounted, 'L-00000000L2');
+    expect([second().isSection, second().hasProposal]).toEqual([false, true]);
+
+    act(() => mounted.result.current.panel.onToggleSection(second()));
+    await waitFor(() => expect(mounted.result.current.panel.busy).toBe(false));
+    expect([second().isSection, second().hasProposal]).toEqual([true, false]);
+
+    act(() => mounted.result.current.panel.onToggleSection(second()));
+    await waitFor(() => expect(mounted.result.current.panel.busy).toBe(false));
+    expect([second().isSection, second().hasProposal]).toEqual([false, true]);
+    expect(mounted.result.current.panel.message).toBe(
+      'Đã bỏ đánh dấu mặt cắt cho Tầng 2. Tầng này vẫn ẩn khỏi 3D; bật lại ở bảng tầng nếu cần.',
+    );
+  });
+
+  it('dự án một tầng chỉ có dòng mặt cắt: không "trống", bảng vẫn hiện', async () => {
+    const mounted = mountAlone(okApi(SECTION_ONLY));
+    mounted.rerender({ projectId: PROJECT_ID, floors: STATIC_FLOORS.slice(0, 1) });
+    await waitFor(() => expect(mounted.result.current.panel.state).toBe('partial'));
+    expect(mounted.result.current.hidden).toBe(false);
+    expect(ground(mounted).isSection).toBe(true);
+  });
+
+  it('khoá tới khi đọc lại xong: busy, bấm lại không gửi, câu báo chỉ đặt sau lượt đọc', async () => {
+    let release: () => void = () => undefined;
+    const read = vi
+      .fn<HouseProposalApi['houseProposal']['read']>()
+      .mockResolvedValueOnce({ ok: true, data: PROPOSAL })
+      .mockImplementation(
+        () =>
+          new Promise((done) => {
+            release = () => done({ ok: true, data: PROPOSAL });
+          }),
+      );
+    const patchFloor = vi.fn<Patch>(okPatch);
+    const mounted = mountAlone({ ...apiOf(read), spatial: { patchFloor } });
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    act(() => mounted.result.current.panel.onToggleSection(ground(mounted)));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    expect(mounted.result.current.panel.busy).toBe(true);
+    expect(mounted.result.current.panel.message).toBe('');
+    act(() => mounted.result.current.panel.onToggleSection(ground(mounted)));
+    await act(async () => release());
+    await waitFor(() => expect(mounted.result.current.panel.busy).toBe(false));
+    expect(patchFloor).toHaveBeenCalledTimes(1);
+    expect(mounted.result.current.panel.message).toBe('Đã đánh dấu Tầng trệt là mặt cắt. Tầng này được ẩn khỏi 3D.');
+  });
+
+  it('bỏ dấu dòng mặt cắt cuối khi máy không đề xuất gì khác: bảng không biến mất', async () => {
+    const read = vi
+      .fn<HouseProposalApi['houseProposal']['read']>()
+      .mockResolvedValueOnce({ ok: true, data: SECTION_ONLY })
+      .mockResolvedValue({ ok: true, data: { enabled: true, floors: [entry(GROUND, { elevationMm: 0, heightMm: 3900 })], runIds: ['r'] } });
+    const mounted = mountAlone({ ...apiOf(read), spatial: { patchFloor: okPatch } });
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    act(() => mounted.result.current.panel.onToggleSection(ground(mounted)));
+    await waitFor(() => expect(mounted.result.current.panel.busy).toBe(false));
+    expect(ground(mounted).isSection).toBe(false);
+    expect(mounted.result.current.panel.summary.isEmpty).toBe(true);
+    expect(mounted.result.current.hidden).toBe(false);
+    expect(mounted.result.current.panel.message).toBe(UNMARKED);
+  });
+
+  it('thất bại: "Chưa lưu được lên máy chủ. Thử lại."', async () => {
+    const mounted = mountAlone(withPatch(() => Promise.resolve({ ok: false as const, error: FAILURE })));
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    await act(async () => mounted.result.current.panel.onToggleSection(ground(mounted)));
+    expect(mounted.result.current.panel.message).toBe(MARK_FAILED_MESSAGE);
+  });
+
+  it('dấu đã lưu nhưng đọc lại hỏng: câu báo nói cả hai, bảng chuyển sang dòng lỗi', async () => {
+    const read = vi
+      .fn<HouseProposalApi['houseProposal']['read']>()
+      .mockResolvedValueOnce({ ok: true, data: PROPOSAL })
+      .mockResolvedValue({ ok: false, error: FAILURE });
+    const mounted = mountAlone({ ...apiOf(read), spatial: { patchFloor: okPatch } });
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    await act(async () => mounted.result.current.panel.onToggleSection(ground(mounted)));
+    await waitFor(() => expect(mounted.result.current.panel.busy).toBe(false));
+    expect(mounted.result.current.panel.message).toBe(
+      `Đã đánh dấu Tầng trệt là mặt cắt. Tầng này được ẩn khỏi 3D. ${REREAD_FAILED}`,
+    );
+    expect(mounted.result.current.panel.state).toBe('error');
+  });
+
+  it('rời dự án giữa lượt đánh dấu: đề xuất của dự án cũ bị coi là cũ, quay lại thì đọc lại', async () => {
+    let resolve: () => void = () => undefined;
+    const patchFloor = vi.fn<Patch>(
+      () => new Promise((done) => {
+        resolve = () => done({ ok: true, data: undefined as never });
+      }),
+    );
+    const api = withPatch(patchFloor);
+    const read = vi.spyOn(api.houseProposal, 'read');
+    const mounted = mountAlone(api);
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    act(() => mounted.result.current.panel.onToggleSection(ground(mounted)));
+    await waitFor(() => expect(patchFloor).toHaveBeenCalledTimes(1));
+    mounted.rerender({ projectId: 'prj_other', floors: STATIC_FLOORS });
+    await act(async () => resolve());
+    const readsOfOld = () => read.mock.calls.filter(([args]) => JSON.stringify(args).includes(PROJECT_ID)).length;
+    const before = readsOfOld();
+    mounted.rerender({ projectId: PROJECT_ID, floors: STATIC_FLOORS });
+    await waitFor(() => expect(readsOfOld()).toBe(before + 1));
+    expect(mounted.result.current.panel.message).toBe('');
+  });
+
+  it('bấm lặp khi đang gửi chỉ gửi một lần', async () => {
+    let resolve: () => void = () => undefined;
+    const patchFloor = vi.fn<Patch>(
+      () => new Promise((done) => {
+        resolve = () => done({ ok: true, data: undefined as never });
+      }),
+    );
+    const mounted = mountAlone(withPatch(patchFloor));
+    await waitFor(() => expect(mounted.result.current.hidden).toBe(false));
+    const row = ground(mounted);
+    act(() => {
+      mounted.result.current.panel.onToggleSection(row);
+      mounted.result.current.panel.onToggleSection(row);
+    });
+    expect(mounted.result.current.panel.busy).toBe(true);
+    await waitFor(() => expect(patchFloor).toHaveBeenCalledTimes(1));
+    await act(async () => resolve());
+    expect(patchFloor).toHaveBeenCalledTimes(1);
+    expect(mounted.result.current.panel.busy).toBe(false);
+  });
+});

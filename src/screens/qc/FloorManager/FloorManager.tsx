@@ -59,6 +59,8 @@
  * màn, không phải tin khẩn cấp cắt ngang người đang gõ.
  */
 
+import type { ReactNode } from 'react';
+
 import { InlineAlert } from '@/components/feedback/InlineAlert';
 import { Breadcrumb } from '@/components/shell/Breadcrumb';
 import { FlowGate } from '@/components/shell/FlowGate';
@@ -99,7 +101,12 @@ const EXPAND_BUTTON_CLASS_NAME = cn(
   'focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
 );
 
-export function FloorManager(props: FloorManagerViewProps) {
+export interface FloorManagerProps extends FloorManagerViewProps {
+  /** Khe bảng đề xuất của máy (F4); vắng thì màn y như cũ. */
+  readonly proposalPanel?: ReactNode;
+}
+
+export function FloorManager(props: FloorManagerProps) {
   const {
     state,
     isCollapsed,
@@ -231,6 +238,10 @@ export function FloorManager(props: FloorManagerViewProps) {
         <div className="mx-auto w-full max-w-[1280px] shrink-0 px-8 pb-2">
           <InlineAlert level="violation" message={duplicateElevationMessage} role="status" />
         </div>
+      )}
+
+      {props.proposalPanel === undefined ? null : (
+        <div className="mx-auto w-full max-w-[1280px] shrink-0 px-8 pb-2">{props.proposalPanel}</div>
       )}
 
       {/* Vùng nội dung lấp phần còn lại của khung và có chiều cao xác định, nên khung bảng tự

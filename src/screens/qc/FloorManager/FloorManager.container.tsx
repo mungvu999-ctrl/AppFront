@@ -72,7 +72,9 @@ import type { ProjectRole } from '@/types/project';
 import { FloorManager } from './FloorManager';
 import type { FloorManagerGateway } from './floorManagerGateway';
 import type { FloorReviewScreen } from './floorManagerTypes';
+import { FloorProposalPanel } from './FloorProposalPanel';
 import { useFloorManager } from './useFloorManager';
+import { useFloorProposals, type HouseProposalApi } from './useFloorProposals';
 
 /** Mã màn, cho ranh giới lỗi và cho nhật ký — một chỗ viết duy nhất (R-71). */
 export const FLOOR_MANAGER_SCREEN_ID = 'floor-manager';
@@ -123,6 +125,11 @@ export interface FloorManagerContainerProps {
   readonly separateUnits?: SeparateUnitsState;
   /** K33: mở Mô hình 3D; route nối vào `useNavigate`. */
   readonly onOpenViewer?: () => void;
+  /**
+   * Cửa đọc đề xuất của máy (F4). Vắng: màn thật dựng client thật; màn có `gateway` tiêm (test,
+   * story) KHÔNG đọc gì — bảng ẩn — trừ khi truyền cửa này. `null` = không đọc.
+   */
+  readonly proposalApi?: HouseProposalApi | null;
 }
 
 /** Cùng khuôn `ScreenCrashFallback` của `src/App.tsx` — R-62. */
@@ -163,9 +170,18 @@ function WiredFloorManager(props: FloorManagerContainerProps) {
       ? { onNavigateToDrawings: props.onNavigateToDrawings }
       : {}),
   });
+  const proposals = useFloorProposals(props.projectId, result.rows, {
+    apply: result.applyLevelValue,
+    // Cùng việc ô nhập tay làm khi chốt: chỉ bỏ nháp của tầng đó, để lần rời ô sau không ghi nháp cũ đè giá trị
+    // vừa nhận — không xoá dấu "cao độ trùng" hay ô đang sửa của tầng khác (khác `onFloorFieldCancel`).
+    releaseDraft: result.releaseFloorDraft,
+    canEdit: result.canEdit,
+    api: props.proposalApi ?? (props.gateway === undefined ? undefined : null),
+  });
 
   return (
     <FloorManager
+      {...(proposals.hidden ? {} : { proposalPanel: <FloorProposalPanel {...proposals.panel} /> })}
       bands={result.bands}
       canEdit={result.canEdit}
       duplicateElevationMessage={result.duplicateElevationMessage}
