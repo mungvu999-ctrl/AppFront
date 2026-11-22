@@ -116,12 +116,13 @@ const ROWS = {
   // lượt nào đang chạy nên không còn lượt mở luồng 404 (B-V4-10) để chờ.
   projectPipeline: { anchor: { role: 'navigation', name: 'Xử lý' } },
   projectPipelineGraph: { anchor: { role: 'heading', name: 'Bản vẽ được xử lý theo đường nào' } },
-  projectScale: { anchor: { role: 'heading', name: 'Tỷ lệ bản vẽ' } },
+  // Cột việc dựng lại (09b6f31d): H1 của các bước duyệt tầng nằm ở đầu cột (`QcStepColumn`, STEP_H1).
+  projectScale: { anchor: { role: 'heading', name: 'Kiểm tỷ lệ' } },
   projectWalls: { anchor: { role: 'region', name: 'Duyệt lớp tường' } },
   projectObjects: { anchor: { role: 'region', name: 'Lớp đối tượng' } },
   projectDimensions: { anchor: { role: 'region', name: 'Kích thước' } },
   projectGrids: { anchor: { role: 'heading', name: 'Trục và gốc toạ độ' } },
-  projectRooms: { anchor: { role: 'heading', name: 'Duyệt phòng' } },
+  projectRooms: { anchor: { role: 'heading', name: 'Đặt tên phòng' } },
   projectFloors: { anchor: { role: 'heading', name: 'Duyệt từng tầng' } },
   projectThickness: { anchor: { role: 'heading', name: 'Độ dày tường' } },
   projectOverlay: { anchor: { role: 'region', name: 'So với bản vẽ' } },
