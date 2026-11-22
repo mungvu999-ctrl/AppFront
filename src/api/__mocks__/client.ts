@@ -12,6 +12,7 @@ import type { Me } from '../schemas/me';
 import type { LightingBake } from '../schemas/lightingBake';
 import type { PipelineRun } from '../schemas/pipelineRuns';
 import type { ProjectRuleConfig } from '../schemas/ruleConfig';
+import type { SpatialGraphDocument } from '../schemas/spatialGraph';
 import type { FloorLayerDocument } from '../schemas/spatialLayer';
 import type {
   AdminUser,
@@ -1317,8 +1318,15 @@ export interface MockScaleDetail {
 /** Trục và gốc đã lưu qua #35 (G4b-17): gửi `axes` thay nguyên danh sách, gửi `origin` thay gốc. */
 const writtenAxes = new Map<string, FloorLayerDocument['axes']>();
 const writtenOrigins = new Map<string, { x: number; y: number }>();
+/**
+ * Đồ thị N15 mà "máy chủ" trả thay cho đồ thị dựng từ các tầng của bộ mẫu — `null` là không thay.
+ * Màn xuất đọc đồ thị qua tuyến xuất có kiểm quyền (87bb47d6), không đọc kho trong trang, nên
+ * một spec bơm kho mà muốn xuất ra đúng thứ đã bơm phải đặt cả phía máy chủ.
+ */
+let serverGraph: SpatialGraphDocument['graph'] | null = null;
 
 export const __resetMockLayerState = (): void => {
+  serverGraph = null;
   layerRevisions.clear();
   writtenLayers.clear();
   lastLayerWrites.clear();
@@ -1348,6 +1356,14 @@ export const simulateProvisionalScale = (
 /** K4: tầng người đã chấp nhận số máy (PUT #35 `scaleEvidence: machineAccepted`) — độ tin vẫn là của máy. */
 export const simulateAcceptedScale = (floorId: string, value: number, detail: MockScaleDetail): void => {
   writtenScales.set(floorId, { accepted: true, detail, provisional: false, source: 'pipeline', value: value as MillimetresPerPixel });
+};
+
+/**
+ * Máy chủ đã có sẵn đồ thị này (mọi tầng revision 0): `readGraph` và `exportGraph` trả nó.
+ * Spec e2e gọi qua `seedSpatial(page, { onServer: true })`.
+ */
+export const simulateServerGraph = (graph: SpatialGraphDocument['graph']): void => {
+  serverGraph = clone(graph);
 };
 
 /** Tầng người dùng đã hiệu chỉnh tỷ lệ (N16 không còn `scaleStatus`) — như sau một lượt PUT #35. */
@@ -1657,6 +1673,13 @@ export const createMockApiClient = (): ApiClient => {
   });
 
   const readMockGraph = () => {
+    if (serverGraph !== null) {
+      return ok({
+        floorRevisions: serverGraph.levels.map((level) => ({ floorId: level.id, revision: 0 })),
+        graph: clone(serverGraph),
+      });
+    }
+
     const documents = floors.map((floor) =>
       makeLayerDocument(floor, layerRevisions.get(floor.id) ?? 0, writtenLayers.get(floor.id)),
     );
