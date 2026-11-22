@@ -1298,7 +1298,7 @@ export function useFloorUploadScreen(
           floorId: floor.id,
           floorName: floor.name,
           kind: 'replacesDrawing' as const,
-          sentence: `${floor.name}: bản vẽ cũ được thay bằng bản mới. Tường, cửa, phòng đã duyệt, tự vẽ hoặc đã sửa vẫn được giữ; phần AI chưa duyệt sẽ được dựng lại từ bản vẽ mới.`,
+          sentence: `${floor.name}: bản vẽ cũ được thay bằng bản mới. Tường, cửa, phòng đã duyệt, tự vẽ hoặc đã sửa vẫn được giữ; phần AI chưa duyệt sẽ được dựng lại từ bản vẽ mới. Nếu bản vẽ mới khác nhiều về hình học, phần đã duyệt có thể không còn khớp — hãy kiểm lại sau khi xử lý xong.`,
         })),
         scrollTo: { floorId: firstReplaced.id, requestId },
       });
