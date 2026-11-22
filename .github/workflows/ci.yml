@@ -76,6 +76,9 @@ jobs:
 
   typecheck:
     runs-on: ubuntu-24.04
+    # Trần heap tường minh: mặc định Node chỉ ~2 GB trên runner, OOM build 13/11, typecheck 17/11 (L8-N04).
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -87,6 +90,7 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
+      - run: node -e "const v=require('v8');console.log('heap_size_limit_MB='+Math.round(v.getHeapStatistics().heap_size_limit/2**20))"
       - run: pnpm typecheck
 
   # `coverage` chứ không phải `test`: cùng một lượt vitest, nhưng có đối chiếu
@@ -170,6 +174,9 @@ jobs:
 
   build:
     runs-on: ubuntu-24.04
+    # Trần heap tường minh: mặc định Node chỉ ~2 GB trên runner, OOM build 13/11, typecheck 17/11 (L8-N04).
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -181,6 +188,7 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
+      - run: node -e "const v=require('v8');console.log('heap_size_limit_MB='+Math.round(v.getHeapStatistics().heap_size_limit/2**20))"
       - run: pnpm build
       # Ngân sách gzip, đọc từ `dist/` mà bước trên vừa dựng.
       - run: pnpm size
@@ -194,6 +202,9 @@ jobs:
   # `--retries=1` (config mặc định 2 retry × test 8 phút vượt hạn job); hạn 25 phút, upload chạy cả khi job đỏ.
   e2e-stability:
     runs-on: ubuntu-24.04
+    # Trần heap tường minh: mặc định Node chỉ ~2 GB trên runner, OOM build 13/11, typecheck 17/11 (L8-N04).
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
@@ -205,6 +216,7 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
+      - run: node -e "const v=require('v8');console.log('heap_size_limit_MB='+Math.round(v.getHeapStatistics().heap_size_limit/2**20))"
       - run: pnpm exec playwright install --with-deps chrome
       - run: pnpm e2e e2e/pascal-stability.spec.ts e2e/pascal-edit-path.spec.ts --workers=1 --retries=1
         env:
