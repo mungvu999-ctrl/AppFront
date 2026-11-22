@@ -711,6 +711,27 @@ describe('usePascalEdits', () => {
     expect(onUnsaved).toHaveBeenCalledWith(['màu cửa'], expect.objectContaining({ [door.id]: expect.anything() }));
   });
 
+  it('A3 — hasPendingEdit: có lượt ghi được chưa vào kho thì true, ghi xong hay không có gì để ghi thì false', async () => {
+    const { result } = mount();
+
+    expect(result.current.hasPendingEdit(SCENE)).toBe(false);
+    expect(result.current.hasPendingEdit(thickened())).toBe(true);
+    const edited = thickened();
+    await act(async () => {
+      await result.current.onSceneCommit(edited);
+    });
+    // Mỗi lần hỏi là một ảnh chụp mới của editor (`readEditorScene`), như ở đây.
+    expect(result.current.hasPendingEdit({ ...edited })).toBe(false);
+    // Lượt bị từ chối (xoá hàng loạt) không có gì để mất.
+    expect(result.current.hasPendingEdit(gutted())).toBe(false);
+  });
+
+  it('A3 — vai chỉ xem không bao giờ có lượt chờ', () => {
+    const { result } = mount({ readOnly: true });
+
+    expect(result.current.hasPendingEdit(thickened())).toBe(false);
+  });
+
   it('v3 V3 — sửa chỉ màu đồ đạc: không có gì để ghi, nhưng báo "màu đồ đạc" chưa lưu được', async () => {
     const onUnsaved = vi.fn();
     const onRejected = vi.fn();
