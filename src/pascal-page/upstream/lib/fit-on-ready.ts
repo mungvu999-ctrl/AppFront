@@ -34,6 +34,9 @@ const MIN_DISTANCE = 6
 const LONG_PLAN_RATIO = 1.3
 const OFF_SHORT_AXIS = (25 * Math.PI) / 180
 
+/** Vùng cách khối tường xa hơn chừng này (m) là mảnh lạc, không tính vào khung nhìn. */
+const ZONE_TOUCH_M = 0.5
+
 /**
  * XZ bounds of the house itself: wall endpoints and zone polygons, both in level coordinates.
  * Vendor `computeSceneBoundsXZ` also adds raw node positions (doors/windows are wall-local,
@@ -56,14 +59,28 @@ export function planBoundsXZ(nodes: Record<string, unknown> | unknown[], levelId
     minZ = Math.min(minZ, p[1])
     maxZ = Math.max(maxZ, p[1])
   }
+  const zones: unknown[][] = []
   for (const node of Object.values(nodes) as { type?: unknown; parentId?: unknown; start?: unknown; end?: unknown; polygon?: unknown }[]) {
     if (levelId !== undefined && node?.parentId !== levelId) continue
     if (node?.type === 'wall') {
       add(node.start)
       add(node.end)
     } else if (node?.type === 'zone' && Array.isArray(node.polygon)) {
-      for (const p of node.polygon) add(p)
+      zones.push(node.polygon)
     }
+  }
+  // Bản vẽ hay sinh mảnh sàn lạc ngoài nhà (khung tên, ghi chú): đừng để chúng làm nhà nhỏ đi trong khung.
+  // Có tường thì chỉ tính vùng chạm khối tường; lô gia không tường bao vẫn chạm nên vẫn được tính.
+  const wallBox = minX <= maxX ? { minX, maxX, minZ, maxZ } : null
+  for (const polygon of zones) {
+    const points = polygon.filter((p): p is [number, number] => Array.isArray(p) && typeof p[0] === 'number' && typeof p[1] === 'number')
+    const touchesWalls =
+      wallBox === null ||
+      (Math.min(...points.map((p) => p[0])) <= wallBox.maxX + ZONE_TOUCH_M &&
+        Math.max(...points.map((p) => p[0])) >= wallBox.minX - ZONE_TOUCH_M &&
+        Math.min(...points.map((p) => p[1])) <= wallBox.maxZ + ZONE_TOUCH_M &&
+        Math.max(...points.map((p) => p[1])) >= wallBox.minZ - ZONE_TOUCH_M)
+    if (touchesWalls) points.forEach(add)
   }
   if (minX > maxX) return null
   return { center: [(minX + maxX) / 2, (minZ + maxZ) / 2], size: [maxX - minX, maxZ - minZ], points }
