@@ -20,6 +20,7 @@ import {
   BRIDGE_EMPTY_ERROR,
   BRIDGE_LOAD_ERROR,
   BRIDGE_SAVE_BLOCKED,
+  BRIDGE_OFFLINE,
   BRIDGE_SAVE_FAILED,
   BRIDGE_SESSION_ERROR,
   CONCEPT_FALLBACK_NOTICE,
@@ -659,7 +660,12 @@ describe('usePascalProjectBridge', () => {
     saver.state = 'failed';
     await expect(result.current.onSave({ nodes: {}, rootNodeIds: [] })).rejects.toThrow(BRIDGE_SAVE_FAILED);
 
+    // K-04: ngoại tuyến ≠ đã lưu; hết ngoại tuyến thì resolve lại.
+    saver.state = 'offline';
+    await expect(result.current.onSave({ nodes: {}, rootNodeIds: [] })).rejects.toThrow(BRIDGE_OFFLINE);
     saver.state = 'saved';
+    await expect(result.current.onSave({ nodes: {}, rootNodeIds: [] })).resolves.toBeUndefined();
+
     saver.blocked = 'Bản vẽ đã đổi ở nơi khác.';
     /* eslint-disable-next-line local/no-direct-set -- tầng L-1 đang chờ lưu */
     useStore.setState({ unsavedFloorIds: ['L-1'] });
