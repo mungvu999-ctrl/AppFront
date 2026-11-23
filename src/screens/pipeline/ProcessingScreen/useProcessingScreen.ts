@@ -165,7 +165,17 @@ const COPY = {
     'Xử lý vẫn chạy khi bạn rời màn này. Đóng thẻ trình duyệt thì không báo được nữa.',
   backgroundDoneDescription: 'Mở lại màn xử lý để xem kết quả.',
   backgroundFailedDescription: 'Mở lại màn xử lý để xem chi tiết lỗi.',
+  statusCancelled: 'đã huỷ',
+  cancelFailedTitle: 'Chưa huỷ được lượt xử lý',
+  cancelFailedDescription: 'Lượt xử lý vẫn đang chạy. Hãy thử huỷ lại sau ít giây.',
 } as const;
+
+/** Mã `Progress.error` của lượt người dùng đã huỷ (N53, K-24). */
+const CANCELLED_CODE = 'PIPELINE_CANCELLED';
+const CANCEL_FAILED_TYPE = 'processing-cancel-failed';
+
+const isCancelledProgress = (progress: Partial<Progress> | undefined): boolean =>
+  progress?.status === 'failed' && progress.error === CANCELLED_CODE;
 
 /** Ví dụ `"Tầng 1 đã xử lý xong"`. */
 const backgroundDoneTitle = (floor: string): string => `${floor} đã xử lý xong`;
@@ -728,7 +738,12 @@ function toRunRow(run: PipelineRun): ProcessingRunRowViewModel {
   if (run.status === 'failed') {
     return {
       ...base,
-      statusLabel: run.supersededBy !== undefined ? 'Đã thay bằng lượt mới' : 'Lỗi',
+      statusLabel:
+        run.supersededBy !== undefined
+          ? 'Đã thay bằng lượt mới'
+          : run.errorCode === CANCELLED_CODE
+            ? 'Đã huỷ'
+            : 'Lỗi',
       tone: run.supersededBy !== undefined ? 'running' : 'failed',
     };
   }
@@ -1071,9 +1086,10 @@ export function useProcessingScreen(options: UseProcessingScreenOptions): Proces
     navigate(ROUTES.account);
   }, [navigate]);
 
-  const canCancel = gateway.supports.cancelProcessing && canEdit;
   // "Để chạy nền" hứa một thông báo: chỉ đưa ra khi còn lượt chưa cuối để mà báo (BUG-165).
   const canRunInBackground = records.some((record) => !isRunFinal(record));
+  // Nút huỷ chỉ có khi còn lượt chưa cuối để huỷ (K-24) và người xem có quyền tải bản vẽ.
+  const canCancel = gateway.supports.cancelProcessing && canEdit && canRunInBackground;
 
   /** Màn rỗng chỉ ra bước kế: chưa có bản vẽ nào trong hàng đợi thì tải bản vẽ (BUG-165). */
   const onUploadDrawings = useCallback(() => {
@@ -1100,14 +1116,40 @@ export function useProcessingScreen(options: UseProcessingScreenOptions): Proces
     setIsCancelConfirming(false);
   }, []);
 
+  /**
+   * K-24 — huỷ mọi lượt CHƯA cuối của màn (N53). Máy chủ trả `Progress` sau huỷ; ghi thẳng vào
+   * bộ đệm để màn rời trạng thái "đang xử lý" ngay, không chờ khung SSE cuối. Lượt huỷ thành
+   * `failed` + `PIPELINE_CANCELLED` (hành động `retry`), nên khi mọi tầng đã cuối màn hỏng S-11
+   * mở với "Chạy lại từ bản gốc" và "Tải lại bản vẽ". Lượt xong trước khi lời huỷ tới thì về
+   * `completed` như thường.
+   */
   const onConfirmCancel = useCallback(() => {
     const uploads = uploadsRef.current;
+    const records = recordsRef.current;
     setIsCancelConfirming(false);
 
-    uploads.forEach((upload) => {
-      void gateway.requestCancel({ projectId, uploadId: upload.uploadId });
+    uploads.forEach((upload, index) => {
+      const record = records[index];
+      if (record !== undefined && isRunFinal(record)) return;
+
+      void gateway.requestCancel({ projectId, uploadId: upload.uploadId }).then((result) => {
+        if (!result.ok) {
+          publish({ type: CANCEL_FAILED_TYPE, title: COPY.cancelFailedTitle, description: COPY.cancelFailedDescription });
+          return;
+        }
+
+        queryClient.setQueryData<FloorProgressRecord>(queryKeys.progress.byFloor(upload.floorId), (existing) =>
+          applySnapshot(
+            existing?.uploadId === upload.uploadId ? existing : emptyRecord(upload),
+            result.data,
+            Date.now(),
+            'polling',
+            `cancel:${upload.uploadId}`,
+          ),
+        );
+      });
     });
-  }, [gateway, projectId]);
+  }, [gateway, projectId, publish, queryClient]);
 
   /**
    * "Để chạy nền và thông báo cho tôi".
@@ -1191,7 +1233,8 @@ export function useProcessingScreen(options: UseProcessingScreenOptions): Proces
           id: upload.floorId,
           label: upload.floorName,
           status,
-          statusLabel: STATUS_LABELS[status],
+          // Lượt người dùng huỷ vẫn là `failed` với máy chủ, nhưng chip nói đúng việc đã xảy ra (K-24).
+          statusLabel: isCancelledProgress(records[index]?.progress) ? COPY.statusCancelled : STATUS_LABELS[status],
           isActive: index === focusIndex,
           ...(objectCount?.scaleMissing === true
             ? { reviewLabel: SCALE_MISSING_LABEL, isScaleMissing: true }
@@ -1205,7 +1248,7 @@ export function useProcessingScreen(options: UseProcessingScreenOptions): Proces
             : {}),
         };
       }),
-    [extractions, floorStatuses, floorUploads, focusIndex],
+    [extractions, floorStatuses, floorUploads, focusIndex, records],
   );
 
   /* ---------------------------------------------------------------------- */

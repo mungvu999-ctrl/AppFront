@@ -152,7 +152,6 @@ export type ProcessingCapability = (typeof PROCESSING_CAPABILITIES)[number];
  * dòng nợ viết nguyên văn.
  */
 export const PROCESSING_MISSING_CAPABILITIES = [
-  'cancelProcessing',
   'queuePosition',
   'parallelFloorPipeline',
   'completionNotice',
@@ -171,7 +170,6 @@ export type ProcessingMissingCapability = (typeof PROCESSING_MISSING_CAPABILITIE
 export const PROCESSING_MISSING_ENDPOINTS: Readonly<
   Record<ProcessingMissingCapability, string>
 > = {
-  cancelProcessing: 'ENDPOINTS.drawings.cancel + DrawingsApi.cancel — chưa có',
   queuePosition:
     'ENDPOINTS.drawings.queue + trường vị trí hàng đợi trong ProgressSchema (.strict(), 7 trường) — chưa có',
   parallelFloorPipeline:
@@ -463,8 +461,12 @@ export interface ProcessingGateway {
    */
   readonly pollProgress: (input: PollProgressInput, handlers: SubscribeProgressHandlers) => () => void;
 
-  /** NOT FOUND — `cancelProcessing`. */
-  readonly requestCancel: (input: RequestCancelInput) => Promise<ProcessingCapabilityResult<void>>;
+  /**
+   * N53 (K-24) — huỷ lượt xử lý đang chạy của một lượt tải; trả `Progress` sau huỷ
+   * (`failed` + `PIPELINE_CANCELLED`, hay `completed` nếu lượt đã xong trước khi huỷ tới).
+   * Máy chủ dừng phần AI ở điểm kiểm gần nhất; idempotent nên bấm đôi vô hại.
+   */
+  readonly requestCancel: (input: RequestCancelInput) => Promise<ApiResult<Progress>>;
   /**
    * Ghi các lượt đang chạy vào sổ theo dõi nền, để màn tháo KHÔNG đóng dòng sự
    * kiện của chúng. Luôn `supported: true` — việc này không cần endpoint nào.
@@ -909,10 +911,10 @@ export function createProcessingGateway(
     // và ánh xạ sáu bước — cái cuối chỉ làm được một nửa, xem giả định C3 ở đầu
     // file. Năm việc còn lại `false` cho tới khi có endpoint thật.
     supports: {
-      // Bật cờ này thì giữ lệnh `UNDO_WINDOW_MS` kèm toast hoàn tác (A8). Hết giờ chỉ
-      // huỷ những lượt tải lên chụp lúc xác nhận mà vẫn đang chạy. Câu toast phải đúng
-      // cả khi lượt chạy xong trước hạn. Xem B-V4-09.
-      cancelProcessing: false,
+      // K-24 (N53): huỷ thật. Không hoãn `UNDO_WINDOW_MS` (B-V4-09): hộp xác nhận chặn bấm nhầm,
+      // và "Chạy lại từ bản gốc" (N51) là đường hoàn tác — giữ tệp, trang, vùng cắt; còn hoãn
+      // 8 s thì ML chạy thêm 8 s, ngược ý "dừng hẳn phần AI" của phương án B.
+      cancelProcessing: true,
       queuePosition: false,
       parallelFloorPipeline: false,
       runInBackground: true,
@@ -1110,7 +1112,8 @@ export function createProcessingGateway(
       return close;
     },
 
-    requestCancel: () => Promise.resolve(unsupported('cancelProcessing')),
+    requestCancel: ({ projectId, uploadId }) =>
+      client.drawings.cancel({ idempotencyKey: createUuid(), projectId, uploadId }),
 
     // Không lời gọi mạng nào: "chạy nền" chỉ là việc KHÔNG đóng dòng sự kiện đã
     // mở. Ghi vào sổ là toàn bộ phần việc của cổng.

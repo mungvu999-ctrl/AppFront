@@ -8,6 +8,7 @@ import { describePipelineError, PIPELINE_ERROR_CODES } from './pipelineErrorText
 const EXPECTED = {
   reload: ['PIPELINE_SUPERSEDED', 'FLOOR_DELETED'],
   retry: [
+    'PIPELINE_CANCELLED',
     'PIPELINE_STALLED',
     'PIPELINE_STEP_TIMEOUT',
     'PIPELINE_ARTIFACT_MISSING',
@@ -43,9 +44,9 @@ const EXPECTED = {
 } as const;
 
 describe('pipelineErrorText', () => {
-  it('holds exactly the 29 codes of the contract table', () => {
+  it('holds exactly the 30 codes of the contract table (29 + PIPELINE_CANCELLED, K-24)', () => {
     const expected = Object.values(EXPECTED).flat();
-    expect(PIPELINE_ERROR_CODES).toHaveLength(29);
+    expect(PIPELINE_ERROR_CODES).toHaveLength(30);
     expect([...PIPELINE_ERROR_CODES].sort()).toEqual([...expected].sort());
   });
 

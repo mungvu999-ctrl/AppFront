@@ -12,10 +12,14 @@ import { APP_ERROR_KIND_CONFIG } from '@/lib/errors/kinds';
 /** Việc nên làm tiếp với một lượt hỏng. */
 export type PipelineErrorAction = 'reupload' | 'retry' | 'contactAdmin' | 'reload';
 
-/** 28 mã của bảng BE-cho-FE §3.1 cộng `NOT_A_FLOOR_PLAN` (bước tách tường), theo thứ tự bốn nhóm hành động. */
+/**
+ * 28 mã của bảng BE-cho-FE §3.1 cộng `NOT_A_FLOOR_PLAN` (bước tách tường) và `PIPELINE_CANCELLED`
+ * (người dùng huỷ, N53/K-24), theo thứ tự bốn nhóm hành động.
+ */
 export const PIPELINE_ERROR_CODES = [
   'PIPELINE_SUPERSEDED',
   'FLOOR_DELETED',
+  'PIPELINE_CANCELLED',
   'PIPELINE_STALLED',
   'PIPELINE_STEP_TIMEOUT',
   'PIPELINE_ARTIFACT_MISSING',
@@ -51,7 +55,9 @@ const TABLE = {
   // reload — lượt này đã bị thay; đọc lại N7, không màn lỗi.
   PIPELINE_SUPERSEDED: ['reload', 'Lượt xử lý này đã được thay bằng một lượt mới hơn.'],
   FLOOR_DELETED: ['reload', 'Tầng của lượt xử lý này đã bị xoá.'],
-  // retry — lỗi tạm; chạy lại cả lượt từ bản gốc đã lưu (K-06), không được thì tải lại bản vẽ.
+  // retry — lỗi tạm hay lượt đã huỷ; chạy lại cả lượt từ bản gốc đã lưu (K-06), không được thì tải lại bản vẽ.
+  // Huỷ KHÔNG là `reload`: N7 vẫn trỏ lượt tải này, đọc lại N7 chỉ giữ tầng ở "đang chờ" mãi (K-24).
+  PIPELINE_CANCELLED: ['retry', 'Lượt xử lý đã được huỷ theo yêu cầu. Bản vẽ gốc vẫn được giữ để chạy lại.'],
   PIPELINE_STALLED: ['retry', 'Bước xử lý dừng lại quá lâu mà không tiến thêm.'],
   PIPELINE_STEP_TIMEOUT: ['retry', 'Bước xử lý chạy quá thời gian cho phép.'],
   PIPELINE_ARTIFACT_MISSING: ['retry', 'Hệ thống không tìm thấy kết quả trung gian của bước trước.'],
