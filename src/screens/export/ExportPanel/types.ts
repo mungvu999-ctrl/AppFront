@@ -306,4 +306,6 @@ export interface ExportPanelProps {
   readonly onBackToProject?: () => void;
   /** Mở màn "Dữ liệu dự án" (xem trước tệp JSON). Vắng thì không có liên kết. */
   readonly onOpenData?: () => void;
+  /** K-22: mở editor 3D để xuất GLB đầy đủ (vật liệu, đồ thật). Vắng thì không có nút. */
+  readonly onOpenEditorExport?: () => void;
 }

@@ -3,6 +3,9 @@
  * `editor3d.html?view=exploded` / `?tool=measure` (`src/routes/viewerRedirects.tsx`). Trang Pascal
  * áp ý định ấy MỘT lần, khi cảnh của dự án đã có tường (cảnh mặc định của editor chưa có), để lượt
  * nạp cảnh không xoá mất nó. Không có tham số thì không làm gì.
+ *
+ * K-22: `?panel=export` là lối từ thẻ GLB của màn Xuất — mở tab Cài đặt và xuất GLB đầy đủ bằng bộ
+ * xuất của editor (thân ở `./exportFullGlb`).
  */
 type SceneNodes = Readonly<Record<string, { readonly type?: string } | undefined>>;
 
@@ -13,6 +16,8 @@ export interface UrlIntentStores {
   };
   readonly explodeLevels: () => void;
   readonly startMeasure: () => void;
+  /** `?panel=export`: mở tab Cài đặt rồi xuất GLB đầy đủ khi cảnh sẵn sàng. */
+  readonly openExport: () => void;
   /** Câu báo lên toast của cầu (UX audit #29). */
   readonly notify?: (message: string) => void;
 }
@@ -23,7 +28,8 @@ export function applyUrlIntent(search: string, stores: UrlIntentStores): () => v
   const query = new URLSearchParams(search);
   const exploded = query.get('view') === 'exploded';
   const measure = query.get('tool') === 'measure';
-  if (!exploded && !measure) return () => {};
+  const exportPanel = query.get('panel') === 'export';
+  if (!exploded && !measure && !exportPanel) return () => {};
 
   let done = false;
   let unsubscribe: () => void = () => {};
@@ -38,6 +44,7 @@ export function applyUrlIntent(search: string, stores: UrlIntentStores): () => v
       stores.explodeLevels();
     }
     if (measure) stores.startMeasure();
+    if (exportPanel) stores.openExport();
   };
   unsubscribe = stores.scene.subscribe(apply);
   apply();

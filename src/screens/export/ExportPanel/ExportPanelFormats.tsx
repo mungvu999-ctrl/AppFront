@@ -145,6 +145,8 @@ export interface ExportPanelFormatsProps {
   readonly onSelectFormat: (id: ExportFormatId) => void;
   /** Mở màn Dữ liệu (xem trước nội dung .json). */
   readonly onOpenData?: () => void;
+  /** K-22: dẫn sang editor để xuất GLB đầy đủ. */
+  readonly onOpenEditorExport?: () => void;
 }
 
 /**
@@ -158,6 +160,7 @@ export function ExportPanelFormats({
   isLoading,
   onSelectFormat,
   onOpenData,
+  onOpenEditorExport,
 }: ExportPanelFormatsProps) {
   const offered = formats.filter((format) => blockedCaptionOf(format.id, capabilities) === null);
   // Roving tabindex cần đúng một điểm dừng, kể cả khi định dạng đang chọn không nằm trong danh sách.
@@ -197,6 +200,15 @@ export function ExportPanelFormats({
               isTabStop={format.id === tabStopId}
               onSelect={onSelectFormat}
             />
+            {format.id === 'glb' && onOpenEditorExport !== undefined && (
+              <button
+                type="button"
+                onClick={onOpenEditorExport}
+                className={cn('self-start rounded-sm px-4 min-h-6 coarse:min-h-11 text-[13px] font-medium text-accent hover:underline', FOCUS_RING)}
+              >
+                Mở editor để xuất bản đầy đủ
+              </button>
+            )}
             {format.id === 'spatial-json' && onOpenData !== undefined && (
               <button
                 type="button"

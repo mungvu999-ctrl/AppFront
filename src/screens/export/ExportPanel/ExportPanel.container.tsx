@@ -73,7 +73,7 @@ import {
 import { useSession } from '@/hooks/useSession';
 import { SHARE_LINKS_SUPPORTED } from '@/lib/export/shareLink';
 import { ShareDialogContainer } from '@/screens/export/ShareDialog';
-import { ROUTES } from '@/routes/paths';
+import { editor3dHref, ROUTES } from '@/routes/paths';
 import { useStore } from '@/store';
 import type { ProjectRole } from '@/types/project';
 
@@ -170,6 +170,10 @@ function WiredExportPanel(props: WiredExportPanelProps) {
         }}
         onOpenData={() => {
           void navigate(ROUTES.project.data(props.projectId));
+        }}
+        // K-22: trang 3D là tài liệu HTML riêng, nên đi cả trang (không qua router).
+        onOpenEditorExport={() => {
+          window.location.assign(editor3dHref(props.projectId, '?panel=export'));
         }}
       />
       {/* Chip đứng sát trên chân dính đáy (cao 69 px + 7 px hở), không `bottom-24` mặc định: ở 1280×720

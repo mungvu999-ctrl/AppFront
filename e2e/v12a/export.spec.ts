@@ -68,8 +68,8 @@ test('có bơm kho: bấm "xuất" .glb thì tệp tải về máy và hiện m�
 }) => {
   await seedAndSettle(page, { onServer: true });
 
-  // G5-29: thẻ định dạng mang tên đọc được, "Mô hình 3D (.glb)", không còn chỉ đuôi ".glb".
-  await expect(page.getByRole('radio', { name: /^Mô hình 3D \(\.glb\)/u })).toHaveAttribute('aria-checked', 'true');
+  // G5-29/K-22: thẻ định dạng mang tên đọc được, "Mô hình 3D, bản rút gọn (.glb)", không còn chỉ đuôi ".glb".
+  await expect(page.getByRole('radio', { name: /^Mô hình 3D, bản rút gọn \(\.glb\)/u })).toHaveAttribute('aria-checked', 'true');
 
   const download = page.waitForEvent('download', { timeout: GLB_EXPORT_TIMEOUT_MS });
   const exportButton = page.getByRole('button', { name: /^Xuất (\.glb|\.json|PDF|ảnh)$/u });

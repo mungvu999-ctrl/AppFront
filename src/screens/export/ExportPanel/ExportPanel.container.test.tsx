@@ -108,7 +108,7 @@ describe('F-06 — cờ tắt: không nút "chia sẻ", không request tới sha
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     renderExportPanel();
 
-    expect(await screen.findByRole('button', { name: /xuất/iu })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /^xuất/iu })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /chia sẻ/iu })).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(shareDialogRenders.count).toBe(0);
