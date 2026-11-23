@@ -20,7 +20,7 @@ import { libraryOnlyCatalog, serverCatalogTiles, setRealismModels } from '@/lib/
 import type { LibrarySource } from '@/lib/pascal/serverLibrary';
 import { getFeatureFlagsSnapshot } from '@/lib/telemetry/flags';
 
-import { BRIDGE_SESSION_ERROR, loginHrefOf, savePascalNow, usePascalProjectBridge } from './bridge';
+import { savePascalNow, usePascalProjectBridge } from './bridge';
 import { isEmptyChange, type NodeChanges, nodeChangesTo } from './bridge/sceneRevert';
 import type { PascalSceneGraph } from './bridge/types';
 import { BackToProjectCard, EditModelButton, ProjectStepsCard } from './BackToProjectCard';
@@ -28,6 +28,7 @@ import { syncChromeTheme } from './chromeTheme';
 import { sceneTrace } from './createProbe';
 import { HomeownerCardMount } from './HomeownerCardMount';
 import { ItemTrustCard } from './ItemTrustCard';
+import { LoadErrorBody } from './LoadErrorBody';
 import { ModelCreditCard } from './ModelCreditCard';
 import { OpeningKindCard, type OpeningKindStores } from './OpeningKindCard';
 import { PlacementIssuesChip } from './PlacementIssuesChip';
@@ -228,16 +229,7 @@ function PascalPage({ projectId }: { readonly projectId: string }) {
   if (bridge.status === 'error') {
     return (
       <Notice>
-        <p className="text-muted-foreground">{bridge.error ?? 'Không mở được mô hình 3D.'}</p>
-        {/* L3a-01: phiên hết thì có lối đăng nhập lại, xong quay về đúng mô hình 3D này. */}
-        {bridge.error === BRIDGE_SESSION_ERROR ? (
-          <a className="mt-4 mr-2 inline-block rounded-md border border-border bg-accent px-3 py-2 font-medium" href={loginHrefOf(projectId)}>
-            Đăng nhập lại
-          </a>
-        ) : null}
-        <a className="mt-4 inline-block rounded-md border border-border bg-accent px-3 py-2 font-medium" href={bridge.backHref}>
-          Về dự án
-        </a>
+        <LoadErrorBody error={bridge.error} projectId={projectId} backHref={bridge.backHref} online={navigator.onLine} />
       </Notice>
     );
   }
