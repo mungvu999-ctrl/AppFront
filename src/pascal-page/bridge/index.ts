@@ -49,7 +49,7 @@ export type { PascalBridge, PascalConfirm, PascalNotice, PascalSaveStatus, Pasca
 
 export const BRIDGE_SESSION_ERROR = 'Phiên đăng nhập đã hết. Đăng nhập lại rồi mở lại mô hình 3D.';
 export const BRIDGE_NOT_FOUND_ERROR = 'Không tìm thấy dự án này, hoặc bạn chưa được thêm vào dự án.';
-export const BRIDGE_LOAD_ERROR = 'Không tải được mô hình của dự án. Tải lại trang để thử lại.';
+export const BRIDGE_LOAD_ERROR = 'Không tải được mô hình của dự án. Bấm Thử lại hoặc tải lại trang.';
 export const BRIDGE_EMPTY_ERROR = 'Dự án chưa có mô hình để mở trong 3D.';
 // Concept AI (N47) dùng chung với lịch sử phiên bản + viewer di động (`sceneConcept.ts`).
 export { CONCEPT_FALLBACK_NOTICE, furnishModeOf } from '@/lib/pascal/sceneConcept';
