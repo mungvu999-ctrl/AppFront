@@ -97,6 +97,10 @@ describe('ApiErrorBodySchema', () => {
     expect(ApiErrorBodySchema.safeParse({ ...minimalError, resource: 'shareLink' }).success).toBe(true);
   });
 
+  it.each(['drawingSet', 'drawingSetFile'])('nhận resource %s — bộ hồ sơ hay tệp của bộ không còn trả NOT_FOUND (K-32a)', (resource) => {
+    expect(ApiErrorBodySchema.safeParse({ ...minimalError, resource }).success).toBe(true);
+  });
+
   it('nhận resource lightingBake — dự án chưa nướng ánh sáng lần nào trả NOT_FOUND (N43)', () => {
     expect(ApiErrorBodySchema.safeParse({ ...minimalError, resource: 'lightingBake' }).success).toBe(true);
   });
