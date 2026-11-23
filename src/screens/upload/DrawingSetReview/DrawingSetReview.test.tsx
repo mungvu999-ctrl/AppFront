@@ -177,6 +177,24 @@ describe('duyệt bộ hồ sơ', () => {
     expect(screen.getByText(/Chọn tầng cho ít nhất một hình mặt bằng/u)).toBeTruthy();
   });
 
+  it('K-65: số bản vẽ hiện cạnh hình, khung "Thông tin hồ sơ" hiện trường đọc được và gợi ý tên bộ', async () => {
+    const { gateway, sets } = gatewayOf();
+    const setId = await seedSet(sets);
+
+    renderScreen({ gateway, setId });
+    const grid = await screen.findByRole('list', { name: 'Các hình máy tách được' });
+    const first = within(grid).getAllByRole('article')[0]!;
+
+    expect(within(first).getByText('KT-01')).toBeTruthy();
+    const info = screen.getByRole('region', { name: 'Thông tin hồ sơ' });
+
+    expect(within(info).getByText('Anh Nguyễn Văn An')).toBeTruthy();
+    expect(within(info).getByText('Quận 7, TP. Hồ Chí Minh')).toBeTruthy();
+    expect(within(info).queryByText('Ngày:')).toBeNull();
+    expect(within(info).getByText(/Gợi ý tên bộ hồ sơ/u)).toBeTruthy();
+    expectVietnamese(info);
+  });
+
   it('chọn tầng cho từng mặt bằng, tự lưu, xác nhận qua hộp hỏi → "đã xác nhận" kèm dòng mặt cắt', async () => {
     const { gateway, sets } = gatewayOf();
     const setId = await seedSet(sets);

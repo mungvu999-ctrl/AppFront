@@ -94,6 +94,8 @@ export const DrawingSetViewSchema = z
     kind: z.enum(HOUSE_VIEW_KINDS),
     kindConfidence: ratio,
     titleText: z.string().optional(),
+    /** Số hiệu bản vẽ đọc từ khung tên (K-65); vắng khi máy không đọc được. */
+    sheetNo: z.string().min(1).optional(),
     storeyLabel: z.enum(HOUSE_STOREY_LABELS).optional(),
     storeyNo: z.number().int().optional(),
     storeyConfidence: ratio.optional(),
@@ -103,6 +105,20 @@ export const DrawingSetViewSchema = z
   })
   .strict();
 export type DrawingSetView = z.infer<typeof DrawingSetViewSchema>;
+
+/**
+ * Khung tên chung của bộ (K-65): giá trị chung khi các trang khớp nhau; trang lệch thì máy chủ bỏ trường đó.
+ * Mọi khoá tuỳ chọn và VẮNG khi không có (W2, không `null`); cả khoá `titleBlock` vắng khi không đọc được gì.
+ */
+export const DrawingSetTitleBlockSchema = z
+  .object({
+    owner: z.string().min(1).optional(),
+    project: z.string().min(1).optional(),
+    location: z.string().min(1).optional(),
+    date: z.string().min(1).optional(),
+  })
+  .strict();
+export type DrawingSetTitleBlock = z.infer<typeof DrawingSetTitleBlockSchema>;
 
 export const DrawingSetSchema = z
   .object({
@@ -114,6 +130,7 @@ export const DrawingSetSchema = z
     errorCode: z.string().min(1).optional(),
     createdAt: isoInstantSchema,
     confirmedAt: isoInstantSchema.optional(),
+    titleBlock: DrawingSetTitleBlockSchema.optional(),
     files: z.array(DrawingSetFileSchema),
     views: z.array(DrawingSetViewSchema),
   })

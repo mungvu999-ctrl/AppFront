@@ -14,6 +14,9 @@ import {
   setKind,
   setNewFloorName,
   setReplace,
+  sortedBySheetNo,
+  suggestedSetName,
+  titleBlockRowsOf,
   suggestedFloorName,
   toDrafts,
   toViewEdits,
@@ -184,5 +187,30 @@ describe('confirmedLines', () => {
 
     expect(lines).toHaveLength(3);
     expect(lines[2]).toContain('duyệt lại');
+  });
+});
+
+describe('K-65: số bản vẽ và khung tên', () => {
+  it('sắp theo số bản vẽ (so số theo giá trị), hình không số xếp sau theo thứ tự cũ; thân N59 không mang sheetNo', () => {
+    const drafts = toDrafts([view('a', { sheetNo: 'KT-10' }), view('b'), view('c', { sheetNo: 'KT-2' }), view('d')]);
+
+    expect(sortedBySheetNo(drafts).map((draft) => draft.id)).toEqual(['c', 'a', 'b', 'd']);
+    expect(JSON.stringify(toViewEdits(drafts))).not.toContain('sheetNo');
+  });
+
+  it('không hình nào có số: giữ thứ tự máy chủ', () => {
+    const drafts = toDrafts([view('a'), view('b'), view('c')]);
+
+    expect(sortedBySheetNo(drafts).map((draft) => draft.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('dòng khung tên chỉ gồm trường có; gợi ý tên bộ lấy từ công trình và không đè tên đã có', () => {
+    const block = { owner: 'Anh An', project: ' Nhà phố An ', date: '01/11/2026' };
+
+    expect(titleBlockRowsOf(block).map((row) => row.label)).toEqual(['Chủ đầu tư', 'Công trình', 'Ngày']);
+    expect(titleBlockRowsOf(undefined)).toEqual([]);
+    expect(suggestedSetName(block, undefined)).toBe('Nhà phố An');
+    expect(suggestedSetName(block, 'Tên cũ')).toBeNull();
+    expect(suggestedSetName({ owner: 'Anh An' }, undefined)).toBeNull();
   });
 });

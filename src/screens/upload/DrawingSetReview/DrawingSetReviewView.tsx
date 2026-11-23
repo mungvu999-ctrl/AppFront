@@ -11,7 +11,16 @@ import { SaveIndicator } from '@/components/feedback/SaveIndicator';
 import { Skeleton } from '@/components/feedback/Skeleton';
 import { Modal } from '@/components/overlay/Modal';
 import { Button } from '@/components/ui/Button';
-import { viewCardOf, type ConfirmCheck, type ReviewFloor, type ViewDraft } from '@/lib/viewmodel/drawingSetReview';
+import type { DrawingSetTitleBlock } from '@/api/schemas/drawingSet';
+import {
+  sortedBySheetNo,
+  suggestedSetName,
+  titleBlockRowsOf,
+  viewCardOf,
+  type ConfirmCheck,
+  type ReviewFloor,
+  type ViewDraft,
+} from '@/lib/viewmodel/drawingSetReview';
 
 import { DrawingSetViewCard } from './DrawingSetViewCard';
 import type { UseDrawingSetReviewResult } from './useDrawingSetReview';
@@ -24,6 +33,9 @@ const TEXT = {
   retry: 'Thử lại',
   problemsTitle: 'Chưa xác nhận được',
   rejectedTitle: 'Tệp máy không nhận',
+  infoTitle: 'Thông tin hồ sơ',
+  infoNote: 'Máy đọc từ khung tên các bản vẽ. Chỉ để tham khảo, không tự đổi tên hay dự án.',
+  nameHint: 'Gợi ý tên bộ hồ sơ',
   empty: 'Máy không tách được hình nào từ bộ này.',
   confirmTitle: 'Xác nhận và dựng?',
   removeTitle: 'Bỏ bộ hồ sơ này?',
@@ -44,6 +56,10 @@ export interface DrawingSetReviewViewProps {
   /** Câu cho tệp bị từ chối, đã có tên tệp. */
   readonly rejectedFiles: readonly string[];
   readonly notice: string | null;
+  /** Khung tên chung của bộ (K-65); vắng khi máy không đọc được. */
+  readonly titleBlock?: DrawingSetTitleBlock | undefined;
+  /** Tên bộ đã có (nếu có): có tên rồi thì không gợi ý tên khác. */
+  readonly setName?: string | undefined;
   readonly actions: UseDrawingSetReviewResult['actions'];
   readonly onRetryFloors: () => void;
   readonly onRetrySave: () => void;
@@ -53,6 +69,8 @@ export function DrawingSetReviewView(props: DrawingSetReviewViewProps) {
   const { actions, check, dialog, drafts, fileNames, floors } = props;
   const problemByView = new Map(check.problems.flatMap((problem) => (problem.viewId === undefined ? [] : [[problem.viewId, problem.text] as const])));
   const generalProblems = check.problems.filter((problem) => problem.viewId === undefined);
+  const infoRows = titleBlockRowsOf(props.titleBlock);
+  const nameHint = suggestedSetName(props.titleBlock, props.setName);
   const saveLabel = props.saveState === 'idle' ? null : TEXT.saveLabel[props.saveState];
 
   return (
@@ -90,6 +108,26 @@ export function DrawingSetReviewView(props: DrawingSetReviewViewProps) {
         )}
       </div>
 
+      {infoRows.length === 0 ? null : (
+        <section aria-label={TEXT.infoTitle} className="rounded-lg border border-border-default bg-bg-surface p-3">
+          <h2 className="text-[14px] font-semibold text-text-primary">{TEXT.infoTitle}</h2>
+          <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 text-[14px] sm:grid-cols-2">
+            {infoRows.map((row) => (
+              <div className="flex gap-2" key={row.key}>
+                <dt className="text-text-secondary">{row.label}:</dt>
+                <dd className="min-w-0 text-text-primary">{row.value}</dd>
+              </div>
+            ))}
+          </dl>
+          {nameHint === null ? null : (
+            <p className="mt-2 text-[13px] text-text-secondary">
+              {TEXT.nameHint}: <span className="font-semibold text-text-primary">{nameHint}</span>
+            </p>
+          )}
+          <p className="mt-1 text-[13px] text-text-secondary">{TEXT.infoNote}</p>
+        </section>
+      )}
+
       {generalProblems.length === 0 ? null : (
         <InlineAlert
           level="attention"
@@ -103,7 +141,7 @@ export function DrawingSetReviewView(props: DrawingSetReviewViewProps) {
         <p className="text-[14px] text-text-secondary">{TEXT.empty}</p>
       ) : (
         <ul aria-label="Các hình máy tách được" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {drafts.map((draft) => (
+          {sortedBySheetNo(drafts).map((draft) => (
             <li key={draft.id}>
               <DrawingSetViewCard
                 actions={actions}

@@ -40,6 +40,7 @@ const TEXT = {
   floorsLoading: 'Đang đọc các tầng…',
   section: 'Hình này thành một dòng mặt cắt, ẩn khỏi 3D.',
   other: 'Loại này không thành tầng.',
+  sheetNo: 'Số bản vẽ',
 } as const;
 
 const SELECT_CLASS =
@@ -94,6 +95,11 @@ export function DrawingSetViewCard({ actions, draft, floors, problem, sourceLabe
         <img alt={`Hình cắt từ ${sourceLabel}`} className="h-40 w-full rounded-md bg-bg-sunken object-contain" src={draft.imageUrl} />
       )}
       <p className="text-[13px] text-text-secondary">{sourceLabel}</p>
+      {draft.sheetNo === undefined ? null : (
+        <p className="text-[13px] text-text-secondary">
+          {TEXT.sheetNo}: <span className="font-semibold text-text-primary">{draft.sheetNo}</span>
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 text-[14px]">
         <span className="font-semibold text-text-primary">{vm.kindText}</span>

@@ -49,6 +49,23 @@ describe('DrawingSet (N54–N61) — schema strict', () => {
     expect(DrawingSetSchema.safeParse({ ...SET, views: [{ ...VIEW, extra: true }] }).success).toBe(false);
   });
 
+  it('K-65: sheetNo và titleBlock tuỳ chọn, vắng khoá khi không có; null/rỗng/khoá lạ bị chặn', () => {
+    const ok = DrawingSetSchema.parse({
+      ...SET,
+      titleBlock: { project: 'Nhà phố A', date: '2026-11-01' },
+      views: [{ ...VIEW, sheetNo: 'KT-01' }],
+    });
+
+    expect(ok.views[0]?.sheetNo).toBe('KT-01');
+    expect(ok.titleBlock).toEqual({ project: 'Nhà phố A', date: '2026-11-01' });
+    expect(DrawingSetSchema.safeParse({ ...SET, titleBlock: {} }).success).toBe(true);
+    expect(DrawingSetSchema.safeParse({ ...SET, titleBlock: null }).success).toBe(false);
+    expect(DrawingSetSchema.safeParse({ ...SET, titleBlock: { owner: null } }).success).toBe(false);
+    expect(DrawingSetSchema.safeParse({ ...SET, titleBlock: { owner: '' } }).success).toBe(false);
+    expect(DrawingSetSchema.safeParse({ ...SET, titleBlock: { sheet: 'x' } }).success).toBe(false);
+    expect(DrawingSetSchema.safeParse({ ...SET, views: [{ ...VIEW, sheetNo: null }] }).success).toBe(false);
+  });
+
   it('thời điểm là UTC Z đúng ba chữ số mili giây (W3)', () => {
     expect(DrawingSetSchema.safeParse({ ...SET, createdAt: '2026-11-23T01:02:03+07:00' }).success).toBe(false);
     expect(DrawingSetSchema.safeParse({ ...SET, createdAt: '2026-11-23T01:02:03Z' }).success).toBe(false);
