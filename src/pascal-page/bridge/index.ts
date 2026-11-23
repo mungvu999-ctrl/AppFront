@@ -57,6 +57,9 @@ export { CONCEPT_FALLBACK_NOTICE, furnishModeOf } from '@/lib/pascal/sceneConcep
 /** Câu khi lượt gửi N16 hỏng mà không có dải khối nào nêu lý do. */
 export const BRIDGE_SAVE_FAILED = 'Lưu thất bại. Kiểm tra mạng rồi sửa tiếp để thử lại.';
 
+/** Mất mạng: bản sửa còn chờ trong bộ nhớ trang, cầu tự gửi khi có mạng — editor không được báo "đã lưu". */
+export const BRIDGE_OFFLINE = 'Đang ngoại tuyến, sẽ lưu khi có mạng.';
+
 /** Câu báo MỖI lần cho phần sửa máy chủ chưa nhận (`unsavedEditsOf`): phần ấy vừa được đặt về như cũ. */
 export const unsavedNoticeOf = (labels: readonly string[]): string =>
   `Chưa lưu được: ${labels.join(', ')} — đã đặt về như cũ.`;
@@ -690,6 +693,9 @@ export function usePascalProjectBridge(
         await autosave.saveNow().catch(() => undefined);
         if (useStore.getState().unsavedFloorIds.some(isFloorBlocked)) throw new Error(BRIDGE_SAVE_BLOCKED);
         if (autosave.getState() === 'failed') throw new Error(BRIDGE_SAVE_FAILED);
+        /* Ngoại tuyến: PUT chưa đi, bản sửa chỉ nằm trong RAM. Ném để editor giữ cờ "chưa lưu" (không nói "đã lưu");
+           tầng lưu của cầu tự thử lại mỗi 5 s và chip ở thẻ trên cùng báo `offline`, nên lỗi này chỉ là tín hiệu nội bộ. */
+        if (autosave.getState() === 'offline') throw new Error(BRIDGE_OFFLINE);
       });
       lastSave = pending;
       try {
