@@ -11,11 +11,12 @@ import { lazy, Suspense, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import type { ApiClient, SharedModel } from '@/api/client';
+import { Button } from '@/components/ui/Button';
 import { ROUTES } from '@/routes/paths';
 
 import { SharedPlan } from './SharedPlan';
 import { useSharedModel } from './useSharedModel';
-import { isNotFound, SHARE_LINK_GONE_MESSAGE, shareGoneReason } from './shareGone';
+import { shareErrorCopy } from './shareGone';
 
 const SharedModel3D = lazy(() => import('./SharedModel3D').then((loaded) => ({ default: loaded.SharedModel3D })));
 
@@ -26,6 +27,9 @@ const VIEW_TABS: readonly { readonly id: ShareView; readonly label: string }[] =
 ];
 
 export const PROVISIONAL_AREA_NOTE = 'Diện tích là số tạm tính, bản vẽ chưa đặt tỷ lệ nên kích thước có thể lệch.';
+
+/** Đồ thị hợp lệ nhưng chưa có tầng nào: nói thẳng thay vì vẽ mặt bằng trắng. */
+export const NO_LEVELS_NOTE = 'Dự án chưa có tầng nào để xem.';
 
 export function SharedModelView({ model }: { model: SharedModel }) {
   const { graph } = model.graph;
@@ -88,13 +92,39 @@ export function SharedModelView({ model }: { model: SharedModel }) {
           ) : null}
         </div>
       </header>
-      {view === '2d' ? (
+      {levels.length === 0 ? (
+        <p role="status" className="text-sm text-text-secondary">{NO_LEVELS_NOTE}</p>
+      ) : view === '2d' ? (
         <SharedPlan key={levelId} walls={onLevel.walls} rooms={onLevel.rooms} openings={openings} provisionalArea={provisionalArea} />
       ) : (
         <Suspense fallback={<p className="text-sm text-text-secondary">Đang mở mô hình 3D…</p>}>
           <SharedModel3D key={levelId} graph={graph} levelId={levelId} provisionalArea={provisionalArea} />
         </Suspense>
       )}
+    </div>
+  );
+}
+
+function SharedModelError({ error, onRetry, retrying }: { error: unknown; onRetry: () => void; retrying: boolean }) {
+  const copy = shareErrorCopy(error);
+  return (
+    <div role="alert" className="flex flex-col gap-1">
+      <h1 className="text-title text-text-primary">{copy.title}</h1>
+      <p className="text-sm text-text-secondary">{copy.body}</p>
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        {copy.retryable ? (
+          <Button variant="secondary" loading={retrying} onClick={onRetry}>
+            Thử lại
+          </Button>
+        ) : null}
+        {/* Trang cụt thì có lối ra (A-09). */}
+        <Link
+          className="inline-flex min-h-6 w-fit items-center rounded-sm text-sm text-accent-hover outline-hidden hover:underline focus-visible:ring-2 focus-visible:ring-accent coarse:min-h-11"
+          to={ROUTES.login}
+        >
+          Về trang đăng nhập
+        </Link>
+      </div>
     </div>
   );
 }
@@ -106,25 +136,7 @@ export function SharedModelPage({ client }: { client?: Pick<ApiClient, 'share'> 
   return (
     <main className="flex h-screen flex-col bg-bg-app p-6">
       {query.isPending ? <p className="text-sm text-text-secondary">Đang mở liên kết…</p> : null}
-      {query.isError ? (
-        <div role="alert" className="flex flex-col gap-1">
-          <h1 className="text-title text-text-primary">{isNotFound(query.error) ? SHARE_LINK_GONE_MESSAGE : 'Không mở được liên kết'}</h1>
-          <p className="text-sm text-text-secondary">
-            {isNotFound(query.error)
-              ? shareGoneReason(query.error)
-              : 'Không kết nối được máy chủ. Thử tải lại trang sau ít phút.'}
-          </p>
-          {/* Trang cụt thì có lối ra (A-09). */}
-          {isNotFound(query.error) ? (
-            <Link
-              className="mt-2 inline-flex min-h-6 w-fit items-center rounded-sm text-sm text-accent-hover outline-hidden hover:underline focus-visible:ring-2 focus-visible:ring-accent coarse:min-h-11"
-              to={ROUTES.login}
-            >
-              Về trang đăng nhập
-            </Link>
-          ) : null}
-        </div>
-      ) : null}
+      {query.isError ? <SharedModelError error={query.error} onRetry={() => void query.refetch()} retrying={query.isFetching} /> : null}
       {query.data === undefined ? null : <SharedModelView model={query.data} />}
     </main>
   );
