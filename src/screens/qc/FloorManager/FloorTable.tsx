@@ -326,7 +326,7 @@ export function FloorTable({
       flush
       title={
         <>
-          {SECTION_TITLE} <span className="ml-1 text-[13px] font-normal text-text-secondary">{rows.length}</span>
+          {SECTION_TITLE} <span className="ml-1 text-[13px] font-normal text-text-secondary">{rows.filter((row) => !row.isSection).length}</span>
         </>
       }
     >

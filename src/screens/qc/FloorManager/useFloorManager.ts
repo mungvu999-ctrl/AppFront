@@ -1815,6 +1815,7 @@ export function useFloorManager(
         isScaleMissing: scaleState === 'missing',
         scaleState,
         isHiddenIn3d: hiddenFloorIds.includes(id),
+        isSection: floorsById.get(id)?.isSection === true,
         isElevationRefused: duplicateElevation?.floorId === id,
         draft: draftOf(level),
         editingField: editing?.floorId === id ? editing.field : null,
@@ -1851,7 +1852,7 @@ export function useFloorManager(
     // một khoảng giữa hai tầng thì khoảng ấy nằm DƯỚI dải, không dồn lên đỉnh (BUG-357).
     let previousTopMm: number = bottomMm ?? 0;
 
-    return rows.map((row) => {
+    return rows.filter((row) => !row.isSection).map((row) => {
       const gapBelowMm = Math.max(0, row.elevationMm - previousTopMm);
       previousTopMm = Math.max(previousTopMm, row.elevationMm + row.heightMm);
 
@@ -1917,7 +1918,7 @@ export function useFloorManager(
     }
 
     return {
-      floorCountText: floorCountText(rows.length),
+      floorCountText: floorCountText(rows.filter((row) => !row.isSection).length), // NO-482: mặt cắt không phải tầng
       totalHeightText,
       totalAreaText:
         areaOutlines === null ? MISSING_VALUE : totalMeasureTextOf(formatArea(totalArea(areaOutlines)), countedFloors),

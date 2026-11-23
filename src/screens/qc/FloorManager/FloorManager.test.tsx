@@ -713,6 +713,18 @@ describe('cao độ ghi đè (BUG-289)', () => {
   });
 });
 
+describe('dòng mặt cắt không phải tầng (NO-482)', () => {
+  it('dòng mặt cắt mang nhãn "Mặt cắt", tầng thường thì không, tiêu đề đếm không tính mặt cắt', () => {
+    const base = scenarioArgsFor('partial');
+    const rows = base.rows.map((row, index) => (index === 1 ? { ...row, isSection: true } : row));
+    renderWithProviders(<FloorManager {...base} rows={rows} />);
+
+    expect(screen.getAllByText('Mặt cắt')).toHaveLength(1);
+    expect(within(screen.getByRole('row', { name: new RegExp(`^${rows[1]!.name}, `, 'u') })).getByText('Mặt cắt')).toBeInTheDocument();
+    expect(screen.getByText('Các tầng').parentElement?.textContent?.startsWith(`Các tầng ${String(rows.length - 1)}`)).toBe(true);
+  });
+});
+
 describe('cao độ bị chặn (BUG-306)', () => {
   it('chỉ ô cao độ của tầng bị chặn mang dấu lỗi', () => {
     const base = scenarioArgsFor('partial');

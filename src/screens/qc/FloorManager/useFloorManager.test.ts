@@ -678,6 +678,31 @@ describe('lát cắt', () => {
     expect(mounted.result.current.footer.floorCountText).toBe('4 tầng');
   });
 
+  it('NO-482: dòng mặt cắt có nhãn, không tính vào số tầng và dải lát cắt', async () => {
+    const base = createMockFloorManagerGateway();
+    const ids = FLOOR_MANAGER_SAMPLE_LEVELS.map((entry) => String(entry.id));
+    const sectionId = ids[ids.length - 1];
+    const gateway = {
+      ...base,
+      readFloorList: async (input: Parameters<typeof base.readFloorList>[0]) => {
+        const snapshot = await base.readFloorList(input);
+
+        return {
+          ...snapshot,
+          floors: snapshot.floors.map((floor) => (floor.id === sectionId ? { ...floor, isSection: true as const } : floor)),
+        };
+      },
+    };
+    const mounted = await mountSettled({ gateway });
+    const { rows, bands, footer } = mounted.result.current;
+
+    expect(rows).toHaveLength(FLOOR_MANAGER_SAMPLE_LEVELS.length);
+    expect(rows.filter((row) => row.isSection).map((row) => row.id)).toEqual([sectionId]);
+    expect(bands).toHaveLength(FLOOR_MANAGER_SAMPLE_LEVELS.length - 1);
+    expect(bands.some((band) => band.levelId === sectionId)).toBe(false);
+    expect(footer.floorCountText).toBe('3 tầng');
+  });
+
   it('vạch thang cao độ chạy từ đáy lên đỉnh, 0 tới 1', async () => {
     const mounted = await mountSettled();
     const ticks = mounted.result.current.elevationTicks;

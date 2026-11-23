@@ -174,6 +174,7 @@ function buildRow(seed: FloorSeed): FloorRowVm {
     isScaleMissing: false,
     scaleState: 'confirmed',
     isHiddenIn3d: false,
+    isSection: false,
     isElevationRefused: false,
     draft: {
       name: seed.name,

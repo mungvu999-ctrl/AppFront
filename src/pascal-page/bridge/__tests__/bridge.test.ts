@@ -941,6 +941,18 @@ describe('undrawnFloorNames (U52)', () => {
   });
 });
 
+describe('undrawnFloorNames (NO-482)', () => {
+  it('bỏ dòng mặt cắt: dự án 3 tầng + 1 mặt cắt chỉ có 3 tầng', () => {
+    const floors = [
+      { id: 'a', name: 'Tầng 1', order: 0 },
+      { id: 'b', name: 'Tầng 2', order: 1 },
+      { id: 'c', name: 'Tầng 3', order: 2 },
+      { id: 's', isSection: true, name: 'Mặt cắt A-A', order: 3 },
+    ];
+    expect(undrawnFloorNames(floors, new Set())).toEqual(['Tầng 3', 'Tầng 2', 'Tầng 1']);
+  });
+});
+
 describe('drawnFloorIds (UX-32)', () => {
   it('counts a floor as drawn only when it has a wall or a room', () => {
     const drawn = drawnFloorIds({

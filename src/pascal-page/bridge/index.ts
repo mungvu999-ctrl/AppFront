@@ -166,11 +166,12 @@ export const UNDRAWN_FLOORS_KEY = '__appfrontUndrawnFloors';
 
 /** Tên các tầng của dự án chưa có trong đồ thị không gian (chưa có bản vẽ), tầng cao ở trên như danh sách tầng. */
 export function undrawnFloorNames(
-  floors: readonly { readonly id: string; readonly name: string; readonly order: number }[],
+  floors: readonly { readonly id: string; readonly isSection?: boolean; readonly name: string; readonly order: number }[],
   drawnIds: ReadonlySet<string>,
 ): string[] {
   return floors
-    .filter((floor) => !drawnIds.has(floor.id))
+    // NO-482: mặt cắt không phải tầng — không hiện thành dòng "Chưa có bản vẽ" của danh sách tầng.
+    .filter((floor) => floor.isSection !== true && !drawnIds.has(floor.id))
     .sort((a, b) => b.order - a.order)
     .map((floor) => floor.name);
 }
