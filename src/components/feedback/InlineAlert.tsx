@@ -16,6 +16,8 @@ export interface InlineAlertProps extends React.HTMLAttributes<HTMLDivElement> {
     label: string;
     onClick: () => void;
     variant?: ButtonProps['variant'];
+    /** Nút bận (đang gọi máy chủ): không bấm lần hai. */
+    loading?: boolean;
   };
   /** Có thì hiện nút "Ẩn thông báo" (biểu tượng X) ở cuối dải. */
   onDismiss?: () => void;
@@ -80,6 +82,7 @@ export function InlineAlert({
             size="sm"
             variant={action.variant || 'secondary'}
             onClick={action.onClick}
+            loading={action.loading === true}
             className={cn(
               'text-[13px]',
               isVerified && 'border-state-verified text-state-verified-text hover:bg-state-verified-10',

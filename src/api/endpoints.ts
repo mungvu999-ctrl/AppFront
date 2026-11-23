@@ -106,6 +106,9 @@ export const ENDPOINTS = {
       (cursor === undefined ? '' : `?cursor=${encodeURIComponent(cursor)}`),
     /** N41 (UX41 U05) — ảnh nhỏ từng trang của PDF; thân là byte PDF thô. */
     pageThumbnails: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}${DRAWINGS_ROOT}/page-thumbnails`,
+    /** N51 (K-06) — chạy lại lượt tải hỏng từ tệp gốc trong kho; thân rỗng, trả `Progress` `pending`. */
+    rerun: (projectId: string, uploadId: string): string =>
+      `${PROJECTS_ROOT}/${projectId}${DRAWINGS_ROOT}/uploads/${uploadId}/rerun`,
     /** N7b (UIFIX-B7) — nhật ký lượt xử lý; `limit`/`cursor` đi qua `query`. */
     pipelineRuns: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}/pipeline-runs`,
     progress: (projectId: string, uploadId: string): string =>

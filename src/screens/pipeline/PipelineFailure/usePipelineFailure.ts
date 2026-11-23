@@ -95,6 +95,7 @@ import {
   type PipelineFailureRawLogLine,
   type PipelineFailureRawStep,
   type PipelineFailureRetryOutcome,
+  describeRerunFailure,
 } from './pipelineFailureGateway';
 import {
   attemptLabel,
@@ -217,6 +218,11 @@ export interface UsePipelineFailureOptions extends PipelineFailureContainerProps
   readonly gateway?: PipelineFailureGateway;
   /** Ép dải thu gọn — cho story và test muốn một câu trả lời cố định. */
   readonly forceCollapsed?: boolean;
+  /**
+   * Mã lượt tải của lượt hỏng (K-06). Có nó thì màn mới đưa ra "Chạy lại từ bản gốc"; vắng thì chỉ
+   * còn đường tải lại bản vẽ.
+   */
+  readonly uploadId?: string;
   /** `Progress.error` của lượt hỏng (mã máy chủ) — dùng khi chưa đọc được chi tiết. */
   readonly failureCode?: string;
   /** Tên tầng theo N7 — thay mã tầng ở nhãn tầng. */
@@ -228,7 +234,7 @@ export interface UsePipelineFailureOptions extends PipelineFailureContainerProps
   readonly failureFloors?: readonly PipelineFailureRawFloor[];
 }
 
-/** Nhãn bước tải lên khi lượt hỏng do lỗi tạm: v1 chạy lượt mới bằng cách tải lại. */
+/** Nhãn bước tải lên khi lỗi tạm mà chưa chạy lại từ bản gốc được (thiếu mã lượt tải hay cổng chưa nối). */
 const RERUN_BY_UPLOAD_LABEL = 'Tải lại bản vẽ để chạy lượt mới';
 
 /* -------------------------------------------------------------------------- */
@@ -335,7 +341,7 @@ function useResolvedGateway(injected: PipelineFailureGateway | undefined): Pipel
 
 /** `(options) => PipelineFailureProps` cho `PipelineFailure.tsx`. */
 export function usePipelineFailure(options: UsePipelineFailureOptions): PipelineFailureProps {
-  const { failureCode, failureFloorName, failureFloors, floorId, projectId, stepId } = options;
+  const { failureCode, failureFloorName, failureFloors, floorId, projectId, stepId, uploadId } = options;
   const serverError = failureCode === undefined ? null : describePipelineError(failureCode);
   const roles = toProjectRoles(options.roles);
   const gateway = useResolvedGateway(options.gateway);
@@ -367,6 +373,11 @@ export function usePipelineFailure(options: UsePipelineFailureOptions): Pipeline
    * một hình dạng dữ liệu và khác nhau ở chuyện đã xảy ra.
    */
   const [hasRetryResolved, setHasRetryResolved] = useState(false);
+  /** K-06 — đang gọi "chạy lại từ bản gốc" (nút bận) và câu lỗi của lần gọi gần nhất. */
+  const [isRerunning, setIsRerunning] = useState(false);
+  const [rerunNotice, setRerunNotice] = useState<string | undefined>(undefined);
+  /** Cờ đồng bộ: hai cú bấm trong cùng một lượt vẽ vẫn chỉ gọi một lần (state chưa kịp cập nhật). */
+  const rerunInFlightRef = useRef(false);
 
   /* ---------------------------------------------------------------------- */
   /* Hai lượt đọc — R-64.                                                    */
@@ -773,8 +784,55 @@ export function usePipelineFailure(options: UsePipelineFailureOptions): Pipeline
     onNavigateRef.current?.(ROUTES.project.upload(projectId));
   }, [projectId]);
 
+  /**
+   * K-06 — chạy lại CẢ lượt từ tệp gốc đã lưu, rồi trả người dùng về màn Xử lý: màn cha nhận
+   * `onResolved` (đọc lại tiến độ → thấy lượt mới `pending`). Lỗi nghiệp vụ hiện đúng câu của nó
+   * và các nút còn lại (nhất là "Tải lại bản vẽ") giữ nguyên.
+   */
+  const onRerunFromOriginal = useCallback(() => {
+    if (uploadId === undefined || rerunInFlightRef.current) {
+      return;
+    }
+
+    rerunInFlightRef.current = true;
+    setIsRerunning(true);
+    setRerunNotice(undefined);
+
+    void gateway
+      .rerunUpload({ projectId, uploadId })
+      .catch((error: unknown) => describeRerunFailure(error))
+      .then((result) => {
+        if (!result.ok) {
+          setRerunNotice(result.sentence);
+        }
+
+        // PIPELINE_RUNNING: lượt mới đã chạy (bấm đôi, hay người khác bấm) — cũng đưa về màn Xử lý.
+        if (result.ok || result.isAlreadyRunning) {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.progress.byFloor.root() });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.progress.latestUploads.root() });
+          const resolved = onResolvedRef.current;
+
+          if (resolved !== undefined) {
+            resolved();
+          } else {
+            onDismissRef.current?.();
+          }
+        }
+      })
+      .finally(() => {
+        rerunInFlightRef.current = false;
+        setIsRerunning(false);
+      });
+  }, [gateway, projectId, queryClient, uploadId]);
+
   const isSkipSupported = gateway.supports.skipFloor;
   const isRetryStepSupported = gateway.supports.retryStep;
+  // Lượt hỏng do tệp (reupload) hay đã bị thay (reload) thì chạy lại từ bản gốc vô ích: chỉ còn tải lại.
+  const isRerunAvailable =
+    gateway.supports.rerunUpload &&
+    uploadId !== undefined &&
+    serverError?.action !== 'reupload' &&
+    serverError?.action !== 'reload';
 
   const onSkipFloor = useCallback(() => {
     void gateway.skipFloor({ floorId, projectId }).then((result) => {
@@ -805,11 +863,26 @@ export function usePipelineFailure(options: UsePipelineFailureOptions): Pipeline
     const action = serverError?.action;
     const uploadClearer: PipelineFailureNextStep = {
       id: 'upload-clearer',
-      label: action === 'retry' ? RERUN_BY_UPLOAD_LABEL : PIPELINE_FAILURE_TEXT.uploadClearerLabel,
+      label: isRerunAvailable
+        ? PIPELINE_FAILURE_TEXT.uploadAgainLabel
+        : action === 'retry'
+          ? RERUN_BY_UPLOAD_LABEL
+          : PIPELINE_FAILURE_TEXT.uploadClearerLabel,
       warningSentence: null,
       isPrimary:
-        serverError === null ? state === 'error' || !isRetryStepSupported : action === 'reupload' || action === 'retry',
+        !isRerunAvailable &&
+        (serverError === null ? state === 'error' || !isRetryStepSupported : action === 'reupload' || action === 'retry'),
       onSelect: onUploadClearer,
+    };
+
+    // K-06 — nút chính khi có: chạy lại từ tệp đã lưu, một bấm, không chọn lại tệp/trang.
+    const rerunFromOriginal: PipelineFailureNextStep = {
+      id: 'rerun-from-original',
+      label: PIPELINE_FAILURE_TEXT.rerunFromOriginalLabel,
+      warningSentence: null,
+      isPrimary: serverError !== null || state === 'error' || !isRetryStepSupported,
+      isBusy: isRerunning,
+      onSelect: onRerunFromOriginal,
     };
 
     const skipFloor: PipelineFailureNextStep = {
@@ -834,17 +907,21 @@ export function usePipelineFailure(options: UsePipelineFailureOptions): Pipeline
       isPrimary: false,
       onSelect: onBackToProjects,
     };
-    const first = isRetryStepSupported ? retryLower : uploadClearer;
-    const rest = [
-      ...(isRetryStepSupported ? [uploadClearer] : []),
+    const [first, ...rest] = [
+      ...(isRerunAvailable ? [rerunFromOriginal] : []),
+      ...(isRetryStepSupported ? [retryLower] : []),
+      uploadClearer,
       ...(isSkipSupported ? [skipFloor] : []),
     ];
     const [second = backToProjects, ...more] = rest;
-    return [first, second, ...more];
+    return [first ?? uploadClearer, second, ...more];
   }, [
+    isRerunAvailable,
+    isRerunning,
     isRetryStepSupported,
     isSkipSupported,
     onBackToProjects,
+    onRerunFromOriginal,
     onRetryLowerThreshold,
     onSkipFloor,
     onUploadClearer,
@@ -877,7 +954,9 @@ export function usePipelineFailure(options: UsePipelineFailureOptions): Pipeline
       attemptLabel: label,
       suggestionSentence: isRetrySupported
         ? PIPELINE_FAILURE_TEXT.supportAfterAttempts
-        : PIPELINE_FAILURE_TEXT.supportRetryUnsupported,
+        : isRerunAvailable
+          ? PIPELINE_FAILURE_TEXT.supportRerunAvailable
+          : PIPELINE_FAILURE_TEXT.supportRetryUnsupported,
       copyAllLogs: copyActionOf(
         'allLogs',
         PIPELINE_FAILURE_TEXT.copyAllLogsAriaLabel,
@@ -894,6 +973,7 @@ export function usePipelineFailure(options: UsePipelineFailureOptions): Pipeline
   }, [
     attemptCount,
     copyActionOf,
+    isRerunAvailable,
     isRetrySupported,
     onCopyAllLogs,
     onUploadClearer,
@@ -996,6 +1076,7 @@ export function usePipelineFailure(options: UsePipelineFailureOptions): Pipeline
       // `null` ĐÚNG ở `forbidden`: ba nút hành động biến mất hẳn, không khoá mờ.
       nextSteps: canAct ? nextSteps : null,
       retryNotice,
+      ...(rerunNotice === undefined ? {} : { rerunNotice }),
     };
   }, [
     canAct,
@@ -1009,6 +1090,7 @@ export function usePipelineFailure(options: UsePipelineFailureOptions): Pipeline
     onContinue,
     onRetry,
     reason,
+    rerunNotice,
     retryNotice,
     state,
     steps,

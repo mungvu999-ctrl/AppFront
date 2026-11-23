@@ -201,7 +201,12 @@ export interface PipelineFailureReasonViewModel {
  * bám vào một chuỗi ổn định thay vì bám vào câu tiếng Việt — câu tiếng Việt được
  * phép sửa lại cho hay hơn mà không làm hỏng gì.
  */
-export type PipelineFailureNextStepId = 'retry-lower-threshold' | 'upload-clearer' | 'skip-floor' | 'back-to-projects';
+export type PipelineFailureNextStepId =
+  | 'rerun-from-original'
+  | 'retry-lower-threshold'
+  | 'upload-clearer'
+  | 'skip-floor'
+  | 'back-to-projects';
 
 /** Một hướng đi tiếp — đúng một câu, một hàm xử lý, và có thể một câu cảnh báo. */
 export interface PipelineFailureNextStep {
@@ -219,6 +224,8 @@ export interface PipelineFailureNextStep {
    * thành tải lại ảnh" được diễn đạt, không cần một trường thứ hai.
    */
   readonly isPrimary: boolean;
+  /** Hướng đang chạy (K-06: gọi chạy lại): nút bận, không bấm lần hai. Vắng = không bận. */
+  readonly isBusy?: boolean;
   readonly onSelect: () => void;
 }
 
@@ -457,6 +464,8 @@ export interface PipelineFailureAlertBand {
   readonly retryAction: PipelineFailureRetryAction;
   readonly nextSteps: PipelineFailureNextSteps | null;
   readonly retryNotice: PipelineFailureRetryNotice;
+  /** K-06 — câu nói vì sao "Chạy lại từ bản gốc" chưa chạy được; vắng khi chưa có lỗi. */
+  readonly rerunNotice?: string;
 }
 
 /**

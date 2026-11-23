@@ -282,6 +282,12 @@ export interface CompleteDrawingUploadInput extends WriteRequestOptions {
   projectId: string;
 }
 
+/** N51 (K-06) — thân rỗng: lượt tải và trang/vùng cắt đã nằm ở máy chủ. */
+export interface RerunDrawingUploadInput extends WriteRequestOptions {
+  projectId: string;
+  uploadId: string;
+}
+
 export interface ReadDrawingProgressInput extends RequestOptions {
   projectId: string;
   uploadId: string;
@@ -621,6 +627,13 @@ export interface DrawingsApi {
   /** N41 (UX41 U05) — ảnh nhỏ từng trang của một PDF chưa tải lên; `data:` URL theo thứ tự trang. */
   pageThumbnails(input: ReadPageThumbnailsInput): Promise<ApiResult<string[]>>;
   progress(input: ReadDrawingProgressInput): Promise<ApiResult<Progress>>;
+  /**
+   * N51 (K-06) — chạy lại lượt tải hỏng từ tệp gốc đã lưu, không tải lại byte. Trả `Progress`
+   * `pending` của lượt chạy mới. Lỗi nghiệp vụ là 409 với mã `UPLOAD_NOT_COMPLETE`,
+   * `UPLOAD_SOURCE_GONE`, `UPLOAD_SUPERSEDED`, `PIPELINE_RUNNING`, `PIPELINE_NOT_FAILED`; 404 khi
+   * lượt tải không còn; 403 thiếu quyền; 429 quá hạn mức (trả ngay, không tự thử lại).
+   */
+  rerun(input: RerunDrawingUploadInput): Promise<ApiResult<Progress>>;
   sendChunk(input: SendDrawingChunkInput): Promise<ApiResult<Progress>>;
 }
 
@@ -1176,6 +1189,15 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
         'drawings.initUpload',
       );
     },
+    rerun: async (input) =>
+      decodeSingle(
+        await http.post<unknown, undefined>(ENDPOINTS.drawings.rerun(input.projectId, input.uploadId), {
+          // Lượt ghi do người dùng bấm: 429 trả ngay (BUG-510), không chờ thử lại.
+          ...toRequestOptions({ failFastOnRateLimit: true, ...input }),
+        }),
+        ProgressSchema,
+        'drawings.rerun',
+      ),
     latestUploads: async ({ projectId, signal }) => {
       const uploads: LatestFloorUpload[] = [];
       let cursor: string | undefined;

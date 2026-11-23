@@ -1854,6 +1854,11 @@ export const createMockApiClient = (): ApiClient => {
         latestUploadByFloor.set(body.floorId, progress.id);
         return ok(progress);
       },
+      rerun: async ({ projectId, uploadId }) => {
+        const pending = makeProgress({ id: uploadId, progressPercent: 0, status: 'pending', step: 'Rerun' });
+        uploads.set(uploadKey(projectId, uploadId), pending);
+        return ok(pending);
+      },
       latestUploads: async () =>
         ok(
           [...floors]

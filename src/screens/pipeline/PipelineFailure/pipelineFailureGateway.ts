@@ -51,6 +51,8 @@
  */
 
 import { createUuid } from '@/lib/http/ids';
+import { createAppApiClient } from '@/api/appClient';
+import type { ApiClient } from '@/api/client';
 import { ENDPOINTS } from '@/api/endpoints';
 import { describeError, reportError, toAppError } from '@/lib/errors';
 import type { AppError, ErrorTelemetryDetail } from '@/lib/errors';
@@ -59,7 +61,11 @@ import { toScreenErrorEvent } from '@/lib/telemetry/events';
 import { createBeaconTransport, createTelemetrySender } from '@/lib/telemetry/sender';
 import type { TelemetrySender } from '@/lib/telemetry/sender';
 
-import type { PipelineFailureCauseCode, PipelineFailureCountUnit } from './pipelineFailureText';
+import {
+  PIPELINE_FAILURE_RERUN_ERROR_TEXT,
+  type PipelineFailureCauseCode,
+  type PipelineFailureCountUnit,
+} from './pipelineFailureText';
 import type { PipelineFailureFloorStatus } from './types';
 
 /* -------------------------------------------------------------------------- */
@@ -72,6 +78,7 @@ import type { PipelineFailureFloorStatus } from './types';
  */
 export const PIPELINE_FAILURE_CAPABILITIES = [
   'retryStep',
+  'rerunUpload',
   'stepFailureDetail',
   'technicalLog',
   'skipFloor',
@@ -261,6 +268,64 @@ export interface RetryStepInput extends ReadStepFailureInput {
   readonly lowerThreshold?: boolean;
 }
 
+/** K-06 — chạy lại CẢ lượt từ tệp gốc đã lưu; trang và vùng cắt đã nằm ở máy chủ. */
+export interface RerunUploadInput {
+  readonly projectId: string;
+  readonly uploadId: string;
+}
+
+/**
+ * Kết quả chạy lại cả lượt. Không ném: lỗi nghiệp vụ (409/404/403/429) đi ra thành một câu
+ * tiếng Việt cụ thể, để màn hiện đúng câu đó và vẫn giữ nút "Tải lại bản vẽ".
+ */
+export type PipelineFailureRerunResult =
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      /** Mã máy đọc: mã 409 của máy chủ, hoặc `AppError.code` của lỗi chung. */
+      readonly code: string;
+      readonly sentence: string;
+      /** `PIPELINE_RUNNING`: lượt mới đã chạy (bấm đôi) — màn cha nên đọc lại tiến độ. */
+      readonly isAlreadyRunning: boolean;
+    };
+
+/** Một lỗi của N51 → câu tiếng Việt cụ thể. Thuần; `status` 410 (nếu có) đọc như tệp gốc đã mất. */
+export function describeRerunFailure(error: unknown): Extract<PipelineFailureRerunResult, { ok: false }> {
+  const appError = toAppError(error);
+  const table = PIPELINE_FAILURE_RERUN_ERROR_TEXT;
+  const status =
+    typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number'
+      ? error.status
+      : undefined;
+  const code = appError.code;
+  const fail = (sentence: string, isAlreadyRunning = false) => ({
+    ok: false as const,
+    code,
+    sentence,
+    isAlreadyRunning,
+  });
+
+  if (code === 'UPLOAD_NOT_COMPLETE') return fail(table.UPLOAD_NOT_COMPLETE);
+  if (code === 'UPLOAD_SOURCE_GONE' || status === 410) return fail(table.UPLOAD_SOURCE_GONE);
+  if (code === 'UPLOAD_SUPERSEDED') return fail(table.UPLOAD_SUPERSEDED);
+  if (code === 'PIPELINE_RUNNING') return fail(table.PIPELINE_RUNNING, true);
+  if (code === 'PIPELINE_NOT_FAILED') return fail(table.PIPELINE_NOT_FAILED);
+
+  switch (appError.kind) {
+    case 'notFound':
+      return fail(table.notFound);
+    case 'forbidden':
+      return fail(table.forbidden);
+    case 'rateLimited':
+      return fail(table.rateLimited);
+    case 'network':
+    case 'timeout':
+      return fail(table.network);
+    default:
+      return fail(table.fallback);
+  }
+}
+
 export interface SkipFloorInput {
   readonly projectId: string;
   readonly floorId: string;
@@ -302,6 +367,8 @@ export interface PipelineFailureGateway {
   readonly retryStep: (
     input: RetryStepInput,
   ) => Promise<PipelineFailureCapabilityResult<PipelineFailureRetryOutcome>>;
+  /** K-06 — chạy lại cả lượt từ tệp gốc (`POST …/uploads/{id}/rerun`). Chỉ gọi khi `supports.rerunUpload`. */
+  readonly rerunUpload: (input: RerunUploadInput) => Promise<PipelineFailureRerunResult>;
   /**
    * NOT FOUND — `skipFloor`. Hành động mất mát. Câu cảnh báo trên màn KHÔNG thoả A9
    * (A9 đòi hộp thoại thật); khi bật thì thoả A8 bằng cách giữ lệnh — xem B-V4-09.
@@ -337,6 +404,11 @@ export interface CreatePipelineFailureGatewayOptions {
   readonly writeClipboardText?: (text: string) => Promise<void>;
   /** Đồng hồ tiêm được. */
   readonly now?: () => number;
+  /**
+   * Máy khách API cho việc "chạy lại từ bản gốc". Vắng thì `supports.rerunUpload` là `false`
+   * — không giả vờ có đường gọi.
+   */
+  readonly client?: ApiClient;
 }
 
 function toApiFailure(error: unknown): PipelineFailureApiFailure {
@@ -367,6 +439,7 @@ export function createPipelineFailureGateway(
   return {
     supports: {
       retryStep: false,
+      rerunUpload: options.client !== undefined,
       stepFailureDetail: false,
       technicalLog: false,
       // Bật cờ này thì phải làm hoãn A8 trước: hẹn `UNDO_WINDOW_MS` kèm toast. Thử lại
@@ -379,6 +452,18 @@ export function createPipelineFailureGateway(
     readStepFailure: () => Promise.resolve(unsupported('stepFailureDetail')),
     readTechnicalLog: () => Promise.resolve(unsupported('technicalLog')),
     retryStep: () => Promise.resolve(unsupported('retryStep')),
+    rerunUpload: async ({ projectId, uploadId }) => {
+      const client = options.client;
+
+      if (client === undefined) {
+        return describeRerunFailure(new Error('drawings.rerun: no api client'));
+      }
+
+      // Khoá mới mỗi lần bấm: bấm đôi bị nút bận chặn, và máy chủ còn chặn bằng 409 PIPELINE_RUNNING.
+      const result = await client.drawings.rerun({ idempotencyKey: createUuid(), projectId, uploadId });
+
+      return result.ok ? { ok: true } : describeRerunFailure(result.error);
+    },
     skipFloor: () => Promise.resolve(unsupported('skipFloor')),
 
     describeApiFailure: (error) => toApiFailure(error),
@@ -429,6 +514,7 @@ export function createPipelineFailureGateway(
 /** Cổng dựng cho ứng dụng thật — thứ container lớp 3 gọi. */
 export function createAppPipelineFailureGateway(): PipelineFailureGateway {
   return createPipelineFailureGateway({
+    client: createAppApiClient(),
     telemetry: createTelemetrySender({
       transport: createBeaconTransport({ url: ENDPOINTS.telemetry }),
       sessionId: createUuid(),
@@ -543,6 +629,8 @@ export interface MockPipelineFailureGateway extends PipelineFailureGateway {
   readonly copiedTexts: readonly string[];
   /** Số lần `reportStepFailure` được gọi (O-01). */
   readonly reportedFailures: readonly ReportStepFailureInput[];
+  /** K-06 — mỗi lần `rerunUpload` được gọi, theo thứ tự. */
+  readonly rerunCalls: readonly RerunUploadInput[];
 }
 
 export interface CreateMockPipelineFailureGatewayOptions
@@ -555,6 +643,8 @@ export interface CreateMockPipelineFailureGatewayOptions
   readonly supports?: Partial<Record<PipelineFailureCapability, boolean>>;
   /** Kết quả của lượt chạy lại. Mặc định là `'done'`. */
   readonly retryStatus?: PipelineFailureRetryOutcome['status'];
+  /** K-06 — kết quả của "chạy lại từ bản gốc". Mặc định thành công. */
+  readonly rerunResult?: PipelineFailureRerunResult;
 }
 
 /**
@@ -582,6 +672,8 @@ export function createMockPipelineFailureGateway(
 
   const supports: Readonly<Record<PipelineFailureCapability, boolean>> = {
     retryStep: true,
+    // Mặc định tắt: bộ mẫu cũ mô tả màn trước K-06; test K-06 bật nó rõ ràng.
+    rerunUpload: false,
     stepFailureDetail: true,
     technicalLog: true,
     skipFloor: true,
@@ -593,6 +685,7 @@ export function createMockPipelineFailureGateway(
   const stepRunCounts = new Map<string, number>();
   const copiedTexts: string[] = [];
   const reportedFailures: ReportStepFailureInput[] = [];
+  const rerunCalls: RerunUploadInput[] = [];
 
   // Trạng thái sáu bước SỐNG qua nhiều lượt chạy lại: lượt sau nhìn thấy kết quả
   // của lượt trước, đúng như một máy chủ thật.
@@ -634,6 +727,11 @@ export function createMockPipelineFailureGateway(
       });
     },
 
+    rerunUpload: (input) => {
+      rerunCalls.push(input);
+      return Promise.resolve(options.rerunResult ?? { ok: true });
+    },
+
     skipFloor: () => Promise.resolve(guard('skipFloor', undefined)),
 
     reportStepFailure: (input) => {
@@ -649,5 +747,6 @@ export function createMockPipelineFailureGateway(
     stepRunCounts,
     copiedTexts,
     reportedFailures,
+    rerunCalls,
   };
 }

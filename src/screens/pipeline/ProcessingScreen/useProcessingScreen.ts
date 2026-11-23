@@ -686,6 +686,8 @@ function useResolvedGateway(injected: ProcessingGateway | undefined): Processing
 export interface ProcessingScreenFailedStep {
   readonly floorId: string;
   readonly stepId: string;
+  /** Lượt tải của lượt hỏng — để S-11 gọi "Chạy lại từ bản gốc" (K-06). */
+  readonly uploadId: string;
   /** `Progress.error` của lượt hỏng — mã máy chủ, S-11 tra câu theo bảng. */
   readonly failureCode?: string;
   /** Tên tầng theo N7. */
@@ -1750,6 +1752,7 @@ export function useProcessingScreen(options: UseProcessingScreenOptions): Proces
       : {
           floorId: failedRecord.floorId,
           stepId: failedStage.id,
+          uploadId: failedRecord.uploadId,
           failureCode,
           failureFloorName: floorUploads[failedIndex]?.floorName ?? failedRecord.floorId,
           failureFloors: floorUploads.map((upload, index) => ({

@@ -72,6 +72,7 @@ function PipelineFailureNextStepRow({
         <Button
           aria-describedby={step.warningSentence === null ? undefined : warningId(step.id)}
           key={step.id}
+          loading={step.isBusy === true}
           onClick={step.onSelect}
           size="sm"
           variant="secondary"
@@ -125,7 +126,7 @@ export interface PipelineFailureAlertProps {
 }
 
 export function PipelineFailureAlert({ band }: PipelineFailureAlertProps) {
-  const { nextSteps, reason, retryAction, retryNotice } = band;
+  const { nextSteps, reason, rerunNotice, retryAction, retryNotice } = band;
 
   const primaryStep = nextSteps === null ? null : (nextSteps.find((step) => step.isPrimary) ?? null);
   const otherSteps = nextSteps === null ? [] : nextSteps.filter((step) => step !== primaryStep);
@@ -134,7 +135,15 @@ export function PipelineFailureAlert({ band }: PipelineFailureAlertProps) {
   /* `exactOptionalPropertyTypes` bật: `action={undefined}` không gán được, nên
      ở `forbidden` prop đó phải VẮNG MẶT chứ không phải mang giá trị rỗng. */
   const alertAction =
-    primaryStep === null ? {} : { action: { label: primaryStep.label, onClick: primaryStep.onSelect } };
+    primaryStep === null
+      ? {}
+      : {
+          action: {
+            label: primaryStep.label,
+            loading: primaryStep.isBusy === true,
+            onClick: primaryStep.onSelect,
+          },
+        };
 
   return (
     <div className="flex flex-col gap-3">
@@ -148,6 +157,12 @@ export function PipelineFailureAlert({ band }: PipelineFailureAlertProps) {
 
       {nextSteps === null ? null : (
         <PipelineFailureNextStepRow retryAction={retryAction} steps={otherSteps} />
+      )}
+
+      {rerunNotice === undefined ? null : (
+        <p className="text-[13px] text-text-primary" role="status">
+          {rerunNotice}
+        </p>
       )}
 
       {warningSteps.map((step) => (
