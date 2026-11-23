@@ -51,6 +51,8 @@ export const PIPELINE_FAILURE_TEXT = {
   collapseLabel: 'Thu gọn',
   expandLabel: 'Mở lại',
   uploadAgainLabel: 'Tải lại bản vẽ',
+  /** K-06 — nút chính: chạy lại cả lượt từ tệp gốc đã lưu, không tải lại byte. */
+  rerunFromOriginalLabel: 'Chạy lại từ bản gốc',
   continueLabel: 'Xem kết quả',
   stepperAriaLabel: 'Tiến độ lượt thử lại',
 
@@ -106,6 +108,31 @@ export const PIPELINE_FAILURE_TEXT = {
    */
   supportRetryUnsupported:
     'Hệ thống chưa chạy lại được riêng một bước. Hãy tải lại bản vẽ để chạy lượt mới.',
+  /** K-06 — cùng chế độ hỗ trợ, nhưng "chạy lại từ bản gốc" nối được: đường đó đi trước. */
+  supportRerunAvailable:
+    'Hệ thống chưa chạy lại được riêng một bước. Hãy chạy lại từ bản gốc, hoặc tải lại bản vẽ để chạy lượt mới.',
+} as const;
+
+/**
+ * K-06 — câu cho từng lỗi của `POST …/uploads/{id}/rerun` (N51). Chủ ngữ là hệ thống hay lượt
+ * xử lý, không phải người dùng. Mọi câu đều để nút "Tải lại bản vẽ" còn nguyên.
+ * Khoá chữ hoa là mã 409 của máy chủ; khoá chữ thường là loại lỗi chung.
+ */
+export const PIPELINE_FAILURE_RERUN_ERROR_TEXT = {
+  UPLOAD_NOT_COMPLETE:
+    'Bản vẽ này chưa tải lên xong nên chưa có bản gốc để chạy lại. Hãy tải lại bản vẽ.',
+  UPLOAD_SOURCE_GONE: 'Hệ thống không còn giữ tệp gốc của lượt tải này. Hãy tải lại bản vẽ.',
+  UPLOAD_SUPERSEDED:
+    'Tầng này đã có bản vẽ tải lên mới hơn, nên không chạy lại bản cũ. Hãy mở lượt xử lý mới nhất của tầng.',
+  PIPELINE_RUNNING: 'Lượt xử lý này đã đang chạy lại. Tiến độ sẽ hiện ở màn Xử lý.',
+  PIPELINE_NOT_FAILED:
+    'Lượt xử lý này không còn ở trạng thái hỏng, nên không cần chạy lại. Hãy tải lại trang để xem kết quả mới nhất.',
+  notFound: 'Hệ thống không tìm thấy lượt tải này, có thể tầng đã bị xoá. Hãy tải lại bản vẽ.',
+  forbidden: 'Tài khoản này không có quyền tải bản vẽ lên dự án, nên chưa chạy lại được.',
+  rateLimited: 'Đã chạy lại quá nhiều lần trong thời gian ngắn. Hãy đợi một lúc rồi thử lại.',
+  network: 'Chưa kết nối được tới máy chủ nên chưa chạy lại được. Hãy kiểm tra mạng rồi thử lại.',
+  fallback:
+    'Hệ thống chưa chạy lại được từ bản gốc. Hãy thử lại sau ít phút, hoặc tải lại bản vẽ.',
 } as const;
 
 /* -------------------------------------------------------------------------- */

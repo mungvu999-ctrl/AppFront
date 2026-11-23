@@ -84,6 +84,8 @@ export interface PipelineFailureScreenContainerProps extends PipelineFailureCont
   readonly gateway?: PipelineFailureGateway;
   /** Ép dải thu gọn — cho story hoặc test muốn một câu trả lời cố định. */
   readonly forceCollapsed?: boolean;
+  /** Lượt tải của lượt hỏng — có thì S-11 đưa ra "Chạy lại từ bản gốc" (K-06). */
+  readonly uploadId?: string;
   /** `Progress.error` của lượt hỏng — S-11 tra câu theo bảng mã pipeline. */
   readonly failureCode?: string;
   /** Tên tầng theo N7. */
@@ -126,6 +128,7 @@ function WiredPipelineFailure(props: PipelineFailureScreenContainerProps) {
     ...(props.onDismiss !== undefined ? { onDismiss: props.onDismiss } : {}),
     ...(props.onNavigate !== undefined ? { onNavigate: props.onNavigate } : {}),
     ...(props.forceCollapsed !== undefined ? { forceCollapsed: props.forceCollapsed } : {}),
+    ...(props.uploadId !== undefined ? { uploadId: props.uploadId } : {}),
     ...(props.failureCode !== undefined ? { failureCode: props.failureCode } : {}),
     ...(props.failureFloorName !== undefined ? { failureFloorName: props.failureFloorName } : {}),
     ...(props.failureFloors !== undefined ? { failureFloors: props.failureFloors } : {}),

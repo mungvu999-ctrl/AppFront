@@ -132,6 +132,7 @@ function WiredProcessingScreen(props: ProcessingScreenContainerProps) {
         onResolved={failedPipelineStep.onResolved}
         projectId={props.projectId}
         stepId={failedPipelineStep.stepId}
+        uploadId={failedPipelineStep.uploadId}
         {...(props.roles !== undefined ? { roles: props.roles } : {})}
         {...(props.onNavigate !== undefined ? { onNavigate: props.onNavigate } : {})}
         {...(props.pipelineFailureGateway !== undefined

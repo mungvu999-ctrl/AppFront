@@ -51,7 +51,7 @@ const TABLE = {
   // reload — lượt này đã bị thay; đọc lại N7, không màn lỗi.
   PIPELINE_SUPERSEDED: ['reload', 'Lượt xử lý này đã được thay bằng một lượt mới hơn.'],
   FLOOR_DELETED: ['reload', 'Tầng của lượt xử lý này đã bị xoá.'],
-  // retry — lỗi tạm; v1 chạy lượt mới bằng cách tải lên lại.
+  // retry — lỗi tạm; chạy lại cả lượt từ bản gốc đã lưu (K-06), không được thì tải lại bản vẽ.
   PIPELINE_STALLED: ['retry', 'Bước xử lý dừng lại quá lâu mà không tiến thêm.'],
   PIPELINE_STEP_TIMEOUT: ['retry', 'Bước xử lý chạy quá thời gian cho phép.'],
   PIPELINE_ARTIFACT_MISSING: ['retry', 'Hệ thống không tìm thấy kết quả trung gian của bước trước.'],

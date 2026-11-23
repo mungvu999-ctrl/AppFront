@@ -137,6 +137,8 @@ describe('pipelineFailureGateway', () => {
 
     expect(gateway.supports).toEqual({
       retryStep: false,
+      // K-06: không có máy khách API tiêm vào thì không có đường gọi "chạy lại từ bản gốc".
+      rerunUpload: false,
       stepFailureDetail: false,
       technicalLog: false,
       // Bật thì phải có hoãn A8 trước — B-V4-09.

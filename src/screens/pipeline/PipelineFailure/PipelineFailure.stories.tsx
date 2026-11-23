@@ -413,3 +413,56 @@ function withServerCode(code: string): PipelineFailureProps {
 export const MaTuMayChu: Story = { args: withServerCode('FILE_CORRUPT') };
 /** Mã lạ — câu dự phòng, mã giữ nguyên, không bước chính. */
 export const MaLa: Story = { args: withServerCode('OCR_FAILED') };
+
+/**
+ * K-06 — "Chạy lại từ bản gốc" là nút chính, "Tải lại bản vẽ" là nút phụ. `isBusy` và
+ * `rerunNotice` dựng các trạng thái đang gọi và gọi lỗi (409 UPLOAD_SUPERSEDED).
+ */
+function withRerun(extra: { readonly isBusy?: boolean; readonly rerunNotice?: string }): PipelineFailureProps {
+  const props = scenarioFor('partial');
+
+  if (props.band.kind !== 'alert') {
+    return props;
+  }
+
+  const rerun: PipelineFailureNextStep = {
+    id: 'rerun-from-original',
+    label: 'Chạy lại từ bản gốc',
+    warningSentence: null,
+    isPrimary: true,
+    isBusy: extra.isBusy === true,
+    onSelect: NO_OP,
+  };
+  const upload: PipelineFailureNextStep = {
+    id: 'upload-clearer',
+    label: 'Tải lại bản vẽ',
+    warningSentence: null,
+    isPrimary: false,
+    onSelect: NO_OP,
+  };
+  const back: PipelineFailureNextStep = {
+    id: 'back-to-projects',
+    label: 'Về danh sách dự án',
+    warningSentence: null,
+    isPrimary: false,
+    onSelect: NO_OP,
+  };
+
+  return {
+    ...props,
+    band: {
+      ...props.band,
+      nextSteps: [rerun, upload, back],
+      ...(extra.rerunNotice === undefined ? {} : { rerunNotice: extra.rerunNotice }),
+    },
+  };
+}
+
+export const ChayLaiTuBanGoc: Story = { args: withRerun({}) };
+export const ChayLaiDangGoi: Story = { args: withRerun({ isBusy: true }) };
+export const ChayLaiBiTuChoi: Story = {
+  args: withRerun({
+    rerunNotice:
+      'Tầng này đã có bản vẽ tải lên mới hơn, nên không chạy lại bản cũ. Hãy mở lượt xử lý mới nhất của tầng.',
+  }),
+};
