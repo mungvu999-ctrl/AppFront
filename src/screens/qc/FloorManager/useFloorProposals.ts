@@ -64,7 +64,7 @@ export const acceptedKey = (floorId: string, field: LevelValueField): string => 
  * Client thật ghim người dùng đầu tiên nên dựng mới mỗi lượt (đổi người trong cùng thẻ vẫn đúng).
  */
 let mockClient: HouseProposalApi | undefined;
-async function loadClient(api: HouseProposalApi | undefined): Promise<HouseProposalApi> {
+export async function loadHouseProposalApi(api: HouseProposalApi | undefined): Promise<HouseProposalApi> {
   if (api !== undefined) {
     return api;
   }
@@ -137,7 +137,7 @@ export function useFloorProposals(
     enabled: api !== null && projectId !== '',
     retry: false,
     queryFn: async ({ signal }) => {
-      const result = await (await loadClient(api ?? undefined)).houseProposal.read({ projectId, signal });
+      const result = await (await loadHouseProposalApi(api ?? undefined)).houseProposal.read({ projectId, signal });
 
       if (!result.ok) {
         throw result.error;
@@ -254,7 +254,7 @@ export function useFloorProposals(
       let reread = true;
 
       try {
-        const spatial = (await loadClient(api ?? undefined)).spatial;
+        const spatial = (await loadHouseProposalApi(api ?? undefined)).spatial;
         ok = spatial !== undefined && (await spatial.patchFloor({ body: { isSection }, floorId: row.floorId, projectId })).ok;
         if (ok) {
           // BE đổi `hiddenIn3d` theo dấu: danh sách tầng lẫn đề xuất của dự án đã ghi đều cũ, kể cả khi người

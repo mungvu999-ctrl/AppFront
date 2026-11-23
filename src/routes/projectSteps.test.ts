@@ -8,6 +8,8 @@ describe('projectLocationOf', () => {
   it.each([
     [ROUTES.project.upload('p1'), 0],
     [ROUTES.project.quality('p1'), 0],
+    [ROUTES.project.drawingSets('p1'), 0],
+    [ROUTES.project.drawingSets('p1', 'dws_1'), 0],
     [ROUTES.project.pipelineGraph('p1'), 1],
     [ROUTES.project.floors('p1'), 2],
     [ROUTES.project.measure('p1'), 3],

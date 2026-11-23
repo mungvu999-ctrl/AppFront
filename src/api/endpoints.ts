@@ -150,6 +150,19 @@ export const ENDPOINTS = {
   designConcept: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}/design-concept`,
   /** Mức 3 — đề xuất số tầng, cốt, chiều cao cho cả nhà (GET, chỉ đọc; tính năng tắt → `enabled: false`, client đổi thành `null`; 404 là lỗi thường, L4-N04). */
   houseProposal: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}/house-proposal`,
+  /** N54–N61 (K-32a) — bộ hồ sơ nhiều bản vẽ; mọi đường dưới `/projects/{projectId}/drawing-sets`. */
+  drawingSets: {
+    chunk: (projectId: string, setId: string, fileId: string): string =>
+      `${PROJECTS_ROOT}/${projectId}/drawing-sets/${setId}/files/${fileId}/chunks`,
+    complete: (projectId: string, setId: string): string => `${PROJECTS_ROOT}/${projectId}/drawing-sets/${setId}/complete`,
+    confirm: (projectId: string, setId: string): string => `${PROJECTS_ROOT}/${projectId}/drawing-sets/${setId}/confirm`,
+    /** N54 (POST, tạo) và N58 (GET, danh sách; `limit`/`cursor` đi qua `query`). */
+    root: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}/drawing-sets`,
+    /** N57 (GET) và N61 (DELETE). */
+    set: (projectId: string, setId: string): string => `${PROJECTS_ROOT}/${projectId}/drawing-sets/${setId}`,
+    /** N59 — thay cả danh sách hình. */
+    views: (projectId: string, setId: string): string => `${PROJECTS_ROOT}/${projectId}/drawing-sets/${setId}/views`,
+  },
   /** N42–N44 — nướng ánh sáng: gửi GLB, đọc lượt mới nhất, tải một trong ba tệp kết quả. */
   lightingBakes: {
     file: (projectId: string, bakeId: string, fileName: string): string =>

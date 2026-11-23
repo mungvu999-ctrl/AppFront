@@ -104,6 +104,8 @@ const EXPAND_BUTTON_CLASS_NAME = cn(
 export interface FloorManagerProps extends FloorManagerViewProps {
   /** Khe bảng đề xuất của máy (F4); vắng thì màn y như cũ. */
   readonly proposalPanel?: ReactNode;
+  /** Khe lối vào "Tải cả bộ hồ sơ" (K-32b); vắng khi công tắc tắt hay không có quyền — không dựng gì thay. */
+  readonly drawingSetEntry?: ReactNode;
 }
 
 export function FloorManager(props: FloorManagerProps) {
@@ -242,6 +244,10 @@ export function FloorManager(props: FloorManagerProps) {
 
       {props.proposalPanel === undefined ? null : (
         <div className="mx-auto w-full max-w-[1280px] shrink-0 px-8 pb-2">{props.proposalPanel}</div>
+      )}
+
+      {props.drawingSetEntry === undefined ? null : (
+        <div className="mx-auto w-full max-w-[1280px] shrink-0 px-8 pb-2">{props.drawingSetEntry}</div>
       )}
 
       {/* Vùng nội dung lấp phần còn lại của khung và có chiều cao xác định, nên khung bảng tự

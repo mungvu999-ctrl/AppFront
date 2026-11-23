@@ -89,6 +89,8 @@ export const ROUTE_PATTERNS = {
   passwordReset: '/login/reset-password',
   projectData: `${PROJECTS_ROOT}/:projectId/data`,
   projectDimensions: `${PROJECTS_ROOT}/:projectId/floors/:floorId${LAYERS_ROOT}/dimensions`,
+  /** K-32b — tải cả bộ hồ sơ; `:setId` vắng = chọn tệp, có = duyệt bộ đã tải. */
+  projectDrawingSets: `${PROJECTS_ROOT}/:projectId/drawing-sets/:setId?`,
   projectExploded: `${PROJECTS_ROOT}/:projectId/3d/exploded`,
   projectExport: `${PROJECTS_ROOT}/:projectId/export`,
   /** Trang xem công khai của liên kết chia sẻ (không cần phiên). */
@@ -147,6 +149,8 @@ export const ROUTES = {
     data: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}/data`,
     dimensions: (projectId: string, floorId: string): string =>
       `${PROJECTS_ROOT}/${projectId}/floors/${floorId}${LAYERS_ROOT}/dimensions`,
+    drawingSets: (projectId: string, setId?: string): string =>
+      `${PROJECTS_ROOT}/${projectId}/drawing-sets${setId === undefined ? '' : `/${setId}`}`,
     exploded: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}/3d/exploded`,
     export: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}/export`,
     floors: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}/floors`,
