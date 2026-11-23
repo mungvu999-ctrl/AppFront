@@ -19,9 +19,9 @@
  * `canEstimateSize`, `canChooseUnit`, `canNameFloorStep`, `canPutDownloadInToast`
  * không có mặt bằng logic nào tương ứng nên không có điều khiển nào giả vờ cần
  * chúng. `canPersistHistory` `false`: danh sách tệp vẫn hiện, kèm câu nói rõ nó
- * chỉ sống trong phiên. `canRenderPdfBytes` và `canCaptureImage` `false`: PDF và
- * ảnh KHÔNG vẽ thành thẻ chọn (nút giả) — chúng hiện thành dòng chữ "chưa xuất
- * được" dưới danh sách, PDF kèm số trang thật (`ExportPanelFormats`).
+ * chỉ sống trong phiên. `canCaptureImage` `false`: ảnh KHÔNG vẽ thành thẻ chọn
+ * (nút giả) — nó hiện thành dòng chữ "chưa xuất được" dưới danh sách
+ * (`ExportPanelFormats`). `canRenderPdfBytes` `true`: PDF xuất thật bằng `renderPdfBlob`.
  * `canIncludeAxisGrid` `false` thì công tắc "gồm lưới trục" rời khỏi DOM.
  *
  * ## Bảy trạng thái (A11)

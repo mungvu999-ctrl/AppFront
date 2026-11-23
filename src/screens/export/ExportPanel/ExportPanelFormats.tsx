@@ -25,14 +25,15 @@ export const FOCUS_RING =
   'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-app';
 
 /**
- * Vì sao thẻ PDF chưa tải về được, dù số trang trên nó là số thật.
+ * Vì sao thẻ PDF không tải về được khi cổng báo thiếu bộ dựng PDF (hôm nay cổng
+ * luôn báo có; nhánh này chỉ còn để bài kiểm ép cờ `false`).
  *
  * Xuất từ đây (một chuỗi, nên `allowConstantExport` của
  * `react-refresh/only-export-components` tha) để `ExportPanel.tsx` nói cùng một
  * câu ở chân trang mà không ai phải chép lại nó.
  */
 export const PDF_BLOCKED_CAPTION =
-  'Chưa xuất được PDF ở bản này, mới đếm được số trang. Hãy chọn mô hình 3D hoặc dữ liệu dự án.';
+  'Chưa xuất được PDF lúc này. Hãy chọn mô hình 3D hoặc dữ liệu dự án.';
 
 /** Vì sao thẻ ảnh chưa tải về được. */
 export const IMAGE_BLOCKED_CAPTION =

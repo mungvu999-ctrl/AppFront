@@ -17,7 +17,7 @@
  * cho tới khi bảng khoá được cập nhật, và lúc đó cờ tự lật sang `true`.
  * Xem {@link FieldKeys} và bốn bảng dùng nó.
  *
- * ## Ba năng lực THIẾU, nay đã nằm trong hợp đồng
+ * ## Năng lực khai tường minh (không suy từ tên hàm), nằm trong hợp đồng
  *
  * Ba lỗ hổng dưới đây được phát hiện *sau* khi hợp đồng đóng băng, nên chúng
  * từng sống trong một kiểu mở rộng riêng của cổng này. Lớp gộp đã dời chúng vào
@@ -25,13 +25,11 @@
  * bài kiểm nhìn thấy đủ tám cờ theo kiểu. {@link ExportPanelCapabilities} giữ
  * lại chỉ như một cái tên cũ trỏ vào hợp đồng, để nơi gọi không phải sửa theo.
  *
- * 1. **`canRenderPdfBytes: false`.** `src/lib/export/exportPdf.ts` dựng
- *    `PdfDocument` — cấu trúc trang và chuỗi đã định dạng — và docstring đầu
- *    file nói thẳng "nothing touches a PDF library". `package.json` không có
- *    `jspdf`/`pdf-lib`/`pdfkit`, `src/api/endpoints.ts` không có đường dựng PDF
- *    phía máy chủ, và cả `src/` chỉ có đúng hai nơi dựng `Blob`
- *    (`exportGlb.ts`, `telemetry/sender.ts`). **Số trang thì THẬT** — nó đếm
- *    được từ `buildPdfDocument`, và thẻ PDF vẫn nói ra con số đó.
+ * 1. **`canRenderPdfBytes: true`.** PDF thật được dựng thành tệp bằng
+ *    `renderPdfBlob` (`lib/export/pdfRaster.ts`, vẽ canvas) từ `buildPdfDocument`;
+ *    cờ trỏ thẳng vào bộ dựng đó thay vì đoán qua tên hàm của `exportPdf.ts`
+ *    (đổi tên một hàm không được phép tắt thẻ PDF). Số trang cũng đếm từ
+ *    `buildPdfDocument`.
  * 2. **`canCaptureImage`.** `createFloorCapture` đòi `CaptureViewportInput`
  *    `{ renderer, scene, camera, viewport }` — một khung nhìn 3D **đang sống**.
  *    Màn Xuất không mount canvas nào và không được tạo component mới, nên năng
@@ -46,7 +44,7 @@
  *
  * ## Bốn định dạng vẫn ở lại
  *
- * Hai lỗ hổng trên **không** xoá thẻ định dạng nào: `.pdf` và ảnh là định dạng
+ * Hai lỗ hổng còn lại **không** xoá thẻ định dạng nào: `.pdf` và ảnh là định dạng
  * có thật của sản phẩm, và thẻ của chúng vẫn nói đúng thứ chúng biết (số trang
  * PDF là thật). Thứ rời khỏi DOM là **khả năng tải**, không phải thẻ.
  *
@@ -158,9 +156,6 @@ const HISTORY_QUERY_BRANCHES = ['export', 'exports', 'file', 'files', 'download'
 /** Tên một hàm ước tính dung lượng sẽ mang nếu nó tồn tại. */
 const SIZE_ESTIMATOR_PATTERN = /^(estimate|predict|forecast|guess).*(size|byte|weight)/i;
 
-/** Tên một bộ dựng `PdfDocument` thành bytes sẽ mang nếu nó tồn tại. */
-const PDF_RENDERER_PATTERN = /(toPdf|toBlob|toBytes|toBuffer)$|^(render|print|encode|serialise|serialize)/i;
-
 const exportsMatching = (namespace: object, pattern: RegExp): boolean =>
   Object.keys(namespace).some((name) => pattern.test(name));
 
@@ -241,7 +236,9 @@ export function readExportCapabilities(
     // trong danh sách tệp đã xuất.
     canPutDownloadInToast: hasAnyField(TOAST_FIELDS, TOAST_ACTION_FIELD_NAMES),
 
-    canRenderPdfBytes: exportsMatching(pdfModule, PDF_RENDERER_PATTERN),
+    // Tường minh: bộ dựng thật là `renderPdfBlob` (nhập ở đầu tệp, dùng ở lượt xuất PDF).
+    // Tham chiếu hàm để xoá/đổi tên nó thì biên dịch hỏng, không lặng lẽ tắt thẻ PDF.
+    canRenderPdfBytes: typeof renderPdfBlob === 'function',
 
     canCaptureImage: input.viewport !== undefined && input.viewport !== null,
 
