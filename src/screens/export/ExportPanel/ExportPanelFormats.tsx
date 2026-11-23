@@ -19,7 +19,8 @@ import type { LucideIcon } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
-import type { ExportCapabilities, ExportFormatCard, ExportFormatId } from './types';
+import { ExportPanelViewerLinks } from './ExportPanelViewerLinks';
+import type { EditorExportTarget, ExportCapabilities, ExportFormatCard, ExportFormatId } from './types';
 
 export const FOCUS_RING =
   'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-app';
@@ -146,6 +147,8 @@ export interface ExportPanelFormatsProps {
   readonly onSelectFormat: (id: ExportFormatId) => void;
   /** Mở màn Dữ liệu (xem trước nội dung .json). */
   readonly onOpenData?: () => void;
+  /** K-22/K-23: dẫn sang editor (GLB đầy đủ, chụp ảnh, OBJ). */
+  readonly onOpenEditor?: (target: EditorExportTarget) => void;
 }
 
 /**
@@ -159,6 +162,7 @@ export function ExportPanelFormats({
   isLoading,
   onSelectFormat,
   onOpenData,
+  onOpenEditor,
 }: ExportPanelFormatsProps) {
   const offered = formats.filter((format) => blockedCaptionOf(format.id, capabilities) === null);
   // Roving tabindex cần đúng một điểm dừng, kể cả khi định dạng đang chọn không nằm trong danh sách.
@@ -198,6 +202,17 @@ export function ExportPanelFormats({
               isTabStop={format.id === tabStopId}
               onSelect={onSelectFormat}
             />
+            {format.id === 'glb' && onOpenEditor !== undefined && (
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenEditor('export');
+                }}
+                className={cn('self-start rounded-sm px-4 min-h-6 coarse:min-h-11 text-[13px] font-medium text-accent hover:underline', FOCUS_RING)}
+              >
+                Mở editor để xuất bản đầy đủ
+              </button>
+            )}
             {format.id === 'spatial-json' && onOpenData !== undefined && (
               <button
                 type="button"
@@ -211,6 +226,13 @@ export function ExportPanelFormats({
         ))}
       </div>
 
+      {onOpenEditor !== undefined && (
+        <ExportPanelViewerLinks
+          showImage={!capabilities.canCaptureImage}
+          onOpenEditor={onOpenEditor}
+          ringClassName={FOCUS_RING}
+        />
+      )}
     </div>
   );
 }

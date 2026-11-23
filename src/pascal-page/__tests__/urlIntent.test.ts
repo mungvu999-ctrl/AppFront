@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { applyUrlIntent, type UrlIntentStores } from '../urlIntent';
+import { applyUrlIntent, SETTINGS_HINT, SNAPSHOT_HINT, type UrlIntentStores } from '../urlIntent';
 
 const fakeStores = () => {
   let nodes: Record<string, { type: string }> = {};
@@ -15,6 +15,8 @@ const fakeStores = () => {
     },
     explodeLevels: vi.fn(),
     startMeasure: vi.fn(),
+    openExport: vi.fn(),
+    openSettings: vi.fn(),
   } satisfies UrlIntentStores;
   const load = (next: Record<string, { type: string }>) => {
     nodes = next;
@@ -58,5 +60,50 @@ describe('applyUrlIntent — ?view=exploded / ?tool=measure của đường chuy
     load({ w1: { type: 'wall' } });
     expect(stores.startMeasure).toHaveBeenCalledTimes(1);
     expect(stores.explodeLevels).not.toHaveBeenCalled();
+  });
+
+  it('?panel=export chờ cảnh có tường rồi mở xuất đúng một lần', () => {
+    const { stores, load, listeners } = fakeStores();
+    applyUrlIntent('?panel=export&project=P-1', stores);
+
+    load({ site: { type: 'site' } });
+    expect(stores.openExport).not.toHaveBeenCalled();
+
+    load({ w1: { type: 'wall' } });
+    load({ w1: { type: 'wall' }, w2: { type: 'wall' } });
+    expect(stores.openExport).toHaveBeenCalledTimes(1);
+    expect(stores.explodeLevels).not.toHaveBeenCalled();
+    expect(listeners.size).toBe(0);
+  });
+
+  it('panel khác `export` thì không mở xuất', () => {
+    const { stores, listeners } = fakeStores();
+    applyUrlIntent('?panel=other&project=P-1', stores);
+    expect(listeners.size).toBe(0);
+    expect(stores.openExport).not.toHaveBeenCalled();
+  });
+
+  it('?panel=snapshot chỉ nói cách chụp, không mở panel, đúng một lần', () => {
+    const { stores, load } = fakeStores();
+    const notify = vi.fn();
+    applyUrlIntent('?panel=snapshot', { ...stores, notify });
+    load({ site: { type: 'site' } });
+    expect(notify).not.toHaveBeenCalled();
+    load({ w1: { type: 'wall' } });
+    load({ w1: { type: 'wall' }, w2: { type: 'wall' } });
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith(SNAPSHOT_HINT);
+    expect(stores.openSettings).not.toHaveBeenCalled();
+    expect(stores.openExport).not.toHaveBeenCalled();
+  });
+
+  it('?panel=settings mở Cài đặt và nhắc nút Xuất OBJ, không tự xuất', () => {
+    const { stores, load } = fakeStores();
+    const notify = vi.fn();
+    applyUrlIntent('?panel=settings', { ...stores, notify });
+    load({ w1: { type: 'wall' } });
+    expect(stores.openSettings).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith(SETTINGS_HINT);
+    expect(stores.openExport).not.toHaveBeenCalled();
   });
 });

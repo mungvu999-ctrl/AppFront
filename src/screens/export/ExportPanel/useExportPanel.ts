@@ -146,7 +146,7 @@ export const exportRunQueryKey = (projectId: string) =>
 
 /** Đuôi tệp của từng định dạng, hiện bằng chữ đều. */
 const EXTENSION_LABEL: Readonly<Record<ExportFormatId, string>> = Object.freeze({
-  glb: 'Mô hình 3D (.glb)',
+  glb: 'Mô hình 3D, bản rút gọn (.glb)',
   pdf: 'Hồ sơ PDF (.pdf)',
   image: 'Ảnh mặt bằng (.png)',
   'spatial-json': 'Dữ liệu dự án (.json)',
@@ -159,7 +159,7 @@ const EXTENSION_LABEL: Readonly<Record<ExportFormatId, string>> = Object.freeze(
  * đang chọn gửi cho ai, không đang chọn một phần mở rộng.
  */
 const AUDIENCE_SENTENCE: Readonly<Record<ExportFormatId, string>> = Object.freeze({
-  glb: 'Mô hình ba chiều cho người dựng hình và người xem bằng phần mềm 3D.',
+  glb: 'Mô hình ba chiều không vật liệu, đồ nội thất là hộp. Cần mô hình đầy đủ thì xuất trong editor.',
   pdf: 'Hồ sơ in cho người duyệt hồ sơ và người mang bản vẽ ra công trường.',
   image: 'Ảnh mặt bằng cho người làm bản trình bày và người gửi kèm thư.',
   'spatial-json': 'Toàn bộ dữ liệu của dự án, cho người viết công cụ và người nối sang hệ khác.',

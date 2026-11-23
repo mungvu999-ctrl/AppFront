@@ -244,6 +244,7 @@ export function ExportPanel(props: ExportPanelProps) {
     noticeCaption,
     onBackToProject,
     onOpenData,
+    onOpenEditor,
     permissionCaption,
     isCollapsed,
     onSelectFormat,
@@ -302,6 +303,8 @@ export function ExportPanel(props: ExportPanelProps) {
   );
 
   if (status === 'forbidden' || status === 'empty') {
+    const backAction =
+      onBackToProject !== undefined ? { action: { label: 'Về dự án', onClick: onBackToProject, variant: 'secondary' as const } } : {};
     return (
       <div className="flex h-full flex-col overflow-y-auto bg-bg-app">
         <div className="mx-auto flex w-full max-w-[1344px] flex-col gap-6 px-4 pb-6 pt-6 xl:px-8">
@@ -311,18 +314,14 @@ export function ExportPanel(props: ExportPanelProps) {
               icon={<Lock aria-hidden="true" />}
               title="Không có quyền xuất bản vẽ"
               description={permissionCaption ?? 'Chỉ một số vai trò trong dự án được xuất bản vẽ.'}
-              {...(onBackToProject !== undefined
-                ? { action: { label: 'Về dự án', onClick: onBackToProject, variant: 'secondary' as const } }
-                : {})}
+              {...backAction}
             />
           ) : (
             <EmptyState
               icon={<FolderOpen aria-hidden="true" />}
               title="Chưa có gì để xuất"
               description="Dự án chưa có bản vẽ nào được xử lý xong. Tải bản vẽ lên, chờ xử lý xong rồi quay lại đây để xuất."
-              {...(onBackToProject !== undefined
-                ? { action: { label: 'Về dự án', onClick: onBackToProject, variant: 'secondary' as const } }
-                : {})}
+              {...backAction}
             />
           )}
         </div>
@@ -370,6 +369,7 @@ export function ExportPanel(props: ExportPanelProps) {
               isLoading={isLoading}
               onSelectFormat={onSelectFormat}
               {...(onOpenData !== undefined ? { onOpenData } : {})}
+              {...(onOpenEditor !== undefined ? { onOpenEditor } : {})}
             />
           </Section>
 
