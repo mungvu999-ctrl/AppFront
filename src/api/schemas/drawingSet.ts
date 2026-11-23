@@ -12,6 +12,9 @@ import { HOUSE_QUESTION_CODES, HOUSE_STOREY_LABELS, HOUSE_VIEW_KINDS } from './h
  * Máy chỉ đề xuất: không giá trị nào ở đây tự tạo tầng (luật A5); chỉ N60 tạo.
  */
 
+/** Trần độ dài tên bộ (BE `NAME_MAX`, dùng chung N54 và N59). */
+export const DRAWING_SET_NAME_MAX = 120;
+
 export const DRAWING_SET_STATUSES = ['receiving', 'analyzing', 'review', 'confirmed', 'failed'] as const;
 export type DrawingSetStatus = (typeof DRAWING_SET_STATUSES)[number];
 
@@ -94,6 +97,8 @@ export const DrawingSetViewSchema = z
     kind: z.enum(HOUSE_VIEW_KINDS),
     kindConfidence: ratio,
     titleText: z.string().optional(),
+    /** Số hiệu bản vẽ đọc từ khung tên (K-65); vắng khi máy không đọc được. */
+    sheetNo: z.string().min(1).optional(),
     storeyLabel: z.enum(HOUSE_STOREY_LABELS).optional(),
     storeyNo: z.number().int().optional(),
     storeyConfidence: ratio.optional(),
@@ -103,6 +108,20 @@ export const DrawingSetViewSchema = z
   })
   .strict();
 export type DrawingSetView = z.infer<typeof DrawingSetViewSchema>;
+
+/**
+ * Khung tên chung của bộ (K-65): giá trị chung khi các trang khớp nhau; trang lệch thì máy chủ bỏ trường đó.
+ * Mọi khoá tuỳ chọn và VẮNG khi không có (W2, không `null`); cả khoá `titleBlock` vắng khi không đọc được gì.
+ */
+export const DrawingSetTitleBlockSchema = z
+  .object({
+    owner: z.string().min(1).optional(),
+    project: z.string().min(1).optional(),
+    location: z.string().min(1).optional(),
+    date: z.string().min(1).optional(),
+  })
+  .strict();
+export type DrawingSetTitleBlock = z.infer<typeof DrawingSetTitleBlockSchema>;
 
 export const DrawingSetSchema = z
   .object({
@@ -114,6 +133,7 @@ export const DrawingSetSchema = z
     errorCode: z.string().min(1).optional(),
     createdAt: isoInstantSchema,
     confirmedAt: isoInstantSchema.optional(),
+    titleBlock: DrawingSetTitleBlockSchema.optional(),
     files: z.array(DrawingSetFileSchema),
     views: z.array(DrawingSetViewSchema),
   })
@@ -177,7 +197,13 @@ export type ViewEdit = z.infer<typeof ViewEditSchema>;
 
 /** N59: thay CẢ danh sách hình; `baseVersion` = `revision` người duyệt đã thấy (thiếu → 428). */
 export const ReplaceViewsSchema = VersionedWriteSchema(
-  z.object({ views: z.array(ViewEditSchema).max(DRAWING_SET_LIMITS.maxViews) }).strict(),
+  z
+    .object({
+      views: z.array(ViewEditSchema).max(DRAWING_SET_LIMITS.maxViews),
+      /** Đổi tên bộ (K-65): đã trim, 1–120 ký tự như N54; vắng = giữ tên. */
+      name: z.string().trim().min(1).max(DRAWING_SET_NAME_MAX).optional(),
+    })
+    .strict(),
 );
 export type ReplaceViews = z.infer<typeof ReplaceViewsSchema>;
 

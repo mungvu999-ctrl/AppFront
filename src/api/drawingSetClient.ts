@@ -59,6 +59,8 @@ export interface ReplaceDrawingSetViewsInput extends SetRef {
   /** `revision` mà người duyệt đã thấy (thiếu → 428, cũ → 409 `VERSION_CONFLICT`). */
   readonly baseVersion: number;
   readonly views: readonly ViewEdit[];
+  /** Tên mới của bộ (đã trim, 1–120 ký tự); vắng = giữ tên hiện có. */
+  readonly name?: string | undefined;
 }
 
 export interface ConfirmDrawingSetInput extends SetRef {
@@ -141,11 +143,11 @@ export function createDrawingSetClient(http: HttpClient): DrawingSetClient {
         (data) => decode(DrawingSetSummaryPageSchema, data, 'drawingSets.list'),
       ),
 
-    replaceViews: async ({ baseVersion, projectId, setId, signal, views }) =>
+    replaceViews: async ({ baseVersion, name, projectId, setId, signal, views }) =>
       asSet(
-        await http.put<unknown, { baseVersion: number; body: { views: readonly ViewEdit[] } }>(
+        await http.put<unknown, { baseVersion: number; body: { views: readonly ViewEdit[]; name?: string } }>(
           ENDPOINTS.drawingSets.views(projectId, setId),
-          { body: { baseVersion, body: { views } }, ...withSignal(signal) },
+          { body: { baseVersion, body: { views, ...(name !== undefined ? { name } : {}) } }, ...withSignal(signal) },
         ),
         'drawingSets.replaceViews',
       ),

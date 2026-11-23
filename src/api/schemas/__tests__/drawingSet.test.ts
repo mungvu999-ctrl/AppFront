@@ -49,6 +49,33 @@ describe('DrawingSet (N54–N61) — schema strict', () => {
     expect(DrawingSetSchema.safeParse({ ...SET, views: [{ ...VIEW, extra: true }] }).success).toBe(false);
   });
 
+  it('K-65: sheetNo và titleBlock tuỳ chọn, vắng khoá khi không có; null/rỗng/khoá lạ bị chặn', () => {
+    const ok = DrawingSetSchema.parse({
+      ...SET,
+      titleBlock: { project: 'Nhà phố A', date: '2026-11-01' },
+      views: [{ ...VIEW, sheetNo: 'KT-01' }],
+    });
+
+    expect(ok.views[0]?.sheetNo).toBe('KT-01');
+    expect(ok.titleBlock).toEqual({ project: 'Nhà phố A', date: '2026-11-01' });
+    expect(DrawingSetSchema.safeParse({ ...SET, titleBlock: {} }).success).toBe(true);
+    expect(DrawingSetSchema.safeParse({ ...SET, titleBlock: null }).success).toBe(false);
+    expect(DrawingSetSchema.safeParse({ ...SET, titleBlock: { owner: null } }).success).toBe(false);
+    expect(DrawingSetSchema.safeParse({ ...SET, titleBlock: { owner: '' } }).success).toBe(false);
+    expect(DrawingSetSchema.safeParse({ ...SET, titleBlock: { sheet: 'x' } }).success).toBe(false);
+    expect(DrawingSetSchema.safeParse({ ...SET, views: [{ ...VIEW, sheetNo: null }] }).success).toBe(false);
+  });
+
+  it('K-65: thân N59 nhận name tuỳ chọn đã trim, 1–120 ký tự', () => {
+    const body = { views: [] };
+
+    expect(ReplaceViewsSchema.parse({ baseVersion: 1, body: { ...body, name: '  Nhà phố An ' } }).body.name).toBe('Nhà phố An');
+    expect('name' in ReplaceViewsSchema.parse({ baseVersion: 1, body }).body).toBe(false);
+    expect(ReplaceViewsSchema.safeParse({ baseVersion: 1, body: { ...body, name: '   ' } }).success).toBe(false);
+    expect(ReplaceViewsSchema.safeParse({ baseVersion: 1, body: { ...body, name: 'x'.repeat(121) } }).success).toBe(false);
+    expect(ReplaceViewsSchema.safeParse({ baseVersion: 1, body: { ...body, name: null } }).success).toBe(false);
+  });
+
   it('thời điểm là UTC Z đúng ba chữ số mili giây (W3)', () => {
     expect(DrawingSetSchema.safeParse({ ...SET, createdAt: '2026-11-23T01:02:03+07:00' }).success).toBe(false);
     expect(DrawingSetSchema.safeParse({ ...SET, createdAt: '2026-11-23T01:02:03Z' }).success).toBe(false);

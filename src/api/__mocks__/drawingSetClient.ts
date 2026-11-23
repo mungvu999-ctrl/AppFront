@@ -16,7 +16,7 @@
  */
 
 import type { DrawingSetClient } from '@/api/drawingSetClient';
-import { DRAWING_SET_ERROR_CODES, DRAWING_SET_LIMITS } from '@/api/schemas/drawingSet';
+import { DRAWING_SET_ERROR_CODES, DRAWING_SET_LIMITS, DRAWING_SET_NAME_MAX } from '@/api/schemas/drawingSet';
 import type {
   DrawingSet,
   DrawingSetFile,
@@ -53,7 +53,7 @@ interface MockFile extends DrawingSetFile {
 interface MockSet {
   readonly id: string;
   readonly projectId: string;
-  readonly name?: string;
+  name?: string;
   status: DrawingSet['status'];
   revision: number;
   errorCode?: string;
@@ -94,6 +94,9 @@ const PAGE_PATTERN = [
   { kind: 'other', conf: 0.4, questions: [{ code: 'NOT_A_PLAN' }] },
 ] as const;
 
+/** Khung tên chung mà máy "đọc" ra khi bộ đã tới bước duyệt (thiếu `date`, để thấy trường vắng). */
+const MOCK_TITLE_BLOCK = { owner: 'Anh Nguyễn Văn An', project: 'Nhà phố Nguyễn Văn An', location: 'Quận 7, TP. Hồ Chí Minh' } as const;
+
 function synthesizeViews(set: MockSet): DrawingSetView[] {
   const noSection = set.files.some((file) => file.fileName.includes('thieu-mat-cat'));
   const views: DrawingSetView[] = [];
@@ -117,6 +120,7 @@ function synthesizeViews(set: MockSet): DrawingSetView[] {
         kindConfidence: pattern.conf,
         ...('label' in pattern ? { storeyLabel: pattern.label, storeyNo: pattern.no, storeyConfidence: pattern.storeyConf } : {}),
         ...(kind === 'section' ? { titleText: 'Mặt cắt A-A' } : {}),
+        ...(kind === 'other' ? {} : { sheetNo: `KT-${String(global).padStart(2, '0')}` }),
         questions: pattern.questions.map((question) => ({ ...question })),
       });
     }
@@ -149,6 +153,7 @@ function viewOf(set: MockSet): DrawingSet {
     ...(set.errorCode !== undefined ? { errorCode: set.errorCode } : {}),
     createdAt: set.createdAt,
     ...(set.confirmedAt !== undefined ? { confirmedAt: set.confirmedAt } : {}),
+    ...(set.status === 'review' || set.status === 'confirmed' ? { titleBlock: { ...MOCK_TITLE_BLOCK } } : {}),
     files: set.files.map(wireFile),
     views: clone(set.views),
   };
@@ -280,7 +285,7 @@ export function createMockDrawingSetClient(options: MockDrawingSetOptions = {}):
       return { ok: true, data: { items } };
     },
 
-    replaceViews: async ({ baseVersion, projectId, setId, views }) => {
+    replaceViews: async ({ baseVersion, name, projectId, setId, views }) => {
       const blocked = off();
 
       if (blocked !== null) return blocked;
@@ -291,6 +296,9 @@ export function createMockDrawingSetClient(options: MockDrawingSetOptions = {}):
       if (set.status !== 'review') return wireError(409, DRAWING_SET_ERROR_CODES.notReady);
       if (baseVersion !== set.revision) return wireError(409, 'VERSION_CONFLICT');
       if (views.length > DRAWING_SET_LIMITS.maxViews) return wireError(422, 'VALIDATION', { field: 'body.views' });
+      if (name !== undefined && (name.trim().length === 0 || name.length > DRAWING_SET_NAME_MAX)) {
+        return wireError(422, 'VALIDATION', { field: 'body.name' });
+      }
       const byId = new Map(set.views.map((view) => [view.id, view]));
       const next: DrawingSetView[] = [];
 
@@ -309,6 +317,7 @@ export function createMockDrawingSetClient(options: MockDrawingSetOptions = {}):
         if (view.source === 'ai' && !next.some((item) => item.id === view.id)) next.push({ ...view, excluded: true });
       }
       set.views = next;
+      if (name !== undefined) set.name = name.trim();
       set.revision += 1;
 
       return { ok: true, data: viewOf(set) };

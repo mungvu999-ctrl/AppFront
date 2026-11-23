@@ -177,6 +177,53 @@ describe('duyệt bộ hồ sơ', () => {
     expect(screen.getByText(/Chọn tầng cho ít nhất một hình mặt bằng/u)).toBeTruthy();
   });
 
+  it('K-65: số bản vẽ hiện cạnh hình, khung "Thông tin hồ sơ" hiện trường đọc được và gợi ý tên bộ', async () => {
+    const { gateway, sets } = gatewayOf();
+    const setId = await seedSet(sets);
+
+    renderScreen({ gateway, setId });
+    const grid = await screen.findByRole('list', { name: 'Các hình máy tách được' });
+    const first = within(grid).getAllByRole('article')[0]!;
+
+    expect(within(first).getByText('KT-01')).toBeTruthy();
+    const info = screen.getByRole('region', { name: 'Thông tin hồ sơ' });
+
+    expect(within(info).getByText('Anh Nguyễn Văn An')).toBeTruthy();
+    expect(within(info).getByText('Quận 7, TP. Hồ Chí Minh')).toBeTruthy();
+    expect(within(info).queryByText('Ngày:')).toBeNull();
+    expect((within(info).getByLabelText('Tên bộ hồ sơ') as HTMLInputElement).value).toBe('Nhà phố Nguyễn Văn An');
+    expect(within(info).getByText(/Điền sẵn từ khung tên/u)).toBeTruthy();
+    expectVietnamese(info);
+  });
+
+  it('K-65: sửa tên bộ tự lưu qua N59 cùng baseVersion; gợi ý điền sẵn không tự lưu; tên trống không gửi', async () => {
+    const { gateway, sets } = gatewayOf();
+    const setId = await seedSet(sets);
+    const replace = vi.spyOn(sets, 'replaceViews');
+    const ui = userEvent.setup({ delay: null, applyAccept: false });
+
+    renderScreen({ gateway, setId });
+    const input = (await screen.findByLabelText('Tên bộ hồ sơ')) as HTMLInputElement;
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(replace).not.toHaveBeenCalled();
+    await ui.clear(input);
+    await ui.type(input, '  Biệt thự Lan  ');
+    await waitFor(() => expect(replace).toHaveBeenCalled());
+    const last = replace.mock.calls.at(-1)?.[0];
+
+    expect(last?.name).toBe('Biệt thự Lan');
+    expect(last?.baseVersion).toBe(0);
+    await ui.clear(input);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const after = replace.mock.calls.at(-1)?.[0];
+
+    expect(after?.name).toBe('Biệt thự Lan');
+    const read = await sets.read({ projectId: PROJECT, setId });
+
+    expect(read.ok && read.data.name).toBe('Biệt thự Lan');
+  });
+
   it('chọn tầng cho từng mặt bằng, tự lưu, xác nhận qua hộp hỏi → "đã xác nhận" kèm dòng mặt cắt', async () => {
     const { gateway, sets } = gatewayOf();
     const setId = await seedSet(sets);

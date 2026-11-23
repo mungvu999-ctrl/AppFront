@@ -14,6 +14,7 @@
 
 import type {
   CropRect,
+  DrawingSetTitleBlock,
   DrawingSetView,
   ViewEdit,
   ViewTarget,
@@ -71,6 +72,8 @@ export interface ViewDraft {
   readonly kind: HouseViewKind;
   readonly kindConfidence: number;
   readonly titleText: string | undefined;
+  /** Số hiệu bản vẽ máy đọc từ khung tên (K-65); chỉ để hiện và sắp, không gửi lại ở N59. */
+  readonly sheetNo: string | undefined;
   readonly storeyLabel: string | undefined;
   readonly storeyNo: number | undefined;
   readonly storeyConfidence: number | undefined;
@@ -97,6 +100,7 @@ export function toDrafts(views: readonly DrawingSetView[]): ViewDraft[] {
     kind: view.kind,
     kindConfidence: view.kindConfidence,
     titleText: view.titleText,
+    sheetNo: view.sheetNo,
     storeyLabel: view.storeyLabel,
     storeyNo: view.storeyNo,
     storeyConfidence: view.storeyConfidence,
@@ -104,6 +108,60 @@ export function toDrafts(views: readonly DrawingSetView[]): ViewDraft[] {
     imageUrl: view.imageUrl,
     target: view.kind === 'plan' ? choiceOf(view.target) : { mode: 'none' },
   }));
+}
+
+/**
+ * Thứ tự hiện lưới: có số bản vẽ thì sắp theo số (so số trong chuỗi theo giá trị: "KT-2" trước "KT-10"),
+ * hình không có số xếp sau theo thứ tự cũ. Không hình nào có số thì giữ nguyên thứ tự máy chủ.
+ * Chỉ đổi thứ tự HIỆN, không đổi bản nháp nên thân N59 không đổi.
+ */
+export function sortedBySheetNo<T extends Pick<ViewDraft, 'sheetNo'>>(drafts: readonly T[]): T[] {
+  if (drafts.every((draft) => draft.sheetNo === undefined)) return [...drafts];
+  const collator = new Intl.Collator('vi', { numeric: true, sensitivity: 'base' });
+
+  return drafts
+    .map((draft, index) => ({ draft, index }))
+    .sort((left, right) => {
+      const a = left.draft.sheetNo;
+      const b = right.draft.sheetNo;
+
+      if (a === undefined || b === undefined) return a === b ? left.index - right.index : a === undefined ? 1 : -1;
+
+      return collator.compare(a, b) || left.index - right.index;
+    })
+    .map((entry) => entry.draft);
+}
+
+export interface TitleBlockRow {
+  readonly key: keyof DrawingSetTitleBlock;
+  readonly label: string;
+  readonly value: string;
+}
+
+const TITLE_BLOCK_LABELS: readonly { readonly key: keyof DrawingSetTitleBlock; readonly label: string }[] = [
+  { key: 'owner', label: 'Chủ đầu tư' },
+  { key: 'project', label: 'Công trình' },
+  { key: 'location', label: 'Địa điểm' },
+  { key: 'date', label: 'Ngày' },
+];
+
+/** Các dòng của khung "Thông tin hồ sơ": chỉ trường máy đọc được (vắng thì không có dòng). */
+export function titleBlockRowsOf(titleBlock: DrawingSetTitleBlock | undefined): TitleBlockRow[] {
+  if (titleBlock === undefined) return [];
+
+  return TITLE_BLOCK_LABELS.flatMap(({ key, label }) => {
+    const value = titleBlock[key]?.trim() ?? '';
+
+    return value.length === 0 ? [] : [{ key, label, value }];
+  });
+}
+
+/** Gợi ý tên bộ: tên công trình trên khung tên; không gợi ý khi bộ đã có tên (không đè tên đã có). */
+export function suggestedSetName(titleBlock: DrawingSetTitleBlock | undefined, currentName: string | undefined): string | null {
+  if (currentName !== undefined && currentName.trim().length > 0) return null;
+  const project = titleBlock?.project?.trim() ?? '';
+
+  return project.length === 0 ? null : project;
 }
 
 /** Tên dòng mặt cắt: chữ máy đọc được trên hình, không có thì "Mặt cắt", "Mặt cắt 2"… theo thứ tự. */
