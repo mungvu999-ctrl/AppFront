@@ -102,6 +102,7 @@ export const SHELL_PATHS: readonly string[] = [
 export const PROJECT_PATHS: readonly string[] = [
   '/projects/:projectId/settings',
   '/projects/:projectId/upload',
+  '/projects/:projectId/drawing-sets/:setId?',
   '/projects/:projectId/quality',
   '/projects/:projectId/pipeline',
   '/projects/:projectId/pipeline/graph',

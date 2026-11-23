@@ -72,7 +72,9 @@ import type { ProjectRole } from '@/types/project';
 import { FloorManager } from './FloorManager';
 import type { FloorManagerGateway } from './floorManagerGateway';
 import type { FloorReviewScreen } from './floorManagerTypes';
+import { FloorDrawingSetEntry } from './FloorDrawingSetEntry';
 import { FloorProposalPanel } from './FloorProposalPanel';
+import { useDrawingSetEntry } from './useDrawingSetEntry';
 import { useFloorManager } from './useFloorManager';
 import { useFloorProposals, type HouseProposalApi } from './useFloorProposals';
 
@@ -130,6 +132,11 @@ export interface FloorManagerContainerProps {
    * story) KHÔNG đọc gì — bảng ẩn — trừ khi truyền cửa này. `null` = không đọc.
    */
   readonly proposalApi?: HouseProposalApi | null;
+  /**
+   * Mở màn "Tải cả bộ hồ sơ" (K-32b). Vắng thì lối vào không dựng: không nút nào không dẫn đi đâu.
+   * Lối vào chỉ hiện khi công tắc bật (N52) và người dùng sửa được bản vẽ.
+   */
+  readonly onNavigateToDrawingSets?: () => void;
 }
 
 /** Cùng khuôn `ScreenCrashFallback` của `src/App.tsx` — R-62. */
@@ -179,9 +186,17 @@ function WiredFloorManager(props: FloorManagerContainerProps) {
     api: props.proposalApi ?? (props.gateway === undefined ? undefined : null),
   });
 
+  const showDrawingSetEntry = useDrawingSetEntry(props.projectId, {
+    canEdit: result.canEdit && props.onNavigateToDrawingSets !== undefined,
+    api: props.proposalApi ?? (props.gateway === undefined ? undefined : null),
+  });
+
   return (
     <FloorManager
       {...(proposals.hidden ? {} : { proposalPanel: <FloorProposalPanel {...proposals.panel} /> })}
+      {...(showDrawingSetEntry && props.onNavigateToDrawingSets !== undefined
+        ? { drawingSetEntry: <FloorDrawingSetEntry onOpen={props.onNavigateToDrawingSets} /> }
+        : {})}
       bands={result.bands}
       canEdit={result.canEdit}
       duplicateElevationMessage={result.duplicateElevationMessage}
@@ -322,6 +337,10 @@ function FloorManagerRouteBody({
     navigate(ROUTES.project.viewer(projectId));
   }, [navigate, projectId]);
 
+  const handleOpenDrawingSets = useCallback(() => {
+    navigate(ROUTES.project.drawingSets(projectId));
+  }, [navigate, projectId]);
+
   // Không vỏ nào cấp chiều cao cho route này: thiếu khung `h-dvh` thì `h-full` của màn
   // không bám vào đâu, khung bảng cao bằng 50 tầng và cả trang cuộn (BUG-520).
   return (
@@ -330,6 +349,7 @@ function FloorManagerRouteBody({
         initialCollapsed={initialCollapsed}
         isCompact={isCompact}
         onBackToProjects={handleBackToProjects}
+        onNavigateToDrawingSets={handleOpenDrawingSets}
         onNavigateToDrawings={handleNavigateToDrawings}
         onNavigateToFloorScreen={handleNavigateToFloorScreen}
         onNavigateToOverlay={handleNavigateToOverlay}

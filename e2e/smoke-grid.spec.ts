@@ -111,6 +111,8 @@ const ROWS = {
   adminTrainingModels: { anchor: { role: 'heading', name: 'Chọn mô hình AI đang dùng' }, role: 'admin' },
   // FIX-775 (BUG-079): breadcrumb dùng chung, `nav` tên "Đường dẫn trang"; chữ của cấp cuối mới nói đây là màn nào.
   projectUpload: { anchor: { text: 'Tải lên bản vẽ' } },
+  // K-32b: chọn tệp của bộ hồ sơ (không `:setId`); mốc là H1, vì chữ ở breadcrumb trùng chữ ở đầu trang.
+  projectDrawingSets: { anchor: { role: 'heading', name: 'Tải cả bộ hồ sơ bản vẽ' } },
   projectQuality: { anchor: { role: 'region', name: 'Báo cáo chất lượng' } },
   // F-05b: màn chỉ mở SSE cho tầng đang xem chưa xong sau lượt #8 mồi; bộ mẫu dev không có
   // lượt nào đang chạy nên không còn lượt mở luồng 404 (B-V4-10) để chờ.
@@ -142,7 +144,7 @@ const ROWS = {
 function pathFor(key: ProductRouteKey, row: Row): string {
   const pattern: string = ROUTE_PATTERNS[key];
   if (pattern === '*') return UNKNOWN_PATH;
-  return pattern.replace(':projectId', PROJECT_ID).replace(':floorId', row.floorId ?? 'L1');
+  return pattern.replace('/:setId?', '').replace(':projectId', PROJECT_ID).replace(':floorId', row.floorId ?? 'L1');
 }
 
 function locate(page: Page, anchor: Exclude<Anchor, { readonly redirect: string }>) {

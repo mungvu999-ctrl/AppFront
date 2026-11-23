@@ -16,6 +16,7 @@ export const RouteMobileViewer = lazy(() => import('../screens/system/MobileView
 export const RouteNotFound = lazy(() => import('../screens/system/NotFound').then(m => ({ default: m.NotFoundRoute })));
 export const RouteOnboarding = lazy(() => import('../screens/onboarding/WelcomeScreen').then(m => ({ default: m.WelcomeRoute })));
 export const RouteFloorUpload = lazy(() => import('../screens/upload/FloorUploadScreen').then(m => ({ default: m.FloorUploadRoute })));
+export const RouteDrawingSet = lazy(() => import('../screens/upload/DrawingSetReview').then(m => ({ default: m.DrawingSetRoute })));
 export const RouteInputQualityGate = lazy(() => import('../screens/upload/InputQualityGate').then(m => ({ default: m.InputQualityGateRoute })));
 export const RouteProcessing = lazy(() => import('../screens/pipeline/ProcessingScreen').then(m => ({ default: m.ProcessingScreenRoute })));
 export const RouteScaleCalibration = lazy(() => import('../screens/pipeline/ScaleCalibration').then(m => ({ default: m.ScaleCalibrationRoute })));

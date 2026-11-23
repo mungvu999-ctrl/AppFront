@@ -16,7 +16,7 @@ export interface ProjectStep {
 }
 
 export const PROJECT_STEPS: readonly ProjectStep[] = [
-  { id: 'upload', label: 'Tải bản vẽ', path: ROUTES.project.upload, segments: ['upload'] },
+  { id: 'upload', label: 'Tải bản vẽ', path: ROUTES.project.upload, segments: ['upload', 'drawing-sets'] },
   { id: 'pipeline', label: 'Xử lý', path: ROUTES.project.pipeline, segments: ['pipeline'] },
   { id: 'floors', label: 'Duyệt tầng', path: ROUTES.project.floors, segments: ['floors'] },
   { id: 'viewer', label: 'Mô hình 3D', path: ROUTES.project.viewer, segments: ['3d'] },

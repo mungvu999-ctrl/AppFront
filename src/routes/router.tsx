@@ -376,6 +376,7 @@ export const routes: RouteObject[] = [
               { path: ROUTE_PATTERNS.onboarding, element: suspended(<Screens.RouteOnboarding />) },
               { path: ROUTE_PATTERNS.projectSettings, element: suspended(<Screens.RouteProjectSettings />) },
               { path: ROUTE_PATTERNS.projectUpload, element: suspended(<Screens.RouteFloorUpload />) },
+              { path: ROUTE_PATTERNS.projectDrawingSets, element: suspended(<Screens.RouteDrawingSet />) },
               { path: ROUTE_PATTERNS.projectQuality, element: suspended(<Screens.RouteInputQualityGate />) },
               { path: ROUTE_PATTERNS.projectPipeline, element: suspended(<Screens.RouteProcessing />) },
               { path: ROUTE_PATTERNS.projectPipelineGraph, element: suspended(<Screens.RoutePipelineGraph />) },
