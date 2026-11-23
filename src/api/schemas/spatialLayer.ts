@@ -82,6 +82,14 @@ export const ReadinessReasonSchema = z.enum([
   'fallbackTextModel',
 ]);
 
+/**
+ * Một kiểm hình học mức nhắc (không critical; K-15/K-16, NO-488): mã (chuỗi tự do, mã lạ hiện câu chung) và id
+ * đối tượng trong lớp tầng (cửa hoặc phòng); `entityIds` rỗng = kiểm không gắn đối tượng nào.
+ */
+export const ReadinessNoticeSchema = z
+  .object({ code: z.string().min(1), entityIds: z.array(z.string().min(1)) })
+  .strict();
+
 /** Độ sẵn sàng của tầng do máy chủ đánh giá (FIX-P0-10); vắng = chưa có BE mới. */
 export const ReadinessSchema = z
   .object({
@@ -92,13 +100,17 @@ export const ReadinessSchema = z
      * Chuỗi tự do, không enum: mã mới của BE không được làm vỡ cả tài liệu tầng — màn hiện câu chung.
      */
     checks: z.array(z.string().min(1)).optional(),
+    /** Kiểm mức nhắc (NO-488): không tạo `reason`, không đổi `state`; vắng khi không có hoặc tầng đã duyệt. */
+    notices: z.array(ReadinessNoticeSchema).optional(),
   })
   .strict()
-  .transform(({ checks, ...readiness }) => ({
+  .transform(({ checks, notices, ...readiness }) => ({
     ...readiness,
     ...(checks !== undefined && checks.length > 0 ? { checks } : {}),
+    ...(notices !== undefined && notices.length > 0 ? { notices } : {}),
   }));
 
+export type ReadinessNotice = z.infer<typeof ReadinessNoticeSchema>;
 export type FloorReadiness = z.infer<typeof ReadinessSchema>;
 export type ReadinessReason = z.infer<typeof ReadinessReasonSchema>;
 

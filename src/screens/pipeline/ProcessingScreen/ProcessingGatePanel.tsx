@@ -164,6 +164,21 @@ export function ProcessingGatePanel({
               <p className="min-w-0 flex-1 text-[13px] text-text-primary">{row.sentence}</p>
             </li>
           ))}
+          {gate.noticeRows?.map((row) => (
+            <li className="flex items-start gap-2" key={row.key}>
+              <TriangleAlert aria-hidden="true" className="mt-0.5 shrink-0 text-text-muted" size={16} />
+              <div className="min-w-0 flex-1 text-[13px] text-text-secondary">
+                <p>{row.sentence}</p>
+                <button
+                  className="mt-0.5 rounded font-medium text-accent underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent focus-visible:outline-solid"
+                  onClick={row.onOpen}
+                  type="button"
+                >
+                  {row.linkLabel}
+                </button>
+              </div>
+            </li>
+          ))}
           {lowConfidence !== undefined ? (
             <li className="flex items-start gap-2">
               <TriangleAlert aria-hidden="true" className="mt-0.5 shrink-0 text-state-attention-text" size={16} />

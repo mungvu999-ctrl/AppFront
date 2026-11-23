@@ -760,6 +760,58 @@ describe('useProcessingScreen', () => {
     mounted.unmount();
   });
 
+  // NO-488: nhắc mức nhẹ của N16 `readiness.notices` thành lối bấm tới đúng cửa/phòng; `?select=` là id đầu tiên.
+  it('readiness.notices become summary notices that open the first door/room of the layer (NO-488)', async () => {
+    const harness = makeScriptedClient();
+    const uploads = await readFloorUploads(harness.client, 1);
+    const upload = uploads[0]!;
+    const layer = await harness.client.spatial.readLayer({ projectId: PROJECT_ID, floorId: upload.floorId });
+    if (!layer.ok) throw new Error('Không đọc được lớp tầng mẫu.');
+    const readiness = {
+      state: 'ready' as const,
+      reasons: [],
+      notices: [
+        { code: 'OPENING_SIZE_IMPLAUSIBLE', entityIds: ['O-1', 'O-2'] },
+        { code: 'ROOM_AREA_TEXT_MISMATCH', entityIds: ['R-1'] },
+        { code: 'NEW_NOTICE', entityIds: [] },
+      ],
+    };
+    vi.spyOn(harness.client.spatial, 'readLayer').mockResolvedValue({
+      ok: true,
+      data: { ...layer.data, readiness },
+    });
+    const onNavigate = vi.fn();
+    const mounted = mountHook(harness.client, uploads, createTestQueryClient(), new MockVisibilityTarget(), {
+      onNavigate,
+    });
+
+    await settle(clock);
+    await act(async () => {
+      latestSource().triggerOpen();
+      latestSource().triggerMessage(finishedProgress(upload.uploadId));
+      await clock.advance(POLL_INTERVAL_MS);
+    });
+    await settle(clock);
+
+    const notices = mounted.result.current.summary?.notices;
+    expect(notices?.map(({ code, count }) => [code, count])).toEqual([
+      ['OPENING_SIZE_IMPLAUSIBLE', 2],
+      ['ROOM_AREA_TEXT_MISMATCH', 1],
+      ['NEW_NOTICE', 0],
+    ]);
+    const base = `/projects/${PROJECT_ID}/floors/${upload.floorId}/layers`;
+    notices?.forEach((notice) => {
+      notice.onOpen();
+    });
+    expect(onNavigate.mock.calls.map(([path]) => path)).toEqual([
+      `${base}/objects?select=O-1`,
+      `${base}/rooms?select=R-1`,
+      `${base}/walls`,
+    ]);
+
+    mounted.unmount();
+  });
+
   // BUG-353: the floor chip counted walls + openings + rooms, the summary chip walls + openings —
   // two numbers under one word. And "Chuỗi kích thước" was the one capitalised chip (A6).
   it('a finished floor counts "đối tượng" the same in its chip and in the summary (BUG-353)', async () => {

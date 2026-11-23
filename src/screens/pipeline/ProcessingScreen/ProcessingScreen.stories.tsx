@@ -403,6 +403,19 @@ export const MotPhan: Story = { args: scenarioFor('partial') };
 export const Loi: Story = { args: scenarioFor('error') };
 /** Xong — sáu bước xong và khối tổng kết theo bộ số riêng của story. */
 export const Xong: Story = { args: scenarioFor('success') };
+/** Xong, còn nhắc nhẹ — chip vẫn "Xong", thêm hai dòng nhắc nhạt kèm liên kết tới đúng cửa/phòng (NO-488). */
+export const XongCoNhac: Story = {
+  args: {
+    ...scenarioFor('success'),
+    summary: {
+      ...SAMPLE_SUMMARY,
+      notices: [
+        { code: 'OPENING_SIZE_IMPLAUSIBLE', count: 2, onOpen: NO_OP },
+        { code: 'ROOM_AREA_TEXT_MISMATCH', count: 1, onOpen: NO_OP },
+      ],
+    },
+  },
+};
 /** Không có quyền — hai cột vẫn đọc được, nút huỷ biến mất hẳn (không khoá mờ). */
 export const KhongCoQuyen: Story = { args: scenarioFor('forbidden') };
 /** Thu gọn — cột phải thành tấm trượt đáy, bất kể bề rộng khung nhìn. */

@@ -2,12 +2,13 @@
  * FIX-P0-15: cổng Xử lý đọc N16 `readiness`. Lỗi gốc: có chuỗi kích thước mà `scaleStatus: unresolved`
  * (tỷ lệ tạm) vẫn ra 'ready' — "Sẵn sàng duyệt tầng".
  */
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { FloorLayerDocument } from '@/api/schemas/spatialLayer';
 
 import { ProcessingFloorChips } from './ProcessingFloorChips';
+import { ProcessingGatePanel } from './ProcessingGatePanel';
 import { SAMPLE_SUMMARY, scenarioFor } from './ProcessingScreen.stories';
 import { SCALE_ESTIMATED_NOTE } from '@/lib/viewmodel/provisionalScale';
 
@@ -19,7 +20,7 @@ import {
   REVIEW_REASON_SENTENCE,
 } from './processingGate';
 import { toExtractionSummary } from './processingGateway';
-import type { ProcessingReviewReason } from './types';
+import type { ProcessingReviewReason, ProcessingSummaryViewModel } from './types';
 
 afterEach(cleanup);
 
@@ -187,6 +188,65 @@ describe('toExtractionSummary — BENCH3D-11', () => {
 
   it('readiness.checks đi kèm readiness tới hook', () => {
     const readiness = { state: 'needsReview', reasons: ['geometrySuspect'], checks: ['OPEN_ENVELOPE'] };
+    expect(toExtractionSummary(documentWith({ readiness }), 0.75).readiness).toEqual(readiness);
+  });
+});
+
+describe('NO-488: readiness.notices (nhắc mức nhẹ, không chặn)', () => {
+  const noticeProps = (notices: NonNullable<ProcessingSummaryViewModel['notices']>, reviewReasons: readonly ProcessingReviewReason[] = []) => ({
+    ...scenarioFor('success'),
+    summary: { ...SAMPLE_SUMMARY, reviewReasons, notices },
+  });
+
+  it('★ ready + hai nhắc: tiêu đề và chip vẫn "Sẵn sàng", hai dòng nhắc, nút chính không đổi', () => {
+    const open = vi.fn();
+    const props = noticeProps([
+      { code: 'OPENING_SIZE_IMPLAUSIBLE', count: 3, onOpen: open },
+      { code: 'ROOM_AREA_TEXT_MISMATCH', count: 2, onOpen: vi.fn() },
+    ]);
+    const gate = deriveProcessingGate(props);
+
+    expect(gate.kind).toBe('ready');
+    expect(gate.title).toBe('Sẵn sàng duyệt tầng');
+    expect(gate.chipVariant).toBe('verified');
+    expect(gate.action?.label).toBe(GO_REVIEW_LABEL);
+    expect(gate.noticeRows?.map((row) => [row.key, row.linkLabel])).toEqual([
+      ['OPENING_SIZE_IMPLAUSIBLE', 'Xem 3 cửa'],
+      ['ROOM_AREA_TEXT_MISMATCH', 'Xem 2 phòng'],
+    ]);
+    expect(gate.noticeRows?.[0]?.sentence).toMatch(/^Có 3 cửa đi rộng bất thường \(hẹp dưới 55 cm hoặc rộng trên 3,6 m\)/u);
+    expect(gate.noticeRows?.[1]?.sentence).toMatch(/^Diện tích 2 phòng lệch nhiều so với số m²/u);
+
+    render(<ProcessingGatePanel gate={gate} isSheet={false} props={props} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Xem 3 cửa' }));
+    expect(open).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('button', { name: /đã xem/iu })).toBeNull();
+  });
+
+  it('mã lạ hoặc không có id: câu chung và liên kết Sang Duyệt tầng', () => {
+    const gate = deriveProcessingGate(
+      noticeProps([
+        { code: 'NEW_NOTICE', count: 4, onOpen: vi.fn() },
+        { code: 'OPENING_SIZE_IMPLAUSIBLE', count: 0, onOpen: vi.fn() },
+      ]),
+    );
+
+    expect(gate.noticeRows?.map((row) => [row.sentence, row.linkLabel])).toEqual([
+      ['Hình học có chỗ nên kiểm lại ở Duyệt tầng.', GO_REVIEW_LABEL],
+      ['Hình học có chỗ nên kiểm lại ở Duyệt tầng.', GO_REVIEW_LABEL],
+    ]);
+  });
+
+  it('không có nhắc: không có noticeRows; needs-review vẫn mang nhắc cùng lúc', () => {
+    expect(gateWith([]).gate.noticeRows).toBeUndefined();
+    const gate = deriveProcessingGate(noticeProps([{ code: 'ROOM_AREA_TEXT_MISMATCH', count: 1, onOpen: vi.fn() }], ['geometrySuspect']));
+
+    expect(gate.kind).toBe('needs-review');
+    expect(gate.noticeRows).toHaveLength(1);
+  });
+
+  it('toExtractionSummary giữ readiness.notices tới hook', () => {
+    const readiness = { state: 'ready', reasons: [], notices: [{ code: 'OPENING_SIZE_IMPLAUSIBLE', entityIds: ['opening:a'] }] };
     expect(toExtractionSummary(documentWith({ readiness }), 0.75).readiness).toEqual(readiness);
   });
 });
