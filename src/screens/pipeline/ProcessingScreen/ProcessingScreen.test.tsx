@@ -20,11 +20,9 @@
  *   một hàm của props (mục D), nên bảy trạng thái vẽ được mà không cần mạng.
  *   Dữ liệu đến từ `ProcessingScreen.stories.tsx`, một bộ duy nhất cho cả story
  *   lẫn test: hai bộ song song là hai bộ sẽ lệch nhau (R-70).
- * - **Qua container + cổng dữ liệu giả** cho lối huỷ. Nút huỷ chỉ tồn tại khi
- *   `gateway.supports.cancelProcessing` bật, mà bản cài đặt thật để `false` —
- *   repo chưa có `ENDPOINTS.drawings.cancel`. Cổng giả bật đúng khả năng đó lên
- *   để nhánh "có hỗ trợ" vẫn được kiểm; đó là điều `ProcessingGateway.supports`
- *   được dựng ra để cho phép, không phải một đường vòng.
+ * - **Qua container + cổng dữ liệu giả** cho lối huỷ. Bản cài đặt thật bật
+ *   `gateway.supports.cancelProcessing` (N53, K-24); cổng giả chỉ thay
+ *   `requestCancel` để đếm lời gọi và trả `Progress` đã huỷ mà không cần mạng.
  *
  * - **Qua hook thật + `NotificationHost` thật** cho `[NGHIEM-F]`. Nút chạy nền
  *   không có gì để nhìn nếu chỉ có view: nó đẩy một thông báo, và thông báo được
@@ -153,8 +151,8 @@ function scenarioIndex(): readonly SevenStateScenario[] {
  * huỷ.
  *
  * Không viết một cổng thứ hai từ đầu — làm vậy là dựng ý niệm thứ hai về hình
- * dạng câu trả lời, đúng thứ R-70 cấm. Chỉ đúng hai chỗ đổi: `supports.cancelProcessing`
- * và `requestCancel`, tức đúng cái endpoint repo còn thiếu.
+ * dạng câu trả lời, đúng thứ R-70 cấm. Chỉ đổi `requestCancel`: đếm lời gọi và trả
+ * `Progress` mà N53 trả cho một lượt đã huỷ (`failed` + `PIPELINE_CANCELLED`).
  */
 function gatewayWithCancel(onCancel: () => void): ProcessingGateway {
   const real = createProcessingGateway(createMockApiClient(), {
@@ -164,9 +162,12 @@ function gatewayWithCancel(onCancel: () => void): ProcessingGateway {
   return {
     ...real,
     supports: { ...real.supports, cancelProcessing: true },
-    requestCancel: async () => {
+    requestCancel: async ({ uploadId }) => {
       onCancel();
-      return { supported: true, value: undefined };
+      return {
+        ok: true,
+        data: { id: uploadId, status: 'failed', step: 'preprocess', progressPercent: 0, error: 'PIPELINE_CANCELLED' },
+      };
     },
   };
 }
@@ -399,6 +400,32 @@ describe('ProcessingScreen — huỷ xử lý [NGHIEM-C]', () => {
     fireEvent.click(screen.getByRole('button', { name: CANCEL_CONFIRM_LABEL }));
 
     expect(cancelled).toBe(1);
+  });
+
+  it('huỷ xong: chip tầng nói "đã huỷ", nút huỷ rời DOM — tầng không kẹt "đang xử lý" (K-24)', async () => {
+    // Cổng THẬT trên client giả: `requestCancel` đi `client.drawings.cancel` (N53) của bản giả,
+    // nên lượt đọc #8 sau đó cũng thấy lượt đã huỷ — không có nguồn sự thật thứ hai.
+    const gateway = createProcessingGateway(createMockApiClient(), {
+      EventSourceImpl: MockEventSource as unknown as typeof EventSource,
+    });
+
+    // Hai tầng để dãy chip tầng được vẽ (một tầng thì màn không vẽ chip).
+    const twoUploads = [...ONE_UPLOAD, { floorId: 'L2', floorName: 'Tầng 2', uploadId: 'upload-2' }];
+
+    renderWithProviders(
+      <ProcessingScreenContainer
+        floorUploads={twoUploads}
+        gateway={gateway}
+        projectId={PROJECT_ID}
+        roles={['engineer']}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: CANCEL_LABEL }));
+    fireEvent.click(screen.getByRole('button', { name: CANCEL_CONFIRM_LABEL }));
+
+    await waitFor(() => expect(screen.getAllByText('đã huỷ')).toHaveLength(2));
+    expect(screen.queryByRole('button', { name: CANCEL_LABEL })).not.toBeInTheDocument();
   });
 });
 

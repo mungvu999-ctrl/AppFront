@@ -126,6 +126,27 @@ describe('processingGateway', () => {
     clock.restore();
   });
 
+  describe('requestCancel (N53, K-24)', () => {
+    it('is supported and POSTs …/uploads/{id}/cancel, decoding the cancelled Progress', async () => {
+      const calls: string[] = [];
+      const cancelled = { id: 'upload-1', status: 'failed', step: 'wallSegmentation', progressPercent: 20, error: 'PIPELINE_CANCELLED' };
+      const http = {
+        post: async (path: string) => {
+          calls.push(path);
+          return { ok: true, data: cancelled };
+        },
+      } as unknown as HttpClient;
+      const gateway = createProcessingGateway(createApiClient(http));
+
+      const result = await gateway.requestCancel({ projectId: PROJECT_ID, uploadId: 'upload-1' });
+
+      expect(gateway.supports.cancelProcessing).toBe(true);
+      expect(calls).toEqual([ENDPOINTS.drawings.cancel(PROJECT_ID, 'upload-1')]);
+      expect(ENDPOINTS.drawings.cancel(PROJECT_ID, 'upload-1')).toMatch(/\/drawings\/uploads\/upload-1\/cancel$/);
+      expect(result).toEqual({ ok: true, data: cancelled });
+    });
+  });
+
   describe('readLatestUploads (N7)', () => {
     const first = 'upl_01J8Z3K4Q5R6S7T8V9W0XYZAB1';
     const second = 'upl_01J8Z3K4Q5R6S7T8V9W0XYZAB2';

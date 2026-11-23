@@ -1854,6 +1854,14 @@ export const createMockApiClient = (): ApiClient => {
         latestUploadByFloor.set(body.floorId, progress.id);
         return ok(progress);
       },
+      cancel: async ({ projectId, uploadId }) => {
+        const current = uploads.get(uploadKey(projectId, uploadId)) ?? makeProgress({ id: uploadId, progressPercent: 0 });
+        // Như máy chủ: lượt đã cuối giữ nguyên (idempotent), lượt sống thành `failed` + `PIPELINE_CANCELLED`.
+        if (current.status === 'completed' || current.status === 'failed') return ok(current);
+        const cancelled: Progress = { ...current, status: 'failed', error: 'PIPELINE_CANCELLED' };
+        uploads.set(uploadKey(projectId, uploadId), cancelled);
+        return ok(cancelled);
+      },
       rerun: async ({ projectId, uploadId }) => {
         const pending = makeProgress({ id: uploadId, progressPercent: 0, status: 'pending', step: 'Rerun' });
         uploads.set(uploadKey(projectId, uploadId), pending);

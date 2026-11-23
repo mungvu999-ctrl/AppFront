@@ -282,6 +282,12 @@ export interface CompleteDrawingUploadInput extends WriteRequestOptions {
   projectId: string;
 }
 
+/** N53 (K-24) — thân rỗng: huỷ mọi lượt chạy còn sống của đúng lượt tải này. */
+export interface CancelDrawingUploadInput extends WriteRequestOptions {
+  projectId: string;
+  uploadId: string;
+}
+
 /** N51 (K-06) — thân rỗng: lượt tải và trang/vùng cắt đã nằm ở máy chủ. */
 export interface RerunDrawingUploadInput extends WriteRequestOptions {
   projectId: string;
@@ -614,6 +620,13 @@ export interface FloorsApi {
 }
 
 export interface DrawingsApi {
+  /**
+   * N53 (K-24) — huỷ lượt xử lý đang chạy: máy chủ dừng phần AI ở điểm kiểm gần nhất và trả
+   * `Progress` sau huỷ (`failed` + `error: 'PIPELINE_CANCELLED'`). Idempotent: bấm đôi, lượt đã xong
+   * hay đã huỷ đều 200 với `Progress` hiện tại (lượt đã `completed` giữ nguyên). 404 khi lượt tải
+   * không còn; 403 thiếu quyền `floor.upload`.
+   */
+  cancel(input: CancelDrawingUploadInput): Promise<ApiResult<Progress>>;
   complete(input: CompleteDrawingUploadInput): Promise<ApiResult<Progress>>;
   initUpload(input: InitDrawingUploadInput): Promise<ApiResult<Progress>>;
   /**
@@ -1189,6 +1202,14 @@ export const createApiClient = (http: HttpClient, options: { authHttp?: HttpClie
         'drawings.initUpload',
       );
     },
+    cancel: async (input) =>
+      decodeSingle(
+        await http.post<unknown, undefined>(ENDPOINTS.drawings.cancel(input.projectId, input.uploadId), {
+          ...toRequestOptions(input),
+        }),
+        ProgressSchema,
+        'drawings.cancel',
+      ),
     rerun: async (input) =>
       decodeSingle(
         await http.post<unknown, undefined>(ENDPOINTS.drawings.rerun(input.projectId, input.uploadId), {
