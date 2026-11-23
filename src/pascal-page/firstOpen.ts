@@ -2,7 +2,7 @@
  * Gieo dáng mở đầu (tô `rendered`, chủ đề tối) cho lần mở đầu tiên. Phải chạy trước khi React
  * vẽ: `<Viewer>` đọc `shadingByContext` lúc gắn. Thân ở `./applyFirstOpenLook`.
  *
- * Cùng lúc mở: ý định từ đường dẫn (`?view=exploded`, `?tool=measure`, `?panel=export`) — thân ở `./urlIntent`.
+ * Cùng lúc mở: ý định từ đường dẫn (`?view=exploded`, `?tool=measure`, `?panel=export|snapshot|settings`) — thân ở `./urlIntent`.
  */
 import { sceneRegistry, useScene } from '@pascal-app/core';
 import { useEditor } from '@pascal-app/editor';
@@ -39,6 +39,8 @@ applyUrlIntent(window.location.search, {
     editor.setMode('build');
     editor.setTool('measurement');
   },
+  // K-23: chỉ mở tab Cài đặt (nút Xuất OBJ nằm ở đó).
+  openSettings: () => useEditor.getState().setActiveSidebarPanel('settings'),
   // K-22: tab Cài đặt + GLB đầy đủ bằng `modelExport` (cùng đường nướng ánh sáng).
   openExport: () => {
     runFullGlbExport({

@@ -172,8 +172,8 @@ function WiredExportPanel(props: WiredExportPanelProps) {
           void navigate(ROUTES.project.data(props.projectId));
         }}
         // K-22: trang 3D là tài liệu HTML riêng, nên đi cả trang (không qua router).
-        onOpenEditorExport={() => {
-          window.location.assign(editor3dHref(props.projectId, '?panel=export'));
+        onOpenEditor={(target) => {
+          window.location.assign(editor3dHref(props.projectId, `?panel=${target}`));
         }}
       />
       {/* Chip đứng sát trên chân dính đáy (cao 69 px + 7 px hở), không `bottom-24` mặc định: ở 1280×720

@@ -19,6 +19,9 @@ export const EXPORT_FORMAT_IDS = ['glb', 'pdf', 'image', 'spatial-json'] as cons
 
 export type ExportFormatId = (typeof EXPORT_FORMAT_IDS)[number];
 
+/** Chỗ trong editor 3D mà màn Xuất dẫn tới: `?panel=export|snapshot|settings` (`pascal-page/urlIntent`). */
+export type EditorExportTarget = 'export' | 'snapshot' | 'settings';
+
 /* -------------------------------------------------------------------------- */
 /* Công năng — cái gì tầng logic THỰC SỰ làm được                             */
 /* -------------------------------------------------------------------------- */
@@ -306,6 +309,6 @@ export interface ExportPanelProps {
   readonly onBackToProject?: () => void;
   /** Mở màn "Dữ liệu dự án" (xem trước tệp JSON). Vắng thì không có liên kết. */
   readonly onOpenData?: () => void;
-  /** K-22: mở editor 3D để xuất GLB đầy đủ (vật liệu, đồ thật). Vắng thì không có nút. */
-  readonly onOpenEditorExport?: () => void;
+  /** K-22/K-23: sang editor 3D, đúng chỗ cần (xuất GLB đầy đủ, chụp ảnh, xuất OBJ). Vắng thì không có nút. */
+  readonly onOpenEditor?: (target: EditorExportTarget) => void;
 }

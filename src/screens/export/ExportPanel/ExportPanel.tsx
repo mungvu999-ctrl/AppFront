@@ -244,7 +244,7 @@ export function ExportPanel(props: ExportPanelProps) {
     noticeCaption,
     onBackToProject,
     onOpenData,
-    onOpenEditorExport,
+    onOpenEditor,
     permissionCaption,
     isCollapsed,
     onSelectFormat,
@@ -369,7 +369,7 @@ export function ExportPanel(props: ExportPanelProps) {
               isLoading={isLoading}
               onSelectFormat={onSelectFormat}
               {...(onOpenData !== undefined ? { onOpenData } : {})}
-              {...(onOpenEditorExport !== undefined ? { onOpenEditorExport } : {})}
+              {...(onOpenEditor !== undefined ? { onOpenEditor } : {})}
             />
           </Section>
 
