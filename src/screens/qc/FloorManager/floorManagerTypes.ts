@@ -128,6 +128,8 @@ export interface FloorRowVm {
   readonly scaleState: ScaleState;
   /** Tầng bị ẩn khỏi mô hình 3D. Dòng mờ đi; tầng vẫn còn trong bảng và trong lát cắt. */
   readonly isHiddenIn3d: boolean;
+  /** NO-482: dòng này là mặt cắt, không phải tầng — mang nhãn "Mặt cắt", không tính vào tổng số tầng và dải lát cắt. */
+  readonly isSection: boolean;
   /** Lượt đặt cao độ gần nhất của tầng này bị chặn: ô cao độ mang dấu lỗi (BUG-306). */
   readonly isElevationRefused: boolean;
 

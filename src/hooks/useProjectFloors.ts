@@ -42,6 +42,8 @@ export function useProjectFloors(
   return useMemo(
     () =>
       [...(query.data ?? [])]
+        // NO-482: mặt cắt không phải tầng — không vào thanh chọn tầng.
+        .filter((item) => item.isSection !== true)
         .sort((first, second) => first.order - second.order)
         .map((item) => ({ id: item.id, label: item.name, hasDrawing: item.drawings.length > 0 })),
     [query.data],

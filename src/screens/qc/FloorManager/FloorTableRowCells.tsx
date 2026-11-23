@@ -18,6 +18,7 @@ import { FloorRowLinks } from './FloorRowLinks';
 import type { FloorManagerViewProps, FloorRowVm } from './floorManagerTypes';
 
 const UPLOAD_LINK_LABEL = 'Tải bản vẽ';
+const SECTION_ROW_LABEL = 'Mặt cắt';
 const NEXT_STEP_PREFIX = 'Việc tiếp:';
 
 const EDIT_VALUE_CLASS =
@@ -119,6 +120,11 @@ export function FloorNameCell({
           </button>
         ) : (
           <span className="text-[13px] font-medium text-text-primary">{row.name}</span>
+        )}
+        {row.isSection && (
+          <Badge className="w-fit" variant="neutral">
+            {SECTION_ROW_LABEL}
+          </Badge>
         )}
         {/* Dòng phụ: số tường, phòng, diện tích. Điểm luật chỉ ở màn Quy chuẩn (UX-R1 K05). */}
         {row.hasDrawing && <span className="text-[12px] text-text-secondary">{summaryText}</span>}
