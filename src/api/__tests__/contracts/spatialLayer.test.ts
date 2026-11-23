@@ -140,6 +140,23 @@ describe('FloorLayerDocumentSchema', () => {
     ).toBe(false);
   });
 
+  it('NO-488: readiness.notices (mã lạ cũng nhận) giữ nguyên; rỗng coi như vắng; khoá lạ hoặc id rỗng bị từ chối', () => {
+    const notices = [
+      { code: 'OPENING_SIZE_IMPLAUSIBLE', entityIds: ['opening:a', 'opening:b'] },
+      { code: 'FUTURE_NOTICE', entityIds: [] },
+    ];
+    const readiness = { reasons: [], state: 'ready', notices } as const;
+    const parse = (value: unknown) => FloorLayerDocumentSchema.safeParse({ ...minimalDocument, readiness: value });
+
+    expect(FloorLayerDocumentSchema.parse({ ...minimalDocument, readiness }).readiness).toStrictEqual(readiness);
+    expect(FloorLayerDocumentSchema.parse({ ...minimalDocument, readiness: { reasons: [], state: 'ready', notices: [] } }).readiness).toStrictEqual({
+      reasons: [],
+      state: 'ready',
+    });
+    expect(parse({ reasons: [], state: 'ready', notices: [{ code: 'X', entityIds: [''] }] }).success).toBe(false);
+    expect(parse({ reasons: [], state: 'ready', notices: [{ code: 'X', entityIds: [], extra: 1 }] }).success).toBe(false);
+  });
+
   it('BENCH3D-11: phòng có clearAreaM2 thì giữ, không có thì không sinh khoá', () => {
     const room = {
       ...AI_REVIEW,

@@ -608,6 +608,13 @@ const STATUS_LABELS: Readonly<Record<ProcessingStageStatus, string>> = {
   failed: COPY.statusFailed,
 };
 
+/** NO-488: màn lớp nơi xem đối tượng của một mã nhắc — cửa ở lớp Cửa và nội thất, phòng ở lớp Phòng; mã lạ không có. */
+function noticeLayerRoute(code: string): ((projectId: string, floorId: string) => string) | undefined {
+  if (code === 'OPENING_SIZE_IMPLAUSIBLE') return ROUTES.project.objects;
+
+  return code === 'ROOM_AREA_TEXT_MISMATCH' ? ROUTES.project.rooms : undefined;
+}
+
 /** Nhãn chip tầng khi N16 `readiness.state` là `needsReview` (FIX-P0-15). */
 const NEEDS_REVIEW_LABEL = 'Cần xem lại';
 /** Nhãn đỏ khi máy không đo được tỷ lệ tầng (N16 `scaleSource: 'project_default'`): tên chung của mọi màn. */
@@ -1553,6 +1560,28 @@ export function useProcessingScreen(options: UseProcessingScreenOptions): Proces
         ),
       ),
     ];
+    // NO-488: nhắc mức nhẹ gộp theo mã (thứ tự máy chủ giữ); đối tượng đầu tiên của tầng đầu tiên có id là đích bấm.
+    const noticeTotals = new Map<string, { count: number; target?: string }>();
+    floorStatuses.forEach((status, index) => {
+      const upload = uploadsRef.current[index];
+
+      if (status !== 'done' || upload === undefined) return;
+
+      for (const notice of extractions[index]?.readiness?.notices ?? []) {
+        const entry = noticeTotals.get(notice.code) ?? { count: 0 };
+        const first = notice.entityIds[0];
+        const layerRoute = noticeLayerRoute(notice.code);
+
+        noticeTotals.set(notice.code, {
+          count: entry.count + notice.entityIds.length,
+          ...(entry.target !== undefined
+            ? { target: entry.target }
+            : first !== undefined && layerRoute !== undefined
+              ? { target: `${layerRoute(projectId, upload.floorId)}?select=${encodeURIComponent(first)}` }
+              : {}),
+        });
+      }
+    });
     const scaleEstimated = floorStatuses.some(
       (status, index) => status === 'done' && extractions[index]?.scaleEstimated === true,
     );
@@ -1581,6 +1610,15 @@ export function useProcessingScreen(options: UseProcessingScreenOptions): Proces
       onOpenViewer3d: () => navigate(ROUTES.project.viewer(projectId)),
       ...(reviewReasons.length > 0 ? { reviewReasons } : {}),
       ...(reviewChecks.length > 0 ? { reviewChecks } : {}),
+      ...(noticeTotals.size > 0
+        ? {
+            notices: [...noticeTotals].map(([code, { count, target }]) => ({
+              code,
+              count,
+              onOpen: target !== undefined ? () => navigate(target) : goTo(ROUTES.project.walls, reviewIndex < 0 ? doneIndex : reviewIndex),
+            })),
+          }
+        : {}),
       ...(scaleEstimated ? { scaleEstimated: true as const } : {}),
       ...scaleState,
     };

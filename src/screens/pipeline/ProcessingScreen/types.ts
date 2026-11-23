@@ -160,6 +160,16 @@ export type ProcessingReviewReason =
   | 'fallbackObjectModel'
   | 'fallbackTextModel';
 
+/**
+ * Một nhắc hình học mức nhẹ (N16 `readiness.notices`, NO-488) gộp từ mọi tầng xong: mã, số đối tượng
+ * (0 khi kiểm không gắn đối tượng) và lối mở đối tượng đầu tiên ở màn lớp tương ứng.
+ */
+export interface ProcessingNoticeViewModel {
+  readonly code: string;
+  readonly count: number;
+  readonly onOpen: () => void;
+}
+
 export interface ProcessingSummaryViewModel {
   /**
    * Tường, đối tượng, kích thước, phòng, diện tích — đã định dạng sẵn (A15), ví dụ `"48 tường"`,
@@ -181,6 +191,8 @@ export interface ProcessingSummaryViewModel {
   readonly reviewReasons?: readonly ProcessingReviewReason[];
   /** Mã kiểm hình học critical (N16 `readiness.checks`) gộp từ mọi tầng xong, không lặp; vắng khi không có. */
   readonly reviewChecks?: readonly string[];
+  /** Nhắc mức nhẹ gộp từ mọi tầng xong (N16 `readiness.notices`): không đổi trạng thái, không chặn; vắng khi không có. */
+  readonly notices?: readonly ProcessingNoticeViewModel[];
   /** Tỷ lệ máy ước lượng (cửa, độ dày tường, mặc định — N16 `scaleBasis`), không đọc từ số trên bản vẽ. */
   readonly scaleEstimated?: true;
   /** R9: tên trạng thái tỷ lệ của tầng xong đầu tiên đáng chú ý (N16 `scaleState`). */

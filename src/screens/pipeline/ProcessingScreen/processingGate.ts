@@ -10,7 +10,7 @@
 
 import { SCALE_ESTIMATED_NOTE, SCALE_PROPOSED_LABEL, SCALE_STATE_VIEWS } from '@/lib/viewmodel/provisionalScale';
 
-import type { ProcessingReviewReason, ProcessingScreenProps } from './types';
+import type { ProcessingNoticeViewModel, ProcessingReviewReason, ProcessingScreenProps } from './types';
 
 export type ProcessingGateKind = 'running' | 'needs-scale' | 'needs-review' | 'ready' | 'error';
 
@@ -29,6 +29,14 @@ export interface ProcessingGateReviewRow {
   readonly sentence: string;
   /** `scale` → nút Đặt tỷ lệ; `review` → nút Sang Duyệt tầng. */
   readonly target: 'scale' | 'review';
+}
+
+/** Một dòng nhắc nhạt (NO-488): không chặn, không đổi chip; bấm tới đúng đối tượng khi có. */
+export interface ProcessingGateNoticeRow {
+  readonly key: string;
+  readonly sentence: string;
+  readonly linkLabel: string;
+  readonly onOpen: () => void;
 }
 
 export interface ProcessingGateModel {
@@ -51,6 +59,8 @@ export interface ProcessingGateModel {
   readonly warnStepIds: readonly string[];
   /** Có khi `kind` là `needs-review`: mỗi lý do một dòng. */
   readonly reviewRows?: readonly ProcessingGateReviewRow[];
+  /** Có khi `kind` là `ready` hoặc `needs-review` và máy chủ báo nhắc mức nhẹ (`readiness.notices`). */
+  readonly noticeRows?: readonly ProcessingGateNoticeRow[];
 }
 
 export const GATE_LABEL = 'Để sang Duyệt tầng';
@@ -83,6 +93,37 @@ export const GEOMETRY_CHECK_SENTENCE: Readonly<Record<string, string>> = {
   ROOM_USAGE_UNKNOWN: 'Nhiều phòng chưa rõ công năng: hãy đặt tên phòng ở bước Phòng.',
   ROTATED_PLAN: 'Bản vẽ có vẻ bị xoay, chữ đọc theo chiều dọc: hãy xoay ảnh cho chữ đọc xuôi rồi tải lại.',
 };
+
+const NOTICE_GENERIC_SENTENCE = 'Hình học có chỗ nên kiểm lại ở Duyệt tầng.';
+
+/** Câu cho từng mã nhắc mức nhẹ (N16 `readiness.notices`) theo số đối tượng; mã lạ dùng câu chung. */
+export const NOTICE_SENTENCE: Readonly<Record<string, { sentence: (count: number) => string; link: (count: number) => string }>> = {
+  OPENING_SIZE_IMPLAUSIBLE: {
+    sentence: (count) =>
+      `Có ${String(count)} cửa đi rộng bất thường (hẹp dưới 55 cm hoặc rộng trên 3,6 m): hãy xem lại bề rộng các cửa này ở lớp Cửa.`,
+    link: (count) => `Xem ${String(count)} cửa`,
+  },
+  ROOM_AREA_TEXT_MISMATCH: {
+    sentence: (count) =>
+      `Diện tích ${String(count)} phòng lệch nhiều so với số m² ghi trên bản vẽ (có thể phòng bị gộp hoặc thiếu tường ngăn): hãy xem lại ranh giới phòng.`,
+    link: (count) => `Xem ${String(count)} phòng`,
+  },
+};
+
+function noticeRowsOf(notices: readonly ProcessingNoticeViewModel[] | undefined): ProcessingGateNoticeRow[] | undefined {
+  if (notices === undefined || notices.length === 0) return undefined;
+
+  return notices.map((notice) => {
+    const known = notice.count > 0 ? NOTICE_SENTENCE[notice.code] : undefined;
+
+    return {
+      key: notice.code,
+      sentence: known?.sentence(notice.count) ?? NOTICE_GENERIC_SENTENCE,
+      linkLabel: known?.link(notice.count) ?? GO_REVIEW_LABEL,
+      onOpen: notice.onOpen,
+    };
+  });
+}
 
 /** Một dòng cho mỗi lý do; `geometrySuspect` có mã kiểm thì tách thành một dòng cho mỗi mã. */
 function reviewRowsOf(
@@ -201,6 +242,7 @@ export function deriveProcessingGate(props: ProcessingScreenProps): ProcessingGa
   const scaleNote =
     summary.scaleStateNote ?? (summary.scaleEstimated === true ? SCALE_ESTIMATED_NOTE : summary.scaleSourceNote);
   const stateLabel = summary.scaleStateLabel;
+  const noticeRows = noticeRowsOf(summary.notices);
   if (reasons.length > 0) {
     const rows = reviewRowsOf(reasons, summary.reviewChecks ?? []);
     const isScaleUnresolved = reasons.includes('scaleUnresolved');
@@ -221,6 +263,7 @@ export function deriveProcessingGate(props: ProcessingScreenProps): ProcessingGa
       ...(scaleNote !== undefined ? { scaleNote } : {}),
       isScaleOk: !isScaleUnresolved,
       reviewRows: rows,
+      ...(noticeRows !== undefined ? { noticeRows } : {}),
       // Đặt tỷ lệ đi trước; Duyệt tầng vẫn mở (lối mềm như tỷ lệ chưa kiểm, không chặn cứng).
       action: isScaleUnresolved ? calibrate : review,
       // Tỷ lệ chưa kiểm: "Sang Duyệt tầng" mở ở bước Tỷ lệ (bước đầu của Duyệt tầng), không bỏ qua nó (U28).
@@ -240,6 +283,7 @@ export function deriveProcessingGate(props: ProcessingScreenProps): ProcessingGa
         : (stateLabel ?? (scaleNote !== undefined ? 'Máy đề xuất' : SCALE_PROPOSED_LABEL)),
     ...(scaleNote !== undefined ? { scaleNote } : {}),
     isScaleOk: true,
+    ...(noticeRows !== undefined ? { noticeRows } : {}),
     action: { label: GO_REVIEW_LABEL, isForward: true, onClick: summary.onReviewWalls },
   };
 }
