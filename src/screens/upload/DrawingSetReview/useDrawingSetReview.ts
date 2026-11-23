@@ -19,7 +19,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { DrawingSet } from '@/api/schemas/drawingSet';
+import { DRAWING_SET_NAME_MAX, type DrawingSet } from '@/api/schemas/drawingSet';
 import type { HouseViewKind } from '@/api/schemas/houseProposal';
 import type { SaveState } from '@/components/feedback/SaveIndicator';
 import {
@@ -32,6 +32,7 @@ import {
   setKind,
   setNewFloorName,
   setReplace,
+  suggestedSetName,
   toDrafts,
   toViewEdits,
   type ConfirmCheck,
@@ -70,7 +71,21 @@ export interface UseDrawingSetReviewOptions {
   readonly onDisabled: () => void;
 }
 
+/** Tên bộ người duyệt gõ; chỉ gửi khi người duyệt đã sửa (gợi ý điền sẵn không tự lưu) và còn chữ sau khi cắt khoảng trắng. */
+const nameToSend = (name: string, touched: boolean): string | undefined => {
+  const text = name.trim();
+
+  return touched && text.length > 0 ? text.slice(0, DRAWING_SET_NAME_MAX) : undefined;
+};
+
 export interface UseDrawingSetReviewResult {
+  /** Ô tên bộ: điền sẵn tên đã có, hoặc gợi ý từ khung tên khi chưa có tên. */
+  readonly nameField: {
+    readonly value: string;
+    readonly isSuggestion: boolean;
+    readonly maxLength: number;
+    readonly onChange: (value: string) => void;
+  };
   readonly drafts: readonly ViewDraft[];
   /** `null` = đang đọc. */
   readonly floors: readonly ReviewFloor[] | null;
@@ -107,15 +122,29 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
   const [saveSentence, setSaveSentence] = useState<string | null>(null);
   const [dialog, setDialog] = useState<ReviewDialogState | null>(null);
 
+  const suggestion = useMemo(() => suggestedSetName(set.titleBlock, set.name), [set.name, set.titleBlock]);
+  const [nameState, setNameState] = useState<{ readonly value: string; readonly touched: boolean }>(() => ({
+    value: set.name ?? suggestion ?? '',
+    touched: false,
+  }));
+
   const draftsRef = useRef(drafts);
+  const nameRef = useRef(nameState);
+  /** Tên đã lưu thành công ở N59 (xoá sạch ô thì giữ tên này, không gửi tên rỗng). */
+  const savedNameRef = useRef<string | undefined>(undefined);
   const revisionRef = useRef(set.revision);
-  const savedRef = useRef(JSON.stringify(toViewEdits(drafts)));
+  const payloadOf = useCallback((): { readonly edits: ReturnType<typeof toViewEdits>; readonly name: string | undefined } => ({
+    edits: toViewEdits(draftsRef.current),
+    name: nameToSend(nameRef.current.value, nameRef.current.touched) ?? savedNameRef.current,
+  }), []);
+  const savedRef = useRef(JSON.stringify({ edits: toViewEdits(drafts), name: undefined }));
   const inFlightRef = useRef<Promise<boolean> | null>(null);
   const mountedRef = useRef(true);
   const callbacksRef = useRef(options);
 
   useEffect(() => {
     draftsRef.current = drafts;
+    nameRef.current = nameState;
     callbacksRef.current = options;
   });
 
@@ -145,8 +174,8 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
 
   const runSave = useCallback(async (): Promise<boolean> => {
     for (;;) {
-      const edits = toViewEdits(draftsRef.current);
-      const key = JSON.stringify(edits);
+      const payload = payloadOf();
+      const key = JSON.stringify(payload);
 
       if (key === savedRef.current) {
         safe(() => {
@@ -163,7 +192,8 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
         projectId,
         setId: set.id,
         baseVersion: revisionRef.current,
-        views: edits,
+        views: payload.edits,
+        ...(payload.name !== undefined ? { name: payload.name } : {}),
       });
 
       if (!result.ok) {
@@ -182,8 +212,9 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
       }
       revisionRef.current = result.data.revision;
       savedRef.current = key;
+      savedNameRef.current = payload.name;
     }
-  }, [gateway.sets, projectId, safe, set.id]);
+  }, [gateway.sets, payloadOf, projectId, safe, set.id]);
 
   const flush = useCallback((): Promise<boolean> => {
     inFlightRef.current ??= runSave().finally(() => {
@@ -194,7 +225,9 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
   }, [runSave]);
 
   useEffect(() => {
-    if (JSON.stringify(toViewEdits(drafts)) === savedRef.current) return undefined;
+    if (JSON.stringify({ edits: toViewEdits(drafts), name: nameToSend(nameState.value, nameState.touched) ?? savedNameRef.current }) === savedRef.current) {
+      return undefined;
+    }
     setSaveState('pending');
     const timer = setTimeout(() => {
       void flush();
@@ -203,7 +236,7 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
     return () => {
       clearTimeout(timer);
     };
-  }, [drafts, flush, saveDelayMs]);
+  }, [drafts, flush, nameState, saveDelayMs]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -211,9 +244,9 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
     return () => {
       mountedRef.current = false;
       // Rời màn: lưu nốt phần chưa gửi (không đợi, không còn ai nghe kết quả).
-      if (JSON.stringify(toViewEdits(draftsRef.current)) !== savedRef.current) void flush();
+      if (JSON.stringify(payloadOf()) !== savedRef.current) void flush();
     };
-  }, [flush]);
+  }, [flush, payloadOf]);
 
   const retrySave = useCallback(() => {
     void flush();
@@ -251,6 +284,10 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
     }),
     [edit, gateway],
   );
+
+  const onNameChange = useCallback((value: string) => {
+    setNameState({ value: value.slice(0, DRAWING_SET_NAME_MAX), touched: true });
+  }, []);
 
   const check = useMemo(() => checkConfirm(drafts, floors ?? []), [drafts, floors]);
 
@@ -328,6 +365,7 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
   }, [dialog, fail, flush, gateway, projectId, safe, set.id]);
 
   return {
+    nameField: { value: nameState.value, maxLength: DRAWING_SET_NAME_MAX, isSuggestion: !nameState.touched && set.name === undefined && suggestion !== null, onChange: onNameChange },
     drafts,
     floors,
     floorsError,

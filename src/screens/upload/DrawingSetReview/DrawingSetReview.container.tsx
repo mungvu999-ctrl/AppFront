@@ -129,7 +129,7 @@ function ReviewStepBody({ flow, gateway, projectId, set }: ReviewStepBodyProps) 
       rejectedFiles={rejected}
       saveSentence={review.saveSentence}
       saveState={review.saveState}
-      setName={set.name}
+      nameField={review.nameField}
       titleBlock={set.titleBlock}
     />
   );

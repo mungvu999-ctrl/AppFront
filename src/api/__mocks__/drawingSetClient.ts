@@ -16,7 +16,7 @@
  */
 
 import type { DrawingSetClient } from '@/api/drawingSetClient';
-import { DRAWING_SET_ERROR_CODES, DRAWING_SET_LIMITS } from '@/api/schemas/drawingSet';
+import { DRAWING_SET_ERROR_CODES, DRAWING_SET_LIMITS, DRAWING_SET_NAME_MAX } from '@/api/schemas/drawingSet';
 import type {
   DrawingSet,
   DrawingSetFile,
@@ -53,7 +53,7 @@ interface MockFile extends DrawingSetFile {
 interface MockSet {
   readonly id: string;
   readonly projectId: string;
-  readonly name?: string;
+  name?: string;
   status: DrawingSet['status'];
   revision: number;
   errorCode?: string;
@@ -285,7 +285,7 @@ export function createMockDrawingSetClient(options: MockDrawingSetOptions = {}):
       return { ok: true, data: { items } };
     },
 
-    replaceViews: async ({ baseVersion, projectId, setId, views }) => {
+    replaceViews: async ({ baseVersion, name, projectId, setId, views }) => {
       const blocked = off();
 
       if (blocked !== null) return blocked;
@@ -296,6 +296,9 @@ export function createMockDrawingSetClient(options: MockDrawingSetOptions = {}):
       if (set.status !== 'review') return wireError(409, DRAWING_SET_ERROR_CODES.notReady);
       if (baseVersion !== set.revision) return wireError(409, 'VERSION_CONFLICT');
       if (views.length > DRAWING_SET_LIMITS.maxViews) return wireError(422, 'VALIDATION', { field: 'body.views' });
+      if (name !== undefined && (name.trim().length === 0 || name.length > DRAWING_SET_NAME_MAX)) {
+        return wireError(422, 'VALIDATION', { field: 'body.name' });
+      }
       const byId = new Map(set.views.map((view) => [view.id, view]));
       const next: DrawingSetView[] = [];
 
@@ -314,6 +317,7 @@ export function createMockDrawingSetClient(options: MockDrawingSetOptions = {}):
         if (view.source === 'ai' && !next.some((item) => item.id === view.id)) next.push({ ...view, excluded: true });
       }
       set.views = next;
+      if (name !== undefined) set.name = name.trim();
       set.revision += 1;
 
       return { ok: true, data: viewOf(set) };

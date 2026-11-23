@@ -12,6 +12,9 @@ import { HOUSE_QUESTION_CODES, HOUSE_STOREY_LABELS, HOUSE_VIEW_KINDS } from './h
  * Máy chỉ đề xuất: không giá trị nào ở đây tự tạo tầng (luật A5); chỉ N60 tạo.
  */
 
+/** Trần độ dài tên bộ (BE `NAME_MAX`, dùng chung N54 và N59). */
+export const DRAWING_SET_NAME_MAX = 120;
+
 export const DRAWING_SET_STATUSES = ['receiving', 'analyzing', 'review', 'confirmed', 'failed'] as const;
 export type DrawingSetStatus = (typeof DRAWING_SET_STATUSES)[number];
 
@@ -194,7 +197,13 @@ export type ViewEdit = z.infer<typeof ViewEditSchema>;
 
 /** N59: thay CẢ danh sách hình; `baseVersion` = `revision` người duyệt đã thấy (thiếu → 428). */
 export const ReplaceViewsSchema = VersionedWriteSchema(
-  z.object({ views: z.array(ViewEditSchema).max(DRAWING_SET_LIMITS.maxViews) }).strict(),
+  z
+    .object({
+      views: z.array(ViewEditSchema).max(DRAWING_SET_LIMITS.maxViews),
+      /** Đổi tên bộ (K-65): đã trim, 1–120 ký tự như N54; vắng = giữ tên. */
+      name: z.string().trim().min(1).max(DRAWING_SET_NAME_MAX).optional(),
+    })
+    .strict(),
 );
 export type ReplaceViews = z.infer<typeof ReplaceViewsSchema>;
 
