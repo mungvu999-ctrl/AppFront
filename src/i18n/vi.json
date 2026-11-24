@@ -3205,7 +3205,8 @@
       "copyIdle": "Sao chép liên kết",
       "copyDone": "Đã sao chép liên kết",
       "forbiddenReason": "Chỉ quản trị viên và kỹ sư của dự án tạo được liên kết chia sẻ; hãy nhờ một người trong hai vai đó tạo giúp",
-      "staleNotice": "Các liên kết đã tạo vẫn mở theo tuỳ chọn nhúng cũ; tạo một liên kết mới để dùng tuỳ chọn vừa đổi"
+      "staleNotice": "Các liên kết đã tạo vẫn mở theo tuỳ chọn nhúng cũ; tạo một liên kết mới để dùng tuỳ chọn vừa đổi",
+      "scopeNote": "Người có liên kết xem được mọi tầng của dự án. Địa chỉ dự án không hiển thị trên trang chia sẻ."
     },
     "embed": {
       "sectionLabel": "Nhúng vào trang khác",

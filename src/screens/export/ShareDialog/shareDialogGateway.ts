@@ -219,6 +219,10 @@ export function toExpiryChoice(id: string): ShareExpiryChoice {
 /** U03: câu nhắc khi có tầng có bản vẽ mà chưa xác nhận tỷ lệ — diện tích trên trang chia sẻ chưa đúng. */
 export const SHARE_SCALE_NOTICE = 'Chưa đặt tỷ lệ: diện tích trên trang chia sẻ là số tạm.';
 
+/** L6-N06: phạm vi thật của một liên kết — không lọc theo tầng; địa chỉ dự án không đưa ra trang chia sẻ. */
+export const SHARE_SCOPE_NOTE =
+  'Người có liên kết xem được mọi tầng của dự án. Địa chỉ dự án không hiển thị trên trang chia sẻ.';
+
 /** Có tầng nào có bản vẽ mà tỷ lệ còn là số đoán (N16) hoặc chưa đặt? Cùng luật với màn Xuất (`reviewReasonsOf`). */
 export function hasUnconfirmedScale(
   levels: readonly Level[],
