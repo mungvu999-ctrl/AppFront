@@ -110,8 +110,8 @@ export const rectInsidePolygon = (r: Rect, outline: readonly Point[], insetMm: n
   // Nhỏ hơn 0,01 mm để hình chạm đúng mép lùi không bị tia quét xử ngẫu nhiên.
   const grown: Rect = { ...r, w: r.w + 2 * insetMm - 0.02, d: r.d + 2 * insetMm - 0.02 };
   const corners = rectCorners(grown);
-  const outlineMm = outline.map(toPointMm);
-  if (!corners.every((corner) => outlineContains(outlineMm, toPointMm(corner)))) return false;
+  // Đã kiểm hữu hạn ở trên: dùng thẳng thay `toPointMm` (chép cùng số), khỏi cấp phát mỗi lần thử (L7-07 B).
+  if (!corners.every((c) => outlineContains(outline as Parameters<typeof outlineContains>[0], c as Parameters<typeof outlineContains>[1]))) return false;
   const [ex, ey] = axesOf(grown);
   const strictlyInside = (p: Point): boolean => {
     const v = { x: p.x - grown.cx, y: p.y - grown.cy };

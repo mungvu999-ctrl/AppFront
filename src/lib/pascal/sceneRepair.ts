@@ -31,9 +31,11 @@ import { span } from '@/lib/perf/span';
 import { outlineContains } from '@/domain/rooms/area';
 import type { Furniture, FurnitureId, Point, Room, SpatialGraph } from '@/domain/spatial/types';
 import { degrees } from '@/domain/units/types';
-import { FURNITURE_KIND_LABELS, toPointMm } from '@/lib/commands/business/shared';
+import type { PointMm } from '@/domain/units/compare';
+import { FURNITURE_KIND_LABELS, isFinitePoint, toPointMm } from '@/lib/commands/business/shared';
 
 import { orientDetectedFurniture } from './orientDetected';
+import { INCREMENTAL_RULES_FLAG, memoSearch, offsetsWithin, reachOf, rectInReach, roomInReach, searchKeyOf, slideOffsets, type Placed, type SearchScope } from './repairSearch';
 import {
   cabinetRun,
   doorSwingRects,
@@ -166,27 +168,13 @@ const centroidOf = (room: Room): Point => ({
   x: room.outline.reduce((s, p) => s + p.x, 0) / room.outline.length,
   y: room.outline.reduce((s, p) => s + p.y, 0) / room.outline.length,
 });
+/** Số hữu hạn thì `toPointMm` chỉ chép lại cùng số: dùng thẳng (không cấp phát mỗi lần thử, L7-07 B); còn lại ném như cũ. */
 const containsPoint = (room: Room, p: Point): boolean =>
-  room.outline.length >= 3 && outlineContains(room.outline.map(toPointMm), toPointMm(p));
+  room.outline.length >= 3 &&
+  (isFinitePoint(p) && room.outline.every(isFinitePoint)
+    ? outlineContains(room.outline as readonly PointMm[], p as PointMm)
+    : outlineContains(room.outline.map(toPointMm), toPointMm(p)));
 
-/** Lệch lưới trong bán kính `max`, gần trước (hoà: theo góc, cố định) — dùng chung cho mọi lần dò. */
-const offsetsCache = new Map<number, readonly Point[]>();
-const offsetsWithin = (max: number): readonly Point[] => {
-  const cached = offsetsCache.get(max);
-  if (cached !== undefined) return cached;
-  const n = Math.floor(max / STEP_MM);
-  const out: Point[] = [];
-  for (let i = -n; i <= n; i += 1)
-    for (let j = -n; j <= n; j += 1) if (Math.hypot(i, j) * STEP_MM <= max) out.push({ x: i * STEP_MM, y: j * STEP_MM });
-  out.sort((p, q) => Math.hypot(p.x, p.y) - Math.hypot(q.x, q.y) || Math.atan2(p.y, p.x) - Math.atan2(q.y, q.x));
-  offsetsCache.set(max, out);
-  return out;
-};
-
-interface Placed {
-  readonly centre: Point;
-  readonly rotationDeg: number;
-}
 
 interface Step {
   readonly id: FurnitureId;
@@ -266,14 +254,6 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[], off: Readonl
     const back = { ...r, cx: r.cx + Math.sin(t) * BACK_GAP_MM, cy: r.cy - Math.cos(t) * BACK_GAP_MM };
     return levelOf(f.levelId).walls.some((w) => rectsOverlap(back, w));
   };
-  /** Lệch trượt dọc tường (trục x riêng, gần trước, + trước −) tới `max`. */
-  const slideOffsets = (f: Furniture, max: number): Point[] => {
-    const t = (rectOfFurniture(f).rotationDeg * Math.PI) / 180;
-    const out: Point[] = [];
-    for (let k = 1; k * STEP_MM <= max; k += 1)
-      for (const s of [1, -1]) out.push({ x: Math.cos(t) * s * k * STEP_MM, y: Math.sin(t) * s * k * STEP_MM });
-    return out;
-  };
 
   const levelCache = new Map<string, { walls: Rect[]; swings: Rect[] }>();
   const levelOf = (levelId: Furniture['levelId']) => {
@@ -333,13 +313,13 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[], off: Readonl
    * Chỗ hợp lệ như `sceneFurnish` (lùi 100 mm, khe 50 mm, không chạm vùng mở cửa/thân tường). `relaxed`: đúng ngưỡng
    * của bộ báo lỗi (`scenePlacementIssues`: lấn ≤ 50 mm) — phương án cuối trước khi phải ẩn món (phòng nhỏ vừa khít giường).
    */
-  const valid = (rect: Rect, f: Furniture, room: Room, obstacles: readonly Rect[], relaxed = false): boolean => {
-    const { walls, swings } = levelOf(f.levelId);
+  const valid = (rect: Rect, f: Furniture, room: Room, obstacles: readonly Rect[], relaxed = false, near?: SearchScope): boolean => {
+    const { walls, swings } = near ?? levelOf(f.levelId);
     const centre = { x: rect.cx, y: rect.cy };
     const slack = relaxed ? -SLACK_MM : 0;
     return (
       rectInsidePolygon(rect, room.outline, relaxed ? 0 : INSET_MM) &&
-      !graph.rooms.some((r) => r.id !== room.id && r.levelId === room.levelId && containsPoint(r, centre)) &&
+      !(near?.rooms ?? graph.rooms).some((r) => r.id !== room.id && r.levelId === room.levelId && containsPoint(r, centre)) &&
       !obstacles.some((o) => rectsOverlap(rect, o, relaxed ? 0 : GAP_MM)) &&
       !swings.some((s) => rectsOverlap(rect, s, slack)) &&
       !walls.some((w) => rectsOverlap(rect, w, slack))
@@ -348,25 +328,34 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[], off: Readonl
 
   /**
    * Chỗ hợp lệ gần nhất giữ nguyên góc, trong bán kính `max`: đủ khe với mọi đồ trước, rồi chỉ với món ưu tiên hơn,
-   * rồi ngưỡng nới (`valid` relaxed). Món bám tường đang bám tường: chỗ mới cũng phải bám tường (bất biến).
+   * rồi ngưỡng nới (`valid` relaxed). Món bám tường đang bám tường: chỗ mới cũng phải bám tường (bất biến). `slide`: chỉ
+   * trượt dọc tường. L7-07 B: chỉ xét danh sách trong tầm và nhớ theo chữ ký (`repairSearch.ts`).
    */
-  const nearestShift = (
-    f: Furniture,
-    room: Room,
-    max: number,
-    rotationDeg = rectOfFurniture(f).rotationDeg,
-    offsets: readonly Point[] = offsetsWithin(max),
-  ): Placed | null => {
+  const nearestShift = (f: Furniture, room: Room, max: number, rotationDeg = rectOfFurniture(f).rotationDeg, slide = false): Placed | null => {
     const keepWall = hugsWall(f) && backOnWall(f);
-    for (const [strongerOnly, relaxed] of [[false, false], [true, false], [true, true]] as const) {
-      const obstacles = obstaclesOf(f, strongerOnly);
-      for (const o of offsets) {
-        const at = { centre: { x: f.centre.x + o.x, y: f.centre.y + o.y }, rotationDeg };
-        const rect = rectAt(f, at);
-        if (valid(rect, f, room, obstacles, relaxed) && (!keepWall || backOnWall(f, rect))) return at;
+    const offsets = slide ? slideOffsets(f, max, STEP_MM) : offsetsWithin(max, STEP_MM);
+    const search = (near?: SearchScope): Placed | null => {
+      for (const [strongerOnly, relaxed] of [[false, false], [true, false], [true, true]] as const) {
+        const obstacles = near === undefined ? obstaclesOf(f, strongerOnly) : strongerOnly ? near.stronger : near.all;
+        for (const o of offsets) {
+          const at = { centre: { x: f.centre.x + o.x, y: f.centre.y + o.y }, rotationDeg };
+          const rect = rectAt(f, at);
+          if (valid(rect, f, room, obstacles, relaxed, near) && (!keepWall || backOnWall(f, rect))) return at;
+        }
       }
-    }
-    return null;
+      return null;
+    };
+    if (off.has(INCREMENTAL_RULES_FLAG)) return search();
+    const inReach = rectInReach(f.centre, reachOf(rectOfFurniture(f), max, BACK_GAP_MM, GAP_MM));
+    const { walls, swings } = levelOf(f.levelId);
+    const near: SearchScope = {
+      walls: walls.filter(inReach),
+      swings: swings.filter(inReach),
+      rooms: graph.rooms.filter((r) => r.id !== room.id && r.levelId === room.levelId && roomInReach(f.centre, max)(r)),
+      all: obstaclesOf(f).filter(inReach),
+      stronger: obstaclesOf(f, true).filter(inReach),
+    };
+    return memoSearch(searchKeyOf(f, room, { max, rotationDeg, slide, keepWall }, near), () => search(near));
   };
 
   /** Chỗ áp lưng vào đoạn có tường thật của phòng, mặt quay vào phòng; gần `near` nhất trước. */
@@ -629,7 +618,7 @@ const runRules = (graph: SpatialGraph, start: readonly Furniture[], off: Readonl
       const what = `${capital(labelOf(yield_))} chồng lên ${labelOf(keep)}`;
       // Món bám tường: chỉ trượt dọc tường đang bám, không đẩy ra giữa phòng; không có chỗ thì giữ nguyên (lỗi trên chip).
       if (hugsWall(yield_)) {
-        const slid = backOnWall(yield_) ? nearestShift(yield_, room, MAX_SHIFT_MM, undefined, slideOffsets(yield_, MAX_SHIFT_MM)) : null;
+        const slid = backOnWall(yield_) ? nearestShift(yield_, room, MAX_SHIFT_MM, undefined, true) : null;
         if (slid !== null)
           commit({ id: yield_.id, rule: 'overlap', reasonVi: `${what}: trượt dọc tường ${mm(dist(slid.centre, yield_.centre))} ra chỗ trống.`, after: movedTo(yield_, slid, room.id) });
         continue;
