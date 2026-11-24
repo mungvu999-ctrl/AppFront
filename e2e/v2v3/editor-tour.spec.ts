@@ -11,7 +11,7 @@ import {
   TOUR_TITLES,
 } from '../fixtures/tour';
 
-import { DESKTOP_VIEWPORT, VIEWER_PROJECT_ID, openViewer } from './viewer-helpers';
+import { DESKTOP_VIEWPORT, VIEWER_PROJECT_ID } from './viewer-helpers';
 
 /**
  * EditorTour — lớp hướng dẫn phủ trên ba màn chủ: duyệt tường
@@ -238,21 +238,4 @@ test('màn xuất (cổng nạp kho): nút xuất vừa có là tour tự hiện
     timeout: TOUR_SELF_APPEAR_TIMEOUT_MS,
   });
   await expect(tourAnnouncement(page, `Bước 1 trên 1: ${TOUR_TITLES.exportResult}`)).toBeAttached();
-});
-
-/*
- * B-V2-01, phần của vỏ 3D (đã sửa): bước `view3d` chỉ có neo DOM, và trước bản sửa
- * thẻ không hiện cho tới một `resize` hoặc cú bấm đầu tiên — tức bật lên GIỮA lúc
- * người dùng đang làm việc khác. Đã kiểm đỏ trên mã chưa nghe DOM.
- */
-test('vỏ 3D: tour tự hiện đúng một bước "Đổi sang khung nhìn khối" khi người dùng lần đầu mở, không cần sự kiện cửa sổ nào', async ({
-  page,
-}) => {
-  test.skip(true, 'Viewer3D cũ không còn route từ 29eba219: /3d chuyển sang editor3d.html, tour và tấm phụ của vỏ cũ không còn; tour trang Pascal kiểm ở pascal-tour.spec.ts.');
-  await openViewer(page);
-
-  await expect(tourCard(page, TOUR_TITLES.view3d)).toBeVisible({
-    timeout: TOUR_SELF_APPEAR_TIMEOUT_MS,
-  });
-  await expect(tourAnnouncement(page, `Bước 1 trên 1: ${TOUR_TITLES.view3d}`)).toBeAttached();
 });

@@ -35,7 +35,7 @@ import { ROUTES, pathOf } from '../../e2e/fixtures/routes';
 import { PASSWORD_LABEL } from '../../e2e/fixtures/session';
 import { BE_SHORT_PASSWORD, signInAdmin } from './support/auth';
 import { attachJson, captureEvidence } from './support/evidence';
-import { PHONE_OUT_OF_SCOPE, mockInvitationPreview } from './support/p01/recovery';
+import { PHONE_OUT_OF_SCOPE, isPhoneOutOfScope, mockInvitationPreview } from './support/p01/recovery';
 
 /** `src/api/endpoints.ts:86-91` under the `/api` base; logout = `src/lib/auth/session.ts:42,200`. */
 const INVITATION_ACCEPT_API = '/api/auth/invitations/accept';
@@ -366,8 +366,9 @@ for (const screen of [INVITE, RESET]) {
     test(`${id} · 375×812: form fits, no horizontal scroll, submit in view`, async ({ page }) => {
       // RecoveryShell.tsx:22,25: no breakpoint variants (`p-12`, `w-[360px] max-w-full`) — same layout,
       // narrower column. Asserted: nothing overflows the phone width.
-      test.skip(true, PHONE_OUT_OF_SCOPE);
-      await page.setViewportSize({ width: 375, height: 812 });
+      const phone = { width: 375, height: 812 };
+      test.skip(isPhoneOutOfScope(phone), PHONE_OUT_OF_SCOPE);
+      await page.setViewportSize(phone);
       await openForm(page, screen, fakeToken(`${slug}-375`));
 
       const overflow = await page.evaluate(

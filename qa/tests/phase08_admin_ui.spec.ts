@@ -34,6 +34,7 @@ import { ensureAdminSession, readAdminCredentials } from './support/auth';
 import { TEST_DATA_PREFIX, testEmail } from './support/evidence';
 import { deleteMails, waitForMail } from './support/mailpit';
 import { typeHeight } from './support/numeric-field';
+import { skipWithReason } from './support/skip';
 import { ADMIN_STORAGE_STATE_FILE } from './support/state';
 import { verifyUi } from './support/ui-verify';
 
@@ -359,7 +360,7 @@ async function openRegistryWhere(page: Page, found: (page: Page) => Locator, why
     await selectFamily(page, family);
     if ((await found(page).count()) > 0) return found(page).first();
   }
-  test.skip(true, why);
+  skipWithReason(why);
   throw new Error('unreachable');
 }
 

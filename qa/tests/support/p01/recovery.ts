@@ -52,3 +52,14 @@ export async function skipUnlessProdBuild(request: APIRequestContext): Promise<v
 
 /** Owner decision (2026-10): the web app is desktop + tablet only — QA 1920/1440/1024/768, no 375 phone rows. */
 export const PHONE_OUT_OF_SCOPE = 'out of scope: web is desktop + tablet only (1920/1440/1024/768), no 375×812 rows';
+
+/** Below this width a viewport is a phone (the app's `sm` breakpoint). */
+export const PHONE_MAX_WIDTH = 640;
+
+/** Flip to `true` when the owner puts phone rows back in scope: every phone-viewport skip below then lifts. */
+export const PHONE_ROWS_IN_SCOPE = false;
+
+/** True when `viewport` is a phone width and phone rows are out of scope — use as `test.skip(<this>, PHONE_OUT_OF_SCOPE)`. */
+export function isPhoneOutOfScope(viewport: { width: number } | null | undefined): boolean {
+  return !PHONE_ROWS_IN_SCOPE && viewport !== null && viewport !== undefined && viewport.width < PHONE_MAX_WIDTH;
+}

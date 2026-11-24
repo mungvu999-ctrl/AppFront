@@ -69,6 +69,7 @@ import { readAdminCredentials, signInAdmin } from './support/auth';
 import { createPipelineDrawingProject, deleteSeededProject, type SeededDrawing } from './support/drawingSeed';
 import { captureEvidence } from './support/evidence';
 import { createQcProject, deleteProject, layerStatus, type LayerApi, type SeededFloor } from './support/layerSeed';
+import { skipWithReason } from './support/skip';
 import { readState, updateState } from './support/state';
 import { flush } from './support/p04/P5';
 
@@ -249,7 +250,7 @@ async function useWorkFloor(): Promise<void> {
   const state = readState();
   const work = { projectId: state.project.projectId ?? '', floorId: state.floors.workFloorId ?? '' };
   if (!state.checkpoints.pipelineComplete || work.projectId === '' || work.floorId === '') {
-    test.skip(true, 'Environment: CP-5 not recorded by Phase 3 (checkpoints.pipelineComplete / work floor id missing)');
+    skipWithReason('Environment: CP-5 not recorded by Phase 3 (checkpoints.pipelineComplete / work floor id missing)');
     return;
   }
   workFloorStatus ??= layerStatus(layerApi(), work.projectId, work.floorId);
@@ -859,7 +860,7 @@ test.describe('CP-6 on the CP-5 work floor', () => {
 
     if (target === undefined || typeof target.id !== 'string') {
       await captureEvidence(page, '16_walls_cp6.png');
-      test.skip(true, 'data-dependent: every wall of the CP-5 work floor is already approved');
+      skipWithReason('data-dependent: every wall of the CP-5 work floor is already approved');
       return;
     }
     const code = wallCodeById.get(target.id);
@@ -1336,7 +1337,7 @@ test.describe('SCR-22 Overlay Comparison', () => {
       // `OverlayComparisonToolbar.tsx`: a disabled mode prints "<mode> — <reason>".
       await expect(page.getByText(/^Trượt — /u)).toBeVisible();
       await captureEvidence(page, '22_overlay_swipe.png');
-      test.skip(true, 'data-dependent: swipe mode disabled for this floor; reason asserted');
+      skipWithReason('data-dependent: swipe mode disabled for this floor; reason asserted');
       return;
     }
 
