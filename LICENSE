@@ -1,0 +1,17 @@
+DỰ THẢO — CHỜ CHỦ DỰ ÁN DUYỆT CÂU CHỮ (xoá dòng này khi đã duyệt; không phải ý kiến pháp lý)
+
+Copyright (c) 2026 [CHỦ DỰ ÁN — điền tên cá nhân/pháp nhân]. All rights reserved.
+Bản quyền (c) 2026 [CHỦ DỰ ÁN — điền tên cá nhân/pháp nhân]. Bảo lưu mọi quyền.
+
+Mã nguồn và tài liệu trong kho này được công bố để XEM và ĐÁNH GIÁ HỌC THUẬT (đồ án) mà thôi.
+Source code and documents in this repository are made available for viewing and academic evaluation only.
+
+Không có giấy phép nào được cấp ngoài mục đích đó. Khi chưa có văn bản cho phép của chủ sở hữu, không được
+sao chép, sửa đổi, phân phối, cung cấp dịch vụ qua mạng, hay dùng cho mục đích thương mại.
+No licence is granted beyond that purpose. Without written permission from the owner, you may not copy, modify,
+distribute, offer as a network service, or use it commercially.
+
+Thành phần của bên thứ ba (mã vendor, mô hình, bộ dữ liệu, tài sản) giữ giấy phép riêng của chúng và KHÔNG nằm
+trong phạm vi tệp này; xem tệp THIRD-PARTY-LICENSES.md và các tệp LICENSE/LICENSES trong thư mục tương ứng.
+Third-party components (vendored code, models, datasets, assets) remain under their own licences and are NOT
+covered by this file; see THIRD-PARTY-LICENSES.md and the LICENSE/LICENSES files in the relevant directories.
