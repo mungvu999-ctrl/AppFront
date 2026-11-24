@@ -47,11 +47,10 @@ const mobileOf = async (graph: SpatialGraph): Promise<PascalScene> => {
     onPick: noop,
     onMeasure: noop,
     onReady: noop,
-    onFailure: (e: unknown) => console.error('DEBUG-L707B mobile onFailure', e),
+    onFailure: noop,
   } as never);
-  const t0 = performance.now();
-  await vi.waitFor(() => expect(mobileScene).not.toBeNull(), { timeout: 10000 });
-  console.error('DEBUG-L707B mobile ms', Math.round(performance.now() - t0));
+  // Lần đầu gồm cả import động trình xem di động: CI (Node 20 + độ phủ) đo 1043 ms, sát mặc định 1 s.
+  await vi.waitFor(() => expect(mobileScene).not.toBeNull(), { timeout: 5000 });
 
   return mobileScene as unknown as PascalScene;
 };
