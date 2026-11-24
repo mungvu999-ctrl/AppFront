@@ -72,12 +72,13 @@ import type { ProjectRole } from '@/types/project';
  * The expiries offered, as a closed list rather than a date picker.
  *
  * A date picker on a share sheet asks somebody to make a decision they have no
- * information for. Four durations and "no expiry" cover what people actually
+ * information for. Four durations cover what people actually
  * mean — a day for a question, a week for a review round, a month for a
  * handover — and every one of them is inside the ninety-day ceiling the lib
- * enforces, so this list cannot produce a request the validator rejects.
+ * and the server enforce, so this list cannot produce a request either rejects.
+ * There is no "no expiry" (L6-N05): the server gives every new link a hard end.
  */
-export const SHARE_EXPIRY_CHOICES = ['1d', '7d', '30d', '90d', 'never'] as const;
+export const SHARE_EXPIRY_CHOICES = ['1d', '7d', '30d', '90d'] as const;
 
 /** One of the offered expiries. */
 export type ShareExpiryChoice = (typeof SHARE_EXPIRY_CHOICES)[number];
@@ -88,23 +89,19 @@ export const SHARE_EXPIRY_LABELS: Readonly<Record<ShareExpiryChoice, string>> = 
   '7d': 'Bảy ngày',
   '30d': 'Ba mươi ngày',
   '90d': 'Chín mươi ngày',
-  never: 'Không đặt hạn',
 };
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-const EXPIRY_DAYS: Readonly<Record<ShareExpiryChoice, number | null>> = {
+const EXPIRY_DAYS: Readonly<Record<ShareExpiryChoice, number>> = {
   '1d': 1,
   '7d': 7,
   '30d': 30,
   '90d': 90,
-  never: null,
 };
 
-function expiryDateFor(choice: ShareExpiryChoice, now: Date): Date | null {
-  const days = EXPIRY_DAYS[choice];
-
-  return days === null ? null : new Date(now.getTime() + days * MS_PER_DAY);
+function expiryDateFor(choice: ShareExpiryChoice, now: Date): Date {
+  return new Date(now.getTime() + EXPIRY_DAYS[choice] * MS_PER_DAY);
 }
 
 /* -------------------------------------------------------------------------- */

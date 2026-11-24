@@ -103,9 +103,26 @@ function schedule() {
   onIdle(pump)
 }
 
+/**
+ * The page's first load (AppFront `src/pascal-page/realism/warm.ts`) sets `globalThis.__pascalBvhHold`
+ * while shader builds are still queued: background trees wait so the builds get the main thread
+ * (L7-04, 2026-11-24: 0.6–0.85 s of tree builds ran inside the load window). Rays stay exact meanwhile
+ * (stock raycast, or a tree built on the ray as above).
+ */
+const HOLD_POLL_MS = 250
+const held = () => (globalThis as { __pascalBvhHold?: boolean }).__pascalBvhHold === true
+
 /** One geometry per slot at least (a tree cannot be split), more while the idle slot has time left. */
 function pump(deadline: Deadline) {
   scheduled = false
+  if (held()) {
+    scheduled = true
+    setTimeout(() => {
+      scheduled = false
+      schedule()
+    }, HOLD_POLL_MS)
+    return
+  }
   let first = true
   for (const g of pending) {
     if (!first && deadline.timeRemaining() < 4) break

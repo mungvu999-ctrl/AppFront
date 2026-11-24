@@ -122,13 +122,18 @@ function link(overrides: Partial<ShareLink> = {}): ShareLink {
   };
 }
 
-function httpError(kind: HttpError['kind'], status?: number): HttpError {
+function httpError(
+  kind: HttpError['kind'],
+  status?: number,
+  wire?: { readonly code: string; readonly field?: string },
+): HttpError {
   return {
     kind,
     requestId: 'req-1',
     retryable: false,
-    raw: null,
+    raw: wire === undefined ? null : { ...wire, requestId: 'req-1' },
     ...(status !== undefined ? { status } : {}),
+    ...(wire !== undefined ? { code: wire.code } : {}),
   };
 }
 
@@ -696,8 +701,20 @@ describe('createShareLink', () => {
     const cases: readonly [HttpError, string][] = [
       [httpError('network'), 'Không kết nối được máy chủ; liên kết chia sẻ chưa thay đổi'],
       [httpError('http', 403), 'Tài khoản này không có quyền chia sẻ dự án'],
-      [httpError('http', 429), 'Tạo liên kết quá nhanh; chờ một lát rồi thử lại'],
+      [httpError('http', 429), 'Tạo liên kết quá nhanh (tối đa 20 lượt mỗi 10 phút); chờ một lát rồi thử lại'],
       [httpError('http', 422), 'Máy chủ không chấp nhận hạn dùng hoặc mật khẩu này'],
+      [
+        httpError('http', 422, { code: 'SHARE_LINK_LIMIT_REACHED' }),
+        'Dự án đã có 50 liên kết đang dùng; hãy thu hồi bớt một liên kết rồi tạo lại',
+      ],
+      [
+        httpError('http', 422, { code: 'VALIDATION', field: 'expiresAt' }),
+        'Hạn dùng phải sau thời điểm hiện tại và không quá 90 ngày',
+      ],
+      [
+        httpError('http', 422, { code: 'VALIDATION', field: 'permission' }),
+        'Liên kết mới chỉ có quyền xem',
+      ],
       [httpError('http', 500), 'Máy chủ từ chối yêu cầu chia sẻ'],
     ];
 

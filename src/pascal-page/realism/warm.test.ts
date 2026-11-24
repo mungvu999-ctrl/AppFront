@@ -341,6 +341,27 @@ describe('thứ tự dựng (build-order)', () => {
     endFirstLoad();
   });
 
+  it('L7-04: lần nạp đầu giữ hàng BVH nền, nhả khi nhãn gỡ hoặc tới mốc', () => {
+    vi.useFakeTimers();
+    try {
+      const held = () => (globalThis as { __pascalBvhHold?: boolean }).__pascalBvhHold;
+      endFirstLoad();
+      expect(held()).toBe(false);
+      const now = performance.now();
+      beginFirstLoad(now);
+      expect(held()).toBe(true);
+      endFirstLoad(); // nhãn gỡ
+      expect(held()).toBe(false);
+      beginFirstLoad(performance.now() + 2 * LOAD_CAP_MS); // lần nạp sau (mốc mới)
+      expect(held()).toBe(true);
+      vi.advanceTimersByTime(3 * LOAD_CAP_MS); // renderer gỡ giữa chừng: không ai gọi endFirstLoad
+      expect(held()).toBe(false);
+    } finally {
+      endFirstLoad();
+      vi.useRealTimers();
+    }
+  });
+
   it('screenSize: bán kính / khoảng cách, 0 khi thiếu dữ liệu', () => {
     expect(screenSize(sized('a', 1), camera)).toBeCloseTo(0.1);
     expect(screenSize({}, camera)).toBe(0);

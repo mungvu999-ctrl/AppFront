@@ -44,8 +44,7 @@
  * The transport is a port — {@link ShareLinkGateway} — with three methods that
  * return `unknown`. Every decision, every validation and every sentence lives in
  * the pure functions around it, so the whole feature tests with three stub
- * functions and no network. {@link createHttpShareLinkGateway} is the one
- * adapter, over `@/lib/http`.
+ * functions and no network. {@link createHttpShareLinkGateway} is the one adapter.
  *
  * ## Field names
  *
@@ -58,6 +57,7 @@
 
 import { z } from 'zod';
 
+import { unprocessableShareMessage } from '@/lib/export/shareLinkRejection';
 import { formatNumber } from '@/lib/format/number';
 import type { HttpClient, HttpError, HttpErrorKind, Result } from '@/lib/http';
 import {
@@ -286,9 +286,9 @@ function transportMessage(error: HttpError): string {
       case STATUS_CONFLICT:
         return 'liên kết đã thay đổi ở nơi khác; tải lại danh sách rồi thử lại';
       case STATUS_UNPROCESSABLE:
-        return 'Máy chủ không chấp nhận hạn dùng hoặc mật khẩu này';
+        return unprocessableShareMessage(error, MAX_SHARE_WINDOW_DAYS);
       case STATUS_TOO_MANY:
-        return 'Tạo liên kết quá nhanh; chờ một lát rồi thử lại';
+        return 'Tạo liên kết quá nhanh (tối đa 20 lượt mỗi 10 phút); chờ một lát rồi thử lại';
       default:
         break;
     }

@@ -29,6 +29,7 @@
 import { sceneRegistry } from '@pascal-app/core';
 
 import { coversScreen, screenSize } from './build-order';
+import { holdBvh } from './bvhHold';
 import { markDirty } from './idle';
 import { installLoadOverlay, LOAD_CAP_MS } from './loadOverlay';
 import { hasPendingTextures, whenTexturesReady } from './texturePreload';
@@ -113,9 +114,11 @@ export function beginFirstLoad(nowMs = performance.now()): number {
   firstLoadUntil = nowMs + LOAD_CAP_MS;
   lastLoadDraw = -Infinity;
   structDirty = false;
+  holdBvh(true, firstLoadUntil);
   return firstLoadUntil;
 }
 export function endFirstLoad(): void {
+  holdBvh(false);
   if (firstLoadUntil === 0) return;
   firstLoadUntil = 0;
   markDirty('load-ready');
