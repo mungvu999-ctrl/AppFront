@@ -52,6 +52,7 @@ import {
 import LIBRARY_ROLES_JSON from './libraryRoles.json' with { type: 'json' };
 import { isCornerSofaBox } from './roomSet';
 import { SANITARY_LABELS, sanitaryPlacementIssues, sanitaryRoleOf } from './sanitaryRules';
+import { repairKeyOf } from './repairKey';
 import { classOf, SCENE_RULES_OFF, type SceneRepair, type SceneRepairAction } from './sceneLayer';
 import { roleOf } from './sceneVariety';
 import { furnishingUsageOf } from './structureFixes';
@@ -778,10 +779,9 @@ export const sessionRepairs = (session: RepairSession, stored: SpatialGraph): Re
     else if (!session.touched.has(f.id) && geometryOf(first) !== geometryOf(f)) session.touched.add(f.id);
   }
   const furniture = stored.furniture.map((f) => (session.touched.has(f.id) && classOf(f) === 'ai' ? { ...f, edited: true } : f));
-  const key = JSON.stringify([stored.walls, stored.openings, stored.rooms, furniture]);
+  const key = repairKeyOf(stored, furniture); // L7-07: bỏ thứ tự khoá + `clearAreaM2` (`repairKey.ts`)
   let hit = session.cache.get(key);
-  // Chẩn đoán ?perf: đếm lượt trúng/trượt ô đệm phiên (n của mốc), để biết `repairScene` chạy lại vì dữ liệu
-  // thật khác hay vì ô đệm trượt oan — xem `docs/editor-3d-performance-ux-audit/implementation`.
+  // ?perf: đếm trúng/trượt ô đệm phiên — `repairScene` chạy lại vì dữ liệu thật khác hay vì ô đệm trượt oan.
   span(hit === undefined ? 'repairs:miss' : 'repairs:hit', () => undefined);
   if (hit === undefined) {
     const fixed = repairScene({ ...stored, furniture });

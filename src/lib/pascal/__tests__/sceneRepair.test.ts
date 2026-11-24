@@ -6,6 +6,7 @@ import type { Furniture, Point, Room, RoomUsage, SpatialGraph, Wall } from '@/do
 
 import { rectInsidePolygon, rectOfFurniture, rectsOverlap, scenePlacementIssues, wallRects } from '../placement';
 import { sanitaryPlacementIssues } from '../sanitaryRules';
+import { repairKeyOf } from '../repairKey';
 import { createRepairSession, repairScene, sessionRepairs } from '../sceneRepair';
 
 const HUMAN = { source: 'human', reviewed: true, confidence: 1 } as const;
@@ -268,6 +269,24 @@ describe('repairScene', () => {
     expect(again.repairs.map((r) => r.furnitureId)).toEqual(['F-wc']);
     expect(byId(again.graph, 'F-bed')).toBe(byId(moved, 'F-bed'));
     expect(byId(again.graph, 'F-wc')).toEqual(byId(first.graph, 'F-wc'));
+  });
+
+  it('L7-07 repairKeyOf: thứ tự khoá và `clearAreaM2` (máy chủ tính lại) không đổi chữ ký; đường bao/diện tích/tâm món thì đổi', () => {
+    const g = graphOf([BED_ROOM, BATH], [wc('F-wc', 1000, 1000)]);
+    const reversed = <T extends object>(v: T): T => Object.fromEntries(Object.entries(v).reverse()) as T;
+    const echo = { ...g, walls: g.walls.map(reversed), rooms: g.rooms.map((r) => reversed({ ...r, clearAreaM2: 12.5 as never })) };
+    expect(repairKeyOf(echo, echo.furniture)).toBe(repairKeyOf(g, g.furniture));
+    const session = createRepairSession();
+    const first = sessionRepairs(session, g);
+    expect(sessionRepairs(session, echo).repairs).toBe(first.repairs);
+    expect(session.cache.size).toBe(1);
+    // Trả đồ thị theo dữ liệu MỚI (phòng mang `clearAreaM2` mới), chỉ dùng lại phần sửa đồ.
+    expect(sessionRepairs(session, echo).graph.rooms).toBe(echo.rooms);
+
+    const area = { ...g, rooms: g.rooms.map((r, i) => (i === 0 ? { ...r, areaM2: (r.areaM2 + 1) as never } : r)) };
+    const outline = { ...g, rooms: [room('R-BED', 'bedroom', box(-1000, 0, 4000, 3500), 'Phòng ngủ'), ...g.rooms.slice(1)] };
+    const itemMoved = { ...g, furniture: [wc('F-wc', 1100, 1000)] };
+    for (const changed of [area, outline, itemMoved]) expect(repairKeyOf(changed, changed.furniture)).not.toBe(repairKeyOf(g, g.furniture));
   });
 
   it('sessionRepairs: món người dùng đã đụng trong phiên không bị sửa lại (kể cả khi kéo về chỗ cũ); món AI chưa đụng sửa theo dữ liệu mới', () => {
