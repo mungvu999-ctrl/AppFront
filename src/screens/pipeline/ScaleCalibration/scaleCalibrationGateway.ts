@@ -26,9 +26,8 @@
  *
  * ## Phần KHÔNG CÓ — và vì sao vẫn khai
  *
- * Năm việc màn cần. Bốn việc hình học đã có endpoint `detected-geometry` (bật khi client có
- * `quality.detectedGeometry`); `dimensionStrings` có endpoint nhưng không trả độ dài px nên vẫn
- * `false`. Mỗi việc vẫn nằm trong {@link ScaleCalibrationGateway} với một kết quả
+ * Năm việc màn cần. Bốn việc hình học bật khi client có `quality.detectedGeometry`; `dimensionStrings`
+ * có endpoint nhưng không trả độ dài px nên vẫn `false`. Mỗi việc vẫn nằm trong {@link ScaleCalibrationGateway} với một kết quả
  * `supported: false` khi chưa làm được, nói rõ điều còn thiếu, thay vì bị bỏ trắng: một cổng im lặng thì màn không
  * phân biệt được "chưa có dữ liệu" với "không có đường lấy dữ liệu", và người
  * đọc mã sau này không biết chỗ nào cần nối khi endpoint xuất hiện.
@@ -81,8 +80,7 @@ export type ScaleMissingCapability = (typeof SCALE_MISSING_CAPABILITIES)[number]
  * hình học; thiếu trường cho `dimensionStrings`). Chuỗi là mô tả, không phải đường dẫn gọi.
  */
 export const SCALE_MISSING_ENDPOINTS: Readonly<Record<ScaleMissingCapability, string>> = {
-  dimensionStrings:
-    'GET .../floors/:floorId/dimension-strings đã có (client.quality.dimensionStrings, dùng cho chip) nhưng không trả độ dài px (span_px) của chuỗi',
+  dimensionStrings: 'GET .../floors/:floorId/dimension-strings đã có (client.quality.dimensionStrings, dùng cho chip) nhưng không trả độ dài px (span_px) của chuỗi',
   referenceWallWidth: 'GET .../floors/:floorId/detected-geometry (bề rộng nét tường); máy chủ cũ 404/501',
   typicalDoorWidth: 'GET .../floors/:floorId/detected-geometry (bề rộng cửa đi); máy chủ cũ 404/501',
   largestRoomBox: 'GET .../floors/:floorId/detected-geometry (hộp bao phòng lớn nhất); máy chủ cũ 404/501',

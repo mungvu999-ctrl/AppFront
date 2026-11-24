@@ -28,11 +28,9 @@
  *
  * Ranh giới đi kèm phải nói ra, vì nó là thật: không có kênh đẩy từ máy chủ thì
  * ĐÓNG THẺ TRÌNH DUYỆT LÀ HẾT. "Chạy nền" ở đây nghĩa là rời màn này trong cùng
- * một phiên, không phải tắt trình duyệt. `completionNotice` vẫn là `supported: false`
- * và ở lại danh sách dưới đây: máy chủ ĐÃ ghi thông báo khi lượt xong/hỏng
- * (`aiCompleted`/`aiFailed`) và trung tâm thông báo đã nghe `/streams/notifications`,
- * nhưng màn này chưa nối cổng với kênh đó. Muốn bật cờ phải thử thật bằng
- * `pnpm dev:be` (xong lúc đang ở màn khác có hiện thông báo không) — chưa thử.
+ * một phiên, không phải tắt trình duyệt. `completionNotice` vẫn `supported: false`: máy chủ ĐÃ ghi
+ * `aiCompleted`/`aiFailed` và trung tâm thông báo nghe `/streams/notifications`, nhưng màn này
+ * chưa nối kênh đó; bật cờ khi đã thử thật bằng `pnpm dev:be`.
  *
  * ## Phần KHÔNG CÓ — và vì sao vẫn khai
  *
@@ -180,8 +178,7 @@ export const PROCESSING_MISSING_ENDPOINTS: Readonly<
     'Máy chủ đã ghi thông báo aiCompleted/aiFailed và trung tâm thông báo nghe /streams/notifications; màn Xử lý chưa nối cổng với kênh đó (chưa thử thật nên cờ vẫn false)',
   stepDetails:
     'Endpoint chi tiết từng bước (số đối tượng tìm được, mã lỗi của riêng bước) — chưa có',
-  detectedGeometry:
-    'GET .../floors/:floorId/detected-geometry đã có (client.quality.detectedGeometry, màn Tỉ lệ dùng) nhưng chỉ đọc được sau khi có kết quả; hình học GIỮA CHỪNG lúc đang xử lý — chưa có; cổng này chưa nối',
+  detectedGeometry: 'GET .../floors/:floorId/detected-geometry đã có (client.quality.detectedGeometry, màn Tỉ lệ dùng) nhưng chỉ đọc được sau khi có kết quả; hình học GIỮA CHỪNG lúc đang xử lý — chưa có; cổng này chưa nối',
   stageBreakdown:
     'Ánh xạ Progress.step (chuỗi tự do) sang PipelineStageId — chưa có; toStageBreakdown tra cứu theo id/nhãn và chịu giả định C3',
 };
@@ -912,9 +909,7 @@ export function createProcessingGateway(
   return {
     // Bốn việc làm được hôm nay: theo dõi tiến độ, chạy nền, tổng kết (đếm từ N16)
     // và ánh xạ sáu bước — cái cuối chỉ làm được một nửa, xem giả định C3 ở đầu
-    // file. Việc còn lại `false`: có việc thiếu endpoint (hàng đợi, nhiều tầng, chi tiết bước),
-    // có việc BE đã có nhưng cổng chưa nối (completionNotice, detectedGeometry) — xem
-    // PROCESSING_MISSING_ENDPOINTS.
+    // file. Việc còn lại `false` (thiếu endpoint, hoặc BE có mà chưa nối): PROCESSING_MISSING_ENDPOINTS.
     supports: {
       // K-24 (N53): huỷ thật. Không hoãn `UNDO_WINDOW_MS` (B-V4-09): hộp xác nhận chặn bấm nhầm,
       // và "Chạy lại từ bản gốc" (N51) là đường hoàn tác — giữ tệp, trang, vùng cắt; còn hoãn
