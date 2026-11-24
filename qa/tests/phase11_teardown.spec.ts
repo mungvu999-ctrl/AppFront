@@ -32,6 +32,7 @@ import { ROUTES, loginUrl, pathOf } from '../../e2e/fixtures/routes';
 import { navigateThenWaitForApi, waitForApi, waitForApiWhere } from '../../e2e/fullstack/apiWatch';
 import { signInAdmin } from './support/auth';
 import { attachJson, captureEvidence } from './support/evidence';
+import { skipWithReason } from './support/skip';
 import { readState, requireState, updateState } from './support/state';
 
 test.describe.configure({ mode: 'default' });
@@ -568,7 +569,7 @@ test.describe('SCR-08 Project Settings', () => {
 
 test.describe('SCR-37 User Management', () => {
   test('SCR-37 disable / enable / delete the opt-in invitee', () => {
-    test.skip(true, 'opt-in: no invitee was created (email)');
+    skipWithReason('opt-in: no invitee was created (email)');
   });
 });
 

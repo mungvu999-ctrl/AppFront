@@ -4,8 +4,8 @@
  *
  * ## Ranh giới vật lý, viết ra để không ai hứa quá
  *
- * Repo hôm nay KHÔNG có kênh đẩy từ máy chủ (`completionNotice` vẫn là một khả
- * năng chưa có endpoint). Nên "chạy nền" ở đây có đúng một nghĩa, và không hơn:
+ * Màn Xử lý hôm nay KHÔNG dùng kênh đẩy từ máy chủ (`completionNotice` vẫn
+ * `supported: false`: máy chủ đã ghi thông báo xong/hỏng nhưng cổng chưa nối). Nên "chạy nền" ở đây có đúng một nghĩa, và không hơn:
  *
  * > **Rời MÀN NÀY trong cùng một phiên trình duyệt.** Đóng thẻ, tải lại trang,
  * > hoặc tắt trình duyệt là hết: dòng sự kiện chết theo trang, và không thông

@@ -38,50 +38,8 @@ async function expectReachable(page: Page, selector: string): Promise<void> {
   expect(ok).toBe(true);
 }
 
-test('viewer: sau khi bỏ qua tour, "Góc nhìn sẵn" vẫn bấm được', async ({ page }) => {
-  test.skip(true, 'Viewer3D cũ không còn route từ 29eba219: /3d chuyển sang editor3d.html, tour và tấm phụ của vỏ cũ không còn; tour trang Pascal kiểm ở pascal-tour.spec.ts.');
-  await openAndSkipTour(page, '/projects/P-01/3d');
-  await expectReachable(page, '[aria-label="Góc nhìn sẵn"]');
-});
-
 test('duyệt lớp tường: sau khi bỏ qua tour, thanh trạng thái không bị đè', async ({ page }) => {
   await openAndSkipTour(page, '/projects/P-01/floors/F-01/layers/walls', 1200);
   /* Trạng thái lưu đã lên đầu panel (thanh dưới chỉ nhắc khi lưu hỏng); mục ngoài cùng bên phải giờ là nhóm phím tắt. */
   await expectReachable(page, '[aria-label="Thanh trạng thái"] [aria-label="Phím tắt"]');
 });
-
-/** Các tấm mà màn 3D mở ra từ thanh nút; mỗi tấm là một lớp nội dung có điều khiển riêng. */
-const VIEWER_PANELS = ['Diện tích phòng', 'Thư viện đồ đạc', 'Lịch sử thao tác'];
-
-for (const panel of VIEWER_PANELS) {
-  test(`viewer 375px, tấm "${panel}" đang mở: chip không đè điều khiển nào`, async ({ page }) => {
-    test.skip(true, 'Viewer3D cũ không còn route từ 29eba219: /3d chuyển sang editor3d.html, tour và tấm phụ của vỏ cũ không còn; tour trang Pascal kiểm ở pascal-tour.spec.ts.');
-    await openAndSkipTour(page, '/projects/P-01/3d', 800, 375);
-    await page.getByRole('button', { name: panel }).click();
-
-    const chip = await page.getByRole('button', { name: 'Xem hướng dẫn' }).boundingBox();
-    expect(chip).not.toBeNull();
-
-    /* Mọi điều khiển nhìn thấy được (trừ chính chip) không giao với hộp của chip. */
-    const covered = await page.evaluate((c) => {
-      return [...document.querySelectorAll('button, a, input, [role="combobox"], [role="radio"]')]
-        .filter((e) => !e.textContent?.includes('Xem hướng dẫn'))
-        .filter((e) => {
-          const r = e.getBoundingClientRect();
-          const style = getComputedStyle(e);
-
-          return (
-            r.width > 0 &&
-            style.visibility !== 'hidden' &&
-            r.right > c!.x &&
-            r.left < c!.x + c!.width &&
-            r.bottom > c!.y &&
-            r.top < c!.y + c!.height
-          );
-        })
-        .map((e) => (e.getAttribute('aria-label') ?? e.textContent ?? '').trim().slice(0, 40));
-    }, chip);
-
-    expect(covered).toEqual([]);
-  });
-}

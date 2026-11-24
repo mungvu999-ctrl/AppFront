@@ -213,18 +213,3 @@ test('dưới CSP của nginx: Cài đặt › Mặt bằng đầy đủ tải v
   await expect(page.getByRole('alert').filter({ hasText: /floor plan|mặt bằng/i })).toHaveCount(0);
   expect(violations).toEqual([]);
 });
-
-/*
- * Bài của khung Pascal NHÚNG cũ: trang riêng không có nút thu khung, phím E/R mở lại hay
- * gói vách ngăn `pascal-mount.js` để chặn. Lưu tường nay kiểm ở `pascal-evidence.spec.ts`
- * và `pascal-fixtures.spec.ts` C13.
- */
-test.describe('khung Pascal nhúng cũ', () => {
-  test.skip(true, 'Khung Pascal nhúng (PascalViewer) không còn route từ 29eba219: /3d chuyển sang editor3d.html');
-  test('sửa độ dày một bức tường → "Đã lưu" → tải lại thấy giá trị mới (việc 7)', () => {});
-  test('Esc đóng bảng phím tắt trước, rồi mới thu khung xem; E mở lại (A12, việc 5)', () => {});
-  test('Esc thu khung ngay cả khi gói còn đang nạp, và lượt nạp dở không phá lượt mở lại (B-3)', () => {});
-  test('gói vách ngăn hỏng (404) thì báo PASCAL-01, và thử lại bằng nút dựng được khi gói trở lại (B-5, B-V10-01)', () => {});
-  test('gói vách ngăn hỏng (text/html) thì báo PASCAL-01, và thử lại bằng phím R dựng được khi gói trở lại (B-5, B-V10-01)', () => {});
-  test('bộ đổi dữ liệu nạp hỏng thì báo PASCAL-01, và thử lại không kẹt khung xương (B-V10-04)', () => {});
-});

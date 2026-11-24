@@ -41,6 +41,25 @@ module.exports = {
       typescript: { alwaysTryTypes: true, project: './tsconfig.json' },
     },
   },
+  // K-59: `test.skip(true, ...)` ở mức đầu tệp hay trong `describe` giết cả nhóm bài mà không ai để ý
+  // (cả nhóm Viewer3D cũ nằm chết như vậy từ 29eba219). Cần bỏ qua khi chạy thì dùng điều kiện
+  // (`test.skip(({ isMobile }) => ..., lý do)`) hoặc `skipWithReason` ở `qa/tests/support/skip.ts`.
+  // `qa/` nằm trong `ignorePatterns` nên ESLint không quét; phần đó do `scripts/__tests__/no-unconditional-skip.test.mjs` giữ.
+  overrides: [
+    {
+      files: ['e2e/**/*.ts'],
+      rules: {
+        'no-restricted-syntax': [
+          'error',
+          {
+            selector:
+              "CallExpression[callee.object.name='test'][callee.property.name='skip'][arguments.0.value=true]",
+            message: 'Cấm test.skip(true, ...): xoá bài chết, hoặc dùng điều kiện theo project/viewport (K-59).',
+          },
+        ],
+      },
+    },
+  ],
   rules: {
     'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
 

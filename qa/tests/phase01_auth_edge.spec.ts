@@ -77,7 +77,7 @@ import { apiBaseUrl, newApiContext, signedInApi } from './support/api';
 import { DASHBOARD_TITLE, dashboardLoaded, readAdminCredentials, signInAdmin } from './support/auth';
 import { TEST_DATA_PREFIX, TEST_EMAIL_DOMAIN, attachJson, captureEvidence, testEmail } from './support/evidence';
 import { deleteMails, linkFrom, waitForMail, type Mail } from './support/mailpit';
-import { PHONE_OUT_OF_SCOPE, isProdBuild, mockInvitationPreview, skipUnlessProdBuild } from './support/p01/recovery';
+import { PHONE_OUT_OF_SCOPE, isPhoneOutOfScope, isProdBuild, mockInvitationPreview, skipUnlessProdBuild } from './support/p01/recovery';
 
 /** BE:apps/api/auth/cookies.py:13 */
 const REFRESH_COOKIE = 'appback_refresh';
@@ -1542,7 +1542,7 @@ test.describe('E01 SCR-02 compact 375×812', () => {
   // change at `sm` (640): 46 px fields (Input.tsx:61-64), 44 px lg buttons (buttonVariants.ts:16-17), 44 px eye
   // button (PasswordField.tsx:65-66) — the touch-target case is in "E01 FE refresh 7735bcda". 768 ≥ sm renders
   // the 375 column with desktop control sizes; no case of its own. `isCollapsed` is unreachable (inventory).
-  test.skip(true, PHONE_OUT_OF_SCOPE);
+  test.skip(({ viewport }) => isPhoneOutOfScope(viewport), PHONE_OUT_OF_SCOPE);
   test.use({ viewport: COMPACT });
 
   test('E01 · 375×812: value panel gone, form alone, no horizontal scroll, submit in view; Enter on the empty form → both problems fit', async ({ page }) => {
@@ -2692,7 +2692,7 @@ test.describe('E01 FE refresh 7735bcda — SCR-01..SCR-04', () => {
   });
 
   test.describe('375×812', () => {
-    test.skip(true, PHONE_OUT_OF_SCOPE);
+    test.skip(({ viewport }) => isPhoneOutOfScope(viewport), PHONE_OUT_OF_SCOPE);
     test.use({ viewport: COMPACT });
 
     test('E01 · 375×812 · touch targets below 640 px: 46 px field boxes (44 px inside the border), "Đăng nhập" 44 px, eye button 44×44, "Quên mật khẩu" and "Về trang đăng nhập" on the reset form 44 px tall (BUG-041), "Ghi nhớ máy này" ≥ 24 px; recovery screens use 24 px side margins (BUG-048/040/052/098)', async ({ page }) => {
@@ -3140,7 +3140,7 @@ test.describe('E01 FE refresh f748afb0 — SCR-01..SCR-04 (+ the gate in front o
   });
 
   test.describe('375×812', () => {
-    test.skip(true, PHONE_OUT_OF_SCOPE);
+    test.skip(({ viewport }) => isPhoneOutOfScope(viewport), PHONE_OUT_OF_SCOPE);
     test.use({ viewport: COMPACT });
 
     test('E01 · 375×812 · /login uses 24 px side margins (BUG-052); the longest two-line complaint (bad address) + "Chưa nhập mật khẩu." move neither the password box nor "Đăng nhập"; no request', async ({ page }) => {

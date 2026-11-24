@@ -26,9 +26,9 @@
  *
  * ## Phần KHÔNG CÓ — và vì sao vẫn khai
  *
- * Năm việc màn cần mà tầng dữ liệu chưa có. Mỗi việc vẫn nằm trong
- * {@link ScaleCalibrationGateway} với một kết quả `supported: false` nói rõ
- * endpoint nào còn thiếu, thay vì bị bỏ trắng: một cổng im lặng thì màn không
+ * Năm việc màn cần. Bốn việc hình học bật khi client có `quality.detectedGeometry`; `dimensionStrings`
+ * có endpoint nhưng không trả độ dài px nên vẫn `false`. Mỗi việc vẫn nằm trong {@link ScaleCalibrationGateway} với một kết quả
+ * `supported: false` khi chưa làm được, nói rõ điều còn thiếu, thay vì bị bỏ trắng: một cổng im lặng thì màn không
  * phân biệt được "chưa có dữ liệu" với "không có đường lấy dữ liệu", và người
  * đọc mã sau này không biết chỗ nào cần nối khi endpoint xuất hiện.
  *
@@ -64,7 +64,7 @@ import type { ImageRatioBox } from './types';
 /** Mã máy đọc của một phát hiện "không tìm thấy khung bản vẽ". */
 export const FRAME_NOT_FOUND_CODE = 'FRAME_NOT_FOUND';
 
-/** Năm việc màn cần mà tầng dữ liệu chưa có đường nào để làm. */
+/** Năm việc màn cần; bốn việc hình học làm được khi máy chủ có `detected-geometry`. */
 export const SCALE_MISSING_CAPABILITIES = [
   'dimensionStrings',
   'referenceWallWidth',
@@ -76,15 +76,15 @@ export const SCALE_MISSING_CAPABILITIES = [
 export type ScaleMissingCapability = (typeof SCALE_MISSING_CAPABILITIES)[number];
 
 /**
- * Endpoint còn thiếu của từng việc, viết ra để lần sau ai nối thì biết nối vào
- * đâu. Chuỗi ở đây là mô tả đường dẫn còn thiếu, không phải đường dẫn có thật.
+ * Điều còn thiếu của từng việc khi trả `supported: false` (máy chủ cũ 404/501 cho bốn việc
+ * hình học; thiếu trường cho `dimensionStrings`). Chuỗi là mô tả, không phải đường dẫn gọi.
  */
 export const SCALE_MISSING_ENDPOINTS: Readonly<Record<ScaleMissingCapability, string>> = {
-  dimensionStrings: 'GET .../floors/:floorId/dimension-strings',
-  referenceWallWidth: 'GET .../floors/:floorId/detected-geometry (bề rộng nét tường)',
-  typicalDoorWidth: 'GET .../floors/:floorId/detected-geometry (bề rộng cửa đi)',
-  largestRoomBox: 'GET .../floors/:floorId/detected-geometry (hộp bao phòng lớn nhất)',
-  snapTargets: 'GET .../floors/:floorId/detected-geometry (đỉnh tường, giao điểm)',
+  dimensionStrings: 'GET .../floors/:floorId/dimension-strings đã có (client.quality.dimensionStrings, dùng cho chip) nhưng không trả độ dài px (span_px) của chuỗi',
+  referenceWallWidth: 'GET .../floors/:floorId/detected-geometry (bề rộng nét tường); máy chủ cũ 404/501',
+  typicalDoorWidth: 'GET .../floors/:floorId/detected-geometry (bề rộng cửa đi); máy chủ cũ 404/501',
+  largestRoomBox: 'GET .../floors/:floorId/detected-geometry (hộp bao phòng lớn nhất); máy chủ cũ 404/501',
+  snapTargets: 'GET .../floors/:floorId/detected-geometry (đỉnh tường, giao điểm); máy chủ cũ 404/501',
 };
 
 /** Một việc chưa có đường làm, kèm endpoint còn thiếu. */

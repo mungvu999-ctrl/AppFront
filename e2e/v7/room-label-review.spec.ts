@@ -2,8 +2,6 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 import { ROUTES } from '../fixtures/routes';
-import { seedSpatial } from '../fixtures/seedSpatial';
-import { dismissTour } from '../fixtures/tour';
 
 import { QCB_FLOOR, QCB_PROJECT, seedQcb } from './seedQcb';
 
@@ -158,48 +156,6 @@ test('bơm bộ mẫu: đổi tên phòng có toast hoàn tác, bấm hoàn tác
   await toast(page).getByRole('button', { name: 'Hoàn tác' }).click();
 
   await expect(roomOptions(page).filter({ hasText: FIRST_ROOM.code })).toContainText(FIRST_ROOM.name);
-});
-
-/**
- * QA/B-2 — cùng việc đổi tên phòng, cửa thứ hai: bảng "Diện tích phòng" của màn 3D
- * (`RoomAreaPanel`) ghi thật qua tầng lệnh, nên ô A8 của nó cần một khẳng định. Tách
- * thành bài riêng chỉ vì ngân sách 30 s/bài: dựng màn 3D tốn phần lớn ngân sách ấy.
- * Màn 3D đọc kho chung nên bơm bằng bộ mẫu chuẩn A14 (`seedSpatial`), không phải bộ
- * mẫu riêng của màn phòng — "Room 0" là tên dữ liệu của bộ ấy.
- */
-const VIEWER_READY_TIMEOUT_MS = 20_000; // cùng ngân sách `viewer3d.spec.ts`: tải route + dựng cảnh
-
-test('bơm bộ mẫu chuẩn: đổi tên phòng từ bảng diện tích của màn 3D cũng có toast hoàn tác (V7-ROOMS-03, QA/B-2, A8)', async ({
-  page,
-}) => {
-  /*
-   * Màn 3D giờ là trang Pascal editor3d.html và trang ấy không có bảng "Diện tích phòng"
-   * (`RoomAreaPanel` chỉ còn trong `Viewer3D`), nên không chuyển bài sang trang mới được.
-   */
-  test.skip(
-    true,
-    'Viewer3D cũ không còn route từ 29eba219 (/3d → editor3d.html), mà trang Pascal không có bảng "Diện tích phòng" — ' +
-      'đổi tên + toast hoàn tác đã phủ ở "bơm bộ mẫu: đổi tên phòng có toast hoàn tác, bấm hoàn tác thì tên về cũ (V7-ROOMS-03, A8)" ' +
-      'cùng tệp này và RoomAreaPanel.test.tsx',
-  );
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(ROUTES.project.viewer(QCB_PROJECT));
-  await expect(page.getByText('Mô hình 3D đã dựng xong.')).toBeAttached({ timeout: VIEWER_READY_TIMEOUT_MS });
-  await seedSpatial(page, { projectId: QCB_PROJECT });
-  await dismissTour(page);
-
-  const toggle = page.getByRole('button', { name: 'Diện tích phòng', exact: true });
-  await toggle.click();
-  await dismissTour(page);
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-
-  const field = page.getByRole('textbox', { name: 'tên phòng Room 0' });
-  await field.fill(NEW_NAME);
-  await field.press('Enter');
-
-  await toast(page).getByRole('button', { name: 'Hoàn tác' }).click();
-
-  await expect(page.getByRole('textbox', { name: 'tên phòng Room 0' })).toHaveValue('Room 0');
 });
 
 test('bơm bộ mẫu: rời ô nhập rồi Ctrl+Z thì tên về cũ (V7-ROOMS-04, A12)', async ({ page }) => {

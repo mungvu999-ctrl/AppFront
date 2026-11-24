@@ -85,33 +85,6 @@ test.describe('V3-DASH-1 — "Mở" đưa tới màn dự án', () => {
   }
 });
 
-/**
- * B-V1-12: lượt nạp trước khi rê chuột ghi đối tượng thẻ dự án; /3d đọc tên dự
- * án như một chuỗi. Cùng một khoá thì đường dẫn vẽ một đối tượng làm chữ và màn
- * sập. Hạn trễ của `prefetchOnHover` là 200 ms (`src/lib/query/prefetch.ts`) —
- * đồng hồ giả đẩy qua nó, không ngủ thật. Không khẳng định tên dự án: ở mock tên
- * này không tất định.
- */
-const HOVER_PREFETCH_ELAPSED_MS = 300;
-
-test.describe('V3-DASH-1 — rê chuột rồi mở /3d (B-V1-12)', () => {
-  test(`rê lên "${BAC_NINH}" cho lượt nạp trước chạy, rồi "Mở": màn 3D dựng được`, async ({ page }) => {
-    test.skip(
-      true,
-      'Viewer3D cũ không còn route từ 29eba219: /3d mở editor3d.html, một tài liệu khác không dùng chung bộ nhớ đệm của lượt nạp trước — trang 3D: xem e2e/pascal-fixtures.spec.ts',
-    );
-    await page.clock.install();
-    await openDashboard(page);
-    await card(page, BAC_NINH).hover();
-    await page.clock.runFor(HOVER_PREFETCH_ELAPSED_MS);
-    await openButton(page, BAC_NINH).click();
-
-    await expect(page.getByRole('navigation', { name: 'Đường dẫn màn hình' })).toContainText('Mô hình 3D', {
-      timeout: FIRST_PAINT_TIMEOUT_MS,
-    });
-  });
-});
-
 test.describe('V3-DASH-2 — phím N chỉ mở hộp thoại tạo khi có quyền', () => {
   test('kỹ sư bấm N mở hộp thoại "tạo dự án mới"', async ({ page }) => {
     await openDashboard(page);
