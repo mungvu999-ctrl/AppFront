@@ -245,8 +245,8 @@ ranh giới import + sổ nợ), `vitest.config.ts` (ngưỡng độ phủ theo 
 - **Kiểm bằng:** `rg --files src -g '*-*.ts' -g '*-*.tsx'`
 - **Mức:** NÊN
 
-### R-21 — File component không quá 250 dòng.
-- **Vì sao:** Trung vị file `.tsx` sản phẩm là ~110 dòng; phân vị 90 là ~330. Trên 250 dòng thì một component đang làm nhiều hơn một việc, và diff của nó không còn review được trong một lượt.
+### R-21 — File nguồn (`.ts`/`.tsx`) không quá 250 dòng.
+- **Vì sao:** Trung vị file `.tsx` sản phẩm là ~110 dòng; phân vị 90 là ~330. Từ K-55 luật tính cả `.ts` (hook, gateway, lib: logic nặng nằm ở đó); không tính `.d.ts`, `*.test.*`, `*.spec.*`, `*.stories.*`, `__mocks__`, `__tests__`. Trên 250 dòng thì một component đang làm nhiều hơn một việc, và diff của nó không còn review được trong một lượt.
 - **ĐƠN VỊ ĐẾM: dòng có nội dung**, tức `line.trim() !== ''`. Dòng trống không tính. Đơn
   vị phải nói ra chứ không để người đọc đoán: ở lần đo đầu, trên cùng cây mã này, đếm cả
   dòng trống cho ra 12 file vượt, đếm dòng có nội dung cho ra 8. Chênh lệch là dòng chỉ
@@ -261,9 +261,10 @@ ranh giới import + sổ nợ), `vitest.config.ts` (ngưỡng độ phủ theo 
   nó chỉ *nhắc*, không làm hỏng lệnh — đó là lý do R-21 ở mức NÊN còn R-22 ở mức BẮT BUỘC.
 - **Mức:** NÊN
 
-### R-22 — File component không được vượt 400 dòng.
+### R-22 — File nguồn (`.ts`/`.tsx`) không được vượt 400 dòng.
 - **Vì sao:** Trên mức này thì tách là bắt buộc chứ không còn là gợi ý. Hai file từng ở đó đã tách, nên ngưỡng này hiện **không** biến mã cũ thành bãi lỗi — nó chỉ giữ nguyên con số 0.
 - **ĐƠN VỊ ĐẾM:** như R-21 — dòng có nội dung, `line.trim() !== ''`.
+- **Baseline (K-55):** file `.ts`/`.tsx` đã vượt 400 lúc cổng mở rộng được ghi trong `scripts/file-length-baseline.json` ({đường dẫn: số dòng}). Cổng hỏng khi file mới vượt 400 hoặc file trong baseline dài thêm; file ngắn đi chỉ nhắc, chạy `node scripts/check-file-length.mjs --update-baseline` để hạ số / xoá mục (lệnh này không bao giờ thêm file hay nâng số). Xung đột baseline giữa nhánh: lấy số nhỏ hơn. Baseline là nợ phải trả dần, không phải ngoại lệ vĩnh viễn.
 - **Đúng:** `src/components/overlay/Modal.tsx` (257) — đã tách sẵn thành `ModalRoot`/`ModalHeader`/`ModalBody` gộp bằng `Object.assign`. Và hai thư mục vừa tách:
   `src/screens/project/ShareScreen/` (460 → khung 178 + `ShareForm` + `ShareList`) và
   `src/components/ui/Combobox/` (403 → `context` + `ComboboxRoot` + `ComboboxDropdown` +

@@ -63,7 +63,7 @@ const STEPS = [
   { name: 'test + độ phủ', description: 'vitest run --coverage, ngưỡng domain 90% / lib 80%' },
   { name: 'build', description: 'pnpm pascal && vite build — tsc đã chạy ở bước typecheck' },
   { name: 'kích thước gói', description: 'ngân sách gzip' },
-  { name: 'độ dài file', description: 'R-21/R-22 — dòng có nội dung, nhắc 250, hỏng 400' },
+  { name: 'độ dài file', description: 'R-21/R-22 — .ts/.tsx, dòng có nội dung, nhắc 250, hỏng 400, ratchet theo baseline' },
 ];
 
 /** Chạy một lệnh con, đệm stdout/stderr để in sau mà không trộn với lệnh khác. */
