@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { Select } from '@/components/ui/Select';
 
+import { SHARE_SCOPE_NOTE } from './shareDialogGateway';
 import type { ShareDialogActions, ShareLinkFormModel, ShareLinkRowModel } from './types';
 
 export interface ShareDialogLinkProps {
@@ -95,6 +96,7 @@ export function ShareDialogLink({
       ) : (
         <div className="flex flex-col gap-3 rounded-lg border border-border-default p-3">
           <p className="text-xs text-text-secondary">Người có liên kết chỉ xem được bản vẽ, không sửa được.</p>
+          <p className="text-xs text-text-secondary">{SHARE_SCOPE_NOTE}</p>
 
           <div className="flex flex-col gap-1">
             <Select
