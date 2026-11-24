@@ -47,9 +47,11 @@ const mobileOf = async (graph: SpatialGraph): Promise<PascalScene> => {
     onPick: noop,
     onMeasure: noop,
     onReady: noop,
-    onFailure: noop,
+    onFailure: (e: unknown) => console.error('DEBUG-L707B mobile onFailure', e),
   } as never);
-  await vi.waitFor(() => expect(mobileScene).not.toBeNull());
+  const t0 = performance.now();
+  await vi.waitFor(() => expect(mobileScene).not.toBeNull(), { timeout: 10000 });
+  console.error('DEBUG-L707B mobile ms', Math.round(performance.now() - t0));
 
   return mobileScene as unknown as PascalScene;
 };
