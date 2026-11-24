@@ -177,7 +177,7 @@ const MS_PER_DAY = HOURS_PER_DAY * MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PE
  * Số ngày của từng mức hạn dùng.
  *
  * `SHARE_EXPIRY_CHOICES` và `SHARE_EXPIRY_LABELS` nhập thẳng từ
- * `src/hooks/useShareLinks.ts:79,85` — năm mức và năm nhãn chỉ có một nguồn.
+ * `src/hooks/useShareLinks.ts:79,85` — bốn mức và bốn nhãn chỉ có một nguồn.
  * Bảng ngày thì phải dựng lại: `EXPIRY_DAYS` và `expiryDateFor` ở đó là hằng
  * riêng của module ấy, không được xuất. `Record<ShareExpiryChoice, …>` bắt
  * trình biên dịch đòi **đủ** khoá, nên một mức thứ sáu thêm vào bộ chọn kia là
@@ -186,12 +186,11 @@ const MS_PER_DAY = HOURS_PER_DAY * MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PE
  * Mốc trần là `MAX_SHARE_WINDOW_DAYS = 90` của `src/lib/export/shareLink.ts`, và
  * `validateShareLinkRequest` mới là thứ nói ra câu lỗi khi một mức vượt trần.
  */
-export const SHARE_EXPIRY_DAYS: Readonly<Record<ShareExpiryChoice, number | null>> = Object.freeze({
+export const SHARE_EXPIRY_DAYS: Readonly<Record<ShareExpiryChoice, number>> = Object.freeze({
   '1d': 1,
   '7d': 7,
   '30d': 30,
   '90d': 90,
-  never: null,
 });
 
 /** Mức mặc định: bảy ngày — đủ cho một lượt góp ý mà không để liên kết sống mãi. */
@@ -202,11 +201,9 @@ export const SHARE_EXPIRY_OPTIONS: readonly ShareDialogOption<string>[] = Object
   SHARE_EXPIRY_CHOICES.map((id) => ({ id, label: SHARE_EXPIRY_LABELS[id] })),
 );
 
-/** Mức đã chọn thành một thời điểm, hoặc `null` cho "không đặt hạn". */
-export function expiryDateFor(choice: ShareExpiryChoice, now: Date): Date | null {
-  const days = SHARE_EXPIRY_DAYS[choice];
-
-  return days === null ? null : new Date(now.getTime() + days * MS_PER_DAY);
+/** Mức đã chọn thành một thời điểm. L6-N05: máy chủ không nhận liên kết mới không hạn, nên không còn mức "không đặt hạn". */
+export function expiryDateFor(choice: ShareExpiryChoice, now: Date): Date {
+  return new Date(now.getTime() + SHARE_EXPIRY_DAYS[choice] * MS_PER_DAY);
 }
 
 /** Một id bất kỳ từ view về lại một mức hợp lệ — bộ chọn không nhận giá trị lạ. */

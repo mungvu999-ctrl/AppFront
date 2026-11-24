@@ -211,7 +211,7 @@ export const NO_PERMISSION_REASON = SHARE_FORBIDDEN_REASON;
  * 5. Biểu mẫu — câu lỗi do `validateShareLinkRequest` sinh (L-03).
  * ========================================================================== */
 
-/** Năm lựa chọn hạn dùng, nhãn từ `SHARE_EXPIRY_LABELS` — không viết tay. */
+/** Bốn lựa chọn hạn dùng, nhãn từ `SHARE_EXPIRY_LABELS` — không viết tay. */
 export const SAMPLE_EXPIRY_CHOICES: readonly ShareDialogOption<string>[] = SHARE_EXPIRY_CHOICES.map(
   (choice) => ({ id: choice, label: SHARE_EXPIRY_LABELS[choice] }),
 );

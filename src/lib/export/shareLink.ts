@@ -58,6 +58,7 @@
 
 import { z } from 'zod';
 
+import { readWireError } from '@/lib/errors/wireError';
 import { formatNumber } from '@/lib/format/number';
 import type { HttpClient, HttpError, HttpErrorKind, Result } from '@/lib/http';
 import {
@@ -274,6 +275,28 @@ const STATUS_GONE = 410;
 const STATUS_UNPROCESSABLE = 422;
 const STATUS_TOO_MANY = 429;
 
+/** Mã lỗi 422 của BE khi dự án đã đủ liên kết đang dùng (L6-N05). */
+export const SHARE_LINK_LIMIT_CODE = 'SHARE_LINK_LIMIT_REACHED';
+
+/** Trần liên kết đang hiệu lực mỗi dự án — chỉ để đặt câu chữ; máy chủ mới là bên chặn (`MAX_ACTIVE_LINKS`). */
+export const MAX_ACTIVE_SHARE_LINKS = 50;
+
+/** 422 của tạo liên kết: nói đúng điều máy chủ từ chối thay vì một câu chung (L6-N05). */
+function unprocessableMessage(error: HttpError): string {
+  const wire = readWireError(error);
+  if (wire?.code === SHARE_LINK_LIMIT_CODE) {
+    return `Dự án đã có ${wholeNumber(MAX_ACTIVE_SHARE_LINKS)} liên kết đang dùng; hãy thu hồi bớt một liên kết rồi tạo lại`;
+  }
+  if (wire?.field === 'expiresAt') {
+    return `Hạn dùng phải sau thời điểm hiện tại và không quá ${wholeNumber(MAX_SHARE_WINDOW_DAYS)} ngày`;
+  }
+  if (wire?.field === 'permission') {
+    return 'Liên kết mới chỉ có quyền xem';
+  }
+
+  return 'Máy chủ không chấp nhận hạn dùng hoặc mật khẩu này';
+}
+
 function transportMessage(error: HttpError): string {
   if (error.kind === 'http') {
     switch (error.status) {
@@ -286,9 +309,9 @@ function transportMessage(error: HttpError): string {
       case STATUS_CONFLICT:
         return 'liên kết đã thay đổi ở nơi khác; tải lại danh sách rồi thử lại';
       case STATUS_UNPROCESSABLE:
-        return 'Máy chủ không chấp nhận hạn dùng hoặc mật khẩu này';
+        return unprocessableMessage(error);
       case STATUS_TOO_MANY:
-        return 'Tạo liên kết quá nhanh; chờ một lát rồi thử lại';
+        return 'Tạo liên kết quá nhanh (tối đa 20 lượt mỗi 10 phút); chờ một lát rồi thử lại';
       default:
         break;
     }
