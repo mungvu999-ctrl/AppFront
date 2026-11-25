@@ -5,7 +5,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { FloorLayerDocument } from '@/api/schemas/spatialLayer';
+import { ReadinessReasonSchema, type FloorLayerDocument } from '@/api/schemas/spatialLayer';
 
 import { ProcessingFloorChips } from './ProcessingFloorChips';
 import { ProcessingGatePanel } from './ProcessingGatePanel';
@@ -77,6 +77,14 @@ describe('deriveProcessingGate — readiness', () => {
     expect(onReviewWalls).not.toHaveBeenCalled();
   });
 
+  it('mọi lý do của N16 (kể cả lý do mới) đều có câu riêng', () => {
+    const sentences = ReadinessReasonSchema.options.map((reason) => REVIEW_REASON_SENTENCE[reason]);
+
+    expect(ReadinessReasonSchema.options).toContain('roofUnreviewed');
+    expect(new Set(sentences).size).toBe(ReadinessReasonSchema.options.length);
+    expect(REVIEW_REASON_SENTENCE.roofUnreviewed).toBe('Mái do máy dựng chưa được duyệt.');
+  });
+
   it('readiness ready (không còn lý do): ra "ready"', () => {
     expect(gateWith([]).gate.kind).toBe('ready');
   });
@@ -88,6 +96,7 @@ describe('deriveProcessingGate — readiness', () => {
     ['fallbackWallModel', 'review'],
     ['fallbackObjectModel', 'review'],
     ['fallbackTextModel', 'review'],
+    ['roofUnreviewed', 'review'],
   ] as const)('%s: đúng câu và đúng đích nút (%s)', (reason, target) => {
     const { gate, onCalibrateScale, onReviewWalls } = gateWith([reason]);
 

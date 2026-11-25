@@ -46,6 +46,24 @@ describe('buildPreflightRows — readiness (FIX-P0-15)', () => {
     expect(row?.fixHref).toBe(ROUTES.project.walls(PROJECT_ID, 'L-1'));
   });
 
+  it('tầng có mái máy dựng chưa duyệt (NHA-07b): dòng dẫn tới Duyệt tầng', () => {
+    const row = rowsFor({ 'L-1': { readiness: { state: 'needsReview', reasons: ['roofUnreviewed'] } } }).find(
+      (entry) => entry.id === 'readiness',
+    );
+
+    expect(row?.label).toBe('Cần xem lại 1 tầng: Tầng 1 (mái máy dựng chưa duyệt).');
+    expect(row?.fixHref).toBe(ROUTES.project.walls(PROJECT_ID, 'L-1'));
+  });
+
+  it('mái chưa duyệt đi cùng tỷ lệ tạm: nêu cả hai, liên kết sửa vẫn là Đặt tỷ lệ', () => {
+    const row = rowsFor({
+      'L-1': { readiness: { state: 'needsReview', reasons: ['scaleUnresolved', 'roofUnreviewed'] } },
+    }).find((entry) => entry.id === 'readiness');
+
+    expect(row?.label).toBe('Cần xem lại 1 tầng: Tầng 1 (tỷ lệ tạm, mái máy dựng chưa duyệt).');
+    expect(row?.fixHref).toBe(ROUTES.project.scale(PROJECT_ID, 'L-1'));
+  });
+
   it('readiness của BE thắng scaleStatus; ready hoặc không có siêu dữ liệu thì không có dòng', () => {
     const ready = rowsFor({ 'L-1': { readiness: { state: 'ready', reasons: [] }, scaleStatus: 'unresolved' } });
 

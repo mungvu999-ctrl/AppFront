@@ -80,6 +80,8 @@ export const ReadinessReasonSchema = z.enum([
   'fallbackWallModel',
   'fallbackObjectModel',
   'fallbackTextModel',
+  /** Tầng có mái do máy dựng mà chưa ai duyệt (NHA-07b, luật M-10). */
+  'roofUnreviewed',
 ]);
 
 /**
