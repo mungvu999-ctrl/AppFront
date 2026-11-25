@@ -209,9 +209,61 @@ describe.each([
     expect(settled(toSpatialGraph(loaded(graph)).graph.roofs)).toEqual(settled(graph.roofs));
   });
 
-  // Nợ NO-579 (AppBack `changes/NHA-02.md`): `(x + t) - t` và `(r - π/2) + π/2` lệch một đơn vị số thực cuối, nên mái
-  // AI trên tầng được căn bị coi là đã sửa ngay lần mở đầu. Sửa xong thì test này đỏ: bỏ `.fails`.
-  it.fails('đọc ngược ra y nguyên từng bit', () => {
-    expect(toSpatialGraph(loaded(graph)).graph.roofs).toEqual(graph.roofs as readonly Roof[]);
+  // NO-579: `(x + t) - t` và `(r - π/2) + π/2` lệch một ulp; `floorAlignment.ts` cất vị trí + góc đã lưu trên node mái
+  // nên mái AI trên tầng được căn không bị coi là đã sửa ngay lần mở đầu.
+  it('đọc ngược ra y nguyên từng bit, nạp không sinh thay đổi mái nào', () => {
+    const scene = loaded(graph);
+    const result = createPascalEditCommand({
+      graph: normalizeSpatial(graph),
+      scene,
+      commit: { origin: 'load', changedNodeIds: Object.keys(scene.nodes) },
+      actorId: ACTOR,
+    });
+
+    expect(toSpatialGraph(scene).graph.roofs).toEqual(graph.roofs as readonly Roof[]);
+    expect(
+      result.ok ? result.data.changes.filter((change) => change.kind === 'roof') : [],
+    ).toEqual([]);
+  });
+
+  it('dời mái trên tầng đã căn → đúng một thay đổi roof, toạ độ mới ở hệ đã lưu', () => {
+    const scene = loaded(graph);
+    const shown = Object.values(scene.nodes).find((node) => node.type === 'roof') as unknown as
+      | (Blob & { id: string; position: Vec3 })
+      | undefined;
+
+    if (shown === undefined) throw new Error('cảnh phải có mái');
+
+    const [dx, dz] = [1.25, -0.5];
+    const [x, y, z] = shown.position;
+    const edited = {
+      ...scene,
+      nodes: { ...scene.nodes, [shown.id]: { ...shown, position: [x + dx, y, z + dz] } },
+    } as unknown as PascalScene;
+    const result = createPascalEditCommand({
+      graph: normalizeSpatial(graph),
+      scene: edited,
+      commit: { origin: 'local', changedNodeIds: [shown.id] },
+      actorId: ACTOR,
+    });
+
+    if (!result.ok) throw new Error(result.error.reasons.join(' '));
+
+    // Độ dời trên màn hình quay ngược góc căn của tầng thì ra độ dời ở hệ đã lưu.
+    const rad = ((floorDisplayTransformsOf(graph).get(upper)?.rotationDeg ?? 0) * Math.PI) / 180;
+    const [stored, ...segments] = nodes as unknown as [Blob & { position: Vec3; rotation: number }, ...Blob[]];
+    const roofChanges = result.data.changes.filter((change) => change.kind === 'roof');
+    const [after, ...afterSegments] = (roofChanges[0]?.after as Roof).nodes;
+
+    expect(roofChanges).toHaveLength(1);
+    expect(after?.position).toEqual([
+      expect.closeTo(stored.position[0] + dx * Math.cos(rad) + dz * Math.sin(rad), 9),
+      stored.position[1],
+      expect.closeTo(stored.position[2] - dx * Math.sin(rad) + dz * Math.cos(rad), 9),
+    ]);
+    expect(after?.position).not.toEqual(stored.position);
+    // Góc không bị đụng tới thì vẫn y nguyên từng bit, mặt mái cũng vậy.
+    expect(after?.rotation).toBe(stored.rotation);
+    expect(afterSegments).toEqual(segments);
   });
 });
