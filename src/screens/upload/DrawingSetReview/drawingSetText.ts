@@ -40,6 +40,14 @@ export const FILE_CODE_SENTENCES: ReadonlyMap<string, string> = new Map([
 
 const FILE_FALLBACK = 'Máy không nhận tệp này.';
 
+/** N60 từ chối vì khối ngôi nhà chưa yên (NHA-06): `field` của 422 `VALIDATION` → việc người duyệt phải làm. */
+const BUILDING_BLOCK_SENTENCES: ReadonlyMap<string, string> = new Map([
+  ['building.decisions', 'Có giá trị đã nhập cho tầng hoặc mái của một hình không còn trong bản duyệt. Hãy bỏ giá trị đó rồi xác nhận lại.'],
+  ['building.conflicts', 'Còn mâu thuẫn giữa các nguồn chưa được chọn. Hãy chọn nguồn đúng rồi xác nhận lại.'],
+  ['building.violations', 'Thông số tầng hoặc mái còn lỗi. Hãy sửa rồi xác nhận lại.'],
+  ['building.warnings', 'Còn cảnh báo chưa xem. Hãy xem hết các cảnh báo rồi xác nhận lại.'],
+]);
+
 /** "ten-tep.pdf: Tệp bị hỏng, không đọc được." — báo đúng tên tệp. */
 export const rejectedFileSentence = (fileName: string, code: string | undefined): string =>
   `${fileName}: ${(code === undefined ? undefined : FILE_CODE_SENTENCES.get(code)) ?? FILE_FALLBACK}`;
@@ -72,6 +80,9 @@ export function describeDrawingSetFailure(error: unknown): DrawingSetFailure {
       return sentence(CAD_SENTENCE);
     default:
   }
+  const blocked = wire?.code === 'VALIDATION' && wire.field !== undefined ? BUILDING_BLOCK_SENTENCES.get(wire.field) : undefined;
+
+  if (blocked !== undefined) return sentence(blocked);
   if (wire?.status === 429) {
     return sentence('Bạn tải quá nhiều bộ hồ sơ trong thời gian ngắn. Đợi vài phút rồi thử lại.');
   }

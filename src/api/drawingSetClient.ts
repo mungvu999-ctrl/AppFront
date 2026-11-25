@@ -25,6 +25,7 @@ import {
   type DrawingSetSummaryPage,
   type ViewEdit,
 } from '@/api/schemas/drawingSet';
+import { SetBuildingSchema, type BuildingDecisions, type SetBuilding } from '@/api/schemas/setBuilding';
 import type { HttpClient, HttpError, Result } from '@/lib/http';
 
 import type { ApiResult } from './client';
@@ -61,6 +62,8 @@ export interface ReplaceDrawingSetViewsInput extends SetRef {
   readonly views: readonly ViewEdit[];
   /** Tên mới của bộ (đã trim, 1–120 ký tự); vắng = giữ tên hiện có. */
   readonly name?: string | undefined;
+  /** Quyết định trên đề xuất ngôi nhà; vắng = giữ bản đã lưu, có = thay cả bản. */
+  readonly building?: BuildingDecisions | undefined;
 }
 
 export interface ConfirmDrawingSetInput extends SetRef {
@@ -76,6 +79,8 @@ export interface DrawingSetClient {
   complete(input: SetRef): Promise<ApiResult<DrawingSet>>;
   /** N57 — màn "Duyệt bộ hồ sơ"; thăm dò 2 giây khi `analyzing`. */
   read(input: SetRef): Promise<ApiResult<DrawingSet>>;
+  /** NHA-06 — đề xuất ngôi nhà của bộ (tầng, mái, mâu thuẫn, vi phạm) kèm quyết định đã lưu. */
+  readBuilding(input: SetRef): Promise<ApiResult<SetBuilding>>;
   /** N58 — mới trước, trần 20, `cursor` tuỳ chọn. */
   list(input: ListDrawingSetsInput): Promise<ApiResult<DrawingSetSummaryPage>>;
   /** N59 — lưu bản duyệt (thay cả danh sách hình); chỉ khi `review`. */
@@ -134,6 +139,11 @@ export function createDrawingSetClient(http: HttpClient): DrawingSetClient {
     read: async ({ projectId, setId, signal }) =>
       asSet(await http.get<unknown>(ENDPOINTS.drawingSets.set(projectId, setId), withSignal(signal)), 'drawingSets.read'),
 
+    readBuilding: async ({ projectId, setId, signal }) =>
+      decodeBody(await http.get<unknown>(ENDPOINTS.drawingSets.building(projectId, setId), withSignal(signal)), (data) =>
+        decode(SetBuildingSchema, data, 'drawingSets.readBuilding'),
+      ),
+
     list: async ({ cursor, limit, projectId, signal }) =>
       decodeBody(
         await http.get<unknown>(ENDPOINTS.drawingSets.root(projectId), {
@@ -143,12 +153,18 @@ export function createDrawingSetClient(http: HttpClient): DrawingSetClient {
         (data) => decode(DrawingSetSummaryPageSchema, data, 'drawingSets.list'),
       ),
 
-    replaceViews: async ({ baseVersion, name, projectId, setId, signal, views }) =>
+    replaceViews: async ({ baseVersion, building, name, projectId, setId, signal, views }) =>
       asSet(
-        await http.put<unknown, { baseVersion: number; body: { views: readonly ViewEdit[]; name?: string } }>(
-          ENDPOINTS.drawingSets.views(projectId, setId),
-          { body: { baseVersion, body: { views, ...(name !== undefined ? { name } : {}) } }, ...withSignal(signal) },
-        ),
+        await http.put<
+          unknown,
+          { baseVersion: number; body: { views: readonly ViewEdit[]; name?: string; building?: BuildingDecisions } }
+        >(ENDPOINTS.drawingSets.views(projectId, setId), {
+          body: {
+            baseVersion,
+            body: { views, ...(name !== undefined ? { name } : {}), ...(building !== undefined ? { building } : {}) },
+          },
+          ...withSignal(signal),
+        }),
         'drawingSets.replaceViews',
       ),
 

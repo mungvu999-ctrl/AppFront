@@ -24,8 +24,11 @@ import type {
   DrawingSetView,
   ViewEdit,
 } from '@/api/schemas/drawingSet';
+import type { BuildingDecisions } from '@/api/schemas/setBuilding';
 import { countUploadChunks } from '@/lib/upload/chunk';
 import type { HttpError, Result } from '@/lib/http';
+
+import { mockBuildingProposal, unseenWarningKeys } from './setBuildingMock';
 
 type Reply<T> = Result<T, HttpError>;
 
@@ -61,6 +64,7 @@ interface MockSet {
   confirmedAt?: string;
   files: MockFile[];
   views: DrawingSetView[];
+  decisions?: BuildingDecisions;
   reads: number;
   deleted: boolean;
 }
@@ -285,7 +289,24 @@ export function createMockDrawingSetClient(options: MockDrawingSetOptions = {}):
       return { ok: true, data: { items } };
     },
 
-    replaceViews: async ({ baseVersion, name, projectId, setId, views }) => {
+    readBuilding: async ({ projectId, setId }) => {
+      if (!enabled) return { ok: true, data: { enabled: false } };
+      const set = find(projectId, setId);
+
+      if (set === undefined) return notFound();
+      if (set.status !== 'review' && set.status !== 'confirmed') return { ok: true, data: { enabled: true } };
+
+      return {
+        ok: true,
+        data: {
+          enabled: true,
+          proposal: mockBuildingProposal(set.views, set.decisions),
+          ...(set.decisions !== undefined ? { decisions: clone(set.decisions) } : {}),
+        },
+      };
+    },
+
+    replaceViews: async ({ baseVersion, building, name, projectId, setId, views }) => {
       const blocked = off();
 
       if (blocked !== null) return blocked;
@@ -318,6 +339,7 @@ export function createMockDrawingSetClient(options: MockDrawingSetOptions = {}):
       }
       set.views = next;
       if (name !== undefined) set.name = name.trim();
+      if (building !== undefined) set.decisions = clone(building);
       set.revision += 1;
 
       return { ok: true, data: viewOf(set) };
@@ -346,6 +368,10 @@ export function createMockDrawingSetClient(options: MockDrawingSetOptions = {}):
         if (view.target.mode === 'floor' && occupied.has(view.target.floorId) && view.target.replace !== true) {
           return wireError(409, DRAWING_SET_ERROR_CODES.floorHasDrawing);
         }
+      }
+      // NHA-06: bộ đã có quyết định thì mọi cảnh báo phải được xem trước; bộ chưa từng gửi quyết định xác nhận như cũ.
+      if (set.decisions !== undefined && unseenWarningKeys(mockBuildingProposal(set.views, set.decisions), set.decisions).length > 0) {
+        return wireError(422, 'VALIDATION', { field: 'building.warnings' });
       }
       set.views = set.views.map((view, index) =>
         view.excluded || view.target === undefined || view.target.mode === 'section' ? view : { ...view, uploadId: mockId('upl', 10 + index) },
