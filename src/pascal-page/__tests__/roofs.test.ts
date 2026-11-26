@@ -9,6 +9,8 @@ import { normalizeSpatial } from '@/domain/spatial/normalize';
 import type { Roof, SpatialGraph } from '@/domain/spatial/types';
 import { fixtureF1 } from '@/lib/pascal/__fixtures__';
 import { createPascalEditCommand } from '@/lib/pascal/fromPascal';
+import { approvedRoofMetadata } from '@/lib/pascal/roofReview';
+import { roofVerdictOf } from '@/lib/pascal/roofs';
 import { toPascalScene } from '@/lib/pascal/toPascal';
 import { toSpatialGraph } from '@/lib/pascal/toSpatial';
 import type { PascalNode, PascalScene } from '@/lib/pascal/types';
@@ -359,5 +361,143 @@ describe('durable gutter — mái nạp lại có máng ngay (luật r9g-load-gu
     } finally {
       useScene.getState().setReadOnly(false);
     }
+  });
+});
+
+describe('NHA-09 — mái do máy dựng và "Duyệt mái"', () => {
+  /** Mái đã lưu nhưng do máy dựng, chưa ai duyệt (như tác vụ ráp nhà của BE phát). */
+  const aiRoofGraph = (): SpatialGraph => {
+    const graph = savedRoofGraph();
+
+    return { ...graph, roofs: [{ ...roofOf(graph), source: 'ai', reviewed: false, confidence: 0.6 }] };
+  };
+
+  const commandFor = (graph: SpatialGraph, scene: PascalScene, changedNodeIds: string[]) =>
+    createPascalEditCommand({ graph: normalizeSpatial(graph), scene, commit: { origin: 'local', changedNodeIds }, actorId: ACTOR });
+
+  it('nạp mái AI: node mái mang nguồn `ai`, chưa duyệt; đọc ngược ra đúng mái đó', () => {
+    const graph = aiRoofGraph();
+    const scene = toPascalScene(graph).scene;
+    const roofNode = Object.values(scene.nodes).find((node) => node.type === 'roof');
+
+    expect(roofNode?.metadata?.appfront).toMatchObject({ source: 'ai', reviewed: false, confidence: 0.6 });
+    expect(toSpatialGraph(scene).graph.roofs).toEqual(graph.roofs);
+  });
+
+  it('sửa một mặt của mái AI: mái ghi về vẫn là `ai`, chưa duyệt (đã sửa chưa phải là đã duyệt)', () => {
+    const graph = aiRoofGraph();
+    const scene = toPascalScene(graph).scene;
+    const segment = scene.nodes.rseg_a1b2c3d4e5f6;
+
+    if (segment === undefined) throw new Error('cảnh phải có mặt mái');
+    const edited: PascalScene = { ...scene, nodes: { ...scene.nodes, [segment.id]: { ...segment, roofHeight: 2.6 } as unknown as PascalNode } };
+    const result = commandFor(graph, edited, [segment.id]);
+
+    if (!result.ok) throw new Error(result.error.reasons.join(' '));
+    expect(result.data.changes).toHaveLength(1);
+    expect(result.data.changes[0]?.after).toMatchObject({ source: 'ai', reviewed: false });
+  });
+
+  it('"Duyệt mái": đúng một thay đổi roof, mái ghi về là `human`, đã duyệt, giữ độ tin', () => {
+    const graph = aiRoofGraph();
+    const scene = toPascalScene(graph).scene;
+    const roofNode = Object.values(scene.nodes).find((node) => node.type === 'roof');
+
+    if (roofNode === undefined) throw new Error('cảnh phải có mái');
+    const approved: PascalScene = {
+      ...scene,
+      nodes: { ...scene.nodes, [roofNode.id]: { ...roofNode, metadata: approvedRoofMetadata(roofNode.metadata) } as unknown as PascalNode },
+    };
+    const result = commandFor(graph, approved, [roofNode.id]);
+
+    if (!result.ok) throw new Error(result.error.reasons.join(' '));
+    expect(result.data.changes).toHaveLength(1);
+    expect(result.data.changes[0]?.kind).toBe('roof');
+    expect(result.data.changes[0]?.after).toMatchObject({ id: roofOf(graph).id, source: 'human', reviewed: true, confidence: 0.6 });
+  });
+
+  /** Cảnh của `graph` với túi `appfront` của node mái bị đổi thành `origin`. */
+  const withOrigin = (graph: SpatialGraph, origin: { source: string; reviewed: boolean }): { scene: PascalScene; roofNodeId: string } => {
+    const scene = toPascalScene(graph).scene;
+    const roofNode = Object.values(scene.nodes).find((node) => node.type === 'roof');
+
+    if (roofNode === undefined) throw new Error('cảnh phải có mái');
+    const metadata = { ...roofNode.metadata, appfront: { ...roofNode.metadata?.appfront, ...origin } };
+
+    return { scene: { ...scene, nodes: { ...scene.nodes, [roofNode.id]: { ...roofNode, metadata } as unknown as PascalNode } }, roofNodeId: roofNode.id };
+  };
+
+  it('hoàn tác cú duyệt: mái đã duyệt quay về `ai`, chưa duyệt', () => {
+    const base = aiRoofGraph();
+    const graph: SpatialGraph = { ...base, roofs: [{ ...roofOf(base), source: 'human', reviewed: true }] };
+    const { roofNodeId, scene } = withOrigin(graph, { source: 'ai', reviewed: false });
+    const result = commandFor(graph, scene, [roofNodeId]);
+
+    if (!result.ok) throw new Error(result.error.reasons.join(' '));
+    expect(result.data.changes[0]?.after).toMatchObject({ source: 'ai', reviewed: false });
+  });
+
+  it('ngoại lệ chỉ có hai bước chuyển đó: mái người vẽ bị sửa túi thành "đã duyệt" thì không có lệnh nào (A5)', () => {
+    const graph = savedRoofGraph();
+    const { roofNodeId, scene } = withOrigin(graph, { source: 'human', reviewed: true });
+    const result = commandFor(graph, scene, [roofNodeId]);
+
+    expect(result.ok ? result.data.changes : result.error.code).toBe('PASCAL_NO_CHANGE');
+  });
+
+  it('mái AI bị sửa túi thành `ai` + đã duyệt (cặp dây cấm): không được nhận, không có lệnh', () => {
+    const graph = aiRoofGraph();
+    const { roofNodeId, scene } = withOrigin(graph, { source: 'ai', reviewed: true });
+    const result = commandFor(graph, scene, [roofNodeId]);
+
+    expect(result.ok ? result.data.changes : result.error.code).toBe('PASCAL_NO_CHANGE');
+  });
+
+  it.each(['wall', 'room', 'opening', 'furniture'])('ngoại lệ không mở cho loại `%s`: phán quyết vẫn lấy từ "trước" (A5)', (kind) => {
+    expect(roofVerdictOf(kind, { source: 'ai', reviewed: false }, { source: 'human', reviewed: true })).toBeNull();
+  });
+
+  it('lượt lưu chỉ khai một mặt mái mà mái chủ vừa được duyệt: vẫn ghi lượt duyệt của mái chủ', () => {
+    const graph = aiRoofGraph();
+    const { scene } = withOrigin(graph, { source: 'human', reviewed: true });
+    const result = commandFor(graph, scene, ['rseg_a1b2c3d4e5f6']);
+
+    if (!result.ok) throw new Error(result.error.reasons.join(' '));
+    expect(result.data.changes).toHaveLength(1);
+    expect(result.data.changes[0]?.after).toMatchObject({ source: 'human', reviewed: true });
+  });
+
+  it('sửa hình mái SAU lượt duyệt đã lưu: mất dấu duyệt (C2), và túi cũ của cảnh không duyệt lại được', () => {
+    const base = aiRoofGraph();
+    const graph: SpatialGraph = { ...base, roofs: [{ ...roofOf(base), source: 'human', reviewed: true }] };
+    const scene = toPascalScene(graph).scene;
+    const segment = scene.nodes.rseg_a1b2c3d4e5f6;
+
+    if (segment === undefined) throw new Error('cảnh phải có mặt mái');
+    const edited: PascalScene = { ...scene, nodes: { ...scene.nodes, [segment.id]: { ...segment, roofHeight: 2.6 } as unknown as PascalNode } };
+    const result = commandFor(graph, edited, [segment.id]);
+
+    if (!result.ok) throw new Error(result.error.reasons.join(' '));
+    expect(result.data.changes[0]?.after).toMatchObject({ source: 'human', reviewed: false });
+    const saved: SpatialGraph = { ...graph, roofs: [result.data.changes[0]?.after as Roof] };
+    const again = commandFor(saved, edited, [segment.id]);
+
+    expect(again.ok ? again.data.changes : again.error.code).toBe('PASCAL_NO_CHANGE');
+  });
+
+  /* Quyết định có chủ ý (xem `roofVerdictOf`): một lượt lưu không cho biết sửa trước hay duyệt trước. */
+  it('sửa một mặt mái và duyệt trong cùng một lượt lưu: mái ghi về mang hình mới và đã duyệt', () => {
+    const graph = aiRoofGraph();
+    const { roofNodeId, scene } = withOrigin(graph, { source: 'human', reviewed: true });
+    const segment = scene.nodes.rseg_a1b2c3d4e5f6;
+
+    if (segment === undefined) throw new Error('cảnh phải có mặt mái');
+    const edited: PascalScene = { ...scene, nodes: { ...scene.nodes, [segment.id]: { ...segment, roofHeight: 2.6 } as unknown as PascalNode } };
+    const result = commandFor(graph, edited, [segment.id, roofNodeId]);
+
+    if (!result.ok) throw new Error(result.error.reasons.join(' '));
+    expect(result.data.changes).toHaveLength(1);
+    expect(result.data.changes[0]?.after).toMatchObject({ source: 'human', reviewed: true });
+    expect((result.data.changes[0]?.after as Roof).nodes[1]).toMatchObject({ roofHeight: 2.6 });
   });
 });

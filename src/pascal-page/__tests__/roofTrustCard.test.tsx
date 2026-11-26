@@ -1,0 +1,94 @@
+import { act, cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { create } from 'zustand';
+
+import { RoofTrustCard, type RoofTrustStores } from '../RoofTrustCard';
+
+const AI = { appfront: { confidence: 0.6, source: 'ai', reviewed: false } };
+const APPROVED = { appfront: { confidence: 0.6, source: 'human', reviewed: true } };
+const HAND_DRAWN = { appfront: { confidence: 1, source: 'human', reviewed: false } };
+
+const nodesOf = (metadata: object) => ({
+  roof_1: { id: 'roof_1', type: 'roof', parentId: 'level_1', metadata },
+  rseg_1: { id: 'rseg_1', type: 'roof-segment', parentId: 'roof_1' },
+  wall_1: { id: 'wall_1', type: 'wall', parentId: 'level_1' },
+});
+
+function storesOf(selectedIds: readonly string[], metadata: object = AI) {
+  const updateNode = vi.fn();
+  const singleStep = vi.fn((run: () => void) => {
+    run();
+  });
+  const useViewer = create(() => ({ selection: { selectedIds } }));
+  const useScene = create(() => ({ nodes: nodesOf(metadata), updateNode }));
+
+  return { stores: { useViewer, useScene, singleStep } as unknown as RoofTrustStores, updateNode, singleStep, useScene };
+}
+
+afterEach(cleanup);
+
+describe('RoofTrustCard (NHA-09)', () => {
+  it('chọn mái do máy dựng: chip nói rõ cần duyệt, không mang tông "đã xác minh", kèm nút "Duyệt mái"', () => {
+    render(<RoofTrustCard readOnly={false} stores={storesOf(['roof_1']).stores} />);
+    const chip = screen.getByRole('status');
+
+    expect(chip.textContent).toBe('Mái do máy dựng — cần duyệt');
+    expect(chip.getAttribute('data-tone')).toBe('attention');
+    expect(screen.getByRole('button', { name: 'Duyệt mái' })).toBeTruthy();
+  });
+
+  it('"Duyệt mái" ghi đúng một lượt trong đúng một bước hoàn tác: đổi cả nguồn lẫn cờ duyệt của node mái', async () => {
+    const { singleStep, stores, updateNode } = storesOf(['roof_1']);
+
+    render(<RoofTrustCard readOnly={false} stores={stores} />);
+    await userEvent.setup({ delay: null }).click(screen.getByRole('button', { name: 'Duyệt mái' }));
+    expect(singleStep).toHaveBeenCalledTimes(1);
+    expect(updateNode).toHaveBeenCalledTimes(1);
+    expect(updateNode).toHaveBeenCalledWith('roof_1', { metadata: { appfront: { confidence: 0.6, source: 'human', reviewed: true } } });
+  });
+
+  it('chọn một mặt mái thì duyệt mái chủ của nó', async () => {
+    const { stores, updateNode } = storesOf(['rseg_1']);
+
+    render(<RoofTrustCard readOnly={false} stores={stores} />);
+    await userEvent.setup({ delay: null }).click(screen.getByRole('button', { name: 'Duyệt mái' }));
+    expect(updateNode.mock.calls[0]?.[0]).toBe('roof_1');
+  });
+
+  it('cảnh đổi thành đã duyệt thì chip xanh và hết nút; hoàn tác (cảnh quay về) thì chip và nút trở lại', () => {
+    const { stores, useScene } = storesOf(['roof_1']);
+
+    render(<RoofTrustCard readOnly={false} stores={stores} />);
+    act(() => {
+      // eslint-disable-next-line local/no-direct-set -- kho giả của test (thay cho `useScene` của Pascal), không phải kho AppFront.
+      useScene.setState({ nodes: nodesOf(APPROVED) });
+    });
+    expect(screen.getByRole('status').textContent).toBe('Bạn đã duyệt');
+    expect(screen.getByRole('status').getAttribute('data-tone')).toBe('verified');
+    expect(screen.queryByRole('button')).toBeNull();
+    act(() => {
+      // eslint-disable-next-line local/no-direct-set -- kho giả của test (thay cho `useScene` của Pascal), không phải kho AppFront.
+      useScene.setState({ nodes: nodesOf(AI) });
+    });
+    expect(screen.getByRole('status').textContent).toBe('Mái do máy dựng — cần duyệt');
+    expect(screen.getByRole('button', { name: 'Duyệt mái' })).toBeTruthy();
+  });
+
+  it('chỉ xem: có chip, không có nút', () => {
+    render(<RoofTrustCard readOnly stores={storesOf(['roof_1']).stores} />);
+    expect(screen.getByRole('status')).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it.each([
+    ['mái người vẽ', ['roof_1'], HAND_DRAWN],
+    ['node không phải mái', ['wall_1'], AI],
+    ['chọn hai node', ['roof_1', 'rseg_1'], AI],
+    ['không chọn gì', [], AI],
+  ] as const)('%s: không hiện gì', (_name, selectedIds, metadata) => {
+    const { container } = render(<RoofTrustCard readOnly={false} stores={storesOf(selectedIds, metadata).stores} />);
+
+    expect(container.innerHTML).toBe('');
+  });
+});

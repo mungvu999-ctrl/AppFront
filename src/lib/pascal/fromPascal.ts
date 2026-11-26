@@ -62,7 +62,7 @@ import { err, ok, type Result } from '@/lib/http/types';
 import { sameValue } from './diff';
 import type { PascalCommit } from './guard';
 import { appFrontIdOf, bodyOfPascalId } from './ids';
-import { roofIdOfSegment, roofNodeIdOf } from './roofs';
+import { roofIdOfSegment, roofNodeIdOf, roofVerdictOf } from './roofs';
 import { undoFloorTransforms } from './floorAlignment';
 import { isGeneratedNodeId } from './sceneDressing';
 import { DRESSING_OFF_MAX } from './sceneLayer';
@@ -327,10 +327,10 @@ const changeBetween = <K extends EntityKind>(
     return asChange(changeForRemove(kind, from));
   }
 
-  const settled = withReviewOfPrevious<K>(from, to, kind === 'furniture' && isSizedNode(node));
+  const settled = { ...withReviewOfPrevious<K>(from, to, kind === 'furniture' && isSizedNode(node)), ...roofVerdictOf(kind, from, to) };
 
-  /* Hình học không đổi: không có lệnh. `reviewed` lấy từ "trước", nên một cú sửa
-     túi `metadata.appfront` bên Pascal không duyệt được gì — duyệt chỉ ở màn QC (A5). */
+  /* Hình học không đổi: không có lệnh. `reviewed` lấy từ "trước", nên một cú sửa túi `metadata.appfront` bên
+     Pascal không duyệt được gì — duyệt chỉ ở màn QC (A5), trừ "Duyệt mái" của trang 3D (`roofVerdictOf`). */
   if (sameValue(from, settled)) {
     return null;
   }
@@ -345,7 +345,7 @@ const changeBetween = <K extends EntityKind>(
   const nameOnly = sameValue({ ...from, name: undefined }, { ...settled, name: undefined });
 
   return asChange(
-    changeForUpdate(kind, from, nameOnly ? settled : { ...settled, reviewed: false }),
+    changeForUpdate(kind, from, nameOnly || settled.reviewed !== from.reviewed ? settled : { ...settled, reviewed: false }),
   );
 };
 
