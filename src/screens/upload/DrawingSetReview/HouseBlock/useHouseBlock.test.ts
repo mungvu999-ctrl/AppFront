@@ -151,6 +151,13 @@ describe('useHouseBlock', () => {
     await waitFor(() => expect(result.current.state).toEqual(expected));
   });
 
+  it('quyết định đã lưu ở máy chủ đi kèm đề xuất', async () => {
+    const decisions = { levels: [{ levelRef: 'v1', heightMm: 3300 }], roofs: [], picks: {}, seen: ['k1'] };
+    const { result } = renderBlock(vi.fn<Read>().mockResolvedValue(ok({ enabled: true, proposal: proposalOf('v1'), decisions })));
+
+    await waitFor(() => expect(result.current.state).toMatchObject({ status: 'ready', decisions }));
+  });
+
   it('rời màn giữa lúc đọc: huỷ lượt đang chạy', () => {
     const readBuilding = vi.fn<Read>().mockReturnValue(deferred().promise);
     const { unmount } = renderBlock(readBuilding);

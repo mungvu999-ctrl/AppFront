@@ -4,6 +4,7 @@ import type { BuildingProposal, Measured } from '@/api/schemas/setBuilding';
 
 import type { ReviewFloor, ViewDraft } from './drawingSetReview';
 import { houseBlockOf, houseLevelNames } from './setBuilding';
+import { EMPTY_DECISIONS } from './setBuildingDecisions';
 
 const measured = (
   value: number | string,
@@ -220,16 +221,16 @@ describe('houseBlockOf — mâu thuẫn và vi phạm', () => {
         key: 'elevationMm:v2',
         title: 'Cốt tầng — Tầng 2',
         candidates: [
-          { text: '+3.300 m', source: 'Máy đọc từ mặt bằng · 80%', isChosen: false },
-          { text: '+3.600 m', source: 'Máy đọc từ mặt cắt · 90%', isChosen: true },
+          { text: '+3.300 m', chip: 'Máy đọc từ mặt bằng · 80%', source: 'plan', isChosen: false },
+          { text: '+3.600 m', chip: 'Máy đọc từ mặt cắt · 90%', source: 'section', isChosen: true },
         ],
       },
       {
         key: 'pitchDeg:v2',
         title: 'Độ dốc mái — Tầng 2',
         candidates: [
-          { text: '30°', source: 'Máy đọc từ mặt bằng mái · 80%', isChosen: false },
-          { text: '35°', source: 'Máy đọc từ mặt cắt · 70%', isChosen: false },
+          { text: '30°', chip: 'Máy đọc từ mặt bằng mái · 80%', source: 'roofPlan', isChosen: false },
+          { text: '35°', chip: 'Máy đọc từ mặt cắt · 70%', source: 'section', isChosen: false },
         ],
       },
     ]);
@@ -255,6 +256,7 @@ describe('houseBlockOf — mâu thuẫn và vi phạm', () => {
       {
         key: 'k-err',
         text: 'Tầng 1, Tầng 2: Tầng trên thấp hơn đỉnh tầng dưới 100 mm: hai tầng chồng lấn nhau.',
+        isSeen: false,
       },
     ]);
     expect(vm.violations[1]?.items.map((item) => item.text)).toEqual([
@@ -287,5 +289,66 @@ describe('houseBlockOf — mâu thuẫn và vi phạm', () => {
     const vm = houseBlockOf(proposal(), NAMES);
 
     expect([vm.levels, vm.roofs, vm.conflicts, vm.violations]).toEqual([[], [], [], []]);
+  });
+});
+
+describe('houseBlockOf — quyết định của người duyệt (NHA-08b)', () => {
+  const twoLevels = proposal({
+    levels: [
+      { levelRef: 'v1', elevationMm: measured(0.4, 'plan'), heightMm: measured(3300, 'default', 0.4) },
+      { levelRef: 'v2', elevationMm: measured(150, 'reviewer', 1), heightMm: measured(12000, 'section') },
+    ],
+  });
+
+  it('"Nhận" ghi số của máy đã làm tròn; không có khi số đã là của người duyệt, ngoài dải, hoặc máy chưa có số', () => {
+    const [first, second] = houseBlockOf(twoLevels, NAMES).levels;
+
+    expect(first?.elevationEdit).toEqual({ typedMm: undefined, acceptMm: 0 });
+    expect(first?.heightEdit).toEqual({ typedMm: undefined, acceptMm: 3300 });
+    expect(second?.elevationEdit.acceptMm).toBeUndefined();
+    expect(second?.heightEdit.acceptMm).toBeUndefined();
+    expect(houseBlockOf(proposal({ levels: [{ levelRef: 'v1' }] }), NAMES).levels[0]?.heightEdit).toEqual({
+      typedMm: undefined,
+      acceptMm: undefined,
+    });
+  });
+
+  it('số vừa nhập hiện ngay trong ô sửa và tắt nút "Nhận", dù đề xuất chưa đọc lại', () => {
+    const vm = houseBlockOf(twoLevels, NAMES, { ...EMPTY_DECISIONS, levels: [{ levelRef: 'v1', heightMm: 3600 }] });
+
+    expect(vm.levels[0]?.heightEdit).toEqual({ typedMm: 3600, acceptMm: undefined });
+    expect(vm.levels[0]?.elevationEdit.acceptMm).toBe(0);
+  });
+
+  const roof = { form: measured('flat', 'default', 0.3), pitchDeg: measured(0, 'default', 0.3), quarterTurns: measured(0, 'convention'), overhangMm: measured(0, 'convention') };
+
+  it('"không dựng mái": thẻ của mái đó được đánh dấu; mái máy không còn đề xuất vẫn có thẻ để bỏ chọn', () => {
+    const decisions = { ...EMPTY_DECISIONS, roofs: [{ levelRef: 'v1', skip: true }, { levelRef: 'v2', skip: true }] };
+    const vm = houseBlockOf(proposal({ roofs: [{ levelRef: 'v1', ...roof }] }), NAMES, decisions);
+
+    expect(vm.roofs.map((card) => [card.key, card.title, card.isSkipped, card.rows.length])).toEqual([
+      ['v1', 'Mái của Tầng 1', true, 4],
+      ['v2', 'Mái của Tầng 2', true, 0],
+    ]);
+    expect(houseBlockOf(proposal({ roofs: [{ levelRef: 'v1', ...roof }] }), NAMES).roofs[0]?.isSkipped).toBe(false);
+  });
+
+  it('nguồn vừa chọn thắng nguồn đã lưu; cảnh báo vừa xem được đánh dấu', () => {
+    const vm = houseBlockOf(
+      proposal({
+        conflicts: [
+          { key: 'elevationMm:v2', field: 'elevationMm', candidates: [measured(3300, 'plan'), measured(3600, 'section')], chosenSource: 'section' },
+        ],
+        violations: [
+          { key: 'w1', code: 'T-07', level: 'warning', floorRefs: [], values: ['heightMm'] },
+          { key: 'w2', code: 'T-07', level: 'warning', floorRefs: [], values: ['roofForm'] },
+        ],
+      }),
+      NAMES,
+      { ...EMPTY_DECISIONS, picks: { 'elevationMm:v2': 'plan' }, seen: ['w2'] },
+    );
+
+    expect(vm.conflicts[0]?.candidates.map((candidate) => candidate.isChosen)).toEqual([true, false]);
+    expect(vm.violations[0]?.items.map((item) => item.isSeen)).toEqual([false, true]);
   });
 });

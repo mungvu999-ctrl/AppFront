@@ -49,6 +49,16 @@ async function chooseNewFloor(ui: ReturnType<typeof userEvent.setup>, card: HTML
   await ui.selectOptions(select, 'Tạo tầng mới');
 }
 
+/** Bấm "Đã xem" cho mọi cảnh báo của khối "Ngôi nhà": còn cảnh báo chưa xem thì chưa xác nhận được (NHA-08b). */
+async function seeAllWarnings(ui: ReturnType<typeof userEvent.setup>): Promise<void> {
+  const block = await screen.findByRole('region', { name: 'Ngôi nhà' });
+  const list = await within(block).findByRole('list', { name: 'Cảnh báo' });
+
+  for (const button of within(list).getAllByRole('button', { name: /^Đã xem: /u })) {
+    await ui.click(button);
+  }
+}
+
 const renderScreen = (props: Partial<Parameters<typeof DrawingSetContainer>[0]> & { gateway: DrawingSetGateway }) =>
   render(
     <MemoryRouter>
@@ -242,6 +252,7 @@ describe('duyệt bộ hồ sơ', () => {
     expect(within(section).getByText(/dòng mặt cắt, ẩn khỏi 3D/u)).toBeTruthy();
     // Hình thứ 6 máy không đoán được loại: bỏ đi.
     await ui.click(within(cards[5] as HTMLElement).getByRole('button', { name: 'Bỏ hình này' }));
+    await seeAllWarnings(ui);
     await waitFor(() => expect(screen.getByText('Đã lưu bản duyệt')).toBeTruthy());
     const confirm = screen.getByRole('button', { name: 'Xác nhận và dựng' }) as HTMLButtonElement;
 
@@ -271,6 +282,7 @@ describe('duyệt bộ hồ sơ', () => {
     await ui.selectOptions(select, within(select).getByRole('option', { name: /Tầng 1 \(đã có bản vẽ\)/u }));
     expect(within(card).getByText(/đã có bản vẽ\. Chọn “Thay bản vẽ cũ”/u)).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Xác nhận và dựng' }) as HTMLButtonElement).disabled).toBe(true);
+    await seeAllWarnings(ui);
     await ui.click(within(card).getByRole('checkbox', { name: 'Thay bản vẽ cũ' }));
     expect(within(card).getByText('Tầng này sẽ phải duyệt lại sau khi thay bản vẽ.')).toBeTruthy();
     await waitFor(() => expect((screen.getByRole('button', { name: 'Xác nhận và dựng' }) as HTMLButtonElement).disabled).toBe(false));
@@ -354,7 +366,7 @@ describe('duyệt bộ hồ sơ', () => {
   });
 });
 
-describe('khối "Ngôi nhà" (NHA-08a): đề xuất của máy, chỉ để xem', () => {
+describe('khối "Ngôi nhà" (NHA-08a, 08b): đề xuất của máy và quyết định của người duyệt', () => {
   it('nằm phía trên danh sách hình: mỗi mặt bằng một hàng tầng, có thẻ mái; chip máy không xanh', async () => {
     const { gateway, sets } = gatewayOf();
     const setId = await seedSet(sets);
@@ -389,24 +401,30 @@ describe('khối "Ngôi nhà" (NHA-08a): đề xuất của máy, chỉ để xe
     expect(read.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('khối không chặn xác nhận: cảnh báo của máy còn nguyên mà nút vẫn bật khi đã chọn tầng', async () => {
+  it('cảnh báo chưa xem chặn xác nhận và nói rõ; xem hết thì nút bật và bản duyệt gửi kèm quyết định', async () => {
     const { gateway, sets } = gatewayOf();
     const setId = await seedSet(sets);
     const ui = userEvent.setup({ delay: null, applyAccept: false });
+    const save = vi.spyOn(sets, 'replaceViews');
 
     renderScreen({ gateway, setId });
-    const block = await screen.findByRole('region', { name: 'Ngôi nhà' });
-
-    expect(await within(block).findByRole('list', { name: 'Cảnh báo' })).toBeTruthy();
+    await screen.findByRole('region', { name: 'Ngôi nhà' });
     const cards = within(screen.getByRole('list', { name: 'Các hình máy tách được' })).getAllByRole('article');
 
     for (const card of cards.slice(0, 3)) {
       await chooseNewFloor(ui, card);
     }
+    expect(await screen.findByText(/Khối “Ngôi nhà” còn 2 cảnh báo chưa xem\./u)).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Xác nhận và dựng' }) as HTMLButtonElement).disabled).toBe(true);
+    await waitFor(() => expect(screen.getByText('Đã lưu bản duyệt')).toBeTruthy());
+    // Chưa đụng vào khối thì không gửi `building`: bộ cũ xác nhận như trước.
+    expect(save.mock.calls.every(([input]) => input.building === undefined)).toBe(true);
+    await seeAllWarnings(ui);
     await waitFor(() => expect((screen.getByRole('button', { name: 'Xác nhận và dựng' }) as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect(save.mock.calls.at(-1)?.[0].building?.seen).toHaveLength(2));
   });
 
-  it('đề xuất có vi phạm mức lỗi: khối nêu lỗi nhưng nút xác nhận vẫn bật (chặn là việc của NHA-08b)', async () => {
+  it('đề xuất có vi phạm mức lỗi: chặn xác nhận, câu báo nói phải sửa gì', async () => {
     const { gateway, sets } = gatewayOf();
     const setId = await seedSet(sets);
     const ui = userEvent.setup({ delay: null, applyAccept: false });
@@ -434,7 +452,66 @@ describe('khối "Ngôi nhà" (NHA-08a): đề xuất của máy, chỉ để xe
     for (const card of cards.slice(0, 3)) {
       await chooseNewFloor(ui, card);
     }
-    await waitFor(() => expect((screen.getByRole('button', { name: 'Xác nhận và dựng' }) as HTMLButtonElement).disabled).toBe(false));
+    expect(await screen.findByText(/Khối “Ngôi nhà” còn 1 lỗi\. Hãy sửa cốt, chiều cao hoặc mái\./u)).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Xác nhận và dựng' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('sửa chiều cao tầng trên cùng: số người duyệt nhập thay giả định của máy, cảnh báo của ô đó hết', async () => {
+    const { gateway, sets } = gatewayOf();
+    const setId = await seedSet(sets);
+    const ui = userEvent.setup({ delay: null, applyAccept: false });
+
+    renderScreen({ gateway, setId });
+    const block = await screen.findByRole('region', { name: 'Ngôi nhà' });
+    const table = await within(block).findByRole('table', { name: 'Các tầng máy đề xuất' });
+
+    expect(within(within(block).getByRole('list', { name: 'Cảnh báo' })).getAllByRole('listitem')).toHaveLength(2);
+    await ui.click(within(table).getAllByRole('button', { name: /^Sửa chiều cao của /u }).at(-1) as HTMLElement);
+    await ui.type(within(table).getByRole('textbox'), '3600{Enter}');
+    expect(await within(table).findByText('Người duyệt nhập')).toBeTruthy();
+    expect(within(table).getByText('3.600 mm')).toBeTruthy();
+    await waitFor(() => expect(within(within(block).getByRole('list', { name: 'Cảnh báo' })).getAllByRole('listitem')).toHaveLength(1));
+  });
+
+  it('bỏ các mặt bằng đã có số nhập: lượt lưu không còn quyết định của hình đã bỏ (N59 sẽ từ chối nếu còn)', async () => {
+    const { gateway, sets } = gatewayOf();
+    const setId = await seedSet(sets);
+    const ui = userEvent.setup({ delay: null, applyAccept: false });
+    const save = vi.spyOn(sets, 'replaceViews');
+
+    renderScreen({ gateway, setId });
+    const table = await within(await screen.findByRole('region', { name: 'Ngôi nhà' })).findByRole('table', { name: 'Các tầng máy đề xuất' });
+
+    await ui.click(within(table).getAllByRole('button', { name: /^Sửa chiều cao của /u })[0] as HTMLElement);
+    await ui.type(within(table).getByRole('textbox'), '3000{Enter}');
+    await waitFor(() => expect(save.mock.calls.at(-1)?.[0].building?.levels).toHaveLength(1));
+    const cards = within(screen.getByRole('list', { name: 'Các hình máy tách được' })).getAllByRole('article');
+
+    for (const card of cards.slice(0, 3)) {
+      await ui.click(within(card).getByRole('button', { name: 'Bỏ hình này' }));
+    }
+    await waitFor(() => {
+      const last = save.mock.calls.at(-1)?.[0];
+
+      expect(last?.views.filter((view) => view.excluded)).toHaveLength(3);
+      expect(last?.building?.levels).toEqual([]);
+    });
+  });
+
+  it('bộ đổi ở nơi khác khi khối còn lựa chọn chưa lưu: câu báo nói thêm lựa chọn của khối đã mất', async () => {
+    const { gateway, sets } = gatewayOf();
+    const setId = await seedSet(sets);
+    const ui = userEvent.setup({ delay: null, applyAccept: false });
+
+    renderScreen({ gateway, setId });
+    const block = await screen.findByRole('region', { name: 'Ngôi nhà' });
+    const warnings = await within(block).findByRole('list', { name: 'Cảnh báo' });
+    const current = await sets.read({ projectId: PROJECT, setId });
+
+    if (!current.ok) throw new Error('read');
+    await sets.replaceViews({ projectId: PROJECT, setId, baseVersion: current.data.revision, views: [] });
+    await ui.click(within(warnings).getAllByRole('button', { name: /^Đã xem: /u })[0] as HTMLElement);
+    expect(await screen.findByText(/Bộ hồ sơ vừa đổi ở nơi khác.*Lựa chọn chưa lưu trong khối “Ngôi nhà” đã mất\./u)).toBeTruthy();
   });
 
   it('route báo tắt: không có khối, lưới hình vẫn đủ', async () => {

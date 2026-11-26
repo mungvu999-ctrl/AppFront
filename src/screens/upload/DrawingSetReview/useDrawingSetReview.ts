@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { DRAWING_SET_NAME_MAX, type DrawingSet } from '@/api/schemas/drawingSet';
+import type { BuildingDecisions } from '@/api/schemas/setBuilding';
 import type { HouseViewKind } from '@/api/schemas/houseProposal';
 import type { SaveState } from '@/components/feedback/SaveIndicator';
 import {
@@ -39,6 +40,7 @@ import {
   type ReviewFloor,
   type ViewDraft,
 } from '@/lib/viewmodel/drawingSetReview';
+import { pruneDecisions } from '@/lib/viewmodel/setBuildingDecisions';
 
 import type { DrawingSetGateway } from './drawingSetGateway';
 import { describeDrawingSetFailure } from './drawingSetText';
@@ -48,6 +50,7 @@ export const SAVE_DELAY_MS = 800;
 
 const FLOORS_ERROR = 'Chưa đọc được danh sách tầng của dự án.';
 const SAVE_FAILED = 'Chưa lưu được bản duyệt. Thử lại.';
+const HOUSE_LOST = 'Lựa chọn chưa lưu trong khối “Ngôi nhà” đã mất.';
 
 export interface ReviewDialogState {
   readonly kind: 'confirm' | 'remove';
@@ -61,6 +64,12 @@ export interface UseDrawingSetReviewOptions {
   readonly set: DrawingSet;
   readonly gateway: DrawingSetGateway;
   readonly saveDelayMs?: number;
+  /** Quyết định của khối "Ngôi nhà" (NHA-08b), đi cùng thân N59; vắng = người duyệt chưa đụng vào khối, không gửi. */
+  readonly building?: BuildingDecisions | undefined;
+  /** Những gì của khối còn chặn xác nhận. */
+  readonly houseProblems?: readonly string[] | undefined;
+  /** N59 lưu xong, kèm `revision` mới: khối "Ngôi nhà" đọc lại đề xuất. */
+  readonly onSaved?: ((revision: number) => void) | undefined;
   /** N60 xong. */
   readonly onConfirmed: (set: DrawingSet) => void;
   /** N61 xong. */
@@ -92,8 +101,6 @@ export interface UseDrawingSetReviewResult {
   readonly floorsError: string | null;
   readonly retryFloors: () => void;
   readonly check: ConfirmCheck;
-  /** `revision` của bản duyệt đã lưu gần nhất; khối "Ngôi nhà" đọc lại đề xuất khi nó đổi. */
-  readonly revision: number;
   readonly saveState: SaveState;
   readonly saveSentence: string | null;
   readonly retrySave: () => void;
@@ -123,7 +130,6 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [saveSentence, setSaveSentence] = useState<string | null>(null);
   const [dialog, setDialog] = useState<ReviewDialogState | null>(null);
-  const [revision, setRevision] = useState(set.revision);
 
   const suggestion = useMemo(() => suggestedSetName(set.titleBlock, set.name), [set.name, set.titleBlock]);
   const [nameState, setNameState] = useState<{ readonly value: string; readonly touched: boolean }>(() => ({
@@ -136,10 +142,23 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
   /** Tên đã lưu thành công ở N59 (xoá sạch ô thì giữ tên này, không gửi tên rỗng). */
   const savedNameRef = useRef<string | undefined>(undefined);
   const revisionRef = useRef(set.revision);
-  const payloadOf = useCallback((): { readonly edits: ReturnType<typeof toViewEdits>; readonly name: string | undefined } => ({
-    edits: toViewEdits(draftsRef.current),
-    name: nameToSend(nameRef.current.value, nameRef.current.touched) ?? savedNameRef.current,
-  }), []);
+  const buildingRef = useRef(options.building);
+  /** Thân `building` đã lưu gần nhất (JSON), để biết 409 có làm mất lựa chọn nào của khối không. */
+  const savedBuildingRef = useRef<string | undefined>(undefined);
+  const payloadOf = useCallback((): {
+    readonly edits: ReturnType<typeof toViewEdits>;
+    readonly name: string | undefined;
+    readonly building: BuildingDecisions | undefined;
+  } => {
+    const plans = new Set(draftsRef.current.filter((draft) => !draft.excluded && draft.kind === 'plan').map((draft) => draft.id));
+
+    return {
+      edits: toViewEdits(draftsRef.current),
+      name: nameToSend(nameRef.current.value, nameRef.current.touched) ?? savedNameRef.current,
+      // Quyết định của hình không còn là mặt bằng đang dùng làm N59 từ chối cả lượt lưu.
+      building: buildingRef.current === undefined ? undefined : pruneDecisions(buildingRef.current, plans),
+    };
+  }, []);
   const savedRef = useRef(JSON.stringify({ edits: toViewEdits(drafts), name: undefined }));
   const inFlightRef = useRef<Promise<boolean> | null>(null);
   const mountedRef = useRef(true);
@@ -148,6 +167,7 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
   useEffect(() => {
     draftsRef.current = drafts;
     nameRef.current = nameState;
+    buildingRef.current = options.building;
     callbacksRef.current = options;
   });
 
@@ -197,14 +217,18 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
         baseVersion: revisionRef.current,
         views: payload.edits,
         ...(payload.name !== undefined ? { name: payload.name } : {}),
+        ...(payload.building !== undefined ? { building: payload.building } : {}),
       });
 
       if (!result.ok) {
         const failure = describeDrawingSetFailure(result.error);
 
         if (failure.kind === 'disabled') callbacksRef.current.onDisabled();
-        else if (failure.kind === 'stale') callbacksRef.current.onStale(failure.sentence);
-        else {
+        else if (failure.kind === 'stale') {
+          const lost = payload.building !== undefined && JSON.stringify(payload.building) !== savedBuildingRef.current;
+
+          callbacksRef.current.onStale(lost ? `${failure.sentence} ${HOUSE_LOST}` : failure.sentence);
+        } else {
           safe(() => {
             setSaveState('error');
             setSaveSentence(failure.sentence.length > 0 ? failure.sentence : SAVE_FAILED);
@@ -214,10 +238,9 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
         return false;
       }
       revisionRef.current = result.data.revision;
-      safe(() => {
-        setRevision(result.data.revision);
-      });
       savedRef.current = key;
+      savedBuildingRef.current = JSON.stringify(payload.building);
+      if (mountedRef.current) callbacksRef.current.onSaved?.(result.data.revision);
       savedNameRef.current = payload.name;
     }
   }, [gateway.sets, payloadOf, projectId, safe, set.id]);
@@ -231,9 +254,8 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
   }, [runSave]);
 
   useEffect(() => {
-    if (JSON.stringify({ edits: toViewEdits(drafts), name: nameToSend(nameState.value, nameState.touched) ?? savedNameRef.current }) === savedRef.current) {
-      return undefined;
-    }
+    // Các ref đã được effect phía trên chép từ chính lượt render này.
+    if (JSON.stringify(payloadOf()) === savedRef.current) return undefined;
     setSaveState('pending');
     const timer = setTimeout(() => {
       void flush();
@@ -242,7 +264,7 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
     return () => {
       clearTimeout(timer);
     };
-  }, [drafts, flush, nameState, saveDelayMs]);
+  }, [drafts, flush, nameState, options.building, payloadOf, saveDelayMs]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -295,7 +317,7 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
     setNameState({ value: value.slice(0, DRAWING_SET_NAME_MAX), touched: true });
   }, []);
 
-  const check = useMemo(() => checkConfirm(drafts, floors ?? []), [drafts, floors]);
+  const check = useMemo(() => checkConfirm(drafts, floors ?? [], options.houseProblems), [drafts, floors, options.houseProblems]);
 
   /* ---- Hộp hỏi: xác nhận và bỏ bộ ---- */
   const closeDialog = useCallback(() => {
@@ -377,7 +399,6 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
     floorsError,
     retryFloors,
     check,
-    revision,
     saveState,
     saveSentence,
     retrySave,

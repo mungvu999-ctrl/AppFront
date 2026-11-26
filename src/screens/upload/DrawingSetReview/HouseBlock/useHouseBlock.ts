@@ -5,13 +5,13 @@
  * người duyệt vừa sửa. Trong lúc đọc lại, đề xuất cũ vẫn ở trên màn. Công tắc tắt hoặc bộ chưa có đề xuất →
  * `hidden`: màn y như khi chưa có khối này, không báo lỗi.
  *
- * Lát này chỉ đọc: chưa gửi quyết định nào và không chặn xác nhận (NHA-08b).
+ * Hook này chỉ đọc; quyết định của người duyệt đi cùng thân tự lưu N59 của `useDrawingSetReview`.
  */
 
 import { useCallback, useEffect, useState } from 'react';
 
 import type { DrawingSetClient } from '@/api/drawingSetClient';
-import type { BuildingProposal } from '@/api/schemas/setBuilding';
+import type { BuildingDecisions, BuildingProposal } from '@/api/schemas/setBuilding';
 
 export type HouseBlockState =
   | { readonly status: 'loading' }
@@ -20,6 +20,8 @@ export type HouseBlockState =
   | {
       readonly status: 'ready';
       readonly proposal: BuildingProposal;
+      /** Quyết định đã lưu ở máy chủ; vắng khi chưa ai gửi. */
+      readonly decisions: BuildingDecisions | undefined;
       readonly isRefreshing: boolean;
     };
 
@@ -56,7 +58,13 @@ export function useHouseBlock({
       if (!result.ok) setState({ status: 'error' });
       else if (!result.data.enabled || result.data.proposal === undefined)
         setState({ status: 'hidden' });
-      else setState({ status: 'ready', proposal: result.data.proposal, isRefreshing: false });
+      else
+        setState({
+          status: 'ready',
+          proposal: result.data.proposal,
+          decisions: result.data.decisions,
+          isRefreshing: false,
+        });
     });
 
     return () => {

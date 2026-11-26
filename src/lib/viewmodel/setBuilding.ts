@@ -7,7 +7,9 @@
 
 import type {
   BuildingConflict,
+  BuildingDecisions,
   BuildingProposal,
+  BuildingSource,
   Measured,
   RoofSpec,
   RuleHit,
@@ -18,6 +20,7 @@ import { ROOF_MATERIALS, ruleSentence } from './buildingRules';
 import { suggestedFloorName, type ReviewFloor, type ViewDraft } from './drawingSetReview';
 import { statusOfConfidence } from './houseProposal';
 import { elevationWithUnit, heightWithUnit, sourceOf } from './houseProposalParts';
+import { EMPTY_DECISIONS, levelValueProblem, type LevelField } from './setBuildingDecisions';
 import type { ViewStatusCode } from './types';
 
 const UNKNOWN_LEVEL = 'Tầng chưa rõ';
@@ -29,18 +32,30 @@ export interface HouseCell {
   readonly status: ViewStatusCode;
 }
 
+/** Phần sửa được của một ô tầng (NHA-08b). */
+export interface HouseLevelEdit {
+  /** Số người duyệt đã nhập trong bản nháp; hiện ngay, không chờ đọc lại. */
+  readonly typedMm: number | undefined;
+  /** Số của máy mà nút "Nhận" sẽ ghi; vắng khi máy chưa có số, số đã là của người duyệt, hoặc số ngoài dải gửi được. */
+  readonly acceptMm: number | undefined;
+}
+
 export interface HouseLevelRow {
   readonly key: string;
   readonly name: string;
   /** `null` = máy chưa có giá trị cho ô này. */
   readonly elevation: HouseCell | null;
   readonly height: HouseCell | null;
+  readonly elevationEdit: HouseLevelEdit;
+  readonly heightEdit: HouseLevelEdit;
 }
 
 export interface HouseRoofCard {
   readonly key: string;
   readonly title: string;
+  /** Rỗng khi mái đã bị bỏ ("không dựng mái") và máy không còn đề xuất nó. */
   readonly rows: readonly { readonly label: string; readonly cell: HouseCell }[];
+  readonly isSkipped: boolean;
 }
 
 export interface HouseConflict {
@@ -48,7 +63,10 @@ export interface HouseConflict {
   readonly title: string;
   readonly candidates: readonly {
     readonly text: string;
-    readonly source: string;
+    /** Nguồn bằng chữ kèm độ tin. */
+    readonly chip: string;
+    /** Mã nguồn gửi lại khi người duyệt chọn. */
+    readonly source: BuildingSource;
     readonly isChosen: boolean;
   }[];
 }
@@ -57,7 +75,8 @@ export interface HouseViolationGroup {
   readonly level: RuleHit['level'];
   readonly title: string;
   readonly status: ViewStatusCode;
-  readonly items: readonly { readonly key: string; readonly text: string }[];
+  /** `isSeen` chỉ có nghĩa với cảnh báo: người duyệt đã bấm "Đã xem". */
+  readonly items: readonly { readonly key: string; readonly text: string; readonly isSeen: boolean }[];
 }
 
 export interface HouseBlockVm {
@@ -163,7 +182,7 @@ const optionalCell = (
 /* Khối.                                                                       */
 /* -------------------------------------------------------------------------- */
 
-function roofCardOf(roof: RoofSpec, nameOf: (ref: string) => string): HouseRoofCard {
+function roofCardOf(roof: RoofSpec, nameOf: (ref: string) => string, isSkipped: boolean): HouseRoofCard {
   const rows: (readonly [string, Measured | undefined, (value: number | string) => string])[] = [
     ['Dạng mái', roof.form, lookup(ROOF_FORMS)],
     ['Độ dốc', roof.pitchDeg, pitchText],
@@ -181,7 +200,14 @@ function roofCardOf(roof: RoofSpec, nameOf: (ref: string) => string): HouseRoofC
     rows: rows.flatMap(([label, measured, write]) =>
       measured === undefined ? [] : [{ label, cell: cellOf(measured, write) }],
     ),
+    isSkipped,
   };
+}
+
+function levelEditOf(field: LevelField, measured: Measured | undefined, typedMm: number | undefined): HouseLevelEdit {
+  const machine = measured !== undefined && measured.source !== 'reviewer' && typeof measured.value === 'number' ? Math.round(measured.value) : undefined;
+
+  return { typedMm, acceptMm: typedMm === undefined && machine !== undefined && levelValueProblem(field, machine) === null ? machine : undefined };
 }
 
 const CONFLICT_FIELDS: Readonly<
@@ -192,16 +218,18 @@ const CONFLICT_FIELDS: Readonly<
 };
 
 /** Khoá mâu thuẫn BE phát là `<trường>:<mã hình>`. */
-function conflictOf(conflict: BuildingConflict, nameOf: (ref: string) => string): HouseConflict {
+function conflictOf(conflict: BuildingConflict, nameOf: (ref: string) => string, picked: BuildingSource | undefined): HouseConflict {
   const { label, write } = CONFLICT_FIELDS[conflict.field];
+  const chosen = picked ?? conflict.chosenSource;
 
   return {
     key: conflict.key,
     title: `${label} — ${nameOf(conflict.key.slice(conflict.field.length + 1))}`,
     candidates: conflict.candidates.map((candidate) => ({
       text: write(candidate.value),
-      source: chipOf(candidate).chip,
-      isChosen: candidate.source === conflict.chosenSource,
+      chip: chipOf(candidate).chip,
+      source: candidate.source,
+      isChosen: candidate.source === chosen,
     })),
   };
 }
@@ -215,7 +243,11 @@ const VIOLATION_GROUPS: readonly Omit<HouseViolationGroup, 'items'>[] = [
 export function houseBlockOf(
   proposal: BuildingProposal,
   names: ReadonlyMap<string, string>,
+  decisions: BuildingDecisions = EMPTY_DECISIONS,
 ): HouseBlockVm {
+  const typed = new Map(decisions.levels.map((level) => [level.levelRef, level]));
+  const skipped = new Set(decisions.roofs.filter((roof) => roof.skip).map((roof) => roof.levelRef));
+  const proposed = new Set(proposal.roofs.map((roof) => roof.levelRef));
   const nameOf = (ref: string): string => names.get(ref) ?? UNKNOWN_LEVEL;
   const violationText = (hit: RuleHit): string =>
     hit.floorRefs.length === 0
@@ -229,13 +261,21 @@ export function houseBlockOf(
       name: nameOf(level.levelRef),
       elevation: optionalCell(level.elevationMm, elevationText),
       height: optionalCell(level.heightMm, lengthText),
+      elevationEdit: levelEditOf('elevationMm', level.elevationMm, typed.get(level.levelRef)?.elevationMm),
+      heightEdit: levelEditOf('heightMm', level.heightMm, typed.get(level.levelRef)?.heightMm),
     })),
-    roofs: proposal.roofs.map((roof) => roofCardOf(roof, nameOf)),
-    conflicts: proposal.conflicts.map((conflict) => conflictOf(conflict, nameOf)),
+    roofs: [
+      ...proposal.roofs.map((roof) => roofCardOf(roof, nameOf, skipped.has(roof.levelRef))),
+      // Mái đã bỏ thì máy không đề xuất nữa; vẫn giữ một thẻ để người duyệt bỏ chọn được.
+      ...[...skipped]
+        .filter((ref) => !proposed.has(ref))
+        .map((ref) => ({ key: ref, title: `Mái của ${nameOf(ref)}`, rows: [], isSkipped: true })),
+    ],
+    conflicts: proposal.conflicts.map((conflict) => conflictOf(conflict, nameOf, decisions.picks[conflict.key])),
     violations: VIOLATION_GROUPS.flatMap((group) => {
       const items = proposal.violations
         .filter((hit) => hit.level === group.level)
-        .map((hit) => ({ key: hit.key, text: violationText(hit) }));
+        .map((hit) => ({ key: hit.key, text: violationText(hit), isSeen: decisions.seen.includes(hit.key) }));
 
       return items.length === 0 ? [] : [{ ...group, items }];
     }),

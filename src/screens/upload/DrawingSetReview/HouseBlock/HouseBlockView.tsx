@@ -1,43 +1,37 @@
 /**
- * Khối "Ngôi nhà" của bước duyệt bộ hồ sơ (NHA-08a) — VIEW THUẦN, chỉ đọc.
+ * Khối "Ngôi nhà" của bước duyệt bộ hồ sơ (NHA-08a/08b) — VIEW THUẦN.
  *
- * Hiện đề xuất của máy cho cả bộ: bảng tầng, thẻ mái, mâu thuẫn giữa các nguồn, và các luật kiểm. Mỗi giá trị
- * đi kèm một chip nói nguồn bằng chữ (không chỉ màu). Lát này chưa có ô sửa, chưa có "Đã xem", và khối không
- * chặn nút xác nhận (NHA-08b) — câu đầu khối nói thẳng điều đó.
+ * Hiện đề xuất của máy cho cả bộ và nhận quyết định của người duyệt: bảng tầng (nhận hoặc sửa cốt, chiều cao),
+ * thẻ mái ("không dựng mái"), mâu thuẫn giữa các nguồn (chọn một), và các luật kiểm (cảnh báo có "Đã xem").
+ * Mỗi giá trị đi kèm một chip nói nguồn bằng chữ, không chỉ màu. Quyết định tự lưu cùng bản duyệt (A7).
+ *
+ * Thẻ mái chưa sửa được từng thông số (NHA-08c); mái có lỗi thì gỡ bằng "Không dựng mái, tôi tự vẽ".
  */
 
 import { useId } from 'react';
 
 import { InlineAlert } from '@/components/feedback/InlineAlert';
 import { Skeleton } from '@/components/feedback/Skeleton';
-import { Badge } from '@/components/ui/Badge';
-import { Table } from '@/components/ui/Table';
-import { MISSING_VALUE } from '@/lib/format/number';
-import type {
-  HouseBlockVm,
-  HouseCell,
-  HouseConflict,
-  HouseRoofCard,
-  HouseViolationGroup,
-} from '@/lib/viewmodel/setBuilding';
+import { Checkbox } from '@/components/ui/Checkbox';
+import type { HouseBlockVm, HouseRoofCard } from '@/lib/viewmodel/setBuilding';
+import type { HouseActions } from '@/lib/viewmodel/setBuildingDecisions';
+
+import { HouseConflictGroup, HouseViolationList } from './HouseIssues';
+import { HouseLevelTable, HouseValue } from './HouseLevelTable';
 
 const TEXT = {
   title: 'Ngôi nhà',
   loading: 'Đang đọc đề xuất ngôi nhà…',
   error: 'Chưa đọc được đề xuất ngôi nhà.',
   retry: 'Thử lại',
-  note: 'Máy đề xuất, chỉ để xem. Phần này chưa ảnh hưởng tới việc xác nhận.',
+  note: 'Máy đề xuất, cần bạn duyệt. Chọn nguồn cho từng mâu thuẫn, sửa các lỗi và xem hết cảnh báo thì mới xác nhận được.',
   unitSystem: 'Hệ đơn vị',
   levels: 'Các tầng',
-  levelsCaption: 'Các tầng máy đề xuất',
-  levelName: 'Tầng',
-  elevation: 'Cốt',
-  height: 'Chiều cao',
   noLevels: 'Máy chưa đề xuất tầng nào.',
   roofs: 'Mái',
   noRoofs: 'Máy chưa đề xuất mái nào.',
+  skipRoof: 'Không dựng mái, tôi tự vẽ',
   conflicts: 'Mâu thuẫn giữa các nguồn',
-  chosen: 'Đã chọn',
   rules: 'Luật kiểm',
 } as const;
 
@@ -51,20 +45,10 @@ export interface HouseBlockViewProps {
   /** Đang đọc lại sau một lần lưu: nội dung cũ vẫn hiện. */
   readonly isRefreshing: boolean;
   readonly onRetry: () => void;
+  readonly actions: HouseActions;
 }
 
-function Value({ cell }: { cell: HouseCell | null }) {
-  if (cell === null) return <span className="text-text-secondary">{MISSING_VALUE}</span>;
-
-  return (
-    <span className="inline-flex flex-wrap items-center gap-2">
-      <span className="text-text-primary">{cell.text}</span>
-      <Badge variant={cell.status}>{cell.chip}</Badge>
-    </span>
-  );
-}
-
-function RoofCard({ card }: { card: HouseRoofCard }) {
+function RoofCard({ actions, card }: { actions: HouseActions; card: HouseRoofCard }) {
   const titleId = useId();
 
   return (
@@ -76,94 +60,43 @@ function RoofCard({ card }: { card: HouseRoofCard }) {
       <h4 className={HEADING} id={titleId}>
         {card.title}
       </h4>
-      <dl className="flex flex-col gap-1 text-[14px]">
-        {card.rows.map((row) => (
-          <div className="flex flex-wrap items-center gap-2" key={row.label}>
-            <dt className="text-text-secondary">{row.label}:</dt>
-            <dd className="min-w-0">
-              <Value cell={row.cell} />
-            </dd>
-          </div>
-        ))}
-      </dl>
+      {card.rows.length === 0 ? null : (
+        <dl className="flex flex-col gap-1 text-[14px]">
+          {card.rows.map((row) => (
+            <div className="flex flex-wrap items-center gap-2" key={row.label}>
+              <dt className="text-text-secondary">{row.label}:</dt>
+              <dd className="min-w-0">
+                <HouseValue cell={row.cell} />
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      <Checkbox
+        checked={card.isSkipped}
+        label={TEXT.skipRoof}
+        onChange={(checked) => {
+          actions.setRoofSkip(card.key, checked);
+        }}
+        size="sm"
+      />
     </div>
   );
 }
 
-function ConflictList({ conflict }: { conflict: HouseConflict }) {
-  const titleId = useId();
-
-  return (
-    <div className="flex flex-col gap-1">
-      <p className="text-[14px] text-text-primary" id={titleId}>
-        {conflict.title}
-      </p>
-      <ul aria-labelledby={titleId} className={`list-disc pl-5 ${BODY}`}>
-        {conflict.candidates.map((candidate) => (
-          <li key={candidate.source}>
-            {candidate.text} · {candidate.source}
-            {candidate.isChosen ? ` · ${TEXT.chosen}` : ''}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function ViolationGroup({ group }: { group: HouseViolationGroup }) {
-  const titleId = useId();
-
-  return (
-    <div className="flex flex-col gap-1">
-      <div>
-        <Badge id={titleId} variant={group.status}>
-          {group.title}
-        </Badge>
-      </div>
-      <ul aria-labelledby={titleId} className={`list-disc pl-5 ${BODY}`}>
-        {group.items.map((item) => (
-          <li key={item.key}>{item.text}</li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function Proposal({ vm }: { vm: HouseBlockVm }) {
+function Proposal({ actions, vm }: { actions: HouseActions; vm: HouseBlockVm }) {
   return (
     <>
       <p className={BODY}>{TEXT.note}</p>
       <p className="flex flex-wrap items-center gap-2 text-[14px] text-text-secondary">
-        {TEXT.unitSystem}: <Value cell={vm.unitSystem} />
+        {TEXT.unitSystem}: <HouseValue cell={vm.unitSystem} />
       </p>
 
       <h3 className={HEADING}>{TEXT.levels}</h3>
       {vm.levels.length === 0 ? (
         <p className={BODY}>{TEXT.noLevels}</p>
       ) : (
-        <Table.Root className="h-auto">
-          <caption className="sr-only">{TEXT.levelsCaption}</caption>
-          <Table.Header>
-            <Table.Row>
-              <Table.Head>{TEXT.levelName}</Table.Head>
-              <Table.Head>{TEXT.elevation}</Table.Head>
-              <Table.Head>{TEXT.height}</Table.Head>
-            </Table.Row>
-          </Table.Header>
-          <Table.Body>
-            {vm.levels.map((level) => (
-              <Table.Row key={level.key}>
-                <Table.Cell>{level.name}</Table.Cell>
-                <Table.Cell>
-                  <Value cell={level.elevation} />
-                </Table.Cell>
-                <Table.Cell>
-                  <Value cell={level.height} />
-                </Table.Cell>
-              </Table.Row>
-            ))}
-          </Table.Body>
-        </Table.Root>
+        <HouseLevelTable actions={actions} levels={vm.levels} />
       )}
 
       <h3 className={HEADING}>{TEXT.roofs}</h3>
@@ -172,7 +105,7 @@ function Proposal({ vm }: { vm: HouseBlockVm }) {
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {vm.roofs.map((card) => (
-            <RoofCard card={card} key={card.key} />
+            <RoofCard actions={actions} card={card} key={card.key} />
           ))}
         </div>
       )}
@@ -181,7 +114,7 @@ function Proposal({ vm }: { vm: HouseBlockVm }) {
         <>
           <h3 className={HEADING}>{TEXT.conflicts}</h3>
           {vm.conflicts.map((conflict) => (
-            <ConflictList conflict={conflict} key={conflict.key} />
+            <HouseConflictGroup actions={actions} conflict={conflict} key={conflict.key} />
           ))}
         </>
       )}
@@ -190,7 +123,7 @@ function Proposal({ vm }: { vm: HouseBlockVm }) {
         <>
           <h3 className={HEADING}>{TEXT.rules}</h3>
           {vm.violations.map((group) => (
-            <ViolationGroup group={group} key={group.level} />
+            <HouseViolationList actions={actions} group={group} key={group.level} />
           ))}
         </>
       )}
@@ -198,7 +131,13 @@ function Proposal({ vm }: { vm: HouseBlockVm }) {
   );
 }
 
-export function HouseBlockView({ isRefreshing, onRetry, status, vm }: HouseBlockViewProps) {
+export function HouseBlockView({
+  actions,
+  isRefreshing,
+  onRetry,
+  status,
+  vm,
+}: HouseBlockViewProps) {
   if (status === 'hidden') return null;
 
   return (
@@ -224,7 +163,7 @@ export function HouseBlockView({ isRefreshing, onRetry, status, vm }: HouseBlock
           role="status"
         />
       ) : null}
-      {status === 'ready' && vm !== null ? <Proposal vm={vm} /> : null}
+      {status === 'ready' && vm !== null ? <Proposal actions={actions} vm={vm} /> : null}
     </section>
   );
 }

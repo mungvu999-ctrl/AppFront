@@ -11,10 +11,11 @@
  * pha ấy đang hiện — pha công tắc tắt không dựng hook tải nào.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import type { DrawingSet } from '@/api/schemas/drawingSet';
+import type { BuildingDecisions } from '@/api/schemas/setBuilding';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { InlineAlert } from '@/components/feedback/InlineAlert';
 import { ScreenErrorBoundary, type ScreenErrorFallback } from '@/components/feedback/ScreenErrorBoundary';
@@ -24,6 +25,7 @@ import { useSession } from '@/hooks/useSession';
 import { formatCalendarDate } from '@/lib/format/datetime';
 import { confirmedLines } from '@/lib/viewmodel/drawingSetReview';
 import { houseBlockOf, houseLevelNames } from '@/lib/viewmodel/setBuilding';
+import { EMPTY_DECISIONS, houseActionsOf, houseBlockers } from '@/lib/viewmodel/setBuildingDecisions';
 import { ROUTES } from '@/routes/paths';
 import type { ProjectRole } from '@/types/project';
 
@@ -104,20 +106,31 @@ interface ReviewStepBodyProps {
 }
 
 function ReviewStepBody({ flow, gateway, projectId, set }: ReviewStepBodyProps) {
+  const [revision, setRevision] = useState(set.revision);
+  // Quyết định của khối "Ngôi nhà"; `null` = người duyệt chưa đụng vào khối, N59 không gửi `building`.
+  const [touched, setTouched] = useState<BuildingDecisions | null>(null);
+  const house = useHouseBlock({ sets: gateway.sets, projectId, setId: set.id, revision });
+  const proposal = house.state.status === 'ready' ? house.state.proposal : undefined;
+  const stored = house.state.status === 'ready' ? house.state.decisions : undefined;
+  const decisions = touched ?? stored ?? EMPTY_DECISIONS;
+  const houseProblems = useMemo(() => houseBlockers(proposal, decisions), [proposal, decisions]);
+  const houseActions = useMemo(() => houseActionsOf(setTouched, stored), [stored]);
   const review = useDrawingSetReview({
     projectId,
     set,
     gateway,
+    building: touched ?? undefined,
+    houseProblems,
+    onSaved: setRevision,
     onConfirmed: flow.onConfirmed,
     onRemoved: flow.onRemoved,
     onStale: flow.onStale,
     onDisabled: flow.onDisabled,
   });
   const fileNames = useMemo(() => new Map(set.files.map((file) => [file.id, file.fileName] as const)), [set.files]);
-  const house = useHouseBlock({ sets: gateway.sets, projectId, setId: set.id, revision: review.revision });
   const houseVm = useMemo(
-    () => (house.state.status === 'ready' ? houseBlockOf(house.state.proposal, houseLevelNames(review.drafts, review.floors ?? [])) : null),
-    [house.state, review.drafts, review.floors],
+    () => (proposal === undefined ? null : houseBlockOf(proposal, houseLevelNames(review.drafts, review.floors ?? []), decisions)),
+    [decisions, proposal, review.drafts, review.floors],
   );
   const rejected = set.files.flatMap((file) => (file.status === 'rejected' ? [rejectedFileSentence(file.fileName, file.rejectedCode)] : []));
 
@@ -131,6 +144,7 @@ function ReviewStepBody({ flow, gateway, projectId, set }: ReviewStepBodyProps) 
       floors={review.floors}
       floorsError={review.floorsError}
       house={{
+        actions: houseActions,
         status: house.state.status,
         vm: houseVm,
         isRefreshing: house.state.status === 'ready' && house.state.isRefreshing,
