@@ -82,7 +82,7 @@ export const REVIEW_REASON_SENTENCE: Readonly<Record<ProcessingReviewReason, str
   fallbackWallModel: 'Tường được dò bằng mô hình dự phòng, độ chính xác thấp hơn: nên kiểm lại tường.',
   fallbackObjectModel: 'Cửa và đồ vật được dò bằng mô hình dự phòng, có thể thiếu hoặc sai chỗ.',
   fallbackTextModel: 'Chữ và số kích thước được đọc bằng mô hình dự phòng, có thể đọc sai.',
-  roofUnreviewed: 'Mái do máy dựng chưa được duyệt.',
+  roofUnreviewed: 'Mái do máy dựng chưa được duyệt: mở mô hình 3D, chọn mái rồi bấm "Duyệt mái".',
 };
 
 /** Câu cho từng mã kiểm hình học (N16 `readiness.checks`): chuyện gì và nên làm gì. Mã lạ dùng câu của `geometrySuspect`. */

@@ -82,7 +82,7 @@ describe('deriveProcessingGate — readiness', () => {
 
     expect(ReadinessReasonSchema.options).toContain('roofUnreviewed');
     expect(new Set(sentences).size).toBe(ReadinessReasonSchema.options.length);
-    expect(REVIEW_REASON_SENTENCE.roofUnreviewed).toBe('Mái do máy dựng chưa được duyệt.');
+    expect(REVIEW_REASON_SENTENCE.roofUnreviewed).toBe('Mái do máy dựng chưa được duyệt: mở mô hình 3D, chọn mái rồi bấm "Duyệt mái".');
   });
 
   it('readiness ready (không còn lý do): ra "ready"', () => {
