@@ -92,6 +92,8 @@ export interface UseDrawingSetReviewResult {
   readonly floorsError: string | null;
   readonly retryFloors: () => void;
   readonly check: ConfirmCheck;
+  /** `revision` của bản duyệt đã lưu gần nhất; khối "Ngôi nhà" đọc lại đề xuất khi nó đổi. */
+  readonly revision: number;
   readonly saveState: SaveState;
   readonly saveSentence: string | null;
   readonly retrySave: () => void;
@@ -121,6 +123,7 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [saveSentence, setSaveSentence] = useState<string | null>(null);
   const [dialog, setDialog] = useState<ReviewDialogState | null>(null);
+  const [revision, setRevision] = useState(set.revision);
 
   const suggestion = useMemo(() => suggestedSetName(set.titleBlock, set.name), [set.name, set.titleBlock]);
   const [nameState, setNameState] = useState<{ readonly value: string; readonly touched: boolean }>(() => ({
@@ -211,6 +214,9 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
         return false;
       }
       revisionRef.current = result.data.revision;
+      safe(() => {
+        setRevision(result.data.revision);
+      });
       savedRef.current = key;
       savedNameRef.current = payload.name;
     }
@@ -371,6 +377,7 @@ export function useDrawingSetReview(options: UseDrawingSetReviewOptions): UseDra
     floorsError,
     retryFloors,
     check,
+    revision,
     saveState,
     saveSentence,
     retrySave,

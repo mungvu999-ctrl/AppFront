@@ -23,6 +23,7 @@ import { PageHead } from '@/components/shell/PageHead';
 import { useSession } from '@/hooks/useSession';
 import { formatCalendarDate } from '@/lib/format/datetime';
 import { confirmedLines } from '@/lib/viewmodel/drawingSetReview';
+import { houseBlockOf, houseLevelNames } from '@/lib/viewmodel/setBuilding';
 import { ROUTES } from '@/routes/paths';
 import type { ProjectRole } from '@/types/project';
 
@@ -36,6 +37,7 @@ import {
   DrawingSetLoadError,
   DrawingSetLoading,
 } from './DrawingSetStatusViews';
+import { useHouseBlock } from './HouseBlock/useHouseBlock';
 import { createAppDrawingSetGateway, type DrawingSetGateway } from './drawingSetGateway';
 import { DISABLED_SENTENCE, rejectedFileSentence } from './drawingSetText';
 import { useDrawingSetFlow, type RecentSet, type UseDrawingSetFlowResult } from './useDrawingSetFlow';
@@ -112,6 +114,11 @@ function ReviewStepBody({ flow, gateway, projectId, set }: ReviewStepBodyProps) 
     onDisabled: flow.onDisabled,
   });
   const fileNames = useMemo(() => new Map(set.files.map((file) => [file.id, file.fileName] as const)), [set.files]);
+  const house = useHouseBlock({ sets: gateway.sets, projectId, setId: set.id, revision: review.revision });
+  const houseVm = useMemo(
+    () => (house.state.status === 'ready' ? houseBlockOf(house.state.proposal, houseLevelNames(review.drafts, review.floors ?? [])) : null),
+    [house.state, review.drafts, review.floors],
+  );
   const rejected = set.files.flatMap((file) => (file.status === 'rejected' ? [rejectedFileSentence(file.fileName, file.rejectedCode)] : []));
 
   return (
@@ -123,6 +130,12 @@ function ReviewStepBody({ flow, gateway, projectId, set }: ReviewStepBodyProps) 
       fileNames={fileNames}
       floors={review.floors}
       floorsError={review.floorsError}
+      house={{
+        status: house.state.status,
+        vm: houseVm,
+        isRefreshing: house.state.status === 'ready' && house.state.isRefreshing,
+        onRetry: house.retry,
+      }}
       notice={flow.notice}
       onRetryFloors={review.retryFloors}
       onRetrySave={review.retrySave}

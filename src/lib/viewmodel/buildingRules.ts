@@ -50,7 +50,8 @@ const ASSUMED_FIELDS: ReadonlyMap<string, string> = new Map([
   ['roofPitchDeg', 'Độ dốc mái'],
 ]);
 
-const ROOF_MATERIALS: ReadonlyMap<string, string> = new Map([
+/** Tên vật liệu lợp, viết thường để đặt giữa câu; khối "Ngôi nhà" dùng lại. */
+export const ROOF_MATERIALS: ReadonlyMap<string, string> = new Map([
   ['tile', 'ngói'],
   ['metal', 'tôn'],
   ['shingle', 'tấm lợp bitum'],

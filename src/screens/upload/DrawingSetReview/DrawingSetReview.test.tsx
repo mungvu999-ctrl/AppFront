@@ -353,3 +353,115 @@ describe('duyệt bộ hồ sơ', () => {
     await waitFor(() => expect(onNavigate).toHaveBeenCalledWith('/projects/project-1/drawing-sets'));
   });
 });
+
+describe('khối "Ngôi nhà" (NHA-08a): đề xuất của máy, chỉ để xem', () => {
+  it('nằm phía trên danh sách hình: mỗi mặt bằng một hàng tầng, có thẻ mái; chip máy không xanh', async () => {
+    const { gateway, sets } = gatewayOf();
+    const setId = await seedSet(sets);
+
+    const { container } = renderScreen({ gateway, setId });
+    const block = await screen.findByRole('region', { name: 'Ngôi nhà' });
+    const table = await within(block).findByRole('table', { name: 'Các tầng máy đề xuất' });
+    const grid = screen.getByRole('list', { name: 'Các hình máy tách được' });
+
+    expect(block.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(table).getAllByRole('row')).toHaveLength(4);
+    expect(within(table).getByText('Tầng trệt')).toBeTruthy();
+    expect(within(block).getByRole('group', { name: /^Mái của /u })).toBeTruthy();
+    expect(container.querySelector('.bg-state-verified-tint')).toBeNull();
+    expectVietnamese(block);
+  });
+
+  it('bản duyệt vừa lưu thì khối đọc lại: bỏ một mặt bằng là bớt một hàng tầng', async () => {
+    const { gateway, sets } = gatewayOf();
+    const setId = await seedSet(sets);
+    const read = vi.spyOn(sets, 'readBuilding');
+    const ui = userEvent.setup({ delay: null, applyAccept: false });
+
+    renderScreen({ gateway, setId });
+    const block = await screen.findByRole('region', { name: 'Ngôi nhà' });
+
+    await waitFor(() => expect(within(block).getAllByRole('row')).toHaveLength(4));
+    const cards = within(screen.getByRole('list', { name: 'Các hình máy tách được' })).getAllByRole('article');
+
+    await ui.click(within(cards[0] as HTMLElement).getByRole('button', { name: 'Bỏ hình này' }));
+    await waitFor(() => expect(within(block).getAllByRole('row')).toHaveLength(3));
+    expect(read.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('khối không chặn xác nhận: cảnh báo của máy còn nguyên mà nút vẫn bật khi đã chọn tầng', async () => {
+    const { gateway, sets } = gatewayOf();
+    const setId = await seedSet(sets);
+    const ui = userEvent.setup({ delay: null, applyAccept: false });
+
+    renderScreen({ gateway, setId });
+    const block = await screen.findByRole('region', { name: 'Ngôi nhà' });
+
+    expect(await within(block).findByRole('list', { name: 'Cảnh báo' })).toBeTruthy();
+    const cards = within(screen.getByRole('list', { name: 'Các hình máy tách được' })).getAllByRole('article');
+
+    for (const card of cards.slice(0, 3)) {
+      await chooseNewFloor(ui, card);
+    }
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Xác nhận và dựng' }) as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it('đề xuất có vi phạm mức lỗi: khối nêu lỗi nhưng nút xác nhận vẫn bật (chặn là việc của NHA-08b)', async () => {
+    const { gateway, sets } = gatewayOf();
+    const setId = await seedSet(sets);
+    const ui = userEvent.setup({ delay: null, applyAccept: false });
+
+    vi.spyOn(sets, 'readBuilding').mockResolvedValue({
+      ok: true,
+      data: {
+        enabled: true,
+        proposal: {
+          unitSystem: { value: 'metric', confidence: 0.9, source: 'plan', viewIds: [] },
+          floors: [],
+          levels: [],
+          roofs: [],
+          conflicts: [],
+          violations: [{ key: 'T-01|a|b|-100', code: 'T-01', level: 'error', floorRefs: [], values: [-100] }],
+        },
+      },
+    });
+    renderScreen({ gateway, setId });
+    const block = await screen.findByRole('region', { name: 'Ngôi nhà' });
+
+    expect(await within(block).findByRole('list', { name: 'Lỗi' })).toBeTruthy();
+    const cards = within(screen.getByRole('list', { name: 'Các hình máy tách được' })).getAllByRole('article');
+
+    for (const card of cards.slice(0, 3)) {
+      await chooseNewFloor(ui, card);
+    }
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Xác nhận và dựng' }) as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it('route báo tắt: không có khối, lưới hình vẫn đủ', async () => {
+    const { gateway, sets } = gatewayOf();
+    const setId = await seedSet(sets);
+
+    vi.spyOn(sets, 'readBuilding').mockResolvedValue({ ok: true, data: { enabled: false } });
+    renderScreen({ gateway, setId });
+    const grid = await screen.findByRole('list', { name: 'Các hình máy tách được' });
+
+    expect(within(grid).getAllByRole('article')).toHaveLength(6);
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Ngôi nhà' })).toBeNull());
+  });
+
+  it('đọc đề xuất lỗi: câu báo nằm trong khối, lưới hình vẫn dùng được; thử lại thì có bảng', async () => {
+    const { gateway, sets } = gatewayOf();
+    const setId = await seedSet(sets);
+    const failed = { ok: false, error: { kind: 'network' } } as unknown as Awaited<ReturnType<DrawingSetClient['readBuilding']>>;
+    const ui = userEvent.setup({ delay: null, applyAccept: false });
+
+    vi.spyOn(sets, 'readBuilding').mockResolvedValueOnce(failed);
+    renderScreen({ gateway, setId });
+    const block = await screen.findByRole('region', { name: 'Ngôi nhà' });
+
+    expect(await within(block).findByText('Chưa đọc được đề xuất ngôi nhà.')).toBeTruthy();
+    expect(within(screen.getByRole('list', { name: 'Các hình máy tách được' })).getAllByRole('article')).toHaveLength(6);
+    await ui.click(within(block).getByRole('button', { name: 'Thử lại' }));
+    expect(await within(block).findByRole('table', { name: 'Các tầng máy đề xuất' })).toBeTruthy();
+  });
+});
