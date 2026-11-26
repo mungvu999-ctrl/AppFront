@@ -505,6 +505,15 @@ describe('NHA-09 — mái do máy dựng và "Duyệt mái"', () => {
     expect(reviewLostNotices(edit.data)).toHaveLength(1);
   });
 
+  it('PR 115 P2 — bản lưu là người sửa, chưa duyệt; Ctrl+Z đưa túi `ai` về: không có gì để ghi (màn phải tự dựng lại cảnh)', () => {
+    const base = aiRoofGraph();
+    const graph: SpatialGraph = { ...base, roofs: [{ ...roofOf(base), source: 'human', reviewed: false }] };
+    const undone = withOrigin(graph, { source: 'ai', reviewed: false });
+    const result = commandFor(graph, undone.scene, [undone.roofNodeId]);
+
+    expect(result.ok ? null : result.error.code).toBe('PASCAL_NO_CHANGE');
+  });
+
   /* Quyết định có chủ ý (xem `roofVerdictOf`): một lượt lưu không cho biết sửa trước hay duyệt trước. */
   it('sửa một mặt mái và duyệt trong cùng một lượt lưu: mái ghi về mang hình mới và đã duyệt', () => {
     const graph = aiRoofGraph();

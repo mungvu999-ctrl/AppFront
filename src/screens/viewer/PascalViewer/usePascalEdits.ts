@@ -46,7 +46,7 @@ import { createPascalEditCommand, PASCAL_COMMAND_TYPE, withRoomOfCentre, type Pa
 import { createChangeGate, type PascalCommit } from '@/lib/pascal/guard';
 import { bodyOfPascalId, toPascalId } from '@/lib/pascal/ids';
 import { splitRoomsAfterWalls } from '@/lib/pascal/roomSplitAfterWalls';
-import { reviewLossOf } from '@/lib/pascal/staleReview';
+import { hasRevertedBadge, reviewLossOf } from '@/lib/pascal/staleReview';
 import { isGeneratedLightId, isGeneratedNodeId } from '@/lib/pascal/sceneDressing';
 import { isServerModel } from '@/lib/pascal/furnitureCatalog';
 import { SUGGESTED_OUTLINE_PREFIX } from '@/lib/pascal/toPascal';
@@ -707,7 +707,7 @@ export function usePascalEdits({
         scene,
         result,
         massDelete: massDelete && !verdict.admitted ? removed : null,
-        accepted: result.ok && (suggestion.accepted || loss?.staleBadge === true),
+        accepted: result.ok ? suggestion.accepted || loss?.staleBadge === true : restEmpty && hasRevertedBadge(previous.nodes, scene.nodes, pascalCommit.changedNodeIds),
         notices: [
           ...(split?.notices ?? []),
           ...(loss?.notices ?? []),
@@ -760,8 +760,7 @@ export function usePascalEdits({
       const scene = settle(raw);
       const previous = savedScene.current ?? loadedScene;
       const built = buildFor(scene);
-      const notices = lastVerdict.current?.scene === scene ? lastVerdict.current.notices : [];
-      const accepted = lastVerdict.current?.scene === scene && lastVerdict.current.accepted;
+      const verdict = lastVerdict.current?.scene === scene ? lastVerdict.current : null;
 
       if (built === null) return false;
 
@@ -778,6 +777,7 @@ export function usePascalEdits({
       if (!built.ok) {
         if (built.error.code === 'PASCAL_NO_CHANGE') {
           settleUnsaved();
+          acceptedPending.current ||= verdict?.accepted === true;
         } else {
           onRejected(built.error.reasons[0] ?? PASCAL_REJECTED_FALLBACK);
         }
@@ -798,8 +798,8 @@ export function usePascalEdits({
       savedScene.current = scene;
       settleUnsaved();
       confirmedRemoval.current = null;
-      acceptedPending.current ||= accepted;
-      notices.forEach((message) => onNotice?.(message));
+      acceptedPending.current ||= verdict?.accepted === true;
+      verdict?.notices.forEach((message) => onNotice?.(message));
 
       return true;
     },
