@@ -8,6 +8,7 @@
  *
  * Không nhập `@pascal-app/*` (như `OpeningKindCard`): `main.tsx` truyền store và `runAsSingleSceneHistoryStep`.
  */
+import { appFrontIdOf } from '@/lib/pascal/ids';
 import { approvedRoofMetadata, roofNodeOfSelection, roofTrustLabelOf, type LooseRoofNode, type RoofTrustLabel } from '@/lib/pascal/roofReview';
 
 import type { SwapModelStores } from './SwapModelCard';
@@ -34,7 +35,8 @@ export function RoofTrustCard({ stores, readOnly }: { readonly stores: RoofTrust
   const roof = stores.useScene((s) =>
     ids.length === 1 ? roofNodeOfSelection(s.nodes as Record<string, LooseRoofNode | undefined>, ids[0] as string) : undefined,
   );
-  const label = roofTrustLabelOf(roof?.metadata);
+  // Mái trình soạn vừa tạo (nhân bản) mang túi chép từ mái gốc; lượt lưu ghi nó là mái người vẽ, nên thẻ không nói gì.
+  const label = roof !== undefined && appFrontIdOf('roof', roof.id) !== null ? roofTrustLabelOf(roof.metadata) : null;
 
   if (roof === undefined || label === null) return null;
 

@@ -42,10 +42,11 @@ import type { EntityChange } from '@/lib/commands/types';
 import { ok } from '@/lib/http/types';
 import { diffScenes, isEmptyDiff, sameValue } from '@/lib/pascal/diff';
 import { undoFloorTransforms } from '@/lib/pascal/floorAlignment';
-import { createPascalEditCommand, PASCAL_COMMAND_TYPE, reviewLostNotices, withRoomOfCentre, type PascalEditResult } from '@/lib/pascal/fromPascal';
+import { createPascalEditCommand, PASCAL_COMMAND_TYPE, withRoomOfCentre, type PascalEditResult } from '@/lib/pascal/fromPascal';
 import { createChangeGate, type PascalCommit } from '@/lib/pascal/guard';
 import { bodyOfPascalId, toPascalId } from '@/lib/pascal/ids';
 import { splitRoomsAfterWalls } from '@/lib/pascal/roomSplitAfterWalls';
+import { reviewLossOf } from '@/lib/pascal/staleReview';
 import { isGeneratedLightId, isGeneratedNodeId } from '@/lib/pascal/sceneDressing';
 import { isServerModel } from '@/lib/pascal/furnitureCatalog';
 import { SUGGESTED_OUTLINE_PREFIX } from '@/lib/pascal/toPascal';
@@ -127,7 +128,7 @@ export interface UsePascalEditsResult {
    * bước ghi lại kho, và cảnh mới về Pascal qua `setScene` như mọi đổi ngoài.
    */
   readonly history: HistoryStack;
-  /** Lượt vừa lưu có món gợi ý được nhận: `true` một lần, màn dựng lại cảnh để tấm viền thành mẫu thật. */
+  /** `true` một lần khi màn phải dựng lại cảnh: vừa nhận món gợi ý (tấm viền thành mẫu thật), hoặc cảnh còn nói "đã duyệt" mà bản lưu đã bỏ (NHA-09b). */
   readonly takeSuggestionAccepted: () => boolean;
   /**
    * Cảnh này (của editor, ngay sau khi màn dựng lại từ kho, đã điền mặc định) thành mốc "trước". Phần chênh của lượt dựng lại không phải
@@ -700,20 +701,16 @@ export function usePascalEdits({
       const split = edit.ok ? splitRoomsAfterWalls(spatial, edit.data, buildSplitRoomCommandFromWalls) : null;
       const result: PascalEditResult = split === null ? edit : { ok: true, data: split.command };
 
+      const loss = result.ok ? reviewLossOf(scene.nodes, result.data, suggestion.changes) : null;
+
       lastVerdict.current = {
         scene,
         result,
         massDelete: massDelete && !verdict.admitted ? removed : null,
-        accepted: result.ok && suggestion.accepted,
+        accepted: result.ok && (suggestion.accepted || loss?.staleBadge === true),
         notices: [
           ...(split?.notices ?? []),
-          // Ctrl+Z trả món về gợi ý là bỏ dấu duyệt do chính lượt nhận đặt: không phải "vừa sửa đồ đã duyệt".
-          ...(result.ok
-            ? reviewLostNotices({
-                ...result.data,
-                changes: result.data.changes.filter((change) => !suggestion.changes.some((own) => own.id === change.id)),
-              })
-            : []),
+          ...(loss?.notices ?? []),
           ...(result.ok && suggestion.accepted ? [SUGGESTION_ACCEPTED_NOTICE] : []),
         ],
       };

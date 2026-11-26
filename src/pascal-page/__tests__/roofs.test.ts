@@ -8,7 +8,7 @@ import { SpatialGraphDocumentSchema } from '@/api/schemas/spatialGraph';
 import { normalizeSpatial } from '@/domain/spatial/normalize';
 import type { Roof, SpatialGraph } from '@/domain/spatial/types';
 import { fixtureF1 } from '@/lib/pascal/__fixtures__';
-import { createPascalEditCommand } from '@/lib/pascal/fromPascal';
+import { createPascalEditCommand, reviewLostNotices } from '@/lib/pascal/fromPascal';
 import { approvedRoofMetadata } from '@/lib/pascal/roofReview';
 import { roofVerdictOf } from '@/lib/pascal/roofs';
 import { toPascalScene } from '@/lib/pascal/toPascal';
@@ -483,6 +483,26 @@ describe('NHA-09 — mái do máy dựng và "Duyệt mái"', () => {
     const again = commandFor(saved, edited, [segment.id]);
 
     expect(again.ok ? again.data.changes : again.error.code).toBe('PASCAL_NO_CHANGE');
+  });
+
+  it('NHA-09b — hoàn tác cú duyệt không phải "vừa sửa mái đã duyệt": không có câu báo mất dấu duyệt; sửa hình mái đã duyệt thì có', () => {
+    const base = aiRoofGraph();
+    const graph: SpatialGraph = { ...base, roofs: [{ ...roofOf(base), source: 'human', reviewed: true }] };
+    const undone = withOrigin(graph, { source: 'ai', reviewed: false });
+    const undo = commandFor(graph, undone.scene, [undone.roofNodeId]);
+
+    if (!undo.ok) throw new Error(undo.error.reasons.join(' '));
+    expect(reviewLostNotices(undo.data)).toEqual([]);
+
+    const scene = toPascalScene(graph).scene;
+    const segment = scene.nodes.rseg_a1b2c3d4e5f6;
+
+    if (segment === undefined) throw new Error('cảnh phải có mặt mái');
+    const edited: PascalScene = { ...scene, nodes: { ...scene.nodes, [segment.id]: { ...segment, roofHeight: 2.6 } as unknown as PascalNode } };
+    const edit = commandFor(graph, edited, [segment.id]);
+
+    if (!edit.ok) throw new Error(edit.error.reasons.join(' '));
+    expect(reviewLostNotices(edit.data)).toHaveLength(1);
   });
 
   /* Quyết định có chủ ý (xem `roofVerdictOf`): một lượt lưu không cho biết sửa trước hay duyệt trước. */

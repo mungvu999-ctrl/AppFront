@@ -378,13 +378,13 @@ export const withRoomOfCentre = (item: Furniture, rooms: readonly Room[]): Furni
 };
 
 /**
- * K6/A2-05/F-06 — sửa (cả sơn) một mục đã duyệt thì dấu "đã duyệt" bị bỏ (luật C2 ở `changeBetween`,
- * không đổi). Câu báo cho người dùng, một câu mỗi loại; nơi gọi đưa vào `onNotice` sau khi lưu được.
+ * K6/A2-05/F-06 — sửa (cả sơn) một mục đã duyệt thì dấu "đã duyệt" bị bỏ (luật C2 ở `changeBetween`, không đổi). Một câu
+ * mỗi loại; nơi gọi đưa vào `onNotice` sau khi lưu được. Nguồn đổi theo (hoàn tác "Duyệt mái", NHA-09) là rút lượt duyệt: không báo.
  */
 export const reviewLostNotices = (command: Command): string[] => {
   const kinds = new Set(
     command.changes.flatMap((change) =>
-      change.before !== null && change.after !== null && change.before.reviewed && !change.after.reviewed ? [change.kind] : [],
+      change.before !== null && change.after !== null && change.before.reviewed && !change.after.reviewed && change.before.source === change.after.source ? [change.kind] : [],
     ),
   );
 

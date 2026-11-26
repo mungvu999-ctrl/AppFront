@@ -39,9 +39,8 @@ export interface RoofTrustLabel {
  * Xanh chỉ cho cặp `human` + đã duyệt: túi `ai` mà mang `reviewed: true` là cặp dây cấm, lượt lưu không nhận,
  * nên mái đó vẫn là "cần duyệt".
  *
- * shortcut: nhãn đọc túi của cảnh, không đọc bản đã lưu. Sửa hình mái SAU khi duyệt thì bản lưu mất dấu duyệt
- * (C2) nhưng chip còn xanh tới lượt nạp lại trang, như `ItemTrustCard`. Nâng cấp khi lượt lưu ghi ngược phán
- * quyết vào cảnh.
+ * Nhãn đọc túi của cảnh, không đọc bản đã lưu. Sửa hình mái SAU khi duyệt thì bản lưu mất dấu duyệt (C2); lượt lưu
+ * đó báo màn dựng lại cảnh từ kho (`staleReview.ts`, NHA-09b), nên túi và chip theo kịp ngay sau lượt lưu.
  */
 export function roofTrustLabelOf(metadata: LooseMetadata | undefined): RoofTrustLabel | null {
   const origin = metadata?.appfront;

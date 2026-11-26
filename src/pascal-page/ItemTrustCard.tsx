@@ -5,6 +5,7 @@
  */
 /* eslint-disable react-refresh/only-export-components -- hàm thuần đi kèm thẻ để test gọi thẳng. */
 import { formatNumber } from '@/lib/format/number';
+import { appFrontIdOf } from '@/lib/pascal/ids';
 import { CONFIDENCE_SUGGESTED_THRESHOLD } from '@/lib/format/semantic';
 
 import type { SwapModelStores } from './SwapModelCard';
@@ -55,7 +56,9 @@ export function ItemTrustCard({ stores }: { readonly stores: SwapModelStores }) 
   const ids = stores.useViewer((s) => s.selection.selectedIds);
   const metadata = stores.useScene((s) => {
     const node = ids.length === 1 ? (s.nodes as Record<string, LooseNode | undefined>)[ids[0] as string] : undefined;
-    return node?.type === 'item' ? node.metadata : undefined;
+    if (node?.type !== 'item') return undefined;
+    // Món trình soạn vừa tạo (nhân bản) mang túi `appfront` chép từ món gốc; lượt lưu ghi nó là đồ người đặt, chưa duyệt.
+    return appFrontIdOf('furniture', ids[0] as string) !== null || node.metadata?.generated !== undefined ? node.metadata : undefined;
   });
   const label = itemTrustLabelOf(metadata);
   if (label === null) return null;
