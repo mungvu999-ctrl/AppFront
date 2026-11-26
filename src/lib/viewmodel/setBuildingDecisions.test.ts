@@ -15,6 +15,7 @@ import {
   markSeen,
   pickSource,
   pruneDecisions,
+  decisionsToSend,
   setLevelValue,
   setRoofSkip,
   setRoofValue,
@@ -147,6 +148,47 @@ describe('pruneDecisions — hình không còn là mặt bằng đang dùng', ()
       picks: { 'elevationMm:gone': 'plan' },
       seen: ['k1'],
     });
+  });
+});
+
+describe('decisionsToSend — thân `building` của lượt lưu', () => {
+  const stored: BuildingDecisions = {
+    levels: [
+      { levelRef: 'v1', heightMm: 3000 },
+      { levelRef: 'v2', elevationMm: 3300 },
+    ],
+    roofs: [{ levelRef: 'v2', skip: true }],
+    picks: { 'elevationMm:v2': 'section' },
+    seen: ['k1'],
+  };
+  const live = (...ids: string[]) => new Set(ids);
+
+  it('chưa chạm khối và mọi quyết định đã lưu còn hợp lệ: không gửi gì (bộ cũ lưu như trước)', () => {
+    expect(decisionsToSend(undefined, stored, live('v1', 'v2'))).toBeUndefined();
+    expect(decisionsToSend(undefined, undefined, live('v1'))).toBeUndefined();
+    expect(decisionsToSend(undefined, EMPTY_DECISIONS, live())).toBeUndefined();
+  });
+
+  it('chưa chạm khối nhưng một hình có quyết định đã lưu vừa bị bỏ: gửi bản đã tỉa, không thì N60 chặn xác nhận mãi', () => {
+    expect(decisionsToSend(undefined, stored, live('v1'))).toEqual({
+      levels: [{ levelRef: 'v1', heightMm: 3000 }],
+      roofs: [],
+      picks: { 'elevationMm:v2': 'section' },
+      seen: ['k1'],
+    });
+  });
+
+  it('chỉ một quyết định MÁI trỏ tới hình đã bỏ cũng đủ để phải gửi', () => {
+    const roofOnly: BuildingDecisions = { ...EMPTY_DECISIONS, roofs: [{ levelRef: 'v2', skip: false, form: 'hip' }] };
+
+    expect(decisionsToSend(undefined, roofOnly, live('v1'))).toEqual(EMPTY_DECISIONS);
+    expect(decisionsToSend(undefined, roofOnly, live('v2'))).toBeUndefined();
+  });
+
+  it('đã chạm khối: gửi bản nháp đã tỉa, bản đã lưu không còn vai trò', () => {
+    const touched: BuildingDecisions = { ...EMPTY_DECISIONS, levels: [{ levelRef: 'v9', heightMm: 2800 }], seen: ['k2'] };
+
+    expect(decisionsToSend(touched, stored, live('v1', 'v2'))).toEqual({ ...EMPTY_DECISIONS, seen: ['k2'] });
   });
 });
 

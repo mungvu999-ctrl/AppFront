@@ -120,6 +120,7 @@ function ReviewStepBody({ flow, gateway, projectId, set }: ReviewStepBodyProps) 
     set,
     gateway,
     building: touched ?? undefined,
+    storedBuilding: stored,
     houseProblems,
     onSaved: setRevision,
     onConfirmed: flow.onConfirmed,

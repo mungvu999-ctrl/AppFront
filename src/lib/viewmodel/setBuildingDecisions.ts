@@ -182,6 +182,27 @@ export const pruneDecisions = (
   roofs: decisions.roofs.filter((roof) => livePlanIds.has(roof.levelRef)),
 });
 
+/**
+ * Thân `building` của một lượt lưu N59; `undefined` = không gửi, máy chủ giữ bản đã lưu.
+ *
+ * `touched` vắng = người duyệt chưa chạm khối trong lượt mở trang này. Khi đó vẫn phải gửi nếu một hình có quyết
+ * định ĐÃ LƯU vừa bị bỏ khỏi bản duyệt: không gửi thì máy chủ giữ quyết định của hình đã mất và N60 chặn xác nhận,
+ * trong khi dòng của tầng đó không còn hiện để người duyệt gỡ.
+ */
+export function decisionsToSend(
+  touched: BuildingDecisions | undefined,
+  stored: BuildingDecisions | undefined,
+  livePlanIds: ReadonlySet<string>,
+): BuildingDecisions | undefined {
+  if (touched !== undefined) return pruneDecisions(touched, livePlanIds);
+  if (stored === undefined) return undefined;
+  const pruned = pruneDecisions(stored, livePlanIds);
+  const unchanged =
+    pruned.levels.length === stored.levels.length && pruned.roofs.length === stored.roofs.length;
+
+  return unchanged ? undefined : pruned;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Thao tác của khối.                                                          */
 /* -------------------------------------------------------------------------- */

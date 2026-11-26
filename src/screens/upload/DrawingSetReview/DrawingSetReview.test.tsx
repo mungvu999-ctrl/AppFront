@@ -523,6 +523,36 @@ describe('khối "Ngôi nhà" (NHA-08a, 08b): đề xuất của máy và quyế
     });
   });
 
+  it('PR 114 P1 — tải lại trang rồi bỏ mặt bằng đã có số nhập mà KHÔNG chạm khối: lượt lưu vẫn gỡ quyết định của hình đã bỏ', async () => {
+    const { gateway, sets } = gatewayOf();
+    const setId = await seedSet(sets);
+    const ui = userEvent.setup({ delay: null, applyAccept: false });
+    const save = vi.spyOn(sets, 'replaceViews');
+    const first = renderScreen({ gateway, setId });
+    const table = await within(await screen.findByRole('region', { name: 'Ngôi nhà' })).findByRole('table', { name: 'Các tầng máy đề xuất' });
+
+    await ui.click(within(table).getAllByRole('button', { name: /^Sửa chiều cao của /u })[0] as HTMLElement);
+    await ui.type(within(table).getByRole('textbox'), '3000{Enter}');
+    await waitFor(() => expect(save.mock.calls.at(-1)?.[0].building?.levels).toHaveLength(1));
+    await waitFor(() => expect(screen.getByText('Đã lưu bản duyệt')).toBeTruthy());
+    // Tải lại trang: khối chưa được chạm, quyết định chỉ còn ở máy chủ.
+    first.unmount();
+    save.mockClear();
+    renderScreen({ gateway, setId });
+    await within(await screen.findByRole('region', { name: 'Ngôi nhà' })).findByText('Người duyệt nhập');
+    const cards = within(screen.getByRole('list', { name: 'Các hình máy tách được' })).getAllByRole('article');
+
+    for (const card of cards.slice(0, 3)) {
+      await ui.click(within(card).getByRole('button', { name: 'Bỏ hình này' }));
+    }
+    await waitFor(() => {
+      const last = save.mock.calls.at(-1)?.[0];
+
+      expect(last?.views.filter((view) => view.excluded)).toHaveLength(3);
+      expect(last?.building?.levels).toEqual([]);
+    });
+  });
+
   it('bộ đổi ở nơi khác khi khối còn lựa chọn chưa lưu: câu báo nói thêm lựa chọn của khối đã mất', async () => {
     const { gateway, sets } = gatewayOf();
     const setId = await seedSet(sets);
