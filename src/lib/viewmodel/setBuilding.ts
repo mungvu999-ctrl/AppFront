@@ -11,6 +11,7 @@ import type {
   BuildingProposal,
   BuildingSource,
   Measured,
+  RoofDecision,
   RoofSpec,
   RuleHit,
 } from '@/api/schemas/setBuilding';
@@ -20,7 +21,14 @@ import { ROOF_MATERIALS, ruleSentence } from './buildingRules';
 import { suggestedFloorName, type ReviewFloor, type ViewDraft } from './drawingSetReview';
 import { statusOfConfidence } from './houseProposal';
 import { elevationWithUnit, heightWithUnit, sourceOf } from './houseProposalParts';
-import { EMPTY_DECISIONS, levelValueProblem, type LevelField } from './setBuildingDecisions';
+import {
+  EMPTY_DECISIONS,
+  levelValueProblem,
+  ROOF_FIELDS,
+  type LevelField,
+  type RoofField,
+} from './setBuildingDecisions';
+import { ROOF_FIELD_LABELS, roofTypedText } from './setBuildingRoofs';
 import type { ViewStatusCode } from './types';
 
 const UNKNOWN_LEVEL = 'Tầng chưa rõ';
@@ -50,11 +58,37 @@ export interface HouseLevelRow {
   readonly heightEdit: HouseLevelEdit;
 }
 
+export interface HouseOption {
+  readonly value: string;
+  readonly label: string;
+}
+
+/** Cách sửa một dòng của thẻ mái (NHA-08c): ô số, ô chọn một, hoặc nút xoay 90°. */
+export type HouseRoofEdit =
+  /** `typedText`: chữ đặt sẵn vào ô sửa; rỗng khi người duyệt chưa nhập. */
+  | { readonly kind: 'number'; readonly typedText: string }
+  /** `value`: mã đang hiệu lực (đã nhập, không thì của máy); rỗng khi chưa có gì. */
+  | { readonly kind: 'choice'; readonly value: string; readonly options: readonly HouseOption[] }
+  /** `next`: số lần xoay sau một lần bấm, tính từ hướng đang hiệu lực. */
+  | { readonly kind: 'turn'; readonly next: number };
+
+export interface HouseRoofRow {
+  readonly field: RoofField;
+  readonly label: string;
+  /** Nhãn viết thường, để đặt giữa câu của nhãn nút. */
+  readonly lower: string;
+  /** `null` = máy chưa có giá trị và người duyệt chưa nhập. */
+  readonly cell: HouseCell | null;
+  /** Giá trị đang hiện là của người duyệt (trong bản nháp), không phải của máy. */
+  readonly isTyped: boolean;
+  readonly edit: HouseRoofEdit;
+}
+
 export interface HouseRoofCard {
   readonly key: string;
   readonly title: string;
   /** Rỗng khi mái đã bị bỏ ("không dựng mái") và máy không còn đề xuất nó. */
-  readonly rows: readonly { readonly label: string; readonly cell: HouseCell }[];
+  readonly rows: readonly HouseRoofRow[];
   readonly isSkipped: boolean;
 }
 
@@ -182,25 +216,47 @@ const optionalCell = (
 /* Khối.                                                                       */
 /* -------------------------------------------------------------------------- */
 
-function roofCardOf(roof: RoofSpec, nameOf: (ref: string) => string, isSkipped: boolean): HouseRoofCard {
-  const rows: (readonly [string, Measured | undefined, (value: number | string) => string])[] = [
-    ['Dạng mái', roof.form, lookup(ROOF_FORMS)],
-    ['Độ dốc', roof.pitchDeg, pitchText],
-    ['Hướng mái', roof.quarterTurns, turnsText],
-    ['Cốt diềm', roof.eaveElevationMm, elevationText],
-    ['Cốt đỉnh', roof.ridgeElevationMm, elevationText],
-    ['Độ đua', roof.overhangMm, lengthText],
-    ['Vật liệu', roof.material, materialText],
-    ['Chiều cao tường chắn mái', roof.parapetMm, lengthText],
-  ];
+const ROOF_WRITERS: Readonly<Record<RoofField, (value: number | string) => string>> = {
+  form: lookup(ROOF_FORMS),
+  pitchDeg: pitchText,
+  quarterTurns: turnsText,
+  eaveElevationMm: elevationText,
+  ridgeElevationMm: elevationText,
+  overhangMm: lengthText,
+  material: materialText,
+  parapetMm: lengthText,
+};
+const optionsOf = (table: ReadonlyMap<string, string>): readonly HouseOption[] =>
+  [...table].map(([value, label]) => ({ value, label: capital(label) }));
+const ROOF_CHOICES: Readonly<Partial<Record<RoofField, readonly HouseOption[]>>> = {
+  form: optionsOf(ROOF_FORMS),
+  material: optionsOf(ROOF_MATERIALS),
+};
 
+/** Một dòng của thẻ mái: số người duyệt nhập (nếu có) thay số của máy và mang chip "Người duyệt nhập". */
+function roofRowOf(field: RoofField, measured: Measured | undefined, typed: number | string | undefined): HouseRoofRow {
+  const shown: Measured | undefined =
+    typed === undefined ? measured : { value: typed, confidence: 1, source: 'reviewer', viewIds: [] };
+  const options = ROOF_CHOICES[field];
+  // Hướng lạ của máy (không nguyên, ngoài 0..3) coi như chưa xoay: lần bấm đầu luôn ra một số dây nhận.
+  const turns = typeof shown?.value === 'number' && [0, 1, 2, 3].includes(shown.value) ? shown.value : 0;
+  const edit: HouseRoofEdit =
+    options !== undefined
+      ? { kind: 'choice', value: shown === undefined ? '' : String(shown.value), options }
+      : field === 'quarterTurns'
+        ? { kind: 'turn', next: (turns + 1) % 4 }
+        : { kind: 'number', typedText: typeof typed === 'number' ? roofTypedText(field, typed) : '' };
+  const label = ROOF_FIELD_LABELS[field];
+
+  return { field, label, lower: label.toLowerCase(), cell: optionalCell(shown, ROOF_WRITERS[field]), isTyped: typed !== undefined, edit };
+}
+
+function roofCardOf(roof: RoofSpec, nameOf: (ref: string) => string, decision: RoofDecision | undefined): HouseRoofCard {
   return {
     key: roof.levelRef,
     title: `Mái của ${nameOf(roof.levelRef)}`,
-    rows: rows.flatMap(([label, measured, write]) =>
-      measured === undefined ? [] : [{ label, cell: cellOf(measured, write) }],
-    ),
-    isSkipped,
+    rows: ROOF_FIELDS.map((field) => roofRowOf(field, roof[field], decision?.[field])),
+    isSkipped: decision?.skip === true,
   };
 }
 
@@ -246,6 +302,7 @@ export function houseBlockOf(
   decisions: BuildingDecisions = EMPTY_DECISIONS,
 ): HouseBlockVm {
   const typed = new Map(decisions.levels.map((level) => [level.levelRef, level]));
+  const roofDecisions = new Map(decisions.roofs.map((roof) => [roof.levelRef, roof]));
   const skipped = new Set(decisions.roofs.filter((roof) => roof.skip).map((roof) => roof.levelRef));
   const proposed = new Set(proposal.roofs.map((roof) => roof.levelRef));
   const nameOf = (ref: string): string => names.get(ref) ?? UNKNOWN_LEVEL;
@@ -265,7 +322,7 @@ export function houseBlockOf(
       heightEdit: levelEditOf('heightMm', level.heightMm, typed.get(level.levelRef)?.heightMm),
     })),
     roofs: [
-      ...proposal.roofs.map((roof) => roofCardOf(roof, nameOf, skipped.has(roof.levelRef))),
+      ...proposal.roofs.map((roof) => roofCardOf(roof, nameOf, roofDecisions.get(roof.levelRef))),
       // Mái đã bỏ thì máy không đề xuất nữa; vẫn giữ một thẻ để người duyệt bỏ chọn được.
       ...[...skipped]
         .filter((ref) => !proposed.has(ref))

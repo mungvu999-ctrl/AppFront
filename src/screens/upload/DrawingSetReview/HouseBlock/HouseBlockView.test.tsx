@@ -42,10 +42,21 @@ const VM: HouseBlockVm = {
       isSkipped: false,
       rows: [
         {
+          field: 'form',
           label: 'Dạng mái',
+          lower: 'dạng mái',
           cell: { text: 'Mái hai dốc', chip: 'Máy đọc từ mặt bằng mái · 80%', status: 'neutral' },
+          isTyped: false,
+          edit: { kind: 'choice', value: 'gable', options: [{ value: 'gable', label: 'Mái hai dốc' }] },
         },
-        { label: 'Độ dốc', cell: { text: '30°', chip: 'Máy giả định · 30%', status: 'violation' } },
+        {
+          field: 'pitchDeg',
+          label: 'Độ dốc',
+          lower: 'độ dốc',
+          cell: { text: '30°', chip: 'Máy giả định · 30%', status: 'violation' },
+          isTyped: false,
+          edit: { kind: 'number', typedText: '' },
+        },
       ],
     },
   ],
@@ -91,6 +102,7 @@ const EMPTY: HouseBlockVm = { ...VM, levels: [], roofs: [], conflicts: [], viola
 const actionsOf = (): { [K in keyof HouseActions]: ReturnType<typeof vi.fn<HouseActions[K]>> } => ({
   setLevel: vi.fn<HouseActions['setLevel']>(),
   setRoofSkip: vi.fn<HouseActions['setRoofSkip']>(),
+  setRoof: vi.fn<HouseActions['setRoof']>(),
   pick: vi.fn<HouseActions['pick']>(),
   markSeen: vi.fn<HouseActions['markSeen']>(),
 });
@@ -174,7 +186,8 @@ describe('HouseBlockView — có đề xuất', () => {
     const card = screen.getByRole('group', { name: 'Mái của Tầng 2' });
 
     expect(within(card).getByText('Dạng mái:')).toBeTruthy();
-    expect(within(card).getByText('Mái hai dốc')).toBeTruthy();
+    // Hai lần: giá trị đang hiệu lực và lựa chọn cùng tên trong nhóm chọn dạng mái (NHA-08c).
+    expect(within(card).getAllByText('Mái hai dốc')).toHaveLength(2);
     expect(within(card).getByText('Máy giả định · 30%')).toBeTruthy();
   });
 
@@ -272,9 +285,9 @@ describe('HouseBlockView — người duyệt quyết định (NHA-08b)', () => 
     await user.click(screen.getByRole('button', { name: 'Sửa chiều cao của Tầng 1' }));
     expect(screen.getByLabelText('Chiều cao của Tầng 1 (mm)')).toHaveProperty('value', '3300');
     await user.keyboard('{Escape}');
-    await user.click(screen.getByRole('button', { name: 'Bỏ chiều cao đã nhập của Tầng 1' }));
+    await user.click(screen.getByRole('button', { name: 'Bỏ số đã nhập cho chiều cao của Tầng 1' }));
     expect(actions.setLevel).toHaveBeenCalledWith('v1', 'heightMm', undefined);
-    expect(screen.queryByRole('button', { name: 'Bỏ cốt đã nhập của Tầng 1' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Bỏ số đã nhập cho cốt của Tầng 1' })).toBeNull();
   });
 
   it('"Không dựng mái, tôi tự vẽ": tick và bỏ tick; mái đã bỏ vẫn có thẻ để bỏ tick', async () => {

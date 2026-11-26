@@ -158,7 +158,7 @@ describe('houseBlockOf — thẻ mái', () => {
     ).roofs;
 
     expect(card?.title).toBe('Mái của Tầng 2');
-    expect(card?.rows.map((row) => [row.label, row.cell.text])).toEqual([
+    expect(card?.rows.map((row) => [row.label, row.cell?.text])).toEqual([
       ['Dạng mái', 'Mái hai dốc'],
       ['Độ dốc', '26,6°'],
       ['Hướng mái', 'Xoay 90°'],
@@ -170,7 +170,7 @@ describe('houseBlockOf — thẻ mái', () => {
     ]);
   });
 
-  it('thiếu trường tuỳ chọn thì không có dòng đó; hướng 0 là "Không xoay"; giá trị lạ hiện nguyên văn', () => {
+  it('thiếu trường tuỳ chọn thì dòng đó vẫn có để người duyệt nhập, ô trống; hướng 0 là "Không xoay"; giá trị lạ hiện nguyên văn', () => {
     const [card] = houseBlockOf(
       proposal({
         roofs: [
@@ -186,12 +186,125 @@ describe('houseBlockOf — thẻ mái', () => {
       NAMES,
     ).roofs;
 
-    expect(card?.rows.map((row) => [row.label, row.cell.text])).toEqual([
+    expect(card?.rows.map((row) => [row.label, row.cell?.text])).toEqual([
       ['Dạng mái', 'butterfly'],
       ['Độ dốc', '0°'],
       ['Hướng mái', 'Không xoay'],
+      ['Cốt diềm', undefined],
+      ['Cốt đỉnh', undefined],
       ['Độ đua', '0 mm'],
+      ['Vật liệu', undefined],
+      ['Chiều cao tường chắn mái', undefined],
     ]);
+  });
+
+  const machineRoof = {
+    levelRef: 'v2',
+    form: measured('gable', 'roofPlan'),
+    pitchDeg: measured(26.57, 'section'),
+    quarterTurns: measured(3, 'convention', 0.6),
+    overhangMm: measured(600, 'convention', 0.4),
+  };
+  const rowsOf = (decisions = EMPTY_DECISIONS) =>
+    new Map(
+      houseBlockOf(proposal({ roofs: [machineRoof] }), NAMES, decisions).roofs[0]?.rows.map(
+        (row) => [row.field, row],
+      ),
+    );
+
+  it('NHA-08c — chưa nhập gì: mỗi dòng biết cách sửa của nó, và giá trị đang hiệu lực là của máy', () => {
+    const rows = rowsOf();
+
+    expect(rows.get('form')).toMatchObject({
+      lower: 'dạng mái',
+      isTyped: false,
+      edit: {
+        kind: 'choice',
+        value: 'gable',
+        options: [
+          { value: 'flat', label: 'Mái bằng' },
+          { value: 'shed', label: 'Mái một dốc' },
+          { value: 'gable', label: 'Mái hai dốc' },
+          { value: 'hip', label: 'Mái bốn dốc' },
+        ],
+      },
+    });
+    expect(rows.get('material')?.edit).toEqual({
+      kind: 'choice',
+      value: '',
+      options: [
+        { value: 'tile', label: 'Ngói' },
+        { value: 'metal', label: 'Tôn' },
+        { value: 'shingle', label: 'Tấm lợp bitum' },
+      ],
+    });
+    // Máy đang ở 3 lần xoay: lần xoay kế quay về 0.
+    expect(rows.get('quarterTurns')?.edit).toEqual({ kind: 'turn', next: 0 });
+    expect(rows.get('pitchDeg')?.edit).toEqual({ kind: 'number', typedText: '' });
+    expect(rows.get('eaveElevationMm')).toMatchObject({
+      cell: null,
+      isTyped: false,
+      edit: { kind: 'number', typedText: '' },
+    });
+  });
+
+  it('NHA-08c — hướng lạ của máy (số lẻ, số âm, chữ): lần xoay đầu vẫn ra 1, một số dây nhận', () => {
+    for (const turns of [1.5, -2, 7, 'north']) {
+      const [card] = houseBlockOf(
+        proposal({ roofs: [{ ...machineRoof, quarterTurns: measured(turns, 'default', 0.3) }] }),
+        NAMES,
+      ).roofs;
+
+      expect(card?.rows.find((row) => row.field === 'quarterTurns')?.edit).toEqual({ kind: 'turn', next: 1 });
+    }
+  });
+
+  it('NHA-08c — số người duyệt nhập hiện ngay kèm chip "Người duyệt nhập", kể cả trường máy chưa có', () => {
+    const rows = rowsOf({
+      ...EMPTY_DECISIONS,
+      roofs: [
+        {
+          levelRef: 'v2',
+          skip: false,
+          form: 'hip',
+          pitchDeg: 30.5,
+          quarterTurns: 1,
+          eaveElevationMm: 6600,
+          material: 'metal',
+        },
+      ],
+    });
+    const typed = { chip: 'Người duyệt nhập', status: 'verified' };
+
+    expect(rows.get('form')).toMatchObject({
+      cell: { text: 'Mái bốn dốc', ...typed },
+      isTyped: true,
+      edit: { value: 'hip' },
+    });
+    expect(rows.get('pitchDeg')).toMatchObject({
+      cell: { text: '30,5°', ...typed },
+      isTyped: true,
+      edit: { kind: 'number', typedText: '30,5' },
+    });
+    expect(rows.get('quarterTurns')).toMatchObject({
+      cell: { text: 'Xoay 90°', ...typed },
+      isTyped: true,
+      edit: { kind: 'turn', next: 2 },
+    });
+    expect(rows.get('eaveElevationMm')).toMatchObject({
+      cell: { text: '+6.600 m', ...typed },
+      isTyped: true,
+      edit: { typedText: '6600' },
+    });
+    expect(rows.get('material')).toMatchObject({
+      cell: { text: 'Tôn', ...typed },
+      edit: { value: 'metal' },
+    });
+    // Trường không nhập vẫn là của máy.
+    expect(rows.get('overhangMm')).toMatchObject({
+      cell: { text: '600 mm', chip: 'Theo quy ước · 40%' },
+      isTyped: false,
+    });
   });
 });
 
@@ -327,7 +440,7 @@ describe('houseBlockOf — quyết định của người duyệt (NHA-08b)', ()
     const vm = houseBlockOf(proposal({ roofs: [{ levelRef: 'v1', ...roof }] }), NAMES, decisions);
 
     expect(vm.roofs.map((card) => [card.key, card.title, card.isSkipped, card.rows.length])).toEqual([
-      ['v1', 'Mái của Tầng 1', true, 4],
+      ['v1', 'Mái của Tầng 1', true, 8],
       ['v2', 'Mái của Tầng 2', true, 0],
     ]);
     expect(houseBlockOf(proposal({ roofs: [{ levelRef: 'v1', ...roof }] }), NAMES).roofs[0]?.isSkipped).toBe(false);

@@ -1,23 +1,37 @@
 /**
- * Quyết định của người duyệt trên khối "Ngôi nhà" (NHA-08b): số họ nhập cho tầng, "không dựng mái", nguồn họ
- * chọn cho mâu thuẫn, cảnh báo đã xem — và những gì còn chặn xác nhận.
+ * Quyết định của người duyệt trên khối "Ngôi nhà" (NHA-08b/08c): số họ nhập cho tầng, thông số mái họ sửa,
+ * "không dựng mái", nguồn họ chọn cho mâu thuẫn, cảnh báo đã xem — và những gì còn chặn xác nhận.
  *
  * Thuần, không React. Mọi hàm trả bản mới, không sửa bản cũ. Bản gửi đi (thân `building` của N59) thay CẢ bản
  * đã lưu, và trường tuỳ chọn thì VẮNG chứ không `null`/`undefined` (schema strict của dây duyệt).
  */
 
 import { HOUSE_ELEVATION_RANGE_MM, HOUSE_HEIGHT_RANGE_MM } from '@/api/schemas/houseProposal';
-import type {
-  BuildingDecisions,
-  BuildingProposal,
-  BuildingSource,
-  LevelDecision,
+import {
+  RoofDecisionSchema,
+  type BuildingDecisions,
+  type BuildingProposal,
+  type BuildingSource,
+  type LevelDecision,
 } from '@/api/schemas/setBuilding';
 import { formatNumber, parseNumber } from '@/lib/format/number';
 
 export const EMPTY_DECISIONS: BuildingDecisions = { levels: [], roofs: [], picks: {}, seen: [] };
 
 export type LevelField = 'elevationMm' | 'heightMm';
+
+/** Tám thông số sửa được của một mái, theo thứ tự hiện trên thẻ mái. */
+export const ROOF_FIELDS = [
+  'form',
+  'pitchDeg',
+  'quarterTurns',
+  'eaveElevationMm',
+  'ridgeElevationMm',
+  'overhangMm',
+  'material',
+  'parapetMm',
+] as const;
+export type RoofField = (typeof ROOF_FIELDS)[number];
 
 const LEVEL_FIELDS: Readonly<
   Record<LevelField, { label: string; range: { readonly min: number; readonly max: number } }>
@@ -39,16 +53,45 @@ export function levelValueFromText(text: string): number | undefined {
   return /^-?\d[\d.]*$/u.test(trimmed) ? parseNumber(trimmed) : undefined;
 }
 
-/** Câu báo khi số nhập không gửi được (BE từ chối 422 ngoài dải); `null` = dùng được. */
-export function levelValueProblem(field: LevelField, valueMm: number | undefined): string | null {
-  const { label, range } = LEVEL_FIELDS[field];
+const MM_FORMAT_PROBLEM = 'Nhập số nguyên theo mm.';
 
-  if (valueMm === undefined || !Number.isInteger(valueMm)) return 'Nhập số nguyên theo mm.';
+/** Kết quả đọc chữ gõ trong một ô sửa: số gửi được, hoặc câu báo ngay dưới ô. */
+export type NumberRead = { readonly value: number } | { readonly problem: string };
+
+/** Câu báo khi một số mm không gửi được (BE từ chối 422 ngoài dải); `null` = dùng được. Chung cho tầng và mái. */
+export function mmRangeProblem(
+  label: string,
+  range: { readonly min: number; readonly max: number },
+  valueMm: number | undefined,
+): string | null {
+  if (valueMm === undefined || !Number.isInteger(valueMm)) return MM_FORMAT_PROBLEM;
 
   return valueMm < range.min || valueMm > range.max
     ? `${label} phải trong khoảng ${signed(range.min)} đến ${signed(range.max)} mm.`
     : null;
 }
+
+export function levelValueProblem(field: LevelField, valueMm: number | undefined): string | null {
+  const { label, range } = LEVEL_FIELDS[field];
+
+  return mmRangeProblem(label, range, valueMm);
+}
+
+export function readMmValue(
+  label: string,
+  range: { readonly min: number; readonly max: number },
+  text: string,
+): NumberRead {
+  const valueMm = levelValueFromText(text);
+  const problem = mmRangeProblem(label, range, valueMm);
+
+  return valueMm === undefined || problem !== null
+    ? { problem: problem ?? MM_FORMAT_PROBLEM }
+    : { value: valueMm };
+}
+
+export const readLevelNumber = (field: LevelField, text: string): NumberRead =>
+  readMmValue(LEVEL_FIELDS[field].label, LEVEL_FIELDS[field].range, text);
 
 /* -------------------------------------------------------------------------- */
 /* Sửa.                                                                        */
@@ -87,6 +130,32 @@ export function setRoofSkip(
   return { ...decisions, roofs: skip || Object.keys(next).length > 2 ? [...others, next] : others };
 }
 
+/**
+ * Đặt (hoặc bỏ, khi `value` vắng) một thông số mái người duyệt nhập. Hết thông số thì bỏ cả quyết định, trừ khi
+ * mái đang "không dựng". Giá trị dây không nhận (dạng lạ, số ngoài khoảng) thì không ghi gì: một quyết định hỏng
+ * làm N59 từ chối CẢ lượt lưu.
+ */
+export function setRoofValue(
+  decisions: BuildingDecisions,
+  levelRef: string,
+  field: RoofField,
+  value: number | string | undefined,
+): BuildingDecisions {
+  const next: Record<string, unknown> = {
+    ...(decisions.roofs.find((roof) => roof.levelRef === levelRef) ?? { levelRef, skip: false }),
+  };
+
+  if (value === undefined) delete next[field];
+  else next[field] = value;
+  const parsed = RoofDecisionSchema.safeParse(next);
+
+  if (!parsed.success) return decisions;
+  const others = decisions.roofs.filter((roof) => roof.levelRef !== levelRef);
+  const kept = parsed.data.skip || Object.keys(parsed.data).length > 2;
+
+  return { ...decisions, roofs: kept ? [...others, parsed.data] : others };
+}
+
 export const pickSource = (
   decisions: BuildingDecisions,
   conflictKey: string,
@@ -121,6 +190,8 @@ export interface HouseActions {
   /** `valueMm` vắng = bỏ số đã nhập, quay về giá trị của máy. */
   readonly setLevel: (levelRef: string, field: LevelField, valueMm: number | undefined) => void;
   readonly setRoofSkip: (levelRef: string, skip: boolean) => void;
+  /** `value` vắng = bỏ giá trị đã nhập, quay về giá trị của máy. */
+  readonly setRoof: (levelRef: string, field: RoofField, value: number | string | undefined) => void;
   readonly pick: (conflictKey: string, source: BuildingSource) => void;
   readonly markSeen: (key: string) => void;
 }
@@ -143,6 +214,9 @@ export function houseActionsOf(
     },
     setRoofSkip: (levelRef, skip) => {
       apply((decisions) => setRoofSkip(decisions, levelRef, skip));
+    },
+    setRoof: (levelRef, field, value) => {
+      apply((decisions) => setRoofValue(decisions, levelRef, field, value));
     },
     pick: (conflictKey, source) => {
       apply((decisions) => pickSource(decisions, conflictKey, source));

@@ -381,7 +381,8 @@ describe('khối "Ngôi nhà" (NHA-08a, 08b): đề xuất của máy và quyế
     expect(within(table).getByText('Tầng trệt')).toBeTruthy();
     expect(within(block).getByRole('group', { name: /^Mái của /u })).toBeTruthy();
     expect(container.querySelector('.bg-state-verified-tint')).toBeNull();
-    expectVietnamese(block);
+    // "bitum" là tên vật liệu đã thành từ tiếng Việt (lựa chọn "Tấm lợp bitum" của thẻ mái).
+    expectVietnamese(block, { allowWords: ['bitum'] });
   });
 
   it('bản duyệt vừa lưu thì khối đọc lại: bỏ một mặt bằng là bớt một hàng tầng', async () => {
@@ -470,6 +471,30 @@ describe('khối "Ngôi nhà" (NHA-08a, 08b): đề xuất của máy và quyế
     await ui.type(within(table).getByRole('textbox'), '3600{Enter}');
     expect(await within(table).findByText('Người duyệt nhập')).toBeTruthy();
     expect(within(table).getByText('3.600 mm')).toBeTruthy();
+    await waitFor(() => expect(within(within(block).getByRole('list', { name: 'Cảnh báo' })).getAllByRole('listitem')).toHaveLength(1));
+  });
+
+  it('NHA-08c — sửa dạng mái và độ dốc trên thẻ mái: hiện ngay "Người duyệt nhập", lượt lưu mang quyết định mái, cảnh báo dạng mái hết', async () => {
+    const { gateway, sets } = gatewayOf();
+    const setId = await seedSet(sets);
+    const ui = userEvent.setup({ delay: null, applyAccept: false });
+    const save = vi.spyOn(sets, 'replaceViews');
+
+    renderScreen({ gateway, setId });
+    const block = await screen.findByRole('region', { name: 'Ngôi nhà' });
+    const card = await within(block).findByRole('group', { name: /^Mái của /u });
+
+    expect(within(within(block).getByRole('list', { name: 'Cảnh báo' })).getAllByRole('listitem')).toHaveLength(2);
+    await ui.click(within(within(card).getByRole('radiogroup', { name: 'Dạng mái:' })).getByRole('radio', { name: 'Mái bốn dốc' }));
+    await ui.click(within(card).getByRole('button', { name: /^Sửa độ dốc — /u }));
+    await ui.type(within(card).getByRole('textbox'), '6:12{Enter}');
+    expect(within(card).getByText('26,6°')).toBeTruthy();
+    expect(within(card).getAllByText('Người duyệt nhập')).toHaveLength(2);
+    await waitFor(() =>
+      expect(save.mock.calls.at(-1)?.[0].building?.roofs).toEqual([
+        expect.objectContaining({ skip: false, form: 'hip', pitchDeg: 26.6 }),
+      ]),
+    );
     await waitFor(() => expect(within(within(block).getByRole('list', { name: 'Cảnh báo' })).getAllByRole('listitem')).toHaveLength(1));
   });
 

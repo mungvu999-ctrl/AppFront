@@ -17,6 +17,7 @@ import {
   pruneDecisions,
   setLevelValue,
   setRoofSkip,
+  setRoofValue,
 } from './setBuildingDecisions';
 
 const proposal = (patch: Partial<BuildingProposal> = {}): BuildingProposal => ({
@@ -198,6 +199,49 @@ describe('houseBlockers — lý do chặn xác nhận (như N60)', () => {
   });
 });
 
+describe('setRoofValue — thông số mái người duyệt nhập (NHA-08c)', () => {
+  it('nhập từng trường: một quyết định cho một mái, không dựng mái vẫn là `false`', () => {
+    const typed = setRoofValue(
+      setRoofValue(setRoofValue(EMPTY_DECISIONS, 'v2', 'form', 'hip'), 'v2', 'pitchDeg', 26.6),
+      'v2',
+      'quarterTurns',
+      1,
+    );
+
+    expect(typed.roofs).toEqual([
+      { levelRef: 'v2', skip: false, form: 'hip', pitchDeg: 26.6, quarterTurns: 1 },
+    ]);
+    expect(BuildingDecisionsSchema.safeParse(typed).success).toBe(true);
+  });
+
+  it('bỏ một trường: khoá đó biến mất; bỏ nốt thì bỏ cả quyết định, trừ khi mái đang "không dựng"', () => {
+    const typed = setRoofValue(
+      setRoofValue(EMPTY_DECISIONS, 'v2', 'overhangMm', 600),
+      'v2',
+      'material',
+      'tile',
+    );
+    const one = setRoofValue(typed, 'v2', 'overhangMm', undefined);
+
+    expect(one.roofs).toEqual([{ levelRef: 'v2', skip: false, material: 'tile' }]);
+    expect(setRoofValue(one, 'v2', 'material', undefined).roofs).toEqual([]);
+    const skipped = setRoofValue(setRoofSkip(one, 'v2', true), 'v2', 'material', undefined);
+
+    expect(skipped.roofs).toEqual([{ levelRef: 'v2', skip: true }]);
+  });
+
+  it('giá trị dây không nhận (dạng lạ, số ngoài khoảng) thì không ghi gì; mái khác không bị đụng', () => {
+    const other: BuildingDecisions = { ...EMPTY_DECISIONS, roofs: [{ levelRef: 'v1', skip: true }] };
+
+    expect(setRoofValue(other, 'v2', 'form', 'butterfly')).toBe(other);
+    expect(setRoofValue(other, 'v2', 'pitchDeg', 85)).toBe(other);
+    expect(setRoofValue(other, 'v2', 'parapetMm', 900).roofs).toEqual([
+      { levelRef: 'v1', skip: true },
+      { levelRef: 'v2', skip: false, parapetMm: 900 },
+    ]);
+  });
+});
+
 describe('houseActionsOf — thao tác của khối', () => {
   it('thao tác đầu tiên khởi từ quyết định đã lưu ở máy chủ; các thao tác sau nối tiếp trên bản nháp', () => {
     let local: BuildingDecisions | null = null;
@@ -211,9 +255,10 @@ describe('houseActionsOf — thao tác của khối', () => {
     actions.pick('elevationMm:v1', 'section');
     actions.setRoofSkip('v1', true);
     actions.setLevel('v1', 'heightMm', undefined);
+    actions.setRoof('v1', 'form', 'gable');
     expect(local).toEqual({
       levels: [],
-      roofs: [{ levelRef: 'v1', skip: true }],
+      roofs: [{ levelRef: 'v1', skip: true, form: 'gable' }],
       picks: { 'elevationMm:v1': 'section' },
       seen: ['k0', 'k1'],
     });

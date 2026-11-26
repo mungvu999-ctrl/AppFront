@@ -2,22 +2,20 @@
  * Khối "Ngôi nhà" của bước duyệt bộ hồ sơ (NHA-08a/08b) — VIEW THUẦN.
  *
  * Hiện đề xuất của máy cho cả bộ và nhận quyết định của người duyệt: bảng tầng (nhận hoặc sửa cốt, chiều cao),
- * thẻ mái ("không dựng mái"), mâu thuẫn giữa các nguồn (chọn một), và các luật kiểm (cảnh báo có "Đã xem").
- * Mỗi giá trị đi kèm một chip nói nguồn bằng chữ, không chỉ màu. Quyết định tự lưu cùng bản duyệt (A7).
- *
- * Thẻ mái chưa sửa được từng thông số (NHA-08c); mái có lỗi thì gỡ bằng "Không dựng mái, tôi tự vẽ".
+ * thẻ mái (sửa từng thông số, hoặc "không dựng mái"), mâu thuẫn giữa các nguồn (chọn một), và các luật kiểm (cảnh
+ * báo có "Đã xem"). Mỗi giá trị đi kèm một chip nói nguồn bằng chữ, không chỉ màu. Quyết định tự lưu cùng bản
+ * duyệt (A7).
  */
-
-import { useId } from 'react';
 
 import { InlineAlert } from '@/components/feedback/InlineAlert';
 import { Skeleton } from '@/components/feedback/Skeleton';
-import { Checkbox } from '@/components/ui/Checkbox';
-import type { HouseBlockVm, HouseRoofCard } from '@/lib/viewmodel/setBuilding';
+import type { HouseBlockVm } from '@/lib/viewmodel/setBuilding';
 import type { HouseActions } from '@/lib/viewmodel/setBuildingDecisions';
 
 import { HouseConflictGroup, HouseViolationList } from './HouseIssues';
-import { HouseLevelTable, HouseValue } from './HouseLevelTable';
+import { HouseLevelTable } from './HouseLevelTable';
+import { HouseValue } from './HouseNumberCell';
+import { HouseRoofCard } from './HouseRoofCard';
 
 const TEXT = {
   title: 'Ngôi nhà',
@@ -30,7 +28,6 @@ const TEXT = {
   noLevels: 'Máy chưa đề xuất tầng nào.',
   roofs: 'Mái',
   noRoofs: 'Máy chưa đề xuất mái nào.',
-  skipRoof: 'Không dựng mái, tôi tự vẽ',
   conflicts: 'Mâu thuẫn giữa các nguồn',
   rules: 'Luật kiểm',
 } as const;
@@ -46,42 +43,6 @@ export interface HouseBlockViewProps {
   readonly isRefreshing: boolean;
   readonly onRetry: () => void;
   readonly actions: HouseActions;
-}
-
-function RoofCard({ actions, card }: { actions: HouseActions; card: HouseRoofCard }) {
-  const titleId = useId();
-
-  return (
-    <div
-      aria-labelledby={titleId}
-      className="flex flex-col gap-2 rounded-lg border border-border-default p-3"
-      role="group"
-    >
-      <h4 className={HEADING} id={titleId}>
-        {card.title}
-      </h4>
-      {card.rows.length === 0 ? null : (
-        <dl className="flex flex-col gap-1 text-[14px]">
-          {card.rows.map((row) => (
-            <div className="flex flex-wrap items-center gap-2" key={row.label}>
-              <dt className="text-text-secondary">{row.label}:</dt>
-              <dd className="min-w-0">
-                <HouseValue cell={row.cell} />
-              </dd>
-            </div>
-          ))}
-        </dl>
-      )}
-      <Checkbox
-        checked={card.isSkipped}
-        label={TEXT.skipRoof}
-        onChange={(checked) => {
-          actions.setRoofSkip(card.key, checked);
-        }}
-        size="sm"
-      />
-    </div>
-  );
 }
 
 function Proposal({ actions, vm }: { actions: HouseActions; vm: HouseBlockVm }) {
@@ -105,7 +66,7 @@ function Proposal({ actions, vm }: { actions: HouseActions; vm: HouseBlockVm }) 
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {vm.roofs.map((card) => (
-            <RoofCard actions={actions} card={card} key={card.key} />
+            <HouseRoofCard actions={actions} card={card} key={card.key} />
           ))}
         </div>
       )}
