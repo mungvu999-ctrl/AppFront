@@ -124,6 +124,16 @@ describe('checkConfirm — không "dựng luôn", chặn trước khi gửi N60'
     expect(check.problems.some((problem) => problem.viewId === undefined)).toBe(true);
   });
 
+  it('khối "Ngôi nhà" còn việc (NHA-08b): mỗi câu thành một vấn đề của cả bộ và chặn xác nhận', () => {
+    const drafts = chooseNewFloor(toDrafts([view('a')]), 'a', 'L-N');
+
+    expect(checkConfirm(drafts, FLOORS, []).canConfirm).toBe(true);
+    const blocked = checkConfirm(drafts, FLOORS, ['Còn 1 lỗi.', 'Còn 2 cảnh báo chưa xem.']);
+
+    expect(blocked.canConfirm).toBe(false);
+    expect(blocked.problems).toEqual([{ text: 'Còn 1 lỗi.' }, { text: 'Còn 2 cảnh báo chưa xem.' }]);
+  });
+
   it('một hình có đích, hình còn lại chưa chọn → chặn đúng hình đó; bỏ hình ấy thì qua', () => {
     let drafts = chooseNewFloor(toDrafts([view('a'), view('b')]), 'a', 'L-N');
     const blocked = checkConfirm(drafts, FLOORS);

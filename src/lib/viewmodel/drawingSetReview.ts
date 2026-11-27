@@ -318,7 +318,12 @@ export interface ConfirmCheck {
 
 const SAVE_NO_PLAN = 'Chọn tầng cho ít nhất một hình mặt bằng rồi mới xác nhận được.';
 
-export function checkConfirm(drafts: readonly ViewDraft[], floors: readonly ReviewFloor[]): ConfirmCheck {
+/** `houseProblems`: những gì của khối "Ngôi nhà" còn chặn (NHA-08b, `houseBlockers`); N60 chặn lại y như vậy. */
+export function checkConfirm(
+  drafts: readonly ViewDraft[],
+  floors: readonly ReviewFloor[],
+  houseProblems: readonly string[] = [],
+): ConfirmCheck {
   const live = drafts.filter((draft) => !draft.excluded);
   const plans = live.filter((draft) => draft.kind === 'plan');
   const problems: ConfirmProblem[] = [];
@@ -365,6 +370,7 @@ export function checkConfirm(drafts: readonly ViewDraft[], floors: readonly Revi
   if (plans.length === 0 || plans.every((draft) => draft.target.mode === 'none')) {
     problems.push({ text: SAVE_NO_PLAN });
   }
+  problems.push(...houseProblems.map((text) => ({ text })));
 
   return {
     canConfirm: problems.length === 0,

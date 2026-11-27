@@ -29,14 +29,16 @@ export interface RadioGroupProps {
   disabled?: boolean;
   name?: string;
   className?: string;
+  /** Id của phần tử đặt tên cho nhóm (trình đọc màn hình đọc tên nhóm trước các lựa chọn). */
+  'aria-labelledby'?: string;
 }
 
-function RadioGroup({ value, onChange, children, disabled = false, name, className = '' }: RadioGroupProps) {
+function RadioGroup({ value, onChange, children, disabled = false, name, className = '', 'aria-labelledby': labelledBy }: RadioGroupProps) {
   const defaultName = useId();
   const internalName = name || defaultName;
   return (
     <RadioContext.Provider value={{ value, onChange, disabled, name: internalName }}>
-      <div className={cn('flex flex-col gap-2', className)} role="radiogroup">
+      <div aria-labelledby={labelledBy} className={cn('flex flex-col gap-2', className)} role="radiogroup">
         {children}
       </div>
     </RadioContext.Provider>

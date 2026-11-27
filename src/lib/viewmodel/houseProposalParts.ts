@@ -55,6 +55,8 @@ const SOURCES: ReadonlyMap<string, { kind: HouseSourceKind; text: string }> = ne
   ['plan', { kind: 'read', text: 'mặt bằng' }],
   ['plan+section', { kind: 'read', text: 'mặt bằng và mặt cắt' }],
   ['section', { kind: 'read', text: 'mặt cắt' }],
+  ['roofPlan', { kind: 'read', text: 'mặt bằng mái' }],
+  ['elevation', { kind: 'read', text: 'mặt đứng' }],
   ['dims', { kind: 'read', text: 'kích thước ghi trên bản vẽ' }],
   ['convention', { kind: 'assumed', text: 'quy ước' }],
   ['default', { kind: 'assumed', text: 'giả định' }],

@@ -23,6 +23,7 @@ import {
 } from '@/lib/viewmodel/drawingSetReview';
 
 import { DrawingSetViewCard } from './DrawingSetViewCard';
+import { HouseBlockView, type HouseBlockViewProps } from './HouseBlock/HouseBlockView';
 import type { UseDrawingSetReviewResult } from './useDrawingSetReview';
 
 const TEXT = {
@@ -61,6 +62,8 @@ export interface DrawingSetReviewViewProps {
   readonly titleBlock?: DrawingSetTitleBlock | undefined;
   /** Ô tên bộ (K-65): tên đã có hoặc gợi ý từ khung tên; người duyệt sửa, tự lưu cùng bản duyệt. */
   readonly nameField: UseDrawingSetReviewResult['nameField'];
+  /** Khối "Ngôi nhà" (NHA-08a): đề xuất của máy cho cả bộ, chỉ để xem. */
+  readonly house: HouseBlockViewProps;
   readonly actions: UseDrawingSetReviewResult['actions'];
   readonly onRetryFloors: () => void;
   readonly onRetrySave: () => void;
@@ -140,6 +143,8 @@ export function DrawingSetReviewView(props: DrawingSetReviewViewProps) {
           title={TEXT.problemsTitle}
         />
       )}
+
+      <HouseBlockView {...props.house} />
 
       {drafts.length === 0 ? (
         <p className="text-[14px] text-text-secondary">{TEXT.empty}</p>

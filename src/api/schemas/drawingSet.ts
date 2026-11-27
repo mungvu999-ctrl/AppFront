@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { CursorPageSchema, isoInstantSchema, VersionedWriteSchema } from './common';
 import { HOUSE_QUESTION_CODES, HOUSE_STOREY_LABELS, HOUSE_VIEW_KINDS } from './houseProposal';
+import { BuildingDecisionsSchema } from './setBuilding';
 
 /**
  * Bộ hồ sơ nhiều bản vẽ (Mức 3, lát cắt 2): N54–N61 dưới `/api/projects/{projectId}/drawing-sets`
@@ -202,6 +203,8 @@ export const ReplaceViewsSchema = VersionedWriteSchema(
       views: z.array(ViewEditSchema).max(DRAWING_SET_LIMITS.maxViews),
       /** Đổi tên bộ (K-65): đã trim, 1–120 ký tự như N54; vắng = giữ tên. */
       name: z.string().trim().min(1).max(DRAWING_SET_NAME_MAX).optional(),
+      /** Quyết định trên đề xuất ngôi nhà (NHA-06): vắng = giữ bản đã lưu; có = thay cả bản. */
+      building: BuildingDecisionsSchema.optional(),
     })
     .strict(),
 );

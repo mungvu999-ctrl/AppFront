@@ -152,6 +152,8 @@ export const ENDPOINTS = {
   houseProposal: (projectId: string): string => `${PROJECTS_ROOT}/${projectId}/house-proposal`,
   /** N54–N61 (K-32a) — bộ hồ sơ nhiều bản vẽ; mọi đường dưới `/projects/{projectId}/drawing-sets`. */
   drawingSets: {
+    /** NHA-06 — đề xuất ngôi nhà của bộ kèm quyết định đã lưu (GET, chỉ đọc). */
+    building: (projectId: string, setId: string): string => `${PROJECTS_ROOT}/${projectId}/drawing-sets/${setId}/building`,
     chunk: (projectId: string, setId: string, fileId: string): string =>
       `${PROJECTS_ROOT}/${projectId}/drawing-sets/${setId}/files/${fileId}/chunks`,
     complete: (projectId: string, setId: string): string => `${PROJECTS_ROOT}/${projectId}/drawing-sets/${setId}/complete`,
