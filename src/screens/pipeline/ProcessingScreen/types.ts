@@ -158,7 +158,8 @@ export type ProcessingReviewReason =
   | 'geometrySuspect'
   | 'fallbackWallModel'
   | 'fallbackObjectModel'
-  | 'fallbackTextModel';
+  | 'fallbackTextModel'
+  | 'roofUnreviewed';
 
 /**
  * Một nhắc hình học mức nhẹ (N16 `readiness.notices`, NO-488) gộp từ mọi tầng xong: mã, số đối tượng

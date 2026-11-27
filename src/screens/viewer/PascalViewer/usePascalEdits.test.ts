@@ -874,3 +874,89 @@ describe('usePascalEdits', () => {
     expect(useStore.getState().spatial?.byKind.wall ?? []).toHaveLength(0);
   });
 });
+
+describe('NHA-09b — cảnh còn nói "đã duyệt" mà bản lưu đã bỏ: báo màn dựng lại cảnh', () => {
+  const itemId = SPATIAL.byKind.furniture[0] ?? '';
+  const nodeId = `item_${itemId}`;
+  const stored = () => useStore.getState().spatial?.byId[itemId] as Furniture;
+  const sceneOfStore = (): PascalScene =>
+    toPascalScene(denormalizeSpatial(useStore.getState().spatial as NormalizedSpatial)).scene;
+  const moved = (scene: PascalScene, dx: number): PascalScene => {
+    const node = scene.nodes[nodeId] as PascalNode & { readonly position: readonly [number, number, number] };
+
+    return {
+      ...scene,
+      nodes: { ...scene.nodes, [nodeId]: { ...node, position: [node.position[0] + dx, node.position[1], node.position[2]] } as PascalNode },
+    };
+  };
+
+  it('sửa món đã duyệt: báo dựng lại đúng một lần; Ctrl+Z về cảnh cũ (túi còn "đã duyệt") cũng báo; sửa món chưa duyệt thì không', async () => {
+    act(() => {
+      const item = SPATIAL.byId[itemId] as Furniture;
+
+      useStore.getState().setSpatial({ ...SPATIAL, byId: { ...SPATIAL.byId, [itemId]: { ...item, source: 'human', reviewed: true } } } as NormalizedSpatial, null);
+    });
+    const loaded = sceneOfStore();
+    const view = renderHook(() =>
+      usePascalEdits({ spatial: useStore.getState().spatial, loadedScene: loaded, readOnly: false, onRejected: vi.fn() }),
+    );
+    const commit = async (scene: PascalScene): Promise<boolean> => {
+      let ok = false;
+
+      await act(async () => {
+        ok = await view.result.current.onSceneCommit(scene);
+      });
+      view.rerender();
+
+      return ok;
+    };
+    /* Như cầu Pascal sau khi dựng lại: cảnh theo kho thành mốc của lượt sửa kế. */
+    const rebuild = (): PascalScene => {
+      const scene = sceneOfStore();
+
+      act(() => {
+        view.result.current.rebaseOnRebuilt(scene);
+      });
+
+      return scene;
+    };
+
+    expect(loaded.nodes[nodeId]?.metadata?.appfront).toMatchObject({ reviewed: true });
+    expect(await commit(moved(loaded, 0.05))).toBe(true);
+    expect(stored().reviewed).toBe(false);
+    expect(view.result.current.takeSuggestionAccepted()).toBe(true);
+    expect(view.result.current.takeSuggestionAccepted()).toBe(false);
+    expect(rebuild().nodes[nodeId]?.metadata?.appfront).toMatchObject({ reviewed: false });
+
+    expect(await commit(loaded)).toBe(true);
+    expect(stored().reviewed).toBe(false);
+    expect(view.result.current.takeSuggestionAccepted()).toBe(true);
+
+    expect(await commit(moved(rebuild(), 0.05))).toBe(true);
+    expect(view.result.current.takeSuggestionAccepted()).toBe(false);
+  });
+
+  it('PR 115 P2 — Ctrl+Z đưa túi nguồn cũ về mà không có gì để ghi: vẫn báo dựng lại, không thì thẻ hiện nút duyệt mà bấm không lưu', async () => {
+    act(() => {
+      const item = SPATIAL.byId[itemId] as Furniture;
+
+      useStore.getState().setSpatial({ ...SPATIAL, byId: { ...SPATIAL.byId, [itemId]: { ...item, source: 'human', reviewed: false } } } as NormalizedSpatial, null);
+    });
+    const loaded = sceneOfStore();
+    const onRejected = vi.fn();
+    const view = renderHook(() => usePascalEdits({ spatial: useStore.getState().spatial, loadedScene: loaded, readOnly: false, onRejected }));
+    const node = loaded.nodes[nodeId] as PascalNode;
+    const metadata = { ...node.metadata, appfront: { ...node.metadata?.appfront, source: 'ai' } };
+    const undone: PascalScene = { ...loaded, nodes: { ...loaded.nodes, [nodeId]: { ...node, metadata } as unknown as PascalNode } };
+    let ok = true;
+
+    await act(async () => {
+      ok = await view.result.current.onSceneCommit(undone);
+    });
+    expect(ok).toBe(false);
+    expect(onRejected).not.toHaveBeenCalled();
+    expect(stored()).toMatchObject({ source: 'human', reviewed: false });
+    expect(view.result.current.takeSuggestionAccepted()).toBe(true);
+    expect(view.result.current.takeSuggestionAccepted()).toBe(false);
+  });
+});

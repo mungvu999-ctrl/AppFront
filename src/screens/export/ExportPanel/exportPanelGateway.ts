@@ -94,6 +94,7 @@ import { ROUTES } from '@/routes/paths';
 import type { ProjectRole } from '@/types/project';
 
 import type { ExportCapabilities, ExportFloorState, ExportFormatId, PreflightRow } from './types';
+import { READINESS_REASON_SHORT } from './exportReadinessText';
 
 /* -------------------------------------------------------------------------- */
 /* Bộ đo năng lực — mỗi cờ là một phép kiểm, không phải một lời khai.          */
@@ -288,16 +289,6 @@ export interface PreflightInput {
     Record<string, { readonly readiness?: FloorReadiness; readonly scaleStatus?: 'unresolved' } | undefined>
   >;
 }
-
-/** Cụm ngắn cho từng lý do readiness trong dòng preflight. */
-const READINESS_REASON_SHORT: Readonly<Record<ReadinessReason, string>> = {
-  scaleUnresolved: 'tỷ lệ tạm',
-  criticalIssues: 'lỗi nghiêm trọng',
-  geometrySuspect: 'hình học đáng ngờ',
-  fallbackWallModel: 'tường dò bằng mô hình dự phòng',
-  fallbackObjectModel: 'đồ vật dò bằng mô hình dự phòng',
-  fallbackTextModel: 'chữ đọc bằng mô hình dự phòng',
-};
 
 function reviewReasonsOf(
   meta: NonNullable<PreflightInput['floorMeta']>[string],

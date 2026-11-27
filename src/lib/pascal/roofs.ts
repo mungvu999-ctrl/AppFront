@@ -147,3 +147,30 @@ export const roofOf = (
 /** Mặt mái `rseg_…` của mái nào trong danh sách, theo `Roof.nodes`. */
 export const roofIdOfSegment = (roofs: readonly Roof[], segmentNodeId: PascalNodeId): RoofId | null =>
   roofs.find((roof) => roof.nodes.some((node) => node.id === segmentNodeId))?.id ?? null;
+
+/**
+ * NHA-09 - "Duyệt mái" là ngoại lệ DUY NHẤT của hàng rào A5 ở `fromPascal.ts` (phán quyết duyệt luôn lấy từ ảnh
+ * chụp "trước", không lấy từ cảnh). Thẻ `RoofTrustCard` đổi túi `metadata.appfront` của node mái, và chỉ hai bước
+ * chuyển sau được nhận từ cảnh: mái máy dựng chưa duyệt -> người đã duyệt (bấm "Duyệt mái"), và chiều ngược lại
+ * (hoàn tác đúng cú bấm đó). Mọi cặp khác, và mọi loại thực thể khác, trả `null`: giữ phán quyết của "trước".
+ *
+ * Phán quyết nhận được là của chính lượt lưu này, kể cả khi mái vừa được sửa trong cùng lượt: `changeBetween`
+ * nhận ra nó qua `reviewed` khác "trước" và không áp C2 lên lượt đó.
+ *
+ * shortcut: một lượt lưu (bộ tự lưu gom 1 giây) không cho biết sửa trước hay duyệt trước, nên "duyệt rồi sửa ngay
+ * trong cùng lượt" cũng được ghi là đã duyệt. Cùng một người, cách nhau dưới 1 giây. Nâng cấp khi cần phân biệt:
+ * ghi dấu hình mái lúc duyệt vào túi và so lại ở lượt lưu.
+ */
+export const roofVerdictOf = (
+  kind: string,
+  before: Pick<ReviewMetadata, 'source' | 'reviewed'>,
+  after: Pick<ReviewMetadata, 'source' | 'reviewed'>,
+): Pick<ReviewMetadata, 'source' | 'reviewed'> | null => {
+  if (kind !== 'roof') return null;
+  const approved =
+    before.source === 'ai' && !before.reviewed && after.source === 'human' && after.reviewed;
+  const undone =
+    before.source === 'human' && before.reviewed && after.source === 'ai' && !after.reviewed;
+
+  return approved || undone ? { source: after.source, reviewed: after.reviewed } : null;
+};

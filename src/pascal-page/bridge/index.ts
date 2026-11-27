@@ -678,9 +678,9 @@ export function usePascalProjectBridge(
           if (massDeleteRef.current?.reason !== rejection.current) revertToStore();
           throw new Error(rejection.current);
         }
-        // Hoàn tác chỉ chạm node dẫn xuất (không có gì để ghi): vẫn dựng lại để cảnh hết node cũ.
+        // Hoàn tác chỉ chạm node dẫn xuất, hay chỉ đưa túi duyệt cũ về (không có gì để ghi): vẫn dựng lại cho cảnh khớp kho.
         if (!ok) {
-          if (restored) rebuildFromStore();
+          if (takeSuggestionAccepted() || restored) rebuildFromStore();
           return;
         }
         /* Dựng lại cảnh từ kho khi: vừa nhận món gợi ý (tấm viền thành mẫu thật; Ctrl+Z về cảnh còn tấm viền và

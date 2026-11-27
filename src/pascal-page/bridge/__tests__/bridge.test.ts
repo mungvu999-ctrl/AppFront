@@ -600,6 +600,20 @@ describe('usePascalProjectBridge', () => {
     expect(commit.rebased).toHaveLength(1);
   });
 
+  it('PR 115 P2 — lượt không có gì để ghi mà hook báo túi duyệt của cảnh lệch bản lưu: vẫn dựng lại cảnh từ kho, một lần', async () => {
+    const applied: PascalScene[] = [];
+    const { result } = renderHook(() => usePascalProjectBridge('p1', (scene) => applied.push(scene as PascalScene), () => ({ nodes: {}, rootNodeIds: [] }) as never));
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    commit.ok = false;
+    commit.accepted = true;
+    await result.current.onSave({ nodes: {}, rootNodeIds: [] });
+    expect(applied).toHaveLength(1);
+    await result.current.onSave({ nodes: {}, rootNodeIds: [] });
+    expect(applied).toHaveLength(1);
+  });
+
   it('máy chủ khối tầng: "Tải lại tầng" nạp lại tầng rồi dựng lại cảnh từ kho, không nạp lại trang', async () => {
     const applied: unknown[] = [];
     saver.blocked = 'Tầng đã đổi trên máy chủ.';

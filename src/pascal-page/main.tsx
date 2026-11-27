@@ -32,6 +32,7 @@ import { LoadErrorBody } from './LoadErrorBody';
 import { ModelCreditCard } from './ModelCreditCard';
 import { OpeningKindCard, type OpeningKindStores } from './OpeningKindCard';
 import { PlacementIssuesChip } from './PlacementIssuesChip';
+import { RoofTrustCard, type RoofTrustStores } from './RoofTrustCard';
 import { prefetchHdri } from './realism/lighting-hdri';
 import { realismFlagsFrom, useRealism } from './realism/store';
 import { preloadSceneTextures } from './realism/texturePreload';
@@ -96,6 +97,8 @@ const openingKindStores = {
   parseNode: (node: object) => AnyNode.parse(node),
   singleStep: (run: () => void) => runAsSingleSceneHistoryStep(useScene, run),
 } as unknown as OpeningKindStores;
+// Thẻ "Duyệt mái": đổi túi metadata của node mái trong một bước Ctrl+Z.
+const roofTrustStores = { useScene, useViewer, singleStep: openingKindStores.singleStep } as unknown as RoofTrustStores;
 
 function Notice({ children }: { readonly children: ReactNode }) {
   return (
@@ -240,6 +243,7 @@ function PascalPage({ projectId }: { readonly projectId: string }) {
       <SwapModelCard catalog={CATALOG_ITEMS} readOnly={readOnly} stores={{ useScene, useViewer }} />
       <ModelCreditCard stores={{ useScene, useViewer }} />
       <ItemTrustCard stores={{ useScene, useViewer }} />
+      <RoofTrustCard readOnly={readOnly} stores={roofTrustStores} />
       <OpeningKindCard readOnly={readOnly} stores={openingKindStores} />
     </>
   );
