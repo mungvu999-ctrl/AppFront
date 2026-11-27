@@ -1,0 +1,554 @@
+[
+  {
+    "name": "rect_gable_turned",
+    "outlineMm": [
+      [
+        1537.365,
+        1623.733
+      ],
+      [
+        10934.291,
+        5043.934
+      ],
+      [
+        8882.17,
+        10682.09
+      ],
+      [
+        -514.756,
+        7261.889
+      ]
+    ],
+    "form": "gable",
+    "pitchDeg": 30.0,
+    "quarterTurns": 0,
+    "eaveAboveFloorMm": 3300.0,
+    "overhangMm": 300.0,
+    "wallThicknessMm": 220.0,
+    "ridgeHeightMm": [
+      1732.051
+    ],
+    "nodes": [
+      {
+        "object": "node",
+        "id": "roof_RF-GOLDEN0000",
+        "type": "roof",
+        "visible": true,
+        "metadata": {},
+        "position": [
+          5.209767,
+          3.3,
+          6.152912
+        ],
+        "rotation": -0.34906581549228094,
+        "support": {
+          "kind": "level"
+        }
+      },
+      {
+        "object": "node",
+        "id": "rseg_RF-GOLDEN0000_0",
+        "type": "roof-segment",
+        "visible": true,
+        "metadata": {},
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "roofType": "gable",
+        "width": 10.0,
+        "depth": 6.0,
+        "wallHeight": 0.0,
+        "pitch": 30.0,
+        "wallThickness": 0.22,
+        "deckThickness": 0.1,
+        "overhang": 0.34641,
+        "shingleThickness": 0.05
+      }
+    ]
+  },
+  {
+    "name": "l_hip",
+    "outlineMm": [
+      [
+        0,
+        0
+      ],
+      [
+        10000,
+        0
+      ],
+      [
+        10000,
+        4000
+      ],
+      [
+        4000,
+        4000
+      ],
+      [
+        4000,
+        9000
+      ],
+      [
+        0,
+        9000
+      ]
+    ],
+    "form": "hip",
+    "pitchDeg": 30.0,
+    "quarterTurns": 0,
+    "eaveAboveFloorMm": 3000.0,
+    "overhangMm": 450.0,
+    "wallThicknessMm": 220.0,
+    "ridgeHeightMm": [
+      1154.701,
+      1154.701
+    ],
+    "nodes": [
+      {
+        "object": "node",
+        "id": "roof_RF-GOLDEN0001",
+        "type": "roof",
+        "visible": true,
+        "metadata": {},
+        "position": [
+          5.0,
+          3.0,
+          4.5
+        ],
+        "rotation": 0.0,
+        "support": {
+          "kind": "level"
+        }
+      },
+      {
+        "object": "node",
+        "id": "rseg_RF-GOLDEN0001_0",
+        "type": "roof-segment",
+        "visible": true,
+        "metadata": {},
+        "position": [
+          0.0,
+          0.0,
+          -2.5
+        ],
+        "rotation": 0.0,
+        "roofType": "hip",
+        "width": 10.0,
+        "depth": 4.0,
+        "wallHeight": 0.0,
+        "pitch": 30.0,
+        "wallThickness": 0.22,
+        "deckThickness": 0.1,
+        "overhang": 0.519615,
+        "shingleThickness": 0.05
+      },
+      {
+        "object": "node",
+        "id": "rseg_RF-GOLDEN0001_1",
+        "type": "roof-segment",
+        "visible": true,
+        "metadata": {},
+        "position": [
+          -3.0,
+          0.0,
+          0.0
+        ],
+        "rotation": 1.5707963267948966,
+        "roofType": "hip",
+        "width": 9.0,
+        "depth": 4.0,
+        "wallHeight": 0.0,
+        "pitch": 30.0,
+        "wallThickness": 0.22,
+        "deckThickness": 0.1,
+        "overhang": 0.519615,
+        "shingleThickness": 0.05
+      }
+    ]
+  },
+  {
+    "name": "t_gable",
+    "outlineMm": [
+      [
+        0,
+        0
+      ],
+      [
+        12000,
+        0
+      ],
+      [
+        12000,
+        4000
+      ],
+      [
+        8000,
+        4000
+      ],
+      [
+        8000,
+        10000
+      ],
+      [
+        4000,
+        10000
+      ],
+      [
+        4000,
+        4000
+      ],
+      [
+        0,
+        4000
+      ]
+    ],
+    "form": "gable",
+    "pitchDeg": 35.0,
+    "quarterTurns": 0,
+    "eaveAboveFloorMm": 3300.0,
+    "overhangMm": 300.0,
+    "wallThicknessMm": 200.0,
+    "ridgeHeightMm": [
+      1400.415,
+      1400.415
+    ],
+    "nodes": [
+      {
+        "object": "node",
+        "id": "roof_RF-GOLDEN0002",
+        "type": "roof",
+        "visible": true,
+        "metadata": {},
+        "position": [
+          6.0,
+          3.3,
+          5.0
+        ],
+        "rotation": 0.0,
+        "support": {
+          "kind": "level"
+        }
+      },
+      {
+        "object": "node",
+        "id": "rseg_RF-GOLDEN0002_0",
+        "type": "roof-segment",
+        "visible": true,
+        "metadata": {},
+        "position": [
+          0.0,
+          0.0,
+          -3.0
+        ],
+        "rotation": 0.0,
+        "roofType": "gable",
+        "width": 12.0,
+        "depth": 4.0,
+        "wallHeight": 0.0,
+        "pitch": 35.0,
+        "wallThickness": 0.2,
+        "deckThickness": 0.1,
+        "overhang": 0.366232,
+        "shingleThickness": 0.05
+      },
+      {
+        "object": "node",
+        "id": "rseg_RF-GOLDEN0002_1",
+        "type": "roof-segment",
+        "visible": true,
+        "metadata": {},
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": 1.5707963267948966,
+        "roofType": "gable",
+        "width": 10.0,
+        "depth": 4.0,
+        "wallHeight": 0.0,
+        "pitch": 35.0,
+        "wallThickness": 0.2,
+        "deckThickness": 0.1,
+        "overhang": 0.366232,
+        "shingleThickness": 0.05
+      }
+    ]
+  },
+  {
+    "name": "u_hip",
+    "outlineMm": [
+      [
+        0,
+        0
+      ],
+      [
+        12000,
+        0
+      ],
+      [
+        12000,
+        9000
+      ],
+      [
+        8000,
+        9000
+      ],
+      [
+        8000,
+        4000
+      ],
+      [
+        4000,
+        4000
+      ],
+      [
+        4000,
+        9000
+      ],
+      [
+        0,
+        9000
+      ]
+    ],
+    "form": "hip",
+    "pitchDeg": 25.0,
+    "quarterTurns": 0,
+    "eaveAboveFloorMm": 3300.0,
+    "overhangMm": 300.0,
+    "wallThicknessMm": 220.0,
+    "ridgeHeightMm": [
+      932.615,
+      932.615,
+      932.615
+    ],
+    "nodes": [
+      {
+        "object": "node",
+        "id": "roof_RF-GOLDEN0003",
+        "type": "roof",
+        "visible": true,
+        "metadata": {},
+        "position": [
+          6.0,
+          3.3,
+          4.5
+        ],
+        "rotation": 0.0,
+        "support": {
+          "kind": "level"
+        }
+      },
+      {
+        "object": "node",
+        "id": "rseg_RF-GOLDEN0003_0",
+        "type": "roof-segment",
+        "visible": true,
+        "metadata": {},
+        "position": [
+          0.0,
+          0.0,
+          -2.5
+        ],
+        "rotation": 0.0,
+        "roofType": "hip",
+        "width": 12.0,
+        "depth": 4.0,
+        "wallHeight": 0.0,
+        "pitch": 25.0,
+        "wallThickness": 0.22,
+        "deckThickness": 0.1,
+        "overhang": 0.331013,
+        "shingleThickness": 0.05
+      },
+      {
+        "object": "node",
+        "id": "rseg_RF-GOLDEN0003_1",
+        "type": "roof-segment",
+        "visible": true,
+        "metadata": {},
+        "position": [
+          -4.0,
+          0.0,
+          0.0
+        ],
+        "rotation": 1.5707963267948966,
+        "roofType": "hip",
+        "width": 9.0,
+        "depth": 4.0,
+        "wallHeight": 0.0,
+        "pitch": 25.0,
+        "wallThickness": 0.22,
+        "deckThickness": 0.1,
+        "overhang": 0.331013,
+        "shingleThickness": 0.05
+      },
+      {
+        "object": "node",
+        "id": "rseg_RF-GOLDEN0003_2",
+        "type": "roof-segment",
+        "visible": true,
+        "metadata": {},
+        "position": [
+          4.0,
+          0.0,
+          0.0
+        ],
+        "rotation": 1.5707963267948966,
+        "roofType": "hip",
+        "width": 9.0,
+        "depth": 4.0,
+        "wallHeight": 0.0,
+        "pitch": 25.0,
+        "wallThickness": 0.22,
+        "deckThickness": 0.1,
+        "overhang": 0.331013,
+        "shingleThickness": 0.05
+      }
+    ]
+  },
+  {
+    "name": "rect_flat",
+    "outlineMm": [
+      [
+        0,
+        0
+      ],
+      [
+        10000,
+        0
+      ],
+      [
+        10000,
+        6000
+      ],
+      [
+        0,
+        6000
+      ]
+    ],
+    "form": "flat",
+    "pitchDeg": 0.0,
+    "quarterTurns": 0,
+    "eaveAboveFloorMm": 3300.0,
+    "overhangMm": 0.0,
+    "wallThicknessMm": 220.0,
+    "ridgeHeightMm": [
+      0.0
+    ],
+    "nodes": [
+      {
+        "object": "node",
+        "id": "roof_RF-GOLDEN0004",
+        "type": "roof",
+        "visible": true,
+        "metadata": {},
+        "position": [
+          5.0,
+          3.3,
+          3.0
+        ],
+        "rotation": 0.0,
+        "support": {
+          "kind": "level"
+        }
+      },
+      {
+        "object": "node",
+        "id": "rseg_RF-GOLDEN0004_0",
+        "type": "roof-segment",
+        "visible": true,
+        "metadata": {},
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "roofType": "flat",
+        "width": 10.0,
+        "depth": 6.0,
+        "wallHeight": 0.0,
+        "pitch": 40.0,
+        "wallThickness": 0.22,
+        "deckThickness": 0.1,
+        "overhang": 0.0,
+        "shingleThickness": 0.05
+      }
+    ]
+  },
+  {
+    "name": "rect_shed_turned",
+    "outlineMm": [
+      [
+        0,
+        0
+      ],
+      [
+        10000,
+        0
+      ],
+      [
+        10000,
+        6000
+      ],
+      [
+        0,
+        6000
+      ]
+    ],
+    "form": "shed",
+    "pitchDeg": 10.0,
+    "quarterTurns": 1,
+    "eaveAboveFloorMm": 2700.0,
+    "overhangMm": 300.0,
+    "wallThicknessMm": 110.0,
+    "ridgeHeightMm": [
+      1763.27
+    ],
+    "nodes": [
+      {
+        "object": "node",
+        "id": "roof_RF-GOLDEN0005",
+        "type": "roof",
+        "visible": true,
+        "metadata": {},
+        "position": [
+          5.0,
+          2.7,
+          3.0
+        ],
+        "rotation": 0.0,
+        "support": {
+          "kind": "level"
+        }
+      },
+      {
+        "object": "node",
+        "id": "rseg_RF-GOLDEN0005_0",
+        "type": "roof-segment",
+        "visible": true,
+        "metadata": {},
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": 1.5707963267948966,
+        "roofType": "shed",
+        "width": 6.0,
+        "depth": 10.0,
+        "wallHeight": 0.0,
+        "pitch": 10.0,
+        "wallThickness": 0.11,
+        "deckThickness": 0.1,
+        "overhang": 0.304628,
+        "shingleThickness": 0.05
+      }
+    ]
+  }
+]

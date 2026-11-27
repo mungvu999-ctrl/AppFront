@@ -140,10 +140,43 @@ const readRigid = (level: AnyNode): Rigid | null => {
   return value !== undefined && typeof value.rotationDeg === 'number' ? value : null;
 };
 
+/** Khoá trong `metadata.appfront` của node MÁI: vị trí + góc đã lưu, trước khi căn. */
+const STORED_POSE_KEY = 'storedPose';
+const POSE_KEYS = ['position', 'rotation'] as const;
+
+/**
+ * Mái lưu nguyên số thực (`roofs.ts`, không làm tròn mm), mà `(x + t) − t` và `(r − π/2) + π/2`
+ * lệch một ulp (NO-579). Lượt đi cất vị trí + góc đã lưu; lượt về trả đúng giá trị ấy cho trường
+ * nào vẫn bằng kết quả căn của nó (mái không bị dời/xoay), trường đã đổi thì gỡ phép căn như thường.
+ */
+const moveChild = (node: AnyNode, t: Rigid, inverse: boolean): AnyNode => {
+  const moved = moveNode(node, t, inverse);
+  if (node.type !== 'roof') return moved;
+  const metadata = (node.metadata ?? {}) as { appfront?: Record<string, unknown> };
+
+  if (!inverse) {
+    const stored = { position: node.position, rotation: node.rotation };
+    return { ...moved, metadata: { ...metadata, appfront: { ...metadata.appfront, [STORED_POSE_KEY]: stored } } };
+  }
+
+  const appfront = { ...metadata.appfront };
+  const stored = appfront[STORED_POSE_KEY] as Partial<Record<(typeof POSE_KEYS)[number], unknown>> | undefined;
+  if (stored === undefined) return moved;
+  delete appfront[STORED_POSE_KEY];
+  const shown = moveNode({ ...node, ...stored }, t, false);
+  const out: Record<string, unknown> = { ...moved, metadata: { ...metadata, appfront } };
+
+  for (const key of POSE_KEYS) {
+    if (stored[key] !== undefined && JSON.stringify(shown[key]) === JSON.stringify(node[key])) out[key] = stored[key];
+  }
+
+  return out as AnyNode;
+};
+
 const moveChildren = <N>(nodes: Record<string, N>, level: AnyNode, t: Rigid, inverse: boolean): void => {
   for (const childId of (level.children as readonly string[] | undefined) ?? []) {
     const child = nodes[childId] as AnyNode | undefined;
-    if (child !== undefined) nodes[childId] = moveNode(child, t, inverse) as N;
+    if (child !== undefined) nodes[childId] = moveChild(child, t, inverse) as N;
   }
 };
 

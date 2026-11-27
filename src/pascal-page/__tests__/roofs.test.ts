@@ -48,7 +48,7 @@ const drawnRoof = (): readonly Record<string, unknown>[] => [
     width: 8.2,
     depth: 6.4,
     wallHeight: 0,
-    roofHeight: 2.1,
+    pitch: 33,
     overhang: 0.45,
   },
   {
@@ -66,7 +66,7 @@ const drawnRoof = (): readonly Record<string, unknown>[] => [
     width: 3,
     depth: 2,
     wallHeight: 0,
-    roofHeight: 0.8,
+    pitch: 22,
     overhang: 0.3,
   },
   {
@@ -88,7 +88,10 @@ const sceneWith = (base: PascalScene, extra: readonly Record<string, unknown>[])
   if (level?.type !== 'level') throw new Error('F1-ext phải có tầng');
 
   const roofIds = extra.filter((node) => node.type === 'roof').map((node) => node.id as string);
-  nodes[levelNodeId] = { ...level, children: [...level.children.filter((id) => !roofIds.includes(id)), ...roofIds] };
+  nodes[levelNodeId] = {
+    ...level,
+    children: [...level.children.filter((id) => !roofIds.includes(id)), ...roofIds],
+  };
 
   return { ...base, nodes };
 };
@@ -98,7 +101,8 @@ const savedRoofGraph = (): SpatialGraph => {
   const { graph } = toSpatialGraph(sceneWith(toPascalScene(extGraph).scene, drawnRoof()));
   const doc = fixtureF1({ ext: true }).doc;
 
-  return SpatialGraphDocumentSchema.parse({ ...doc, graph: { ...doc.graph, roofs: graph.roofs } }).graph;
+  return SpatialGraphDocumentSchema.parse({ ...doc, graph: { ...doc.graph, roofs: graph.roofs } })
+    .graph;
 };
 
 const roofOf = (graph: SpatialGraph): Roof => {
@@ -149,10 +153,28 @@ describe.each([true, false])('mái, cờ details = %s', (details) => {
     const rebuilt = toPascalScene(graph).scene.nodes;
     const roofNode = rebuilt[`roof_${roof.id}`];
 
-    expect(roofNode).toMatchObject({ type: 'roof', parentId: levelNodeId, children: ['rseg_a1b2c3d4e5f6', 'rseg_f6e5d4c3b2a1'] });
-    expect(rebuilt[levelNodeId]?.type === 'level' ? rebuilt[levelNodeId].children : []).toContain(`roof_${roof.id}`);
+    expect(roofNode).toMatchObject({
+      type: 'roof',
+      parentId: levelNodeId,
+      children: ['rseg_a1b2c3d4e5f6', 'rseg_f6e5d4c3b2a1'],
+    });
+    expect(rebuilt[levelNodeId]?.type === 'level' ? rebuilt[levelNodeId].children : []).toContain(
+      `roof_${roof.id}`,
+    );
 
-    const geometry = ['type', 'name', 'position', 'rotation', 'support', 'roofType', 'width', 'depth', 'wallHeight', 'roofHeight', 'overhang'];
+    const geometry = [
+      'type',
+      'name',
+      'position',
+      'rotation',
+      'support',
+      'roofType',
+      'width',
+      'depth',
+      'wallHeight',
+      'pitch',
+      'overhang',
+    ];
 
     for (const original of drawn.slice(0, 3)) {
       const id = original.type === 'roof' ? `roof_${roof.id}` : (original.id as string);
@@ -172,7 +194,10 @@ describe.each([true, false])('mái, cờ details = %s', (details) => {
 
     if (segment === undefined) throw new Error('cảnh phải có mặt mái');
 
-    const edited: PascalScene = { ...scene, nodes: { ...scene.nodes, [segment.id]: { ...segment, roofHeight: 2.6 } as unknown as PascalNode } };
+    const edited: PascalScene = {
+      ...scene,
+      nodes: { ...scene.nodes, [segment.id]: { ...segment, pitch: 38 } as unknown as PascalNode },
+    };
     const result = createPascalEditCommand({
       graph: normalizeSpatial(graph),
       scene: edited,
@@ -185,7 +210,7 @@ describe.each([true, false])('mái, cờ details = %s', (details) => {
     expect(result.data.changes).toHaveLength(1);
     expect(result.data.changes[0]?.kind).toBe('roof');
     expect(result.data.changes[0]?.after).toMatchObject({ id: roofOf(graph).id });
-    expect((result.data.changes[0]?.after as Roof).nodes[1]).toMatchObject({ roofHeight: 2.6 });
+    expect((result.data.changes[0]?.after as Roof).nodes[1]).toMatchObject({ pitch: 38 });
   });
 
   it('xoá một mặt mái → một thay đổi roof còn một mặt', () => {
@@ -203,7 +228,10 @@ describe.each([true, false])('mái, cờ details = %s', (details) => {
     delete rest.rseg_f6e5d4c3b2a1;
     const result = createPascalEditCommand({
       graph: normalizeSpatial(graph),
-      scene: { ...scene, nodes: { ...rest, [roofNodeId]: { ...roofNode, children: ['rseg_a1b2c3d4e5f6'] } } },
+      scene: {
+        ...scene,
+        nodes: { ...rest, [roofNodeId]: { ...roofNode, children: ['rseg_a1b2c3d4e5f6'] } },
+      },
       commit: { origin: 'local', changedNodeIds: ['rseg_f6e5d4c3b2a1', 'gutter_zz11yy22xx33'] },
       actorId: ACTOR,
     });
@@ -220,7 +248,10 @@ describe.each([true, false])('mái, cờ details = %s', (details) => {
     const result = createPascalEditCommand({
       graph: normalizeSpatial(extGraph),
       scene: sceneWith(toPascalScene(extGraph).scene, drawnRoof()),
-      commit: { origin: 'local', changedNodeIds: ['roof_k3n9q2w8e7r6', 'rseg_a1b2c3d4e5f6', 'rseg_f6e5d4c3b2a1'] },
+      commit: {
+        origin: 'local',
+        changedNodeIds: ['roof_k3n9q2w8e7r6', 'rseg_a1b2c3d4e5f6', 'rseg_f6e5d4c3b2a1'],
+      },
       actorId: ACTOR,
     });
 
@@ -241,16 +272,25 @@ describe('GĐ6 — diềm + máng mặc định cho mái đã lưu', () => {
     expect(stored).not.toHaveProperty('fascia');
     expect(stored?.metadata).not.toHaveProperty('autoGutter');
 
-    const nodes = toPascalScene(graph).scene.nodes as unknown as Record<string, Record<string, unknown>>;
+    const nodes = toPascalScene(graph).scene.nodes as unknown as Record<
+      string,
+      Record<string, unknown>
+    >;
 
     expect(nodes.rseg_a1b2c3d4e5f6).toMatchObject({ fascia: true, metadata: { autoGutter: true } });
-    expect(nodes.rseg_f6e5d4c3b2a1).toMatchObject({ fascia: false, metadata: { autoGutter: false } });
+    expect(nodes.rseg_f6e5d4c3b2a1).toMatchObject({
+      fascia: false,
+      metadata: { autoGutter: false },
+    });
   });
 
   it('cờ details tắt → không thêm gì', () => {
     setDetailsEnabled(false);
 
-    const nodes = toPascalScene(savedRoofGraph()).scene.nodes as unknown as Record<string, Record<string, unknown>>;
+    const nodes = toPascalScene(savedRoofGraph()).scene.nodes as unknown as Record<
+      string,
+      Record<string, unknown>
+    >;
 
     expect(nodes.rseg_a1b2c3d4e5f6).not.toHaveProperty('fascia');
     expect(nodes.rseg_a1b2c3d4e5f6?.metadata).not.toHaveProperty('autoGutter');
@@ -261,16 +301,24 @@ describe('dây', () => {
   it('`roofs: []` hay vắng đều đọc thành không có khoá; mái có id RF- đi qua schema', () => {
     const doc = fixtureF1({ ext: true }).doc;
 
-    expect(SpatialGraphDocumentSchema.parse({ ...doc, graph: { ...doc.graph, roofs: [] } }).graph).not.toHaveProperty('roofs');
+    expect(
+      SpatialGraphDocumentSchema.parse({ ...doc, graph: { ...doc.graph, roofs: [] } }).graph,
+    ).not.toHaveProperty('roofs');
     expect(roofOf(savedRoofGraph()).id).toMatch(/^RF-/u);
     expect(() =>
-      SpatialGraphDocumentSchema.parse({ ...doc, graph: { ...doc.graph, roofs: [{ ...roofOf(savedRoofGraph()), nodes: [] }] } }),
+      SpatialGraphDocumentSchema.parse({
+        ...doc,
+        graph: { ...doc.graph, roofs: [{ ...roofOf(savedRoofGraph()), nodes: [] }] },
+      }),
     ).toThrow();
   });
 });
 
 describe('durable gutter — mái nạp lại có máng ngay (luật r9g-load-gutters)', () => {
-  type Live = Record<string, { type?: string; parentId?: string | null; children?: string[] | undefined; metadata?: unknown }>;
+  type Live = Record<
+    string,
+    { type?: string; parentId?: string | null; children?: string[] | undefined; metadata?: unknown }
+  >;
 
   const guttersOf = (nodes: Live, segmentId: string): string[] =>
     (nodes[segmentId]?.children ?? []).filter((id) => nodes[id]?.type === 'gutter');
@@ -292,7 +340,12 @@ describe('durable gutter — mái nạp lại có máng ngay (luật r9g-load-gu
     try {
       useScene
         .getState()
-        .updateNodes(gutterless.map(([id, node]) => ({ id: id as never, data: { metadata: node.metadata } as never })));
+        .updateNodes(
+          gutterless.map(([id, node]) => ({
+            id: id as never,
+            data: { metadata: node.metadata } as never,
+          })),
+        );
     } finally {
       // eslint-disable-next-line local/no-direct-set -- như trên
       if (wasReadOnly) useScene.setState({ readOnly: true });
@@ -300,7 +353,8 @@ describe('durable gutter — mái nạp lại có máng ngay (luật r9g-load-gu
 
     const refreshed: Live = { ...(useScene.getState().nodes as unknown as Live) };
 
-    for (const [id, node] of gutterless) refreshed[id] = { ...node, children: refreshed[id]?.children ?? node.children };
+    for (const [id, node] of gutterless)
+      refreshed[id] = { ...node, children: refreshed[id]?.children ?? node.children };
     // eslint-disable-next-line local/no-direct-set -- như trên
     useScene.setState({ nodes: refreshed as never });
   };
@@ -314,10 +368,15 @@ describe('durable gutter — mái nạp lại có máng ngay (luật r9g-load-gu
     const built = toPascalScene(graph).scene;
 
     useScene.getState().setScene(built.nodes as never, built.rootNodeIds as never);
-    const loadedRoofs = toSpatialGraph({ ...built, nodes: useScene.getState().nodes } as unknown as PascalScene).graph.roofs;
+    const loadedRoofs = toSpatialGraph({
+      ...built,
+      nodes: useScene.getState().nodes,
+    } as unknown as PascalScene).graph.roofs;
 
     expect(loadedRoofs).toHaveLength(1);
-    expect(guttersOf(useScene.getState().nodes as unknown as Live, 'rseg_a1b2c3d4e5f6')).toEqual([]);
+    expect(guttersOf(useScene.getState().nodes as unknown as Live, 'rseg_a1b2c3d4e5f6')).toEqual(
+      [],
+    );
 
     refreshLoadedGutters();
 
@@ -327,16 +386,22 @@ describe('durable gutter — mái nạp lại có máng ngay (luật r9g-load-gu
     expect(gutters.length).toBeGreaterThan(0);
     expect(guttersOf(live(), 'rseg_f6e5d4c3b2a1')).toEqual([]);
 
-    // setScene tự đổi roofHeight → pitch (migrateNodes, có từ trước luật này); máng không thêm gì vào bản lưu.
-    expect(toSpatialGraph({ ...built, nodes: live() } as unknown as PascalScene).graph.roofs).toEqual(loadedRoofs);
+    // Máng không thêm gì vào bản lưu.
+    expect(
+      toSpatialGraph({ ...built, nodes: live() } as unknown as PascalScene).graph.roofs,
+    ).toEqual(loadedRoofs);
 
     refreshLoadedGutters();
-    useScene.getState().updateNodes([{ id: 'rseg_a1b2c3d4e5f6' as never, data: { width: 9 } as never }]);
+    useScene
+      .getState()
+      .updateNodes([{ id: 'rseg_a1b2c3d4e5f6' as never, data: { width: 9 } as never }]);
 
     const after = guttersOf(live(), 'rseg_a1b2c3d4e5f6');
 
     expect(after).toHaveLength(gutters.length);
-    expect(Object.values(live()).filter((node) => node.type === 'gutter')).toHaveLength(gutters.length);
+    expect(Object.values(live()).filter((node) => node.type === 'gutter')).toHaveLength(
+      gutters.length,
+    );
   });
 
   it('cảnh chỉ đọc (readOnly) cũng có máng, cờ readOnly giữ nguyên, đọc ngược 0 lệnh', () => {
@@ -348,14 +413,19 @@ describe('durable gutter — mái nạp lại có máng ngay (luật r9g-load-gu
     useScene.getState().setReadOnly(true);
     try {
       useScene.getState().setScene(built.nodes as never, built.rootNodeIds as never);
-      const loadedRoofs = toSpatialGraph({ ...built, nodes: useScene.getState().nodes } as unknown as PascalScene).graph.roofs;
+      const loadedRoofs = toSpatialGraph({
+        ...built,
+        nodes: useScene.getState().nodes,
+      } as unknown as PascalScene).graph.roofs;
 
       refreshLoadedGutters();
       const live = useScene.getState().nodes as unknown as Live;
 
       expect(guttersOf(live, 'rseg_a1b2c3d4e5f6').length).toBeGreaterThan(0);
       expect(useScene.getState().readOnly).toBe(true);
-      expect(toSpatialGraph({ ...built, nodes: live } as unknown as PascalScene).graph.roofs).toEqual(loadedRoofs);
+      expect(
+        toSpatialGraph({ ...built, nodes: live } as unknown as PascalScene).graph.roofs,
+      ).toEqual(loadedRoofs);
     } finally {
       useScene.getState().setReadOnly(false);
     }
