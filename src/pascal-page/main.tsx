@@ -204,6 +204,17 @@ const exportSceneGlb = async (): Promise<Blob | null> =>
 /** Trần chờ ảnh vật liệu trước lượt dựng đầu; quá thì dựng luôn, ảnh gán sau. */
 const TEXTURE_HOLD_MS = 1500;
 
+/**
+ * Thẻ duyệt mái ở cụm "Cảnh" cho mọi vai: thẻ thao tác nhanh chỉ hiện với đồ vật và cửa, nên mái đặt trong đó thì
+ * không ai duyệt được. Nút "Duyệt mái" chỉ có khi trình soạn rảnh, như mọi thẻ sửa cảnh khác; lúc khác chỉ còn nhãn.
+ */
+function RoofTrust({ readOnly }: { readonly readOnly: boolean }) {
+  // Cùng điều kiện "rảnh" với `HomeownerCard.tsx`; đổi một bên thì đổi cả hai.
+  const idle = useEditor((s) => s.mode === 'select' && s.tool == null && !s.isPreviewMode && !s.isFirstPersonMode);
+
+  return <RoofTrustCard readOnly={readOnly || !idle} stores={roofTrustStores} />;
+}
+
 function PascalPage({ projectId }: { readonly projectId: string }) {
   const bridge = usePascalProjectBridge(projectId, applyRejectedRevert, readEditorScene, serverLibraryLoaded);
   const readOnly = bridge.status === 'ready' && bridge.readOnly;
@@ -243,7 +254,6 @@ function PascalPage({ projectId }: { readonly projectId: string }) {
       <SwapModelCard catalog={CATALOG_ITEMS} readOnly={readOnly} stores={{ useScene, useViewer }} />
       <ModelCreditCard stores={{ useScene, useViewer }} />
       <ItemTrustCard stores={{ useScene, useViewer }} />
-      <RoofTrustCard readOnly={readOnly} stores={roofTrustStores} />
       <OpeningKindCard readOnly={readOnly} stores={openingKindStores} />
     </>
   );
@@ -281,6 +291,7 @@ function PascalPage({ projectId }: { readonly projectId: string }) {
             />
             <PlacementIssuesChip useViewer={useViewer} />
             {readOnly ? itemCards : null}
+            <RoofTrust readOnly={readOnly} />
           </div>
         </>
       }

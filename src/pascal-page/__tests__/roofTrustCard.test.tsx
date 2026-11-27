@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -101,5 +104,16 @@ describe('RoofTrustCard (NHA-09)', () => {
     const { container } = render(<RoofTrustCard readOnly={false} stores={storesOf(selectedIds, metadata).stores} />);
 
     expect(container.innerHTML).toBe('');
+  });
+
+  it('main.tsx gắn thẻ thẳng vào cụm "Cảnh", ngoài nhóm thẻ của thẻ thao tác nhanh (thẻ đó không hiện khi chọn mái)', () => {
+    const main = readFileSync(resolve(process.cwd(), 'src/pascal-page/main.tsx'), 'utf8');
+    const start = main.indexOf('const itemCards = (');
+
+    expect(start).toBeGreaterThan(-1);
+    expect(main.slice(start, main.indexOf('return (', start))).not.toContain('<RoofTrust');
+    // Đứng riêng một dòng: không nằm trong biểu thức `điều kiện ? … : …` nào (lỗi cũ: chỉ người xem mới thấy thẻ).
+    expect(main.match(/^\s*<RoofTrust readOnly=\{readOnly\} \/>$/gmu)).toHaveLength(1);
+    expect(main.match(/<RoofTrustCard /gu)).toHaveLength(1);
   });
 });
