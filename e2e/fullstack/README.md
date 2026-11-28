@@ -21,6 +21,7 @@ Chuỗi gồm các bước: đăng nhập, CSP/Draco, tạo dự án, thêm tầ
 | `E2E_DEV_SERVER=1` | Chạy trên Vite `dev:be` (mã FE đang sửa) thay vì ảnh `web`: bỏ kiểm CSP và `?v=` của trang 3D, hai thứ chỉ nginx/bản build mới có |
 | `E2E_SKIP_REGISTRY=1` | Bỏ bước 10. Bắt buộc khi stack đang chạy model đã huấn luyện: bước 10 kích hoạt lại "Bản gốc" và đè mất lựa chọn ấy |
 | `E2E_REAL_PLANS` | Cho `realplan.fullstack.ts`: các ảnh bản vẽ căn hộ thật, ngăn bằng `;`, mỗi ảnh một test (ML thật, đặt tỷ lệ tay nếu máy không đọc được). Nhận `.png/.jpg/.pdf`; PDF nhiều trang thì chọn trang cuối. Trống thì bỏ qua |
+| `E2E_SET_FILES` | Cho `houseset.fullstack.ts`: các tệp của **một** bộ hồ sơ (PDF/PNG/JPG), ngăn bằng `;`. BE cần `DRAWING_SET_ENABLED=true` và ML thật (`ML_BACKEND=onnx`). Đừng thêm `--trace`: trang 3D làm bước lưu vết treo tới 15 phút. Trống thì bỏ qua |
 
 Thiếu biến nào thì `globalSetup` dừng ngay và liệt kê đủ các biến thiếu. Nếu BE không trả lời, hoặc CSP ở `GET /` thiếu `'wasm-unsafe-eval'` hay `worker-src blob:`, nó dừng với câu "chưa có AppBack ở …".
 
